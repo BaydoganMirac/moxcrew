@@ -11,10 +11,10 @@
 | V0 provider production integration | Done | 2026-07-16 | [v0-provider-integration.md](v0-provider-integration.md) |
 | V0 Gemini lifecycle ingress | Done | 2026-07-16 | [v0-gemini-lifecycle-ingress.md](v0-gemini-lifecycle-ingress.md) |
 | V0 local work control | Done | 2026-07-16 | [v0-local-work-control.md](v0-local-work-control.md) |
+| V0 paired Cloud control | Done | 2026-07-16 | [v0-paired-cloud-control.md](v0-paired-cloud-control.md) |
 
-Phase 1 local observation and Phase 2 durable local work control are complete.
-The next milestone requires a separately approved Phase 3 plan; Cloud remains
-deferred.
+Phase 1 local observation, Phase 2 durable local work control, and Phase 3
+paired Cloud visibility with remote cancel are complete.
 
 State files are resumable handoffs. Update the relevant file whenever a work
 session changes implementation status, blockers, decisions, or next steps.

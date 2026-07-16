@@ -13,10 +13,12 @@ local installation.
 
 ## Current status
 
-Phase 1 observation and Phase 2 durable local work control are complete. The
-local app queues work, writes safe terminal receipts, and starts/cancels Codex
-inside an explicitly selected Git worktree. Claude Code and Gemini CLI remain
-observation-only. Optional Cloud connectivity is not implemented yet.
+Phase 1 observation, Phase 2 durable local work control, and the Phase 3 paired
+Cloud control slice are complete. The local app queues work, writes safe
+terminal receipts, starts/cancels Codex inside an explicitly selected Git
+worktree, and can publish a bounded sanitized operational view to Patchfleet
+Cloud. Claude Code and Gemini CLI remain observation-only. The only remote
+command in protocol version 1 is `cancel_run`.
 
 Start with [the documentation map](docs/README.md) before changing code.
 
@@ -40,6 +42,13 @@ policy `never`, and exposes cancel only for a linked active run.
 Codex control belongs to the current local app boot. After an app restart,
 Patchfleet hides Cancel until Refresh safely reconciles an old active run as
 session-lost/blocked; it never launches replacement work automatically.
+
+Cloud remains optional. Create a short-lived pairing code in Patchfleet Cloud,
+then enter its URL, a host name, and the code in the local Cloud panel. The
+local launcher syncs outbound in the background. It sends only current opaque
+IDs, states, revisions, provider capabilities, versions, and coarse timestamps;
+local work text and worktree paths stay on the host. Disconnecting or a Cloud
+outage does not disable the local console.
 
 Gemini lifecycle observation is opt-in. From the Patchfleet checkout, let
 Gemini CLI link the checked-in extension, then restart Gemini:

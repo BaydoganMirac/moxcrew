@@ -19,3 +19,4 @@ supersedes the old one.
 | [0012](0012-gemini-native-extension-lifecycle-inbox.md) | Accepted | Use Gemini's native extension lifecycle and a sanitized inbox before the single writer |
 | [0013](0013-local-work-intake-shares-the-canonical-event-log.md) | Accepted | Keep work intake and command receipts in the canonical local event log |
 | [0014](0014-codex-control-uses-a-bounded-app-server-session.md) | Accepted | Start and cancel Codex through a bounded app-server session |
+| [0015](0015-phase-3-uses-outbound-polling-and-remote-cancel.md) | Accepted | Pair outbound and prove one sanitized remote-cancel loop |

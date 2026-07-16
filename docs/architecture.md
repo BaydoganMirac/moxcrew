@@ -38,21 +38,25 @@ The public repository owns:
 - one durable local event writer;
 - rebuildable local projections;
 - the local web user interface;
-- pairing credentials stored with operating-system-appropriate protection;
+- pairing credentials stored in the private local data file with owner-only
+  permissions;
 - payload sanitization before any network request;
 - validation and application of remote command intents;
 - the versioned public host-to-Cloud protocol.
 
 ## Private/Cloud responsibilities
 
-Patchfleet Cloud owns:
+Patchfleet Cloud owns in the Phase 3 private alpha:
 
-- account authentication and workspace membership;
+- one owner session and one fixed workspace;
 - host pairing and credential rotation;
-- sanitized host and run projections;
-- remote work intake and a durable intent queue;
-- receipt history, notifications, billing, and retention policy;
+- bounded sanitized host, provider, work, and run projections;
+- durable `cancel_run` intents and their host receipts;
 - authorization for every read and mutation.
+
+Production authentication, database storage, notifications, billing, history,
+and retention jobs remain future Cloud responsibilities, not implemented V1
+features.
 
 Cloud does not own provider credentials, repository contents, canonical run
 events, local process control, or shell execution.

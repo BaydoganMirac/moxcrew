@@ -9,26 +9,23 @@ commitments.
 
 ## Now
 
-- Keep the completed Phase 1 three-provider observation loop and completed
-  Phase 2 durable Codex control loop stable.
+- Keep the completed Phase 1 observation, Phase 2 local control, and Phase 3
+  paired Cloud control loops stable.
+- Validate pairing, sanitized visibility, remote cancel, receipts, revocation,
+  restart behavior, and offline local use with real users.
 - Keep the local/Cloud trust contract and contributor rules reviewable.
-- Validate the local queue, receipts, restart behavior, and same-boot Codex
-  control with real users before broadening provider control.
 
 ## Next
 
-- Approve a Phase 3 pairing and threat-model plan before Cloud implementation.
-- Pair with optional Patchfleet Cloud through outbound HTTPS, then publish only
-  an allowlisted operational projection.
-- Add typed, validated remote intents only after pairing, revocation, replay,
-  authorization, and receipt contract tests pass.
+- Harden macOS and Windows install, upgrade, background-host, and recovery
+  paths before a public V0 release.
+- Replace the undeployed Cloud alpha store/auth only in a separately approved
+  deployment milestone.
 - Generalize execution control to Claude Code or Gemini only after a provider
   proves an equally safe supported lifecycle surface.
 
 ## Later
 
-- Harden macOS and Windows install, upgrade, background-host, and recovery
-  paths.
 - Add team capabilities when real multi-user demand defines them.
 - Consider a desktop shell, provider SDK, or self-hosted Cloud only when the
   web-first product proves a concrete need.

@@ -147,6 +147,10 @@ test("only consecutive identical terminal observations are deduplicated", async 
 });
 
 test("fixed providers normalize with provider-scoped safe errors", () => {
+  const combinedVersion = observation({ providerId: "claude" });
+  combinedVersion.provider.version = "2.1.169-beta.1+build.7";
+  assert.equal(normalizeObservation(combinedVersion).provider.version, "2.1.169-beta.1+build.7");
+
   for (const [providerId, code] of [
     ["codex", "CODEX_NOT_FOUND"],
     ["claude", "CLAUDE_NOT_FOUND"],

@@ -2,7 +2,7 @@
 
 Status: working product contract
 
-Updated: 2026-07-14
+Updated: 2026-07-16
 
 ## One-line promise
 
@@ -36,8 +36,9 @@ validated commands. It works offline from Patchfleet Cloud.
 ### Patchfleet Cloud
 
 The optional private SaaS. It authenticates users, stores sanitized operational
-projections, accepts remote work requests, and delivers allowlisted command
-intents to paired local hosts. It is never the execution authority.
+projections, and delivers allowlisted command intents to paired local hosts. In
+the V1 contract the only remote intent is `cancel_run`. Cloud is never the
+execution authority.
 
 ## V0 promise
 
@@ -50,7 +51,7 @@ V0 is complete when one user can:
 4. observe durable lifecycle history and recover after restart;
 5. pair the installation with Patchfleet Cloud through an outbound connection;
 6. view sanitized status remotely;
-7. issue a small set of safe remote actions and receive definitive receipts.
+7. issue the safe V1 remote cancel action and receive a definitive receipt.
 
 macOS is the development reference platform. Windows support is a V0 release
 gate, not a requirement for the first vertical slice.

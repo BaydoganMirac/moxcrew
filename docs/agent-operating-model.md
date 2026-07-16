@@ -6,10 +6,10 @@ Updated: 2026-07-16
 
 ## Recommendation now
 
-Phase 1 observation and Phase 2 durable local work control are complete. Return
-to one coordinator until the owner approves Phase 3. The next bounded team
-should begin with pairing, protocol, and security review; do not create a Cloud
-implementation role before that plan and trust boundary are approved.
+Phase 1 observation, Phase 2 durable local control, and the owner-approved
+Phase 3 paired Cloud control slice are complete. Collapse back to one
+coordinator. Create another bounded team only for an approved packaging,
+deployment-foundation, or provider-control milestone.
 
 ## Initial team
 
@@ -80,23 +80,7 @@ Each delegated task should specify:
 
 ## Suggested next agent task
 
-Objective: write the smallest Phase 3 pairing and sanitized-projection plan for
-owner approval; do not implement it yet.
-
-Owned scope:
-
-- pairing and revocation threat model;
-- outbound-only host authentication contract;
-- first allowlisted, path-free operational projection;
-- replay, expiry, schema-version, and receipt contract tests;
-- exact public/private repository ownership boundaries.
-
-Forbidden scope:
-
-- Cloud product code before plan approval;
-- remote shell or arbitrary provider commands;
-- auth, billing, notifications, teams, or packaging;
-- Claude Code or Gemini execution control;
-- source, prompt, transcript, diff, credential, or local-path upload.
-
-This starts only after the owner approves a Phase 3 plan and task card.
+Do not infer the next milestone. The owner should choose between local
+packaging/recovery, a production Cloud foundation, or another provider-control
+proof. Each choice needs its own task card and must preserve the Phase 3 public
+protocol and local-first boundary.

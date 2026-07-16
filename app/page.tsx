@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { publicCloudStatus, readCloudState } from "@/lib/cloud/connection.mjs";
 import { supportsCodexControl } from "@/lib/providers/codex.mjs";
 import { readProjection, readWorkProjection } from "@/lib/runtime/observation-store.mjs";
 import { currentWorkControlOwnerEpoch } from "@/lib/runtime/work-queue.mjs";
@@ -68,6 +69,18 @@ type WorkProjection = {
   receipts: Receipt[];
 };
 
+type CloudStatus =
+  | { paired: false; error?: boolean }
+  | {
+    paired: true;
+    cloudUrl: string;
+    hostId: string;
+    workspaceId: string;
+    lastAttemptAt: string | null;
+    lastSuccessAt: string | null;
+    lastErrorCode: string | null;
+  };
+
 function time(value: string) {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(
     new Date(value),
@@ -87,10 +100,14 @@ function providerLabel(state: Observation["provider"]["state"]) {
 async function loadState() {
   try {
     const [projection, work] = await Promise.all([readProjection(), readWorkProjection()]);
+    const cloud = await readCloudState()
+      .then(publicCloudStatus)
+      .catch(() => ({ paired: false as const, error: true }));
     return {
       kind: "ready" as const,
       projection: projection as Projection | null,
       work: (work ?? { schemaVersion: 1, revision: 0, items: [], runs: [], receipts: [] }) as WorkProjection,
+      cloud: cloud as CloudStatus,
     };
   } catch {
     return { kind: "fatal" as const };
@@ -127,6 +144,7 @@ export default async function Home() {
             projection={result.projection}
             ownerEpoch={currentWorkControlOwnerEpoch()}
           />
+          <CloudPanel status={result.cloud} />
           {result.projection === null ? (
             <section className="notice" aria-labelledby="never-observed">
               <h2 id="never-observed">Providers have not been observed</h2>
@@ -138,6 +156,57 @@ export default async function Home() {
         </>
       )}
     </main>
+  );
+}
+
+function CloudPanel({ status }: { status: CloudStatus }) {
+  return (
+    <section aria-labelledby="cloud-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Optional remote view</p>
+          <h2 id="cloud-title">Patchfleet Cloud</h2>
+        </div>
+        <span className={`badge ${status.paired && !status.lastErrorCode ? "available" : "unavailable"}`}>
+          {status.paired ? (status.lastErrorCode ? "Sync unavailable" : "Paired") : "Local only"}
+        </span>
+      </div>
+      {status.paired ? (
+        <>
+          <dl>
+            <div><dt>Cloud</dt><dd>{status.cloudUrl}</dd></div>
+            <div><dt>Host</dt><dd><code>{shortId(status.hostId)}</code></dd></div>
+            <div><dt>Last sync</dt><dd>{status.lastSuccessAt ? time(status.lastSuccessAt) : "Waiting"}</dd></div>
+          </dl>
+          {status.lastErrorCode ? <p className="safe-error" role="status">Sync will retry. <code>{status.lastErrorCode}</code></p> : null}
+          <form action="/api/cloud" method="post">
+            <input type="hidden" name="action" value="disconnect" />
+            <button type="submit">Disconnect Cloud</button>
+          </form>
+        </>
+      ) : (
+        <>
+          {status.error ? <p className="safe-error" role="status">Cloud settings could not be read. Local work remains available.</p> : null}
+          <form className="work-form" action="/api/cloud" method="post">
+            <input type="hidden" name="action" value="pair" />
+            <label>
+              Cloud URL
+              <input name="cloudUrl" type="url" required maxLength={2048} placeholder="https://cloud.example.com" autoComplete="url" />
+            </label>
+            <label>
+              Host name
+              <input name="displayName" required minLength={1} maxLength={80} autoComplete="off" />
+            </label>
+            <label>
+              Pairing code
+              <input name="pairingCode" required minLength={1} maxLength={256} autoComplete="off" />
+            </label>
+            <button type="submit">Pair this host</button>
+          </form>
+          <p className="snapshot">Only operational IDs, states, revisions, capabilities, and coarse timestamps leave this host.</p>
+        </>
+      )}
+    </section>
   );
 }
 

@@ -66,6 +66,7 @@ async function waitForServer(port, child) {
 
 async function startNext(dataDir, binDir) {
   const port = await freePort();
+  const syncToken = `test-sync-${port}`;
   const production = process.env.PATCHFLEET_TEST_PRODUCTION === "1";
   const child = spawn(
     process.execPath,
@@ -83,13 +84,14 @@ async function startNext(dataDir, binDir) {
         ...process.env,
         PATCHFLEET_DATA_DIR: dataDir,
         PATCHFLEET_OWNER_EPOCH: `test-owner-${port}`,
+        PATCHFLEET_SYNC_TOKEN: syncToken,
         PATH: `${binDir}${delimiter}${process.env.PATH}`,
       },
       stdio: "ignore",
     },
   );
   await waitForServer(port, child);
-  return { child, port };
+  return { child, port, syncToken };
 }
 
 async function stopNext(child) {
@@ -253,6 +255,8 @@ test("local shell enforces the browser boundary and renders durable observation 
   assert.equal(scripts.start, "node scripts/local-next.mjs start");
   const launcher = await readFile("scripts/local-next.mjs", "utf8");
   assert.match(launcher, /"--hostname",\s*"127\.0\.0\.1"/);
+  assert.match(launcher, /PATCHFLEET_SYNC_TOKEN/);
+  assert.match(launcher, /5_000/);
 
   const dataDir = await mkdtemp(join(tmpdir(), "patchfleet-web-data-"));
   const { binDir, geminiMode, marker } = await fakeProviders();
@@ -264,6 +268,24 @@ test("local shell enforces the browser boundary and renders durable observation 
     assert.match(initial.body, /Providers have not been observed/);
     assert.match(initial.body, /method="post"/);
     assert.match(initial.body, /action="\/api\/observe"/);
+    assert.match(initial.body, /Patchfleet Cloud/);
+    assert.match(initial.body, /action="\/api\/cloud"/);
+
+    const internal = { path: "/api/cloud/sync", method: "POST" };
+    assert.equal((await fetch(server.port, internal)).statusCode, 403, "missing sync token");
+    assert.equal((await fetch(server.port, {
+      ...internal,
+      headers: {
+        authorization: `Bearer ${server.syncToken}`,
+        origin: `http://127.0.0.1:${server.port}`,
+      },
+    })).statusCode, 403, "browser cannot trigger internal sync");
+    const unpairedSync = await fetch(server.port, {
+      ...internal,
+      headers: { authorization: `Bearer ${server.syncToken}` },
+    });
+    assert.equal(unpairedSync.statusCode, 200);
+    assert.deepEqual(JSON.parse(unpairedSync.body), { kind: "unpaired" });
 
     for (const host of ["localhost", `localhost:${server.port}`, "127.0.0.1", `127.0.0.1:${server.port}`]) {
       const response = await fetch(server.port, { host });

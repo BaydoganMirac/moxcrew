@@ -1,8 +1,8 @@
 # Host-to-Cloud protocol
 
-Status: V0 contract; endpoint details may evolve under version 1
+Status: implemented V1 contract
 
-Updated: 2026-07-13
+Updated: 2026-07-16
 
 This public document defines the trust contract between a Patchfleet local host
 and Patchfleet Cloud. The public repository owns the contract. The private
@@ -60,15 +60,19 @@ expressions applied after serializing the complete local object.
    version over HTTPS.
 4. Cloud consumes the code and returns an opaque host identifier plus a
    revocable host credential.
-5. The host stores the credential using operating-system-appropriate protected
-   storage.
+5. The V1 host stores the credential in its private local data directory with
+   owner-only file permissions. Platform key stores may replace this later.
+
+The host persists its installation identifier before the consume request. If
+the response is lost, a later code reuses that identifier so Cloud revokes the
+orphaned credential while re-pairing.
 
 Pairing does not transfer provider credentials. Re-pairing or revocation
 invalidates the old host credential.
 
-## V0 resources
+## Version 1 resources
 
-The first implementation may expose these HTTP resources:
+The first implementation exposes these HTTP resources:
 
 - POST /api/v1/pairings/consume
 - POST /api/v1/hosts/{hostId}/heartbeat
@@ -76,23 +80,143 @@ The first implementation may expose these HTTP resources:
 - GET /api/v1/hosts/{hostId}/intents?after={cursor}
 - POST /api/v1/hosts/{hostId}/receipts
 
-Exact route naming may change before code lands, but the resource semantics and
-trust boundary require an ADR to change.
+Route names, message fields, and the trust boundary are part of version 1 and
+require a protocol decision to change.
 
-Polling is the V0 delivery mechanism because it works through ordinary outbound
+Polling is the V1 delivery mechanism because it works through ordinary outbound
 HTTPS and is easy to recover. Server-sent events may reduce latency later;
 polling remains the recovery path.
 
-## Envelope
+## Exact messages
 
-Every host message includes:
+All records reject unknown fields. Identifiers are opaque ASCII strings of 1
+to 256 characters. Timestamps are canonical UTC ISO 8601 strings. Request
+bodies are JSON, carry `Content-Type: application/json`, and are limited to
+64 KiB.
 
-- schemaVersion;
-- messageId;
-- hostId;
-- sequence or cursor where ordering matters;
-- occurredAt in UTC;
-- payload containing only fields defined for that message.
+Pairing consumes:
+
+```json
+{
+  "schemaVersion": 1,
+  "messageId": "opaque",
+  "occurredAt": "2026-07-16T00:00:00.000Z",
+  "pairingCode": "PF-0123456789AB",
+  "installationId": "opaque",
+  "displayName": "user chosen, 1 to 80 characters",
+  "appVersion": "0.1.0",
+  "protocolVersion": 1,
+  "osFamily": "darwin|linux|windows"
+}
+```
+
+It returns `schemaVersion`, `hostId`, `workspaceId`, `credential`, and
+`protocolVersion`. The pairing code and credential appear only in this TLS
+exchange; Cloud persists their SHA-256 digests, never their plaintext.
+
+Heartbeat uses the common `schemaVersion`, `messageId`, `hostId`, and
+`occurredAt` fields plus this exact payload:
+
+```json
+{
+  "appVersion": "0.1.0",
+  "protocolVersion": 1,
+  "lastLocalSequence": 0,
+  "health": "ok"
+}
+```
+
+`health` is `ok` or `degraded`.
+
+Projection uses the same envelope and this exact payload:
+
+```json
+{
+  "revision": 0,
+  "providers": [{
+    "providerId": "codex",
+    "state": "available",
+    "version": "semantic-version-or-null",
+    "capabilities": { "recentObservation": true, "explicitLiveStatus": true },
+    "observedAt": "2026-07-16T00:00:00.000Z"
+  }],
+  "workItems": [{
+    "workItemId": "opaque",
+    "providerId": "codex",
+    "status": "queued",
+    "revision": 1,
+    "queuePosition": 0,
+    "createdAt": "2026-07-16T00:00:00.000Z"
+  }],
+  "runs": [{
+    "runId": "opaque",
+    "workItemId": "opaque",
+    "providerId": "codex",
+    "status": "running",
+    "revision": 1,
+    "startedAt": "2026-07-16T00:00:00.000Z",
+    "terminalAt": null
+  }],
+  "workItemsTruncated": false,
+  "runsTruncated": false
+}
+```
+
+Projection contains no receipts: receipts use their dedicated durable route.
+It contains at most three providers, 32 non-terminal work items, and 32
+non-terminal runs. Terminal command outcomes use the receipt route instead of
+growing the current projection without bound. The truncation flags are `true`
+when the host has more current records than the corresponding list carries, so
+Cloud never presents a bounded view as complete.
+Cloud replaces a host projection only when `revision` is strictly newer. An
+exact retry of the current revision is acknowledged; a conflicting equal or
+older revision is rejected.
+
+Intent polling returns:
+
+```json
+{
+  "schemaVersion": 1,
+  "hostId": "opaque",
+  "cursor": 4,
+  "intents": [{
+    "sequence": 4,
+    "intent": {
+      "schemaVersion": 1,
+      "intentId": "opaque",
+      "idempotencyKey": "opaque",
+      "type": "cancel_run",
+      "actorId": "cloud-owner",
+      "createdAt": "2026-07-16T00:00:00.000Z",
+      "expiresAt": "2026-07-16T00:05:00.000Z",
+      "payload": { "runId": "opaque", "expectedRunRevision": 1 }
+    }
+  }]
+}
+```
+
+Receipt delivery uses the common envelope and an exact payload containing one
+to 20 existing local command receipts:
+
+```json
+{
+  "receipts": [{
+    "schemaVersion": 1,
+    "intentId": "opaque",
+    "idempotencyKey": "opaque",
+    "commandType": "cancel_run",
+    "outcome": "applied",
+    "reasonCode": "RUN_CANCELLED",
+    "completedAt": "2026-07-16T00:00:01.000Z",
+    "workProjectionRevision": 3,
+    "workItemId": "opaque-or-null"
+  }]
+}
+```
+
+Successful message writes return `{ "schemaVersion": 1, "accepted": true }`.
+Cloud records bounded message identifiers so an exact replay is acknowledged
+without applying the write twice; a conflicting replay is rejected.
 
 Cloud rejects unknown hosts, replayed pairing codes, invalid credentials,
 unsupported versions, and messages that violate size or schema limits.
@@ -121,14 +245,13 @@ An intent contains:
 - expected local revision when the action depends on current state;
 - actor identity suitable for an audit trail.
 
-Candidate V0 command types are:
+Version 1 supports exactly one Cloud-authored command type: `cancel_run`.
+Local-only command types are not part of the Cloud protocol.
 
-- enqueue_work;
-- revise_queued_work;
-- reorder_queue;
-- remove_queued_work;
-- cancel_run;
-- answer_question.
+Cloud creates `cancel_run` intents with a lifetime of at most five minutes. A
+host rejects a longer lifetime or a `createdAt` more than 60 seconds ahead of
+its current clock. An already-expired valid intent still receives a durable
+`expired` receipt.
 
 There is no execute_shell, run_script, upload_repository, or generic provider
 command. New intent types require a protocol decision and redaction review.

@@ -1,12 +1,38 @@
 {
   "name": "patchfleet",
   "version": "0.1.0",
-  "private": true,
+  "description": "Local-first command center for Claude Code, Codex, and Gemini CLI.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BaydoganMirac/patchfleet.git"
+  },
+  "bin": {
+    "patchfleet": "bin/patchfleet.mjs"
+  },
+  "files": [
+    ".next",
+    "app",
+    "bin",
+    "docs/install.md",
+    "extensions",
+    "lib",
+    "scripts",
+    "middleware.js",
+    "next.config.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "node scripts/local-next.mjs dev",
-    "build": "next build --turbopack",
+    "build": "next build --turbopack && node scripts/sanitize-package.mjs",
+    "prepack": "npm run build",
     "start": "node scripts/local-next.mjs start",
-    "test": "node --test --test-concurrency=1 tests/*.test.*"
+    "test": "node --test --test-concurrency=1 tests/*.test.*",
+    "test:package": "node smoke/package-smoke.mjs"
   },
   "dependencies": {
     "next": "15.5.19",

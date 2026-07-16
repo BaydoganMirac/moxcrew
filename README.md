@@ -27,6 +27,10 @@ Start with [the documentation map](docs/README.md) before changing code.
     npm install
     npm run dev
 
+Closed-alpha tarballs expose `patchfleet start`, `patchfleet stop`,
+`patchfleet status`, and `patchfleet recover`. See the
+[installation and recovery contract](docs/install.md).
+
 The local app runs at http://127.0.0.1:3000 and accepts only `localhost` or
 `127.0.0.1` Host values. Use the manual refresh to store up to 20 recent
 sessions per provider. Patchfleet does not retain prompts, titles, paths,

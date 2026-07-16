@@ -12,9 +12,12 @@
 | V0 Gemini lifecycle ingress | Done | 2026-07-16 | [v0-gemini-lifecycle-ingress.md](v0-gemini-lifecycle-ingress.md) |
 | V0 local work control | Done | 2026-07-16 | [v0-local-work-control.md](v0-local-work-control.md) |
 | V0 paired Cloud control | Done | 2026-07-16 | [v0-paired-cloud-control.md](v0-paired-cloud-control.md) |
+| V0 closed alpha readiness | Done | 2026-07-17 | [v0-closed-alpha-readiness.md](v0-closed-alpha-readiness.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.
+Phase 4 packaged the existing loop and preserved its remote command boundary. Hosted release
+activation remains an explicit owner action.
 
 State files are resumable handoffs. Update the relevant file whenever a work
 session changes implementation status, blockers, decisions, or next steps.

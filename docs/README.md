@@ -12,9 +12,11 @@ and trust boundaries come before implementation details.
 3. [Host-to-Cloud protocol](protocol.md) — data policy, pairing, projections,
    command intents, and receipts.
 4. [Roadmap](roadmap.md) — public Now / Next / Later technical direction.
-5. [Agent operating model](agent-operating-model.md) — when parallel agents
+5. [Install and operate](install.md) — closed-alpha package, lifecycle, upgrade,
+   recovery, and Gemini extension instructions.
+6. [Agent operating model](agent-operating-model.md) — when parallel agents
    help and how their ownership is bounded.
-6. [Project skills](../.agents/skills/) — task-triggered rules for adapters,
+7. [Project skills](../.agents/skills/) — task-triggered rules for adapters,
    local state, the Cloud boundary, and team delegation.
 
 ## Execution records

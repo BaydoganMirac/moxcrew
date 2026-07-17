@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 const securityHeaders = {
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  "Referrer-Policy": "no-referrer",
+  "Referrer-Policy": "same-origin",
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
 };

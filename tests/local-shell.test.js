@@ -10,7 +10,7 @@ const { test } = require("node:test");
 
 const requiredHeaders = {
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
-  "referrer-policy": "no-referrer",
+  "referrer-policy": "same-origin",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 };

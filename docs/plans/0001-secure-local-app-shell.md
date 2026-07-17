@@ -62,7 +62,7 @@ Treat these as read-only contracts:
    rejects missing, malformed, or other Host values exposed to middleware.
 3. Responses produced by the middleware boundary set
    `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
-   `Referrer-Policy: no-referrer`, and a restrictive `Permissions-Policy` for
+   `Referrer-Policy: same-origin`, and a restrictive `Permissions-Policy` for
    camera, microphone, and geolocation.
 4. The page identifies itself as a local console without fake provider,
    runtime, Cloud, account, or billing state.

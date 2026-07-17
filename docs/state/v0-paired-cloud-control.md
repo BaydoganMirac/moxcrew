@@ -2,7 +2,7 @@
 
 Status: Done
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 ## Done
 
@@ -19,6 +19,8 @@ Last updated: 2026-07-16
 - Passed the real cross-repository HTTP pairing, projection, cancel, receipt,
   revocation, and denial-after-revocation smoke.
 - Completed independent cross-boundary review with no remaining P0-P2 finding.
+- Fixed browser pairing forms by retaining exact same-origin referrers; Chrome
+  now sends the Origin required by the loopback mutation boundary.
 
 ## In progress
 

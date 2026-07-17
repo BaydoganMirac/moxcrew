@@ -2,7 +2,7 @@
 
 Status: Done
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 ## Done
 
@@ -84,6 +84,38 @@ Last updated: 2026-07-16
   deployed.
 - Task 0010 implementation and hardening are recorded in local commits
   `df4a725`, `10064c8`, and `b82db83`.
+- Closed the first owner-operated local work form failure: incidental outer
+  whitespace is normalized at the browser boundary, and relative or `~` Git
+  worktree paths now return the specific safe
+  `WORKSPACE_PATH_NOT_ABSOLUTE` guidance instead of `INVALID_COMMAND`.
+- Clarified that the user first queues an item and then starts it from Work
+  items; the strict domain, Git preflight, event, receipt, provider, and Cloud
+  contracts are unchanged.
+- Task 0013 checks pass: focused local shell 2/2, full public suite 130/130,
+  production build, clean package lifecycle smoke, and live local host restart.
+- Completed Task 0014 product-ready local activation without changing the work
+  domain, provider boundary, dependencies, or Cloud protocol.
+- The local console now leads with privacy, Local/Codex/Cloud readiness, a
+  three-step first-run path, accessible allowlisted command feedback, stronger
+  responsive hierarchy, and plain-language durable outcomes.
+- A real owner flow on the live paired host produced `WORK_ENQUEUED`,
+  `WORK_STARTED`, and `RUN_CANCELLED`; the item and run ended interrupted and
+  the sanitized Cloud projection resumed successful sync.
+- Task 0014 exact-tree checks pass: 130/130 tests, production build, clean
+  package lifecycle smoke, desktop and 390-pixel browser review, and no
+  horizontal overflow.
+- Accepted ADR 0017 and completed Task 0015 for a local-only workspace
+  registry. Add/list/remove use the canonical event writer, expiring
+  idempotent commands, immutable receipts, and replayable projection state.
+- The queue form now selects an opaque registered project ID that is resolved
+  locally; missing, conflicting, unknown, and manual-relative inputs fail with
+  safe allowlisted feedback. Absolute paths remain outside Cloud.
+- Clean package smoke exercises workspace add/list/remove, and a real
+  registered-project flow produced `WORK_ENQUEUED`, `WORK_STARTED`, and
+  `RUN_CANCELLED` with the item/run interrupted and sanitized Cloud sync
+  continuing.
+- Task 0015 exact-tree checks pass: 134/134 tests, production build, clean
+  package lifecycle smoke, and diff checks.
 
 ## In progress
 
@@ -91,10 +123,9 @@ Last updated: 2026-07-16
 
 ## Next up
 
-1. Prepare an owner-approved Phase 3 plan for optional Cloud pairing and the
-   smallest sanitized outbound projection.
-2. Do not implement Cloud, remote commands, packaging, auth, or billing before
-   that plan is explicitly approved.
+1. Complete the authenticated live Cloud-authored cancel and definitive
+   receipt proof.
+2. Run clean-install activation sessions with the first external alpha users.
 
 ## Blockers
 
@@ -107,8 +138,12 @@ Last updated: 2026-07-16
 ## Decisions accepted
 
 - Local work text and working directory remain local-only data.
+- Registered workspace IDs and paths remain local-only; the browser sends an
+  opaque local ID and the server resolves it before enqueue.
 - Work facts and receipts reuse the one canonical event log.
 - Codex is the sole Phase 2 execution provider.
 - Codex work is workspace-write with no approval escalation.
 - Codex control is same-owner-boot only; restart is at-most-once and fail-closed.
 - Cloud and generalized provider control remain deferred.
+- Declarative agent packs wait for external activation evidence; executable
+  plugins and multi-agent orchestration require separate gates and ADRs.

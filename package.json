@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "Local-first command center for Claude Code, Codex, and Gemini CLI.",
   "license": "Apache-2.0",
+  "homepage": "https://github.com/BaydoganMirac/patchfleet#readme",
+  "bugs": "https://github.com/BaydoganMirac/patchfleet/issues",
+  "keywords": [
+    "ai-agents",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "local-first"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BaydoganMirac/patchfleet.git"
@@ -24,7 +33,10 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "node scripts/local-next.mjs dev",

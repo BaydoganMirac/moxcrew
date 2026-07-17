@@ -21,3 +21,5 @@ supersedes the old one.
 | [0014](0014-codex-control-uses-a-bounded-app-server-session.md) | Accepted | Start and cancel Codex through a bounded app-server session |
 | [0015](0015-phase-3-uses-outbound-polling-and-remote-cancel.md) | Accepted | Pair outbound and prove one sanitized remote-cancel loop |
 | [0016](0016-package-the-node-host-before-a-desktop-shell.md) | Accepted | Package the Node host behind an npm CLI before adding a desktop shell |
+| [0017](0017-use-a-local-workspace-registry-before-cloud-aliases.md) | Accepted | Register local Git worktrees before adding Cloud aliases |
+| [0018](0018-support-node-22-and-24-for-the-public-beta.md) | Accepted | Support Node 22 and verify Node 24 compatibility |

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createServer } from "node:net";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -11,6 +11,7 @@ const directory = await mkdtemp(join(tmpdir(), "patchfleet-package-smoke-"));
 const packDir = join(directory, "pack");
 const prefix = join(directory, "prefix");
 const dataDir = join(directory, "data");
+const npmEnv = { ...process.env, NPM_CONFIG_CACHE: join(directory, "npm-cache") };
 
 async function freePort() {
   const server = createServer();
@@ -21,19 +22,27 @@ async function freePort() {
 }
 
 try {
-  await import("node:fs/promises").then(({ mkdir }) => mkdir(packDir, { recursive: true }));
+  await mkdir(packDir, { recursive: true });
   const packed = JSON.parse((await exec("npm", [
     "pack", "--json", "--ignore-scripts", "--pack-destination", packDir,
-  ], { maxBuffer: 10 * 1024 * 1024 })).stdout)[0];
+  ], { env: npmEnv, maxBuffer: 10 * 1024 * 1024 })).stdout)[0];
   const names = packed.files.map((item) => item.path);
   assert(names.includes("bin/patchfleet.mjs"));
   assert(names.includes("docs/install.md"));
   assert(names.includes(".next/BUILD_ID"));
   assert(names.includes("extensions/patchfleet-gemini/hook.mjs"));
   assert.equal(names.some((name) => name.startsWith("tests/") || name.startsWith(".git/") || name.includes(".env")), false);
+  assert.equal(names.some((name) => name.endsWith(".map")), false);
+  assert.equal(names.some((name) => [
+    ".next/cache/",
+    ".next/diagnostics/",
+    ".next/turbopack/",
+    ".next/types/",
+  ].some((prefix) => name.startsWith(prefix)) || name === ".next/trace"), false);
 
   const tarball = join(packDir, packed.filename);
   await exec("npm", ["install", "--global", "--prefix", prefix, tarball, "--ignore-scripts"], {
+    env: npmEnv,
     maxBuffer: 10 * 1024 * 1024,
   });
   const packageRoot = process.platform === "win32"
@@ -50,12 +59,20 @@ try {
     PATCHFLEET_DATA_DIR: dataDir,
     PATCHFLEET_PORT: String(selectedPort),
   };
-  const invoke = (argument, options = {}) => exec(cli, [argument], {
+  const invoke = (args, options = {}) => exec(cli, Array.isArray(args) ? args : [args], {
     env,
     shell: process.platform === "win32",
     ...options,
   });
   if (process.platform !== "win32") assert.notEqual((await stat(cli)).mode & 0o111, 0);
+  const workspace = join(directory, "workspace");
+  await mkdir(join(workspace, ".git"), { recursive: true });
+  const registered = (await invoke(["workspace", "add", workspace])).stdout;
+  const workspaceId = registered.match(/workspace:[0-9a-f-]{36}/i)?.[0];
+  assert(workspaceId);
+  assert.match((await invoke(["workspace", "list"])).stdout, new RegExp(workspaceId));
+  assert.match((await invoke(["workspace", "remove", workspaceId])).stdout, /Removed/);
+  assert.match((await invoke("doctor")).stdout, /Doctor found no blocking problems/);
   assert.match((await invoke("start", { timeout: 30_000 })).stdout, /started/);
   assert.match((await invoke("status")).stdout, /running/);
   if (process.platform !== "win32") {
@@ -66,7 +83,7 @@ try {
   assert.match((await invoke("stop", { timeout: 20_000 })).stdout, /stopped/);
   assert.match((await invoke("recover")).stdout, /recovered/);
   assert.equal((await readFile(join(packageRoot, "package.json"), "utf8")).includes('"private"'), false);
-  process.stdout.write("package smoke: pack -> clean install -> start/status/stop/recover PASS\n");
+  process.stdout.write("package smoke: pack -> clean install -> doctor/start/status/stop/recover PASS\n");
 } catch (error) {
   const log = await readFile(join(dataDir, "patchfleet.log"), "utf8").catch(() => "no Patchfleet log");
   throw new Error(`${error.message}\n${log}`, { cause: error });

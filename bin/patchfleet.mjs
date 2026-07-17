@@ -2,7 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -198,15 +198,124 @@ async function recover() {
   process.stdout.write("Patchfleet projections recovered from the durable event log.\n");
 }
 
+async function doctor() {
+  const checks = [];
+  const add = (level, label, detail) => checks.push({ level, label, detail });
+  const major = Number(process.versions.node.split(".")[0]);
+  add(major >= 22 ? "PASS" : "FAIL", "Node.js", major >= 22 ? `v${process.versions.node}` : `v${process.versions.node}; install Node 22 or newer`);
+
+  let directoryExists = false;
+  try {
+    const info = await stat(dataDir);
+    directoryExists = info.isDirectory();
+    if (!directoryExists) add("FAIL", "Data directory", "the configured location is not a directory");
+    else if (process.platform !== "win32" && (info.mode & 0o077) !== 0) add("FAIL", "Data directory", "permissions must be owner-only (0700)");
+    else add("PASS", "Data directory", "owner storage is available");
+  } catch (error) {
+    if (error.code === "ENOENT") add("WARN", "Data directory", "not created yet; start Patchfleet once");
+    else add("FAIL", "Data directory", "could not inspect owner storage");
+  }
+
+  try {
+    const state = await runtime();
+    if (await running(state)) add("PASS", "Local host", `running on loopback port ${state.port}`);
+    else if (state) add("WARN", "Local host", "stale runtime metadata; run patchfleet status");
+    else add("WARN", "Local host", "stopped; run patchfleet start");
+  } catch {
+    add("FAIL", "Local host", "runtime metadata is corrupt");
+  }
+
+  if (directoryExists) {
+    try {
+      const { replayEvents, readProjection, readWorkspaceProjection } = await import(
+        pathToFileURL(join(root, "lib", "runtime", "observation-store.mjs"))
+      );
+      const events = await replayEvents({ dataDir });
+      add("PASS", "Durable state", `${events.length} validated event${events.length === 1 ? "" : "s"}`);
+      const projection = await readProjection({ dataDir });
+      const available = projection?.observations?.filter((item) => item.state === "available").length ?? 0;
+      add(projection ? "PASS" : "WARN", "Providers", projection ? `${available} available provider${available === 1 ? "" : "s"}` : "not checked yet; refresh providers in the console");
+      const workspaces = await readWorkspaceProjection({ dataDir });
+      const count = workspaces?.items?.length ?? 0;
+      add(count ? "PASS" : "WARN", "Projects", count ? `${count} registered project${count === 1 ? "" : "s"}` : "none registered; run patchfleet workspace add .");
+    } catch {
+      add("FAIL", "Durable state", "event log or a derived projection is corrupt; stop the host and run patchfleet recover");
+    }
+  } else {
+    add("WARN", "Durable state", "no local state yet");
+    add("WARN", "Providers", "not checked yet");
+    add("WARN", "Projects", "none registered");
+  }
+
+  try {
+    const { readCloudState } = await import(pathToFileURL(join(root, "lib", "cloud", "connection.mjs")));
+    const cloud = await readCloudState({ dataDir });
+    add(cloud.connection ? (cloud.connection.lastErrorCode ? "WARN" : "PASS") : "WARN", "Patchfleet Cloud",
+      cloud.connection ? (cloud.connection.lastErrorCode ? `paired; retrying after ${cloud.connection.lastErrorCode}` : "paired with sanitized outbound sync") : "optional; Local remains fully usable");
+  } catch {
+    add("FAIL", "Patchfleet Cloud", "local connection settings are corrupt");
+  }
+
+  for (const check of checks) process.stdout.write(`${check.level.padEnd(4)} ${check.label}: ${check.detail}\n`);
+  const failures = checks.filter((check) => check.level === "FAIL").length;
+  process.stdout.write(failures ? `Doctor found ${failures} blocking problem${failures === 1 ? "" : "s"}.\n` : "Doctor found no blocking problems.\n");
+  if (failures) process.exitCode = 1;
+}
+
+async function workspace() {
+  const action = process.argv[3] ?? "help";
+  const registry = await import(pathToFileURL(join(root, "lib", "runtime", "workspace-registry.mjs")));
+  if (action === "add") {
+    const selectedPath = process.argv[4] ?? ".";
+    if (process.argv.length > 5) throw new TypeError("workspace add accepts one path");
+    const receipt = await registry.registerWorkspace(selectedPath, { dataDir });
+    const projection = await registry.readWorkspaceProjection({ dataDir });
+    const item = projection.items.find((candidate) => candidate.workspaceId === receipt.workspaceId);
+    if (!item) throw new Error(`workspace command failed (${receipt.reasonCode})`);
+    process.stdout.write(receipt.outcome === "applied"
+      ? `Registered ${item.displayName} (${item.workspaceId})\n${item.workingDirectory}\n`
+      : `${item.displayName} is already registered (${item.workspaceId})\n${item.workingDirectory}\n`);
+    return;
+  }
+  if (action === "list") {
+    if (process.argv.length > 4) throw new TypeError("workspace list does not accept arguments");
+    const projection = await registry.readWorkspaceProjection({ dataDir });
+    if (!projection?.items.length) {
+      process.stdout.write("No registered workspaces. Add one with: patchfleet workspace add .\n");
+      return;
+    }
+    for (const item of projection.items) {
+      process.stdout.write(`${item.displayName}\t${item.workspaceId}\t${item.workingDirectory}\n`);
+    }
+    return;
+  }
+  if (action === "remove") {
+    const workspaceId = process.argv[4];
+    if (!workspaceId || process.argv.length > 5) throw new TypeError("usage: patchfleet workspace remove <workspace-id>");
+    const receipt = await registry.removeWorkspace(workspaceId, { dataDir });
+    if (receipt.outcome !== "applied") throw new Error(`workspace was not removed (${receipt.reasonCode})`);
+    process.stdout.write(`Removed ${receipt.workspaceId}\n`);
+    return;
+  }
+  if (action === "help" || action === "--help" || action === "-h") {
+    process.stdout.write("Usage: patchfleet workspace <add [path]|list|remove <workspace-id>>\n");
+    return;
+  }
+  throw new TypeError("unknown workspace command");
+}
+
 function help() {
-  process.stdout.write("Usage: patchfleet <start|stop|status|recover>\n");
+  process.stdout.write("Usage: patchfleet <start|stop|status|doctor|recover|workspace>\n");
+  process.stdout.write("       patchfleet workspace <add [path]|list|remove <workspace-id>>\n");
 }
 
 try {
   if (command === "start") await start();
   else if (command === "stop") await stop();
   else if (command === "status") await status();
+  else if (command === "doctor") await doctor();
   else if (command === "recover") await recover();
+  else if (command === "workspace") await workspace();
   else if (command === "help" || command === "--help" || command === "-h") help();
   else throw new TypeError("unknown Patchfleet command");
 } catch (error) {

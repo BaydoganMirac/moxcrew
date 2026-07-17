@@ -2,7 +2,7 @@
 
 Status: V0 target architecture
 
-Updated: 2026-07-16
+Updated: 2026-07-17
 
 ## System boundary
 
@@ -46,17 +46,16 @@ The public repository owns:
 
 ## Private/Cloud responsibilities
 
-Patchfleet Cloud owns in the Phase 3 private alpha:
+Patchfleet Cloud owns in the Free beta release candidate:
 
-- one owner session and one fixed workspace;
+- authenticated users and one personal workspace per user;
 - host pairing and credential rotation;
 - bounded sanitized host, provider, work, and run projections;
 - durable `cancel_run` intents and their host receipts;
 - authorization for every read and mutation.
 
-Production authentication, database storage, notifications, billing, history,
-and retention jobs remain future Cloud responsibilities, not implemented V1
-features.
+The hosted service owns account authentication, export, retention and deletion. The host
+continues to use the public V1 protocol.
 
 Cloud does not own provider credentials, repository contents, canonical run
 events, local process control, or shell execution.
@@ -79,6 +78,8 @@ The normalized model starts small:
 - Host: one Patchfleet installation and its pairing state.
 - ProviderInstallation: provider identity, availability, version, and
   capabilities.
+- Workspace: an opaque local registration for one canonical Git worktree; its
+  absolute path never enters the Cloud projection.
 - WorkItem: owner intent and ordering independent of a provider session.
 - Run: one execution attempt for a work item.
 - AgentSession: provider-observed execution context associated with a run when
@@ -115,6 +116,11 @@ the same conformance cases. V0 is not provider-complete until all three pass.
 A single writer appends versioned JSON events to a local log using Node.js file
 primitives. Derived JSON projections are written atomically and may always be
 rebuilt from events.
+
+Workspace registration uses this same writer and command/receipt contract. The
+CLI mutates the registry; the UI sends only an opaque local workspace ID, which
+the server resolves before creating a work item. Manual path entry is a local
+advanced fallback and does not change the Cloud protocol.
 
 V0 recovery rules:
 

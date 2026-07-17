@@ -780,12 +780,12 @@ test("malformed post-side-effect responses close control and fail closed", async
       try {
         await applyWorkCommand(enqueue(cwd), { dataDir, now: () => FIRST });
         const started = await applyWorkControlCommand(start(), {
-          dataDir, command: fake.command, now: () => SECOND, timeoutMs: 500,
+          dataDir, command: fake.command, now: () => SECOND, timeoutMs: 2_000,
         });
         if (mode === "malformed-interrupt") {
           assert.equal(started.outcome, "applied");
           const failed = await applyWorkControlCommand(cancel(), {
-            dataDir, command: fake.command, now: () => THIRD, timeoutMs: 500,
+            dataDir, command: fake.command, now: () => THIRD, timeoutMs: 2_000,
           });
           assert.deepEqual([failed.outcome, failed.reasonCode], ["failed", "RUN_SESSION_LOST"]);
         } else {

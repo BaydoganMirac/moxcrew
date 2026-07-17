@@ -14,7 +14,9 @@ and trust boundaries come before implementation details.
 4. [Roadmap](roadmap.md) — public Now / Next / Later technical direction.
 5. [Install and operate](install.md) — closed-alpha package, lifecycle, upgrade,
    recovery, and Gemini extension instructions.
-6. [Agent operating model](agent-operating-model.md) — when parallel agents
+6. [Release](release.md) — npm beta verification, first-package bootstrap,
+   trusted publishing, provenance, and recovery.
+7. [Agent operating model](agent-operating-model.md) — when parallel agents
    help and how their ownership is bounded.
 7. [Project skills](../.agents/skills/) — task-triggered rules for adapters,
    local state, the Cloud boundary, and team delegation.

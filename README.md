@@ -27,9 +27,12 @@ Start with [the documentation map](docs/README.md) before changing code.
     npm install
     npm run dev
 
-Closed-alpha tarballs expose `patchfleet start`, `patchfleet stop`,
-`patchfleet status`, and `patchfleet recover`. See the
+Closed-alpha tarballs expose host lifecycle commands plus
+`patchfleet workspace add|list|remove`. See the
 [installation and recovery contract](docs/install.md).
+
+Run `patchfleet doctor` for safe runtime, state, project, provider, and optional
+Cloud diagnostics before changing configuration.
 
 The local app runs at http://127.0.0.1:3000 and accepts only `localhost` or
 `127.0.0.1` Host values. Use the manual refresh to store up to 20 recent
@@ -38,8 +41,9 @@ transcripts, tools, diffs, reasoning, or tokens in its observation projection.
 Owner-authored work titles, instructions, and worktree paths are retained only
 in the separate local work projection and never copied into command receipts.
 
-Queue work from the console by providing a title, instruction, and absolute Git
-worktree root. Enqueue works without Codex; start appears only after Codex is
+Register a Git worktree once with `patchfleet workspace add .`, then choose the
+project by name when queueing work. One-off absolute path entry remains under
+the console's Advanced fallback. Enqueue works without Codex; start appears only after Codex is
 observed as available with the tested app-server metadata on stable Codex
 0.144.1 or newer. Patchfleet starts Codex with `workspace-write` and approval
 policy `never`, and exposes cancel only for a linked active run.

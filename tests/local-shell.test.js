@@ -265,6 +265,11 @@ test("local shell enforces the browser boundary and renders durable observation 
   try {
     const initial = await fetch(server.port);
     assert.equal(initial.statusCode, 200);
+    assert.match(initial.body, /Keep every coding agent in view/);
+    assert.match(initial.body, /Three steps to controlled work/);
+    assert.match(initial.body, /Local data stays local/);
+    assert.match(initial.body, /No registered projects/);
+    assert.match(initial.body, /patchfleet workspace add/);
     assert.match(initial.body, /Providers have not been observed/);
     assert.match(initial.body, /method="post"/);
     assert.match(initial.body, /action="\/api\/observe"/);
@@ -433,6 +438,13 @@ test("local work route is bounded, capability-aware, idempotent, and restart-saf
   const dataDir = await mkdtemp(join(tmpdir(), "patchfleet-web-work-data-"));
   const workspace = await mkdtemp(join(tmpdir(), "patchfleet-web-workspace-"));
   await mkdir(join(workspace, ".git"));
+  const workspaceId = "workspace:99999999-9999-4999-8999-999999999999";
+  const { registerWorkspace } = await import("../lib/runtime/workspace-registry.mjs");
+  await registerWorkspace(workspace, {
+    dataDir,
+    workspaceId,
+    commandId: "cmd:99999999-9999-4999-8999-999999999999",
+  });
   const { binDir, controlState } = await fakeProviders();
   const createdAt = new Date();
   const commandTimes = {
@@ -443,9 +455,10 @@ test("local work route is bounded, capability-aware, idempotent, and restart-saf
     action: "enqueue",
     commandId: "cmd:11111111-1111-4111-8111-111111111111",
     ...commandTimes,
-    title: "Route-safe work",
-    instruction: "Perform one safe local task.",
-    workingDirectory: workspace,
+    title: " Route-safe work ",
+    instruction: "\nPerform one safe local task.\n",
+    workspaceId,
+    workingDirectory: "",
   };
   const workItemId = "work:11111111-1111-4111-8111-111111111111";
   let server = await startNext(dataDir, binDir);
@@ -453,8 +466,17 @@ test("local work route is bounded, capability-aware, idempotent, and restart-saf
   try {
     const initial = await fetch(server.port);
     assert.match(initial.body, /Queue Codex work/);
+    assert.match(initial.body, /Select a registered project/);
+    assert.match(initial.body, new RegExp(`value="${workspaceId}"`));
+    assert.match(initial.body, /Advanced: use an unregistered path once/);
+    assert.match(initial.body, /relative paths and <code>~<\/code> are not accepted/);
+    assert.match(initial.body, /then start it from Work items/);
     assert.match(initial.body, /control unavailable/);
     assert.doesNotMatch(initial.body, /Start Codex/);
+    for (const code of ["UNTRUSTED_CANARY", "constructor"]) {
+      const unknownFeedback = await fetch(server.port, { path: `/?work=${code}` });
+      assert.doesNotMatch(unknownFeedback.body, /data-testid="work-feedback"/);
+    }
 
     const validBody = formBody(enqueueFields);
     assert.equal((await fetch(server.port, {
@@ -469,12 +491,61 @@ test("local work route is bounded, capability-aware, idempotent, and restart-saf
     assert.equal((await postForm(server.port, validBody.replace("action=enqueue", "action=enqueue&action=enqueue"))).statusCode, 403, "duplicate field");
     assert.equal((await postForm(server.port, `${validBody}&extra=true`)).statusCode, 403, "extra field");
     assert.equal((await postForm(server.port, { ...enqueueFields, instruction: "x".repeat(66_000) })).statusCode, 403, "oversized body");
+    const relativePath = await postForm(server.port, {
+      ...enqueueFields,
+      commandId: "cmd:66666666-6666-4666-8666-666666666666",
+      workspaceId: "",
+      workingDirectory: "~/Patchfleet",
+    });
+    assert.equal(relativePath.statusCode, 303);
+    const relativeTarget = new URL(relativePath.headers.location);
+    assert.equal(relativeTarget.pathname, "/");
+    assert.equal(relativeTarget.searchParams.get("work"), "WORKSPACE_PATH_NOT_ABSOLUTE");
+    const relativeFeedback = await fetch(server.port, { path: `${relativeTarget.pathname}${relativeTarget.search}` });
+    assert.match(relativeFeedback.body, /Run pwd inside the Git repository/);
+    assert.match(relativeFeedback.body, /WORKSPACE_PATH_NOT_ABSOLUTE/);
+
+    const missingWorkspace = await postForm(server.port, {
+      ...enqueueFields,
+      commandId: "cmd:10101010-1010-4010-8010-101010101010",
+      workspaceId: "",
+      workingDirectory: "",
+    });
+    assert.equal(new URL(missingWorkspace.headers.location).searchParams.get("work"), "WORKSPACE_SELECTION_REQUIRED");
+
+    const conflictingWorkspace = await postForm(server.port, {
+      ...enqueueFields,
+      commandId: "cmd:12121212-1212-4212-8212-121212121212",
+      workingDirectory: workspace,
+    });
+    assert.equal(new URL(conflictingWorkspace.headers.location).searchParams.get("work"), "WORKSPACE_SELECTION_CONFLICT");
+
+    const unknownWorkspace = await postForm(server.port, {
+      ...enqueueFields,
+      commandId: "cmd:13131313-1313-4313-8313-131313131313",
+      workspaceId: "workspace:14141414-1414-4414-8414-141414141414",
+    });
+    assert.equal(new URL(unknownWorkspace.headers.location).searchParams.get("work"), "WORKSPACE_NOT_REGISTERED");
+
+    const missingTitle = await postForm(server.port, {
+      ...enqueueFields,
+      commandId: "cmd:77777777-7777-4777-8777-777777777777",
+      title: "   ",
+    });
+    assert.equal(missingTitle.statusCode, 303);
+    assert.equal(new URL(missingTitle.headers.location).searchParams.get("work"), "WORK_TITLE_REQUIRED");
 
     const enqueued = await postForm(server.port, enqueueFields);
     assert.equal(enqueued.statusCode, 303);
-    assert.equal(new URL(enqueued.headers.location).pathname, "/");
+    const enqueuedTarget = new URL(enqueued.headers.location);
+    assert.equal(enqueuedTarget.pathname, "/");
+    assert.equal(enqueuedTarget.searchParams.get("work"), "WORK_ENQUEUED");
+    const enqueuedFeedback = await fetch(server.port, { path: `${enqueuedTarget.pathname}${enqueuedTarget.search}` });
+    assert.match(enqueuedFeedback.body, /Task added to the queue/);
     let page = await fetch(server.port);
     assert.match(page.body, /Route-safe work/);
+    assert.match(page.body, /Project <strong>/);
+    assert.match(page.body, /Local path/);
     assert.match(page.body, new RegExp(workspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.doesNotMatch(page.body, /Start Codex/);
 

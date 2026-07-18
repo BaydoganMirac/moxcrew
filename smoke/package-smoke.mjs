@@ -12,6 +12,9 @@ const packDir = join(directory, "pack");
 const prefix = join(directory, "prefix");
 const dataDir = join(directory, "data");
 const npmEnv = { ...process.env, NPM_CONFIG_CACHE: join(directory, "npm-cache") };
+const npmCli = process.env.npm_execpath;
+if (!npmCli) throw new Error("package smoke must run through npm");
+const npm = (args, options) => exec(process.execPath, [npmCli, ...args], options);
 
 async function freePort() {
   const server = createServer();
@@ -23,7 +26,7 @@ async function freePort() {
 
 try {
   await mkdir(packDir, { recursive: true });
-  const packed = JSON.parse((await exec("npm", [
+  const packed = JSON.parse((await npm([
     "pack", "--json", "--ignore-scripts", "--pack-destination", packDir,
   ], { env: npmEnv, maxBuffer: 10 * 1024 * 1024 })).stdout)[0];
   const names = packed.files.map((item) => item.path);
@@ -41,7 +44,7 @@ try {
   ].some((prefix) => name.startsWith(prefix)) || name === ".next/trace"), false);
 
   const tarball = join(packDir, packed.filename);
-  await exec("npm", ["install", "--global", "--prefix", prefix, tarball, "--ignore-scripts"], {
+  await npm(["install", "--global", "--prefix", prefix, tarball, "--ignore-scripts"], {
     env: npmEnv,
     maxBuffer: 10 * 1024 * 1024,
   });

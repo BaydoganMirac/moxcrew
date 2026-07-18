@@ -52,9 +52,10 @@ const read = () => fs.existsSync(stateFile)
   : { processes: 0, threadStarts: 0, turnStarts: 0, interrupts: 0, threads: [], serverResponse: null, timedOut: false, initialize: null, startParams: null, turnStartParams: null, interruptParams: null };
 const write = (state) => fs.writeFileSync(stateFile, JSON.stringify(state));
 const state = read(); state.processes += 1; write(state);
-process.on("SIGTERM", () => {
-  const current = read(); current.stops = (current.stops || 0) + 1; write(current); process.exit(0);
+process.on("exit", () => {
+  const current = read(); current.stops = (current.stops || 0) + 1; write(current);
 });
+process.on("SIGTERM", () => process.exit(0));
 const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
 const thread = (params, id) => ({
   id, cwd: params.cwd, threadSource: params.threadSource, ephemeral: false,

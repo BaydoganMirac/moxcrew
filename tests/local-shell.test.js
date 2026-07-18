@@ -122,7 +122,8 @@ const writeState = (state) => fs.writeFileSync(controlState, JSON.stringify(stat
 if (process.argv.includes("--version")) console.log("codex-cli 1.2.3");
 else {
   fs.appendFileSync(marker, "start\\n");
-  process.on("SIGTERM", () => { fs.appendFileSync(marker, "stop\\n"); process.exit(0); });
+  process.on("exit", () => fs.appendFileSync(marker, "stop\\n"));
+  process.on("SIGTERM", () => process.exit(0));
   const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
   readline.createInterface({ input: process.stdin }).on("line", (line) => {
     const message = JSON.parse(line);

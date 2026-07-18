@@ -1,12 +1,13 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
-const { chmod, mkdir, mkdtemp, readFile, writeFile } = require("node:fs/promises");
+const { mkdir, mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { request } = require("node:http");
 const { createServer } = require("node:net");
 const { tmpdir } = require("node:os");
 const { delimiter, join } = require("node:path");
 const { test } = require("node:test");
+const { writeFakeCli } = require("./support/fake-cli.cjs");
 
 const requiredHeaders = {
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
@@ -188,12 +189,9 @@ else if (process.argv[2] === "extensions") {
 }
 else process.exit(1);
 `;
-  await writeFile(codex, codexSource, "utf8");
-  await writeFile(claude, claudeSource, "utf8");
-  await writeFile(gemini, geminiSource, "utf8");
-  await chmod(codex, 0o700);
-  await chmod(claude, 0o700);
-  await chmod(gemini, 0o700);
+  await writeFakeCli(codex, codexSource);
+  await writeFakeCli(claude, claudeSource);
+  await writeFakeCli(gemini, geminiSource);
   return { binDir, geminiMode, marker, controlState };
 }
 

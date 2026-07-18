@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -11,6 +11,9 @@ import {
 } from "../lib/providers/gemini.mjs";
 import { validateProviderLifecycleSignal } from "../lib/domain/provider-lifecycle-signal.mjs";
 import { assertProviderObservation } from "./support/provider-observation-conformance.mjs";
+import fakeCli from "./support/fake-cli.cjs";
+
+const { writeFakeCli } = fakeCli;
 
 const NOW = new Date("2026-07-16T12:00:00.000Z");
 const GEMINI_PROVIDER = Object.freeze({ id: "gemini", displayName: "Gemini CLI" });
@@ -25,7 +28,7 @@ const CANARY = "CANARY_SECRET_PAYLOAD";
 
 async function fakeGemini(mode, extensionOutput = "[]") {
   const directory = await mkdtemp(join(tmpdir(), "patchfleet-gemini-"));
-  const command = join(directory, "gemini");
+  const baseCommand = join(directory, "gemini");
   const marker = join(directory, "argv");
   const source = `#!/usr/bin/env node
 const fs = require("node:fs");
@@ -42,8 +45,7 @@ else if (${JSON.stringify(mode)} === "extension-malformed") console.log("{");
 else if (${JSON.stringify(mode)} === "extension-stderr") console.error(${JSON.stringify(extensionOutput)});
 else if (${JSON.stringify(mode)} !== "extension-blank") console.log(${JSON.stringify(extensionOutput)});
 `;
-  await writeFile(command, source, "utf8");
-  await chmod(command, 0o700);
+  const command = await writeFakeCli(baseCommand, source);
   return { command, marker };
 }
 

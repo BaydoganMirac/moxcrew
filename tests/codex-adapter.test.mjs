@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -10,6 +10,9 @@ import {
   supportsCodexControl,
 } from "../lib/providers/codex.mjs";
 import { assertProviderObservation } from "./support/provider-observation-conformance.mjs";
+import fakeCli from "./support/fake-cli.cjs";
+
+const { writeFakeCli } = fakeCli;
 
 const NOW = new Date("2026-07-15T12:00:00.000Z");
 const CODEX_PROVIDER = Object.freeze({ id: "codex", displayName: "Codex" });
@@ -59,7 +62,7 @@ test("control compatibility requires tested Codex metadata and version", () => {
 
 async function fakeCodex(mode) {
   const directory = await mkdtemp(join(tmpdir(), "patchfleet-codex-"));
-  const command = join(directory, "codex");
+  const baseCommand = join(directory, "codex");
   const marker = join(directory, "marker");
   const source = `#!/usr/bin/env node
 const fs = require("node:fs");
@@ -120,8 +123,7 @@ if (process.argv.includes("--version")) {
   });
 }
 `;
-  await writeFile(command, source, "utf8");
-  await chmod(command, 0o700);
+  const command = await writeFakeCli(baseCommand, source);
   return { command, marker };
 }
 

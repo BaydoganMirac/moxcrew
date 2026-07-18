@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { test } from "node:test";
@@ -21,6 +21,9 @@ import {
   commitEventTransaction,
   persistObservation,
 } from "../lib/runtime/observation-store.mjs";
+import fakeCli from "./support/fake-cli.cjs";
+
+const { writeFakeCli } = fakeCli;
 
 const FIRST = "2026-07-16T12:00:00.000Z";
 const SECOND = "2026-07-16T12:01:00.000Z";
@@ -37,7 +40,7 @@ async function workspace() {
 
 async function fixture({ mode = "normal" } = {}) {
   const root = await mkdtemp(join(tmpdir(), "patchfleet-control-"));
-  const command = join(root, "codex");
+  const baseCommand = join(root, "codex");
   const stateFile = join(root, "state.json");
   const source = `#!/usr/bin/env node
 const fs = require("node:fs");
@@ -105,8 +108,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   }
 });
 `;
-  await writeFile(command, source, "utf8");
-  await chmod(command, 0o700);
+  const command = await writeFakeCli(baseCommand, source);
   return {
     command,
     state: async () => {

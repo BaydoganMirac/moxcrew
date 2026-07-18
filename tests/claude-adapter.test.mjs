@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { observeClaude, probeClaude } from "../lib/providers/claude.mjs";
 import { assertProviderObservation } from "./support/provider-observation-conformance.mjs";
+import fakeCli from "./support/fake-cli.cjs";
+
+const { writeFakeCli } = fakeCli;
 
 const NOW = new Date("2026-07-16T12:00:00.000Z");
 const TEST_TIMEOUT = 5_000;
@@ -25,7 +28,7 @@ const CANARY = "MUST_NOT_SURVIVE";
 
 async function fakeClaude(mode, payload = []) {
   const directory = await mkdtemp(join(tmpdir(), "patchfleet-claude-"));
-  const command = join(directory, "claude");
+  const baseCommand = join(directory, "claude");
   const marker = join(directory, "marker");
   const source = `#!${process.execPath}
 const fs = require("node:fs");
@@ -56,8 +59,7 @@ if (process.argv[2] === "--version") {
   }
 }
 `;
-  await writeFile(command, source, "utf8");
-  await chmod(command, 0o700);
+  const command = await writeFakeCli(baseCommand, source);
   return { command, marker };
 }
 

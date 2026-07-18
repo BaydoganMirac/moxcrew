@@ -85,8 +85,10 @@ test("hook is fail-open and inbox keeps only the validated signal", async () => 
     observedAt: NOW,
   });
   assert.equal(stored.includes(CANARY), false);
-  assert.equal((await stat(inbox)).mode & 0o777, 0o700);
-  assert.equal((await stat(join(inbox, name))).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(inbox)).mode & 0o777, 0o700);
+    assert.equal((await stat(join(inbox, name))).mode & 0o777, 0o600);
+  }
 
   const invalid = join(inbox, "signal-invalid.json");
   const unknown = join(inbox, "keep.txt");

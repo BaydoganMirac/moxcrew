@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
-const { mkdir, mkdtemp, readFile, writeFile } = require("node:fs/promises");
+const { mkdir, mkdtemp, readFile, realpath, writeFile } = require("node:fs/promises");
 const { request } = require("node:http");
 const { createServer } = require("node:net");
 const { tmpdir } = require("node:os");
@@ -548,7 +548,8 @@ test("local work route is bounded, capability-aware, idempotent, and restart-saf
     assert.match(page.body, /Route-safe work/);
     assert.match(page.body, /Project <strong>/);
     assert.match(page.body, /Local path/);
-    assert.match(page.body, new RegExp(workspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    const canonicalWorkspace = await realpath(workspace);
+    assert.match(page.body, new RegExp(canonicalWorkspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.doesNotMatch(page.body, /Start Codex/);
 
     const unavailable = await postForm(server.port, {

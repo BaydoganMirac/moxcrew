@@ -200,7 +200,10 @@ test("Agent View failures stay bounded, safe, and clean up timed-out children", 
       assert.equal(result.provider.error.code, code);
       assert.equal(JSON.stringify(result).includes(CANARY), false);
       if (mode === "snapshot-timeout") {
-        assert.equal(await readFile(marker, "utf8"), "agents --json --all\nterm\n");
+        assert.equal(
+          await readFile(marker, "utf8"),
+          process.platform === "win32" ? "agents --json --all\n" : "agents --json --all\nterm\n",
+        );
       }
     });
   }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -79,7 +79,8 @@ test("CLI adds, lists, and removes a local workspace", async () => {
   assert.match(duplicate, /already registered/);
   const listed = (await exec(process.execPath, [cli, "workspace", "list"], { env })).stdout;
   assert.match(listed, new RegExp(workspaceId));
-  assert.match(listed, new RegExp(workspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  const canonicalWorkspace = await realpath(workspace);
+  assert.match(listed, new RegExp(canonicalWorkspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 
   assert.match((await exec(process.execPath, [cli, "workspace", "remove", workspaceId], { env })).stdout, /Removed/);
   assert.match((await exec(process.execPath, [cli, "workspace", "list"], { env })).stdout, /No registered workspaces/);

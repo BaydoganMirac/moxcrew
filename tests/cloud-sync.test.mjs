@@ -131,7 +131,7 @@ test("Cloud projection is a field allowlist and connection storage is owner-only
   const { dataDir, pairingBody } = await pairedDirectory();
   assert.equal(pairingBody.pairingCode, "one-time-code");
   const mode = (await stat(join(dataDir, "cloud.json"))).mode & 0o777;
-  assert.equal(mode, 0o600);
+  if (process.platform !== "win32") assert.equal(mode, 0o600);
   const stored = await readFile(join(dataDir, "cloud.json"), "utf8");
   assert.equal(stored.includes("one-time-code"), false);
   assert.equal((await readCloudState({ dataDir })).connection.credential, "credential:one");
@@ -216,7 +216,9 @@ test("pairing persists and reuses installation identity across a lost response",
   }));
   const afterLoss = await readCloudState({ dataDir });
   assert.equal(afterLoss.connection, null);
-  assert.equal((await stat(join(dataDir, "cloud.json"))).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(join(dataDir, "cloud.json"))).mode & 0o777, 0o600);
+  }
 
   await pairCloud({
     cloudUrl: "https://cloud.example.com",

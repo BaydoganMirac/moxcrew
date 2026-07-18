@@ -2,11 +2,12 @@
 
 Status: In progress
 
-Last updated: 2026-07-17
+Last updated: 2026-07-18
 
 ## Prepared and verified
 
 - Owner approved Task 0017 and the release-preparation boundaries.
+- Fast-forwarded local `main` to tested release commit `6d33332`.
 - Created the local `release/local-beta-0.1.0` branch without rewriting the
   unavailable public upstream history.
 - Completed public package metadata, a protected manual beta-publish workflow,
@@ -27,9 +28,9 @@ Last updated: 2026-07-17
 ## Open release gates
 
 1. Restore a reviewable public upstream branch and run the checked-in macOS,
-   Windows, Linux, Node 22, and Node 24 GitHub jobs. This workspace has no
-   usable GitHub authentication and the configured upstream currently exposes
-   no branch, so no push was attempted.
+   Windows, Linux, Node 22, and Node 24 GitHub jobs. The public push was
+   attempted and GitHub rejected it because the current OAuth credential lacks
+   permission to update workflow files; the remote branch remains unchanged.
 2. Approve and perform the initial interactive npm beta publication with the
    owner's npm account and 2FA. Configure the trusted publisher immediately
    afterward; never pass an OTP or long-lived npm token through a command.
@@ -39,7 +40,8 @@ Last updated: 2026-07-17
 
 ## Release boundaries
 
-- No branch was pushed and no npm package was published.
+- Local `main` contains the release. The public GitHub push was rejected and no
+  npm package was published.
 - No hosted migration, deployment, DNS change, secret mutation, or invitation
   was performed.
 - Plugins, agent packs, multi-agent orchestration, billing, and new remote

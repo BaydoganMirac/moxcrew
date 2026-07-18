@@ -2,7 +2,7 @@
 
 Status: Done
 
-Last updated: 2026-07-17
+Last updated: 2026-07-18
 
 ## Done
 
@@ -22,12 +22,25 @@ Last updated: 2026-07-17
 - Re-ran the real two-repository HTTP smoke through pairing, sanitizer,
   Cloud-authored cancel, definitive host receipt, revocation, and offline Local
   operation.
+- Completed approved Task 0018's Local product correction: returning owners now
+  see current work, new task intake, and plain-language activity first;
+  completed onboarding disappears and provider/session detail is progressive.
+- Added monotonic projection upgrade recovery. A changed sanitized view at the
+  same local event count advances once, while genuinely stale state still
+  fails closed. The live paired host recovered from revision 73 to 74 and
+  resumed successful sync.
+- Replaced the broken Turbopack production build path after it generated an
+  incomplete routes manifest; the standard Next production build now starts
+  through the packaged CLI and serves the verified operational console.
+- Passed 137 Public tests, the production build, Local browser review, and the
+  real paired HTTP cancel/receipt smoke on the corrected tree.
 
 ## Next up
 
 1. Run the same package lifecycle through the configured GitHub macOS, Windows,
    and Linux jobs.
-2. Complete the deferred live Cloud-authored cancel with the owner.
+2. Deploy the matching Cloud product commit, then complete the deferred live
+   Cloud-authored cancel with the owner.
 3. Test a clean install with external beta users before native installers or
    background login services.
 

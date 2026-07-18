@@ -265,7 +265,7 @@ test("local shell enforces the browser boundary and renders durable observation 
   try {
     const initial = await fetch(server.port);
     assert.equal(initial.statusCode, 200);
-    assert.match(initial.body, /Keep every coding agent in view/);
+    assert.match(initial.body, /Run your first controlled task/);
     assert.match(initial.body, /Three steps to controlled work/);
     assert.match(initial.body, /Local data stays local/);
     assert.match(initial.body, /No registered projects/);
@@ -465,12 +465,12 @@ test("local work route is bounded, capability-aware, idempotent, and restart-saf
 
   try {
     const initial = await fetch(server.port);
-    assert.match(initial.body, /Queue Codex work/);
-    assert.match(initial.body, /Select a registered project/);
+    assert.match(initial.body, /Give Codex work/);
+    assert.match(initial.body, /Choose a project/);
     assert.match(initial.body, new RegExp(`value="${workspaceId}"`));
-    assert.match(initial.body, /Advanced: use an unregistered path once/);
+    assert.match(initial.body, /Use another Git worktree once/);
     assert.match(initial.body, /relative paths and <code>~<\/code> are not accepted/);
-    assert.match(initial.body, /then start it from Work items/);
+    assert.match(initial.body, /Review the queued task in Your work/);
     assert.match(initial.body, /control unavailable/);
     assert.doesNotMatch(initial.body, /Start Codex/);
     for (const code of ["UNTRUSTED_CANARY", "constructor"]) {
@@ -542,6 +542,9 @@ test("local work route is bounded, capability-aware, idempotent, and restart-saf
     assert.equal(enqueuedTarget.searchParams.get("work"), "WORK_ENQUEUED");
     const enqueuedFeedback = await fetch(server.port, { path: `${enqueuedTarget.pathname}${enqueuedTarget.search}` });
     assert.match(enqueuedFeedback.body, /Task added to the queue/);
+    assert.match(enqueuedFeedback.body, /Local work, under control/);
+    assert.doesNotMatch(enqueuedFeedback.body, /Three steps to controlled work/);
+    assert.ok(enqueuedFeedback.body.indexOf("Your work") < enqueuedFeedback.body.indexOf("Give Codex work"));
     let page = await fetch(server.port);
     assert.match(page.body, /Route-safe work/);
     assert.match(page.body, /Project <strong>/);

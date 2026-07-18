@@ -254,6 +254,52 @@ test("the server sync trigger admits only one in-flight operation", async () => 
   assert.equal(calls, 2);
 });
 
+test("sync advances once after an equal projection conflict and still rejects stale state", async () => {
+  const { dataDir } = await pairedDirectory();
+  const revisions = [];
+  let equalConflict = true;
+  const fetchImpl = async (url, options) => {
+    if (url.endsWith("/projection")) {
+      revisions.push(JSON.parse(options.body).payload.revision);
+      if (equalConflict) {
+        equalConflict = false;
+        return json({ error: "conflicting message replay" }, 409);
+      }
+    }
+    if (url.includes("/intents?")) {
+      return json({ schemaVersion: 1, hostId: "host:one", cursor: 0, intents: [] });
+    }
+    return json({ schemaVersion: 1, accepted: true });
+  };
+
+  assert.deepEqual(await syncCloud({ dataDir, fetchImpl, loadSnapshot: async () => snapshot(), now: () => THIRD }), {
+    kind: "synced",
+    cursor: 0,
+    revision: 3,
+  });
+  assert.equal((await readCloudState({ dataDir })).connection.projectionRevisionOffset, 1);
+  assert.equal((await syncCloud({ dataDir, fetchImpl, loadSnapshot: async () => snapshot(), now: () => THIRD })).revision, 3);
+  assert.deepEqual(revisions, [2, 3, 3]);
+
+  const stale = await pairedDirectory();
+  const staleRevisions = [];
+  const staleResult = await syncCloud({
+    dataDir: stale.dataDir,
+    loadSnapshot: async () => snapshot(),
+    now: () => THIRD,
+    fetchImpl: async (url, options) => {
+      if (url.endsWith("/projection")) {
+        staleRevisions.push(JSON.parse(options.body).payload.revision);
+        return json({ error: "stale projection" }, 409);
+      }
+      return json({ schemaVersion: 1, accepted: true });
+    },
+  });
+  assert.deepEqual(staleResult, { kind: "failed", code: "CLOUD_CONFLICT" });
+  assert.deepEqual(staleRevisions, [2]);
+  assert.equal((await readCloudState({ dataDir: stale.dataDir })).connection.projectionRevisionOffset, 0);
+});
+
 test("a dropped receipt response retries the same receipt before advancing the cursor", async () => {
   const { dataDir } = await pairedDirectory();
   const receipts = [];
@@ -375,4 +421,15 @@ test("Cloud outage is contained and does not mutate the durable cursor", async (
   const connection = (await readCloudState({ dataDir })).connection;
   assert.equal(connection.cursor, 0);
   assert.equal(connection.lastErrorCode, "CLOUD_UNAVAILABLE");
+});
+
+test("runtime error codes never leak through the public Cloud status", async () => {
+  const { dataDir } = await pairedDirectory();
+  const result = await syncCloud({
+    dataDir,
+    loadSnapshot: async () => { throw Object.assign(new Error("private runtime detail"), { code: "ERR_INVALID_ARG_TYPE" }); },
+    now: () => THIRD,
+  });
+  assert.deepEqual(result, { kind: "failed", code: "CLOUD_SYNC_FAILED" });
+  assert.equal((await readCloudState({ dataDir })).connection.lastErrorCode, "CLOUD_SYNC_FAILED");
 });

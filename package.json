@@ -40,7 +40,7 @@
   },
   "scripts": {
     "dev": "node scripts/local-next.mjs dev",
-    "build": "next build --turbopack && node scripts/sanitize-package.mjs",
+    "build": "next build && node scripts/sanitize-package.mjs",
     "prepack": "npm run build",
     "start": "node scripts/local-next.mjs start",
     "test": "node --test --test-concurrency=1 tests/*.test.*",

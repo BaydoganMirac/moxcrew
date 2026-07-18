@@ -233,6 +233,25 @@ p {
   margin-top: 2rem;
 }
 
+.operational-hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2rem;
+  padding: clamp(2.25rem, 5vw, 3.75rem) 0 2rem;
+}
+
+.operational-hero h1 {
+  max-width: 18ch;
+  margin-bottom: 0.75rem;
+  font-size: clamp(2.35rem, 5vw, 4.25rem);
+  line-height: 1;
+}
+
+.operational-hero .hero-actions {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
 .trust-card {
   display: flex;
   align-items: flex-start;
@@ -312,9 +331,18 @@ p {
   font-size: 0.87rem;
 }
 
-.feedback > code {
+.feedback-diagnostics {
   color: var(--muted);
   font-size: 0.68rem;
+}
+
+.feedback-diagnostics summary {
+  cursor: pointer;
+}
+
+.feedback-diagnostics code {
+  display: block;
+  margin-top: 0.3rem;
 }
 
 .readiness,
@@ -467,7 +495,7 @@ p {
 
 .work-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
   align-items: start;
   gap: 1rem;
   margin-top: 1rem;
@@ -494,6 +522,12 @@ p {
   position: sticky;
   top: 1rem;
   background: linear-gradient(160deg, rgb(20 34 45 / 96%), rgb(13 20 28 / 96%));
+}
+
+.privacy-note {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 750;
 }
 
 .work-form {
@@ -734,14 +768,19 @@ code {
 
 .receipts li {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   gap: 0.75rem;
 }
 
-.receipts code {
-  color: #d1dae0;
-  font-size: 0.77rem;
+.receipts li > div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.receipts strong {
+  font-size: 0.86rem;
 }
 
 .receipts time {
@@ -749,8 +788,38 @@ code {
   font-size: 0.74rem;
 }
 
+.receipt-diagnostics summary {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.receipt-diagnostics code {
+  display: block;
+  margin-top: 0.25rem;
+  color: #d1dae0;
+  font-size: 0.72rem;
+}
+
 .cloud-panel {
   margin-top: 1rem;
+}
+
+.connection-settings {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.connection-settings summary {
+  color: var(--text);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.connection-settings p {
+  margin: 0.75rem 0;
 }
 
 dl {
@@ -783,6 +852,36 @@ dd {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
   margin-top: 1rem;
+}
+
+.diagnostics-panel {
+  margin-top: 1rem;
+  padding: 1rem clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgb(13 20 28 / 62%);
+}
+
+.diagnostics-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.diagnostics-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.diagnostics-panel > summary span:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.diagnostics-panel > summary small {
+  color: var(--muted);
 }
 
 .provider-group {
@@ -827,10 +926,19 @@ dd {
   font-size: 0.7rem;
 }
 
-@media (max-width: 58rem) {
+@media (max-width: 48rem) {
   .hero {
     grid-template-columns: 1fr;
     gap: 2rem;
+  }
+
+  .operational-hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .operational-hero .hero-actions {
+    justify-content: flex-start;
   }
 
   .trust-card {
@@ -866,6 +974,10 @@ dd {
     padding: 3.5rem 0 3rem;
   }
 
+  .operational-hero {
+    padding: 2.25rem 0 1.5rem;
+  }
+
   h1 {
     font-size: clamp(2.8rem, 15vw, 4.4rem);
   }
@@ -881,7 +993,7 @@ dd {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .feedback > code {
+  .feedback-diagnostics {
     grid-column: 2;
   }
 
@@ -919,7 +1031,11 @@ dd {
   }
 
   .receipts li {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .diagnostics-panel > summary {
+    align-items: flex-start;
   }
 }
 

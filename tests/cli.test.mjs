@@ -21,6 +21,7 @@ test("package metadata exposes the supported Node CLI release surface", async ()
   assert.equal(packageJson.dependencies.next, "15.5.19");
   assert.equal(packageJson.scripts.prepack, "npm run build");
   assert.match(packageJson.scripts.build, /sanitize-package/);
+  assert.doesNotMatch(packageJson.scripts.build, /--turbopack/, "production start needs the complete Next routes manifest");
   assert(packageJson.files.includes(".next"));
   assert.equal(packageJson.files.includes("tests"), false);
   const publishWorkflow = await readFile(".github/workflows/publish.yml", "utf8");

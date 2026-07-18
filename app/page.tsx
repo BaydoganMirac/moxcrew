@@ -271,6 +271,7 @@ export default async function Home({ searchParams }: {
 }) {
   const workCode = (await searchParams).work;
   const result = await loadState();
+  const activated = result.kind === "ready" && (result.work.items.length > 0 || result.work.receipts.length > 0);
 
   return (
     <main className="app-shell">
@@ -283,26 +284,21 @@ export default async function Home({ searchParams }: {
         <span className="privacy-pill"><span aria-hidden="true">●</span> Local data stays local</span>
       </header>
 
-      <section className="hero" aria-labelledby="page-title">
+      <section className="hero operational-hero" aria-labelledby="page-title">
         <div className="hero-copy">
-          <p className="eyebrow">AI agent command center</p>
-          <h1 id="page-title">Keep every coding agent in view.</h1>
+          <p className="eyebrow">Local command center</p>
+          <h1 id="page-title">{activated ? "Local work, under control." : "Run your first controlled task."}</h1>
           <p className="summary">
-            Queue real work, monitor honest provider state, and stop a risky run from one private control room.
+            {activated
+              ? "See what is active, give Codex its next task, and verify every action without leaving this machine."
+              : "Choose a local project, give Codex one bounded task, and keep a durable record of every action."}
           </p>
-          <div className="hero-actions">
-            <form action="/api/observe" method="post">
-              <button type="submit">Refresh providers</button>
-            </form>
-            <a className="button-link secondary" href="#queue-work">Queue a task</a>
-          </div>
         </div>
-        <div className="trust-card">
-          <span className="trust-icon" aria-hidden="true">✓</span>
-          <div>
-            <strong>Your machine stays in charge</strong>
-            <p>Source, prompts, paths, credentials, and provider output are not sent to Patchfleet Cloud.</p>
-          </div>
+        <div className="hero-actions">
+          <a className="button-link" href="#queue-work">New task</a>
+          <form action="/api/observe" method="post">
+            <button className="secondary" type="submit">Refresh status</button>
+          </form>
         </div>
       </section>
 
@@ -315,7 +311,7 @@ export default async function Home({ searchParams }: {
         <>
           <WorkFeedback code={typeof workCode === "string" ? workCode : null} />
           <ReadinessOverview projection={result.projection} cloud={result.cloud} />
-          <ActivationPath projection={result.projection} work={result.work} workspaces={result.workspaces} />
+          {!activated ? <ActivationPath projection={result.projection} work={result.work} workspaces={result.workspaces} /> : null}
           <WorkConsole
             work={result.work}
             workspaces={result.workspaces}
@@ -347,7 +343,7 @@ function WorkFeedback({ code }: { code: string | null }) {
         <h2>{feedback.title}</h2>
         <p>{feedback.detail}</p>
       </div>
-      <code>{code}</code>
+      <details className="feedback-diagnostics"><summary>Details</summary><code>{code}</code></details>
     </section>
   );
 }
@@ -412,6 +408,14 @@ function ActivationPath({ projection, work, workspaces }: {
 }
 
 function CloudPanel({ status }: { status: CloudStatus }) {
+  const errorMessage = status.paired && status.lastErrorCode
+    ? ({
+      CLOUD_UNAVAILABLE: "Cloud cannot be reached right now. Local work continues and sync will retry automatically.",
+      CLOUD_AUTH_REJECTED: "This host no longer has Cloud access. Disconnect it here, then pair it again from Cloud.",
+      CLOUD_CONFLICT: "Cloud has a newer or different snapshot. Upgrade recovery is automatic; genuinely older local state stays blocked.",
+      CLOUD_PROTOCOL_INVALID: "Cloud returned an incompatible response. Local work remains safe while sync retries.",
+    } as Record<string, string>)[status.lastErrorCode] ?? "Cloud sync could not finish. Local work remains available and Patchfleet will retry."
+    : null;
   return (
     <section className="panel cloud-panel" aria-labelledby="cloud-title">
       <div className="section-heading">
@@ -427,14 +431,18 @@ function CloudPanel({ status }: { status: CloudStatus }) {
         <>
           <dl>
             <div><dt>Cloud</dt><dd>{status.cloudUrl}</dd></div>
-            <div><dt>Host</dt><dd><code>{shortId(status.hostId)}</code></dd></div>
             <div><dt>Last sync</dt><dd>{status.lastSuccessAt ? time(status.lastSuccessAt) : "Waiting"}</dd></div>
+            <div><dt>Privacy</dt><dd>Sanitized status only</dd></div>
           </dl>
-          {status.lastErrorCode ? <p className="safe-error" role="status">Sync will retry. <code>{status.lastErrorCode}</code></p> : null}
-          <form action="/api/cloud" method="post">
-            <input type="hidden" name="action" value="disconnect" />
-            <button className="secondary" type="submit">Disconnect Cloud</button>
-          </form>
+          {errorMessage ? <p className="safe-error" role="status">{errorMessage}<code>{status.lastErrorCode}</code></p> : null}
+          <details className="connection-settings">
+            <summary>Connection settings</summary>
+            <p>Host <code>{shortId(status.hostId)}</code></p>
+            <form action="/api/cloud" method="post">
+              <input type="hidden" name="action" value="disconnect" />
+              <button className="secondary" type="submit">Disconnect Cloud</button>
+            </form>
+          </details>
         </>
       ) : (
         <>
@@ -487,64 +495,12 @@ function WorkConsole({ work, workspaces, projection, ownerEpoch }: {
   const latestReceipts = work.receipts.slice(-5).reverse();
   return (
     <div className="work-grid">
-      <section id="queue-work" className="panel composer" aria-labelledby="create-work-title">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Local work intake</p>
-            <h2 id="create-work-title">Queue Codex work</h2>
-          </div>
-          <span className="count">{work.items.length} items</span>
-        </div>
-        <form className="work-form" action="/api/work" method="post">
-          <input type="hidden" name="action" value="enqueue" />
-          <CommandFields />
-          <label>
-            Title
-            <input name="title" required maxLength={160} autoComplete="off" placeholder="e.g. Verify the release build" />
-          </label>
-          <label>
-            Project
-            <select name="workspaceId" defaultValue="" aria-describedby="workspace-select-help">
-              <option value="">{workspaces.items.length ? "Select a registered project" : "No registered projects"}</option>
-              {workspaces.items.map((workspace) => (
-                <option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.displayName}</option>
-              ))}
-            </select>
-            <span id="workspace-select-help">
-              {workspaces.items.length
-                ? "The selected path is resolved only on this machine."
-                : <>Register the current Git repository with <code>patchfleet workspace add .</code>, then refresh this page.</>}
-            </span>
-          </label>
-          <details className="advanced-path">
-            <summary>Advanced: use an unregistered path once</summary>
-            <label>
-              Absolute Git worktree root
-              <input
-                name="workingDirectory"
-                maxLength={4096}
-                autoComplete="off"
-                placeholder="/absolute/path/to/git-worktree"
-                aria-describedby="worktree-path-help"
-              />
-              <span id="worktree-path-help">Run <code>pwd</code> inside the repository and paste the absolute path; relative paths and <code>~</code> are not accepted. Leave this blank when selecting a project above.</span>
-            </label>
-          </details>
-          <label>
-            Instruction
-            <textarea name="instruction" required maxLength={50000} rows={6} placeholder="Describe one bounded outcome. Patchfleet will run it locally through Codex." />
-          </label>
-          <button type="submit">Add task to queue</button>
-        </form>
-        <p className="snapshot">Add the item to the queue, then start it from Work items. Instructions and paths stay in the local work projection.</p>
-      </section>
-
       <div className="work-stack">
         <section className="panel" aria-labelledby="work-items-title">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Durable queue</p>
-              <h2 id="work-items-title">Work items</h2>
+              <p className="eyebrow">Now</p>
+              <h2 id="work-items-title">Your work</h2>
             </div>
             <span className={`badge ${codexAvailable ? "available" : "unavailable"}`}>
               Codex {codexAvailable ? "ready" : "control unavailable"}
@@ -552,8 +508,8 @@ function WorkConsole({ work, workspaces, projection, ownerEpoch }: {
           </div>
           {work.items.length === 0 ? (
             <div className="empty-state">
-              <strong>No tasks in the queue</strong>
-              <p>Your first task will appear here before anything starts.</p>
+              <strong>Nothing needs attention</strong>
+              <p>Create a task and it will appear here before Codex starts.</p>
             </div>
           ) : (
             <ul className="work-items">
@@ -600,9 +556,9 @@ function WorkConsole({ work, workspaces, projection, ownerEpoch }: {
           <div className="section-heading">
             <div>
               <p className="eyebrow">Proven outcomes</p>
-              <h2 id="receipts-title">Recent receipts</h2>
+              <h2 id="receipts-title">Recent activity</h2>
             </div>
-            <span className="count">revision {work.revision}</span>
+            <span className="count">{latestReceipts.length} recent</span>
           </div>
           {latestReceipts.length === 0 ? (
             <div className="empty-state compact">
@@ -614,16 +570,83 @@ function WorkConsole({ work, workspaces, projection, ownerEpoch }: {
               {latestReceipts.map((receipt) => (
                 <li key={receipt.intentId}>
                   <span className={`badge ${receipt.outcome}`}>{receipt.outcome}</span>
-                  <code>{receipt.reasonCode}</code>
-                  <time dateTime={receipt.completedAt}>{time(receipt.completedAt)}</time>
+                  <div>
+                    <strong>{receiptTitle(receipt.reasonCode)}</strong>
+                    <time dateTime={receipt.completedAt}>{time(receipt.completedAt)}</time>
+                    <details className="receipt-diagnostics"><summary>Details</summary><code>{receipt.reasonCode}</code></details>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </section>
       </div>
+
+      <section id="queue-work" className="panel composer" aria-labelledby="create-work-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Next task</p>
+            <h2 id="create-work-title">Give Codex work</h2>
+          </div>
+          <span className="privacy-note">Stays local</span>
+        </div>
+        <form className="work-form" action="/api/work" method="post">
+          <input type="hidden" name="action" value="enqueue" />
+          <CommandFields />
+          <label>
+            Task name
+            <input name="title" required maxLength={160} autoComplete="off" placeholder="e.g. Verify the release build" />
+          </label>
+          <label>
+            Project
+            <select name="workspaceId" defaultValue="" aria-describedby="workspace-select-help">
+              <option value="">{workspaces.items.length ? "Choose a project" : "No registered projects"}</option>
+              {workspaces.items.map((workspace) => (
+                <option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.displayName}</option>
+              ))}
+            </select>
+            <span id="workspace-select-help">
+              {workspaces.items.length
+                ? "The selected path is resolved only on this machine."
+                : <>Register this Git repository with <code>patchfleet workspace add .</code>, then refresh.</>}
+            </span>
+          </label>
+          <details className="advanced-path">
+            <summary>Use another Git worktree once</summary>
+            <label>
+              Absolute Git worktree root
+              <input
+                name="workingDirectory"
+                maxLength={4096}
+                autoComplete="off"
+                placeholder="/absolute/path/to/git-worktree"
+                aria-describedby="worktree-path-help"
+              />
+              <span id="worktree-path-help">Run <code>pwd</code> inside the repository and paste the absolute path; relative paths and <code>~</code> are not accepted. Leave this blank when selecting a project above.</span>
+            </label>
+          </details>
+          <label>
+            What should Codex do?
+            <textarea name="instruction" required maxLength={50000} rows={5} placeholder="Describe one bounded outcome." />
+          </label>
+          <button type="submit">Add to queue</button>
+        </form>
+        <p className="snapshot">Review the queued task in Your work, then start it when ready.</p>
+      </section>
     </div>
   );
+}
+
+function receiptTitle(reasonCode: string) {
+  return ({
+    WORK_ENQUEUED: "Task added to the queue",
+    WORK_REMOVED: "Queued task removed",
+    WORK_STARTED: "Codex started working",
+    RUN_CANCELLED: "Run cancelled safely",
+    COMMAND_EXPIRED: "Action expired without a change",
+    PROVIDER_CONTROL_FAILED: "Codex control failed safely",
+    RUN_SESSION_LOST: "Run control session was lost",
+  } as Record<string, string>)[reasonCode] ?? "Action recorded";
 }
 
 function WorkAction({ action, item, children }: {
@@ -656,11 +679,17 @@ function RunCancel({ run }: { run: Run }) {
 
 function Dashboard({ projection }: { projection: Projection }) {
   return (
-    <div className="provider-grid">
-      {projection.observations.map((observation) => (
-        <ProviderObservation key={observation.provider.id} observation={observation} />
-      ))}
-    </div>
+    <details className="diagnostics-panel">
+      <summary>
+        <span><strong>Provider diagnostics</strong><small>Versions, capabilities, and recent sessions</small></span>
+        <span className="count">{projection.observations.length} providers</span>
+      </summary>
+      <div className="provider-grid">
+        {projection.observations.map((observation) => (
+          <ProviderObservation key={observation.provider.id} observation={observation} />
+        ))}
+      </div>
+    </details>
   );
 }
 

@@ -227,7 +227,7 @@ async function doctor() {
 
   if (directoryExists) {
     try {
-      const { replayEvents, readProjection, readWorkspaceProjection } = await import(
+      const { replayEvents, readProjection, readWorkspaceProjection, readAgentPackProjection } = await import(
         pathToFileURL(join(root, "lib", "runtime", "observation-store.mjs"))
       );
       const events = await replayEvents({ dataDir });
@@ -238,6 +238,8 @@ async function doctor() {
       const workspaces = await readWorkspaceProjection({ dataDir });
       const count = workspaces?.items?.length ?? 0;
       add(count ? "PASS" : "WARN", "Projects", count ? `${count} registered project${count === 1 ? "" : "s"}` : "none registered; run patchfleet workspace add .");
+      const packs = await readAgentPackProjection({ dataDir });
+      add("PASS", "Agent packs", `${12 + (packs?.items.length ?? 0)} available pack${12 + (packs?.items.length ?? 0) === 1 ? "" : "s"}`);
     } catch {
       add("FAIL", "Durable state", "event log or a derived projection is corrupt; stop the host and run patchfleet recover");
     }
@@ -245,6 +247,7 @@ async function doctor() {
     add("WARN", "Durable state", "no local state yet");
     add("WARN", "Providers", "not checked yet");
     add("WARN", "Projects", "none registered");
+    add("PASS", "Agent packs", "12 built-in packs available");
   }
 
   try {
@@ -304,9 +307,50 @@ async function workspace() {
   throw new TypeError("unknown workspace command");
 }
 
+async function agentPack() {
+  const action = process.argv[3] ?? "help";
+  const registry = await import(pathToFileURL(join(root, "lib", "runtime", "agent-pack-registry.mjs")));
+  if (action === "install") {
+    const filename = process.argv[4];
+    if (!filename || process.argv.length > 5) throw new TypeError("usage: patchfleet agent-pack install <manifest.json>");
+    const installed = await registry.installAgentPackFile(resolve(filename), { dataDir });
+    process.stdout.write(`Installed ${installed.pack.name} ${installed.pack.version} (${installed.pack.id})\n`);
+    return;
+  }
+  if (action === "list") {
+    if (process.argv.length > 4) throw new TypeError("agent-pack list does not accept arguments");
+    const packs = await registry.listAgentPacks({ dataDir });
+    for (const pack of packs) {
+      process.stdout.write(`${pack.name}\t${pack.id}\t${pack.version}\t${pack.role}\t${pack.provenance.kind}\n`);
+    }
+    return;
+  }
+  if (action === "show") {
+    const packId = process.argv[4];
+    if (!packId || process.argv.length > 5) throw new TypeError("usage: patchfleet agent-pack show <pack-id>");
+    const pack = await registry.resolveAgentPack(packId, { dataDir });
+    if (!pack) throw new TypeError("agent pack was not found");
+    process.stdout.write(`${JSON.stringify(pack, null, 2)}\n`);
+    return;
+  }
+  if (action === "remove") {
+    const packId = process.argv[4];
+    if (!packId || process.argv.length > 5) throw new TypeError("usage: patchfleet agent-pack remove <pack-id>");
+    await registry.removeAgentPack(packId, { dataDir });
+    process.stdout.write(`Removed ${packId}\n`);
+    return;
+  }
+  if (action === "help" || action === "--help" || action === "-h") {
+    process.stdout.write("Usage: patchfleet agent-pack <install <manifest.json>|list|show <pack-id>|remove <pack-id>>\n");
+    return;
+  }
+  throw new TypeError("unknown agent-pack command");
+}
+
 function help() {
-  process.stdout.write("Usage: patchfleet <start|stop|status|doctor|recover|workspace>\n");
+  process.stdout.write("Usage: patchfleet <start|stop|status|doctor|recover|workspace|agent-pack>\n");
   process.stdout.write("       patchfleet workspace <add [path]|list|remove <workspace-id>>\n");
+  process.stdout.write("       patchfleet agent-pack <install <manifest.json>|list|show <pack-id>|remove <pack-id>>\n");
 }
 
 try {
@@ -316,6 +360,7 @@ try {
   else if (command === "doctor") await doctor();
   else if (command === "recover") await recover();
   else if (command === "workspace") await workspace();
+  else if (command === "agent-pack") await agentPack();
   else if (command === "help" || command === "--help" || command === "-h") help();
   else throw new TypeError("unknown Patchfleet command");
 } catch (error) {

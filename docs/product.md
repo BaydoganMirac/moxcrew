@@ -2,13 +2,13 @@
 
 Status: working product contract
 
-Updated: 2026-07-16
+Updated: 2026-07-20
 
 ## One-line promise
 
-Patchfleet gives serious builders one local command center to see, direct, and
-recover work running across Claude Code, Codex, and Gemini CLI, with an
-optional low-cost Cloud view for remote access.
+Patchfleet gives serious builders one local command center to form, direct,
+supervise, and recover teams of coding agents, with an optional Cloud view for
+safe remote decisions.
 
 ## Jobs to be done
 
@@ -40,6 +40,14 @@ projections, and delivers allowlisted command intents to paired local hosts. In
 the V1 contract the only remote intent is `cancel_run`. Cloud is never the
 execution authority.
 
+### Agent packs and teams
+
+Ready agent packs are inspectable local data, not executable plugins. An owner
+selects a workspace, an orchestrator, roles, and limits. The local scheduler
+coordinates bounded provider runs and keeps task ownership, decisions, retries,
+questions, and receipts durable. Cloud receives only the sanitized operational
+projection and allowlisted expiring intents.
+
 ## V0 promise
 
 V0 is complete when one user can:
@@ -60,7 +68,7 @@ gate, not a requirement for the first vertical slice.
 
 - reselling model tokens or subscriptions;
 - a general-purpose workflow engine;
-- autonomous team planning with dozens of permanent agents;
+- unbounded autonomous planning or permanent background agents;
 - cloud execution or hosted coding sandboxes;
 - arbitrary shell access from a browser;
 - uploading repositories, diffs, raw prompts, transcripts, or terminal output;

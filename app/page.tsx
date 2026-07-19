@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { publicCloudStatus, readCloudState } from "@/lib/cloud/connection.mjs";
 import { supportsCodexControl } from "@/lib/providers/codex.mjs";
-import { readProjection, readWorkProjection, readWorkspaceProjection } from "@/lib/runtime/observation-store.mjs";
+import { readAgentTeamProjection, readProjection, readWorkProjection, readWorkspaceProjection } from "@/lib/runtime/observation-store.mjs";
+import { listAgentPacks } from "@/lib/runtime/agent-pack-registry.mjs";
 import { currentWorkControlOwnerEpoch } from "@/lib/runtime/work-queue.mjs";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +82,46 @@ type WorkspaceProjection = {
   revision: number;
   items: Workspace[];
 };
+
+type AgentPack = {
+  id: string;
+  version: string;
+  name: string;
+  role: string;
+  description: string;
+  providerId: "codex";
+  instructions: string;
+  permissions: string[];
+  requiredCapabilities: string[];
+  qualityChecks: string[];
+  limits: { maxAttempts: number; timeoutMinutes: number };
+  expectedOutput: string;
+  provenance: { kind: "built-in" | "local"; source: string };
+};
+
+type AgentTeam = {
+  teamId: string;
+  name: string;
+  goal: string;
+  workspaceId: string;
+  templateId: string;
+  orchestratorAgentId: string;
+  status: "draft" | "active" | "waiting" | "completed" | "failed" | "cancelled" | "timed_out";
+  settings: { concurrency: number; retryLimit: number; timeoutMinutes: number; failurePolicy: "stop" | "continue" };
+  agents: Array<{ agentId: string; pack: AgentPack; status: string }>;
+  tasks: Array<{
+    taskId: string;
+    title: string;
+    status: string;
+    agentId: string;
+    attempt: number;
+    maxAttempts: number;
+    approvalRequired: boolean;
+    question: null | { questionId: string; prompt: string; maxAnswerLength: number };
+  }>;
+};
+
+type AgentTeamProjection = { schemaVersion: 1; revision: number; items: AgentTeam[] };
 
 type CloudStatus =
   | { paired: false; error?: boolean }
@@ -246,10 +287,12 @@ function providerLabel(state: Observation["provider"]["state"]) {
 
 async function loadState() {
   try {
-    const [projection, work, workspaces] = await Promise.all([
+    const [projection, work, workspaces, agentPacks, agentTeams] = await Promise.all([
       readProjection(),
       readWorkProjection(),
       readWorkspaceProjection(),
+      listAgentPacks(),
+      readAgentTeamProjection(),
     ]);
     const cloud = await readCloudState()
       .then(publicCloudStatus)
@@ -259,6 +302,8 @@ async function loadState() {
       projection: projection as Projection | null,
       work: (work ?? { schemaVersion: 1, revision: 0, items: [], runs: [], receipts: [] }) as WorkProjection,
       workspaces: (workspaces ?? { schemaVersion: 1, revision: 0, items: [], receipts: [] }) as WorkspaceProjection,
+      agentPacks: agentPacks as AgentPack[],
+      agentTeams: (agentTeams ?? { schemaVersion: 1, revision: 0, items: [] }) as AgentTeamProjection,
       cloud: cloud as CloudStatus,
     };
   } catch {
@@ -267,9 +312,11 @@ async function loadState() {
 }
 
 export default async function Home({ searchParams }: {
-  searchParams: Promise<{ work?: string | string[] }>;
+  searchParams: Promise<{ work?: string | string[]; team?: string | string[] }>;
 }) {
-  const workCode = (await searchParams).work;
+  const params = await searchParams;
+  const workCode = params.work;
+  const teamCode = params.team;
   const result = await loadState();
   const activated = result.kind === "ready" && (result.work.items.length > 0 || result.work.receipts.length > 0);
 
@@ -310,7 +357,10 @@ export default async function Home({ searchParams }: {
       ) : (
         <>
           <WorkFeedback code={typeof workCode === "string" ? workCode : null} />
+          <TeamFeedback code={typeof teamCode === "string" ? teamCode : null} />
           <ReadinessOverview projection={result.projection} cloud={result.cloud} />
+          <AgentCatalog packs={result.agentPacks} />
+          <TeamConsole teams={result.agentTeams.items} packs={result.agentPacks} workspaces={result.workspaces} />
           {!activated ? <ActivationPath projection={result.projection} work={result.work} workspaces={result.workspaces} /> : null}
           <WorkConsole
             work={result.work}
@@ -330,6 +380,146 @@ export default async function Home({ searchParams }: {
         </>
       )}
     </main>
+  );
+}
+
+function TeamFeedback({ code }: { code: string | null }) {
+  if (!code) return null;
+  const content = ({
+    TEAM_CREATED: ["Team saved", "Review the plan, then start the local orchestrator."],
+    TEAM_STARTED: ["Team started", "Ready tasks were assigned within the selected concurrency limit."],
+    TEAM_ADVANCED: ["Team reconciled", "Completed work, retries, gates, and ready tasks were checked."],
+    TEAM_CANCELLED: ["Team cancelled", "No new tasks will start; active and queued work received typed stop actions."],
+    AGENT_CANCELLED: ["Agent cancelled", "That agent owns no new work in this team."],
+    QUESTION_ANSWERED: ["Answer recorded", "The local orchestrator can use it only for the gated task."],
+    TASK_APPROVED: ["Task approved", "The current revision may now advance."],
+    TASK_REJECTED: ["Task rejected", "The decision is durable and dependent work will not bypass it."],
+    TEAM_INVALID_ACTION: ["Team action rejected", "Refresh the current state, check the selected agents and limits, then try again."],
+  } as Record<string, [string, string]>)[code];
+  if (!content) return null;
+  const error = code === "TEAM_INVALID_ACTION";
+  return <section className={`feedback ${error ? "error" : "success"}`} role={error ? "alert" : "status"}><span className="feedback-mark" aria-hidden="true">{error ? "!" : "✓"}</span><div><h2>{content[0]}</h2><p>{content[1]}</p></div><details className="feedback-diagnostics"><summary>Details</summary><code>{code}</code></details></section>;
+}
+
+function TeamConsole({ teams, packs, workspaces }: { teams: AgentTeam[]; packs: AgentPack[]; workspaces: WorkspaceProjection }) {
+  const orchestrators = packs.filter((pack) => pack.role === "orchestrator");
+  const workers = packs.filter((pack) => pack.role !== "orchestrator");
+  return (
+    <section className="panel" aria-labelledby="teams-title">
+      <div className="section-heading">
+        <div><p className="eyebrow">Multi-agent delivery</p><h2 id="teams-title">Agent teams</h2></div>
+        <span className="count">{teams.length} teams</span>
+      </div>
+      <div className="work-grid">
+        <div className="work-stack">
+          {teams.length === 0 ? <div className="empty-state"><strong>No team yet</strong><p>Choose ready agents and one bounded template.</p></div> : (
+            <ul className="work-items">
+              {teams.map((team) => (
+                <li key={team.teamId}>
+                  <div className="work-summary">
+                    <div><h3>{team.name}</h3><p>{team.goal}</p><small>{team.templateId.replaceAll("-", " ")} · concurrency {team.settings.concurrency} · retry {team.settings.retryLimit}</small></div>
+                    <span className={`badge ${team.status}`}>{team.status}</span>
+                  </div>
+                  <ol className="activation-steps">
+                    {team.tasks.map((task) => {
+                      const agent = team.agents.find((candidate) => candidate.agentId === task.agentId);
+                      return (
+                        <li key={task.taskId} className={task.status === "completed" ? "done" : ["running", "waiting_question", "waiting_approval"].includes(task.status) ? "active" : ""}>
+                          <span>{task.attempt}</span>
+                          <div>
+                            <strong>{task.title}</strong>
+                            <small>{agent?.pack.name} · {task.status} · attempt {task.attempt}/{task.maxAttempts}</small>
+                            {task.status === "waiting_question" && task.question ? (
+                              <form className="work-form" action="/api/teams" method="post">
+                                <input type="hidden" name="action" value="answer" /><input type="hidden" name="teamId" value={team.teamId} /><input type="hidden" name="questionId" value={task.question.questionId} />
+                                <label>{task.question.prompt}<textarea name="answer" required maxLength={task.question.maxAnswerLength} rows={3} /></label><button type="submit">Answer</button>
+                              </form>
+                            ) : null}
+                            {task.status === "waiting_approval" ? (
+                              <form className="work-form" action="/api/teams" method="post">
+                                <input type="hidden" name="teamId" value={team.teamId} /><input type="hidden" name="taskId" value={task.taskId} />
+                                <label>Decision note <input name="note" maxLength={1000} /></label>
+                                <div className="work-actions"><button name="action" value="approve" type="submit">Approve</button><button className="danger" name="action" value="reject" type="submit">Reject</button></div>
+                              </form>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  <div className="work-actions">
+                    {team.status === "draft" ? <TeamAction teamId={team.teamId} action="start">Start team</TeamAction> : null}
+                    {["active", "waiting"].includes(team.status) ? <><TeamAction teamId={team.teamId} action="advance">Run ready work</TeamAction><TeamAction teamId={team.teamId} action="cancel" danger>Cancel team</TeamAction></> : null}
+                  </div>
+                  <details className="connection-settings"><summary>Agents and controls</summary>
+                    <ul className="receipts">{team.agents.map((agent) => <li key={agent.agentId}><span className={`badge ${agent.status}`}>{agent.status}</span><div><strong>{agent.pack.name}</strong><small>{agent.pack.role}</small>{agent.agentId !== team.orchestratorAgentId && !["completed", "cancelled"].includes(agent.status) && ["active", "waiting"].includes(team.status) ? <form action="/api/teams" method="post"><input type="hidden" name="action" value="cancel_agent" /><input type="hidden" name="teamId" value={team.teamId} /><input type="hidden" name="agentId" value={agent.agentId} /><button className="secondary" type="submit">Cancel agent</button></form> : null}</div></li>)}</ul>
+                  </details>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="composer">
+          <div className="section-heading"><div><p className="eyebrow">Team builder</p><h3>Form a local team</h3></div><span className="privacy-note">Goals stay local</span></div>
+          <form className="work-form" action="/api/teams" method="post">
+            <input type="hidden" name="action" value="create" />
+            <label>Team name<input name="name" required maxLength={80} placeholder="e.g. Billing launch" /></label>
+            <label>Local project<select name="workspaceId" required defaultValue=""><option value="" disabled>Choose a registered project</option>{workspaces.items.map((workspace) => <option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.displayName}</option>)}</select></label>
+            <label>Template<select name="templateId" defaultValue="product-feature"><option value="product-feature">Product feature</option><option value="bug-fix">Bug fix</option><option value="saas-launch">SaaS launch</option><option value="design-frontend">Design + frontend</option><option value="security-audit">Security audit</option><option value="release">Release</option></select></label>
+            <label>Orchestrator<select name="orchestratorPackId">{orchestrators.map((pack) => <option key={pack.id} value={pack.id}>{pack.name}</option>)}</select></label>
+            {[1, 2, 3, 4].map((slot) => <label key={slot}>Agent {slot}{slot === 1 ? " (required)" : ""}<select name={`workerPack${slot}`} required={slot === 1} defaultValue=""><option value="">{slot === 1 ? "Choose an agent" : "No agent"}</option>{workers.map((pack) => <option key={pack.id} value={pack.id}>{pack.name} · {pack.role}</option>)}</select></label>)}
+            <div className="work-actions"><label>Concurrency<select name="concurrency" defaultValue="2"><option>1</option><option>2</option><option>3</option><option>4</option></select></label><label>Retries<select name="retryLimit" defaultValue="1"><option>0</option><option>1</option><option>2</option><option>3</option></select></label></div>
+            <label>Time budget<select name="timeoutMinutes" defaultValue="120"><option value="30">30 minutes</option><option value="60">1 hour</option><option value="120">2 hours</option><option value="240">4 hours</option><option value="480">8 hours</option></select></label>
+            <label>Failure policy<select name="failurePolicy" defaultValue="stop"><option value="stop">Stop dependent work</option><option value="continue">Continue independent work</option></select></label>
+            <label>Goal<textarea name="goal" required maxLength={10000} rows={5} placeholder="Describe the outcome and acceptance criteria." /></label>
+            <button type="submit">Create team plan</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TeamAction({ teamId, action, danger = false, children }: { teamId: string; action: "start" | "advance" | "cancel"; danger?: boolean; children: React.ReactNode }) {
+  return <form action="/api/teams" method="post"><input type="hidden" name="action" value={action} /><input type="hidden" name="teamId" value={teamId} /><button className={danger ? "danger" : undefined} type="submit">{children}</button></form>;
+}
+
+function AgentCatalog({ packs }: { packs: AgentPack[] }) {
+  const builtIn = packs.filter((pack) => pack.provenance.kind === "built-in").length;
+  return (
+    <details className="diagnostics-panel agent-catalog">
+      <summary>
+        <span><strong>Ready agent catalog</strong><small>Inspect roles, permissions, limits, and quality checks before forming a team</small></span>
+        <span className="count">{builtIn} built-in · {packs.length - builtIn} custom</span>
+      </summary>
+      <div className="provider-grid">
+        {packs.map((pack) => {
+          const titleId = `${pack.id.replace(":", "-")}-title`;
+          return (
+            <article className="panel provider" key={pack.id} aria-labelledby={titleId}>
+              <div className="section-heading">
+                <div><p className="eyebrow">{pack.role}</p><h2 id={titleId}>{pack.name}</h2></div>
+                <span className={`badge ${pack.provenance.kind === "built-in" ? "available" : "queued"}`}>{pack.provenance.kind}</span>
+              </div>
+              <p>{pack.description}</p>
+              <dl>
+                <div><dt>Provider</dt><dd>Codex</dd></div>
+                <div><dt>Limit</dt><dd>{pack.limits.timeoutMinutes} min · {pack.limits.maxAttempts} attempts</dd></div>
+                <div><dt>Permissions</dt><dd>{pack.permissions.join(", ")}</dd></div>
+                <div><dt>Checks</dt><dd>{pack.qualityChecks.join(", ") || "Task-defined"}</dd></div>
+              </dl>
+              <details className="connection-settings">
+                <summary>Inspect pack contract</summary>
+                <p>{pack.instructions}</p>
+                <p><strong>Expected output:</strong> {pack.expectedOutput}</p>
+                <p><code>{pack.id}@{pack.version}</code> · {pack.provenance.source}</p>
+              </details>
+            </article>
+          );
+        })}
+      </div>
+      <p className="snapshot">Custom packs are strict local JSON data. Install one with <code>patchfleet agent-pack install manifest.json</code>; packs cannot load executable code or widen the Codex sandbox.</p>
+    </details>
   );
 }
 

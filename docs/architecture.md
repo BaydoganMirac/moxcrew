@@ -2,7 +2,7 @@
 
 Status: V0 target architecture
 
-Updated: 2026-07-17
+Updated: 2026-07-20
 
 ## System boundary
 
@@ -54,8 +54,9 @@ Patchfleet Cloud owns in the Free beta release candidate:
 - durable `cancel_run` intents and their host receipts;
 - authorization for every read and mutation.
 
-The hosted service owns account authentication, export, retention and deletion. The host
-continues to use the public V1 protocol.
+Cloud owns account authentication, retention, export and account deletion. Protocol V2 adds
+sanitized team supervision and typed decisions. Hosted features consume only that sanitized
+operational state.
 
 Cloud does not own provider credentials, repository contents, canonical run
 events, local process control, or shell execution.
@@ -80,6 +81,10 @@ The normalized model starts small:
   capabilities.
 - Workspace: an opaque local registration for one canonical Git worktree; its
   absolute path never enters the Cloud projection.
+- AgentPack: a versioned declarative local role, capability, permission, limit,
+  expected-output, and provenance contract.
+- Team: immutable selected packs, limits, and one orchestrator for a workspace.
+- TeamTask: one dependency-ordered unit with exactly one agent owner per attempt.
 - WorkItem: owner intent and ordering independent of a provider session.
 - Run: one execution attempt for a work item.
 - AgentSession: provider-observed execution context associated with a run when
@@ -121,6 +126,11 @@ Workspace registration uses this same writer and command/receipt contract. The
 CLI mutates the registry; the UI sends only an opaque local workspace ID, which
 the server resolves before creating a work item. Manual path entry is a local
 advanced fallback and does not change the Cloud protocol.
+
+Agent-pack installation and team lifecycle use the same single writer. Team
+events project independently but ordinary task attempts enter the existing work
+queue, so provider side effects retain the established idempotency, ownership,
+cancel, and recovery rules. Pack instructions and team goals are local-only.
 
 V0 recovery rules:
 

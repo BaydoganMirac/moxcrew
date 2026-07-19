@@ -16,6 +16,15 @@ const requiredHeaders = {
   "x-frame-options": "DENY",
 };
 
+test("local shell exposes the ready agent catalog and safe installation boundary", async () => {
+  const page = await readFile(join(process.cwd(), "app", "page.tsx"), "utf8");
+  assert.match(page, /Ready agent catalog/);
+  assert.match(page, /permissions/i);
+  assert.match(page, /patchfleet agent-pack install manifest\.json/);
+  assert.match(page, /cannot load executable code or widen the Codex sandbox/);
+  assert.doesNotMatch(page, /eval\(|new Function/);
+});
+
 async function freePort() {
   const server = createServer();
   server.listen(0, "127.0.0.1");

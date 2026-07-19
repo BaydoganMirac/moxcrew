@@ -15,6 +15,7 @@
 | V0 closed alpha readiness | Done | 2026-07-17 | [v0-closed-alpha-readiness.md](v0-closed-alpha-readiness.md) |
 | V0 publishable Local beta | Done | 2026-07-17 | [v0-local-beta.md](v0-local-beta.md) |
 | External beta activation | In progress | 2026-07-17 | [external-beta-activation.md](external-beta-activation.md) |
+| Agent packs and teams | Done | 2026-07-20 | [agent-teams.md](agent-teams.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

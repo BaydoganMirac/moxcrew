@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "pack:example-maintainer",
+  "version": "1.0.0",
+  "name": "Example Maintainer",
+  "role": "fullstack",
+  "description": "Maintains a small application with focused implementation and verification.",
+  "providerId": "codex",
+  "instructions": "Implement only the assigned acceptance criteria. Follow repository instructions, preserve unrelated work, run declared checks, and report evidence.",
+  "requiredCapabilities": ["work.start", "work.cancel"],
+  "permissions": ["read_workspace", "write_workspace", "run_checks"],
+  "defaultModel": null,
+  "limits": { "maxAttempts": 2, "timeoutMinutes": 60 },
+  "expectedOutput": "Outcome, changed files, checks run, blockers, and a concise handoff.",
+  "qualityChecks": ["tests", "build"]
+}

@@ -1,7 +1,7 @@
 {
   "name": "patchfleet",
-  "version": "0.1.0",
-  "description": "Local-first command center for Claude Code, Codex, and Gemini CLI.",
+  "version": "0.2.0",
+  "description": "Local-first coding-agent teams and command center for Codex, Claude Code, and Gemini CLI.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/BaydoganMirac/patchfleet#readme",
   "bugs": "https://github.com/BaydoganMirac/patchfleet/issues",
@@ -22,6 +22,7 @@
   "files": [
     ".next",
     "app",
+    "agent-packs",
     "bin",
     "docs/install.md",
     "extensions",

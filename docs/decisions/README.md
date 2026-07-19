@@ -23,3 +23,5 @@ supersedes the old one.
 | [0016](0016-package-the-node-host-before-a-desktop-shell.md) | Accepted | Package the Node host behind an npm CLI before adding a desktop shell |
 | [0017](0017-use-a-local-workspace-registry-before-cloud-aliases.md) | Accepted | Register local Git worktrees before adding Cloud aliases |
 | [0018](0018-support-node-22-and-24-for-the-public-beta.md) | Accepted | Support Node 22 and verify Node 24 compatibility |
+| [0019](0019-declarative-packs-and-local-team-orchestration.md) | Accepted | Use declarative local agent packs and a bounded local team orchestrator |
+| [0020](0020-capability-negotiated-team-protocol-v2.md) | Accepted | Add capability-negotiated sanitized Cloud team supervision |

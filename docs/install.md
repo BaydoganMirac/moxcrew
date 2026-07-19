@@ -2,7 +2,7 @@
 
 Status: beta release contract
 
-Updated: 2026-07-17
+Updated: 2026-07-20
 
 ## Requirements
 
@@ -13,7 +13,7 @@ Updated: 2026-07-17
 The owner supplies a reviewed Patchfleet npm tarball. Installation and package
 publication are separate owner release actions:
 
-    npm install --global ./patchfleet-0.1.0.tgz
+    npm install --global ./patchfleet-0.2.0.tgz
 
 Operate the local host with:
 
@@ -24,6 +24,17 @@ Operate the local host with:
     patchfleet status
     patchfleet stop
     patchfleet recover
+
+Inspect or install declarative local agent packs with:
+
+    patchfleet agent-pack list
+    patchfleet agent-pack show pack:orchestrator
+    patchfleet agent-pack install ./pack.json
+    patchfleet agent-pack remove pack:custom
+
+The browser console forms and controls bounded multi-agent teams from the
+registered projects and installed packs. Pack manifests are versioned JSON;
+they contain no executable hooks and cannot expand provider permissions.
 
 Run `patchfleet workspace add .` from each Git worktree you want to use. The
 command validates and stores its canonical local path; the console then lets

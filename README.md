@@ -13,12 +13,16 @@ local installation.
 
 ## Current status
 
-Phase 1 observation, Phase 2 durable local work control, and the Phase 3 paired
-Cloud control slice are complete. The local app queues work, writes safe
-terminal receipts, starts/cancels Codex inside an explicitly selected Git
-worktree, and can publish a bounded sanitized operational view to Patchfleet
-Cloud. Claude Code and Gemini CLI remain observation-only. The only remote
-command in protocol version 1 is `cancel_run`.
+Patchfleet 0.2 includes durable local work control, declarative agent packs,
+ready agent roles, bounded dependency-graph teams, and the optional paired
+Cloud control plane. Local queues work, writes terminal receipts, starts and
+cancels Codex inside an explicitly selected Git worktree, and keeps team goals,
+task text, pack instructions, paths, prompts, and output on the machine. Claude
+Code and Gemini CLI remain observation-only.
+
+Cloud protocol V2 adds a sanitized team projection and typed, expiring team
+actions. Local revalidates every action and may reject it; Cloud never receives
+source or gains a generic shell.
 
 Start with [the documentation map](docs/README.md) before changing code.
 
@@ -27,8 +31,8 @@ Start with [the documentation map](docs/README.md) before changing code.
     npm install
     npm run dev
 
-Closed-alpha tarballs expose host lifecycle commands plus
-`patchfleet workspace add|list|remove`. See the
+Release tarballs expose host lifecycle commands, workspace registration, and
+declarative pack management. See the
 [installation and recovery contract](docs/install.md).
 
 Run `patchfleet doctor` for safe runtime, state, project, provider, and optional
@@ -51,12 +55,28 @@ Codex control belongs to the current local app boot. After an app restart,
 Patchfleet hides Cancel until Refresh safely reconciles an old active run as
 session-lost/blocked; it never launches replacement work automatically.
 
+The Local console includes twelve built-in ready packs: Orchestrator, Product,
+Design, Frontend, Backend, Full-stack, QA, Review, Security, Release, Docs, and
+Research. Form a team by choosing one registered project, a bounded template,
+agents, concurrency, retry count, time budget, approval gates, and failure
+policy. Custom packs are strict JSON data:
+
+    patchfleet agent-pack list
+    patchfleet agent-pack install ./my-pack.json
+    patchfleet agent-pack show pack:my-pack
+    patchfleet agent-pack remove pack:my-pack
+
+Packs cannot load executable code or widen the Codex sandbox.
+
 Cloud remains optional. Create a short-lived pairing code in Patchfleet Cloud,
 then enter its URL, a host name, and the code in the local Cloud panel. The
 local launcher syncs outbound in the background. It sends only current opaque
 IDs, states, revisions, provider capabilities, versions, and coarse timestamps;
-local work text and worktree paths stay on the host. Disconnecting or a Cloud
-outage does not disable the local console.
+local work text and worktree paths stay on the host. V2 may also send anonymous
+workspace aliases, installed pack IDs and roles, and sanitized team/agent/task
+states. Owner-authored bounded goals, answers, and notes travel only inside the
+specific typed intent and are never copied into the projection. Disconnecting
+or a Cloud outage does not disable the local console.
 
 Gemini lifecycle observation is opt-in. From the Patchfleet checkout, let
 Gemini CLI link the checked-in extension, then restart Gemini:

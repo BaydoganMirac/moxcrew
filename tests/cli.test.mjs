@@ -33,7 +33,7 @@ test("package metadata exposes the supported Node CLI release surface", async ()
 test("CLI help, diagnostics, stopped status, stale metadata cleanup, and empty recovery are safe", async () => {
   const dataDir = await mkdtemp(join(tmpdir(), "patchfleet-cli-"));
   const env = { ...process.env, PATCHFLEET_DATA_DIR: dataDir, PATCHFLEET_PORT: "39123" };
-  assert.match((await exec(process.execPath, [cli, "--help"], { env })).stdout, /start\|stop\|status\|doctor\|recover\|workspace/);
+  assert.match((await exec(process.execPath, [cli, "--help"], { env })).stdout, /start\|stop\|status\|doctor\|recover\|workspace\|agent-pack/);
   const diagnosed = await exec(process.execPath, [cli, "doctor"], { env });
   assert.match(diagnosed.stdout, /Doctor found no blocking problems/);
   assert.equal(diagnosed.stdout.includes(dataDir), false);
@@ -84,4 +84,31 @@ test("CLI adds, lists, and removes a local workspace", async () => {
 
   assert.match((await exec(process.execPath, [cli, "workspace", "remove", workspaceId], { env })).stdout, /Removed/);
   assert.match((await exec(process.execPath, [cli, "workspace", "list"], { env })).stdout, /No registered workspaces/);
+});
+
+test("CLI lists built-in packs and installs, shows, and removes a custom pack", async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), "patchfleet-cli-packs-"));
+  const env = { ...process.env, PATCHFLEET_DATA_DIR: dataDir };
+  const listed = (await exec(process.execPath, [cli, "agent-pack", "list"], { env })).stdout;
+  assert.match(listed, /Orchestrator\tpack:orchestrator\t1\.0\.0/);
+  const filename = join(dataDir, "pack.json");
+  await writeFile(filename, JSON.stringify({
+    schemaVersion: 1,
+    id: "pack:cli-maintainer",
+    version: "1.0.0",
+    name: "CLI Maintainer",
+    role: "fullstack",
+    description: "Maintains a project through the Patchfleet command line.",
+    providerId: "codex",
+    instructions: "Implement assigned criteria and return verification evidence.",
+    requiredCapabilities: ["work.start", "work.cancel"],
+    permissions: ["read_workspace", "write_workspace", "run_checks"],
+    defaultModel: null,
+    limits: { maxAttempts: 2, timeoutMinutes: 30 },
+    expectedOutput: "Outcome, files, checks, blockers, and handoff.",
+    qualityChecks: ["tests"],
+  }), "utf8");
+  assert.match((await exec(process.execPath, [cli, "agent-pack", "install", filename], { env })).stdout, /Installed CLI Maintainer/);
+  assert.match((await exec(process.execPath, [cli, "agent-pack", "show", "pack:cli-maintainer"], { env })).stdout, /"provenance"/);
+  assert.match((await exec(process.execPath, [cli, "agent-pack", "remove", "pack:cli-maintainer"], { env })).stdout, /Removed/);
 });

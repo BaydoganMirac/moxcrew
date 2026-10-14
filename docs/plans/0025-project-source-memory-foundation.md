@@ -1,6 +1,6 @@
 # Task 0025 Project and source memory foundation
 
-Status: Approved — implementing
+Status: Completed locally; native platform release validation remains
 
 Owner direction: 2026-10-14, “Onaylı yap”
 
@@ -31,8 +31,8 @@ Projection key `projectMemory`, cache file `project-memory.json`:
 - Project/source IDs use `project:<uuid>` / `source:<uuid>`.
 - Kinds: `message`, `work_instruction`, `team_goal`, `owner_answer`, `approval_note`.
 - Project/source titles 160 UTF-16 units, project names 80; source text 50,000.
-  Message/edit intake allows a bounded192KiB JSON envelope in Host and native CLI
-  so valid multilingual text fits. Other actions retain128KiB.
+  Message/edit intake allows a bounded 192 KiB JSON envelope in Host and native CLI
+  so valid multilingual text fits. Other actions retain 128 KiB.
 
 Owner actions (normal commandId/createdAt/expiresAt envelope):
 
@@ -112,3 +112,12 @@ credentials, pushing or publishing are in scope.
 
 Vectors, accepted ADRs, automatic extraction, provider MCP access, imports,
 deletion/retention controls and real model calls remain later Task 0022 slices.
+
+## Handoff
+
+Implemented in local commits `e6ef8e2`, `3051969`, `3e7b0bb`, `0d2729e` and
+`7aa177d`. Independent review signed off after clock correction and multilingual
+intake fixes. All 81 Rust and 149 legacy tests pass, including 246 V1 prefix checks;
+strict all-target/all-feature Clippy and Rustfmt pass. Turkish/English actual
+native frames, timed normal close and macOS ARM64 App/DMG are verified.
+See project-memory/native state for exact artifact evidence and remaining limits.

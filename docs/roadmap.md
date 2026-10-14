@@ -9,8 +9,8 @@ commitments.
 
 ## Now
 
-- Complete the approved [Project/source foundation](plans/0025-project-source-memory-foundation.md),
-  then implement decision proposal/acceptance and evaluate a rebuildable local
+- Build on the completed [Project/source foundation](plans/0025-project-source-memory-foundation.md)
+  to implement decision proposal/acceptance and evaluate a rebuildable local
   index under [Task 0022](plans/0022-project-memory-and-decision-service.md).
   Scoped agent access and automatic ADR drafts follow independently verified
   decision retrieval; owner acceptance remains explicit.

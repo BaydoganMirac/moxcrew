@@ -500,7 +500,7 @@ impl Console {
                 );
                 ui.add_space(24.0);
                 if let Some(notice) = notice {
-                    self.feedback(ui, notice, can_retry && !busy);
+                    self.feedback(ui, notice, !busy, can_retry);
                     ui.add_space(14.0);
                 }
                 if let Some(error) = self.form_error {
@@ -550,7 +550,7 @@ impl Console {
         commands
     }
 
-    fn feedback(&mut self, ui: &mut Ui, notice: &Notice, can_retry: bool) {
+    fn feedback(&mut self, ui: &mut Ui, notice: &Notice, ready: bool, can_retry: bool) {
         if notice.kind == NoticeKind::Success {
             egui::Frame::new()
                 .fill(MINT.gamma_multiply(0.06))
@@ -600,14 +600,14 @@ impl Console {
             if folder::is_problem(&notice.code) {
                 if matches!(notice.code.as_str(),"WORKSPACE_ACCESS_DENIED" | "WORKSPACE_READ_ONLY") { hint(ui,folder::permission_guidance(&notice.code)); }
                 ui.horizontal_wrapped(|ui| {
-                    if matches!(notice.action,"workspace_register" | "work_enqueue") && control(ui,"Choose another folder",can_retry || notice.kind != NoticeKind::Error).clicked() {
+                    if matches!(notice.action,"workspace_register" | "work_enqueue") && control(ui,"Choose another folder",ready).clicked() {
                         self.folder_request = Some(if notice.action == "work_enqueue" { folder::Target::Task } else { folder::Target::Registration });
                         self.notice_action = Some(NoticeAction::Dismiss);
                     }
                     #[cfg(target_os="macos")]
                     if notice.code == "WORKSPACE_ACCESS_DENIED" && control(ui,"Open permission settings",true).clicked() { self.notice_action = Some(NoticeAction::Settings); }
                 });
-            } else if can_retry && notice.retryable() && control(ui,"Retry the same action",true).clicked() { self.notice_action = Some(NoticeAction::Retry); }
+            } else if ready && can_retry && notice.retryable() && control(ui,"Retry the same action",true).clicked() { self.notice_action = Some(NoticeAction::Retry); }
             if notice.kind != NoticeKind::Success { ui.collapsing(t(ui,"Technical details"),|ui| { ui.monospace(&notice.code); }); }
         });
     }
@@ -2543,6 +2543,66 @@ mod tests {
             .0
             .is_empty());
         assert_eq!(console.link_choices["project:fixture"], "workspace:other");
+    }
+
+    #[test]
+    fn folder_recovery_requires_an_idle_host_but_never_a_retryable_command() {
+        for ready in [false, true] {
+            let ctx = egui::Context::default();
+            let mut console = Console::default();
+            let notice = Notice::error("workspace_register", "WORKSPACE_ACCESS_DENIED");
+            let paint = |console: &mut Console, events| {
+                let output = ctx.run_ui(
+                    RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            egui::vec2(800.0, 560.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| console.feedback(ui, &notice, ready, false),
+                );
+                output.drop_without_applying_deltas();
+            };
+            paint(&mut console, vec![]);
+            paint(&mut console, vec![]);
+            let rect: Rect = ctx.data(|d| {
+                d.get_temp(egui::Id::new((
+                    "test-action",
+                    "memory_control",
+                    "Choose another folder",
+                )))
+                .unwrap()
+            });
+            let pos = rect.center();
+            paint(
+                &mut console,
+                vec![
+                    Event::PointerMoved(pos),
+                    Event::PointerButton {
+                        pos,
+                        button: PointerButton::Primary,
+                        pressed: true,
+                        modifiers: Modifiers::NONE,
+                    },
+                    Event::PointerButton {
+                        pos,
+                        button: PointerButton::Primary,
+                        pressed: false,
+                        modifiers: Modifiers::NONE,
+                    },
+                ],
+            );
+            assert_eq!(
+                console.take_folder_request(),
+                ready.then_some(folder::Target::Registration)
+            );
+            assert_eq!(
+                matches!(console.notice_action, Some(NoticeAction::Dismiss)),
+                ready
+            );
+        }
     }
 
     #[test]

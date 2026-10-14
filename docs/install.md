@@ -1,8 +1,8 @@
 # Install and operate Patchfleet Desktop
 
-Status: 0.5 native Rust desktop development distribution
+Status: 0.5.1 native Rust desktop development distribution
 
-Updated: 2026-10-14
+Updated: 2026-10-15
 
 ## Application requirements
 
@@ -12,6 +12,9 @@ Updated: 2026-10-14
   are independent of the Rust Patchfleet application.
 - Native Windows/Linux installer and runtime checks remain CI/release evidence;
   the local development package has been built on macOS ARM64.
+- Linux folder selection needs a working XDG desktop portal with a desktop
+  backend, or Zenity as the fallback. The Deb declares these runtime packages;
+  AppImage users need them supplied by their distribution. GTK is not bundled.
 
 Use the platform installer: macOS DMG/application, Windows NSIS/MSI, or Linux
 Deb/AppImage. Development artifacts have no public Developer ID notarization or
@@ -39,7 +42,7 @@ production application draws correctly when the old process is closed.
 
 1. Quit all running Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.5.0`
+3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.5.1`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut
@@ -48,13 +51,43 @@ deleted. See the [verified production window](screenshots/native-production-0.5-
 
 ## Local operation
 
-Register a Git workspace in the desktop, select it when queueing work, and use
+On Projects, choose **Choose folder** or **Add folder**. The system folder picker
+opens; select the actual Git repository root, then confirm **Add folder** in
+Patchfleet. The chosen path is read-only in the form. **Change folder** opens the
+picker again; canceling leaves the draft intact. One-off work folders use the
+same picker. A container holding several repositories is not itself a Git root:
+choose the child containing `.git`, including a linked worktree's `.git` marker.
+
+Patchfleet checks the selected folder before displaying the confirmation and
+checks current access again when registering a new command. A missing folder,
+non-repository, unsafe root, denied access and read-only folder have separate
+localized explanations. These checks inspect directory metadata, not source
+contents. Registration does not grant provider processes unrestricted access.
+
+For denied access, reselect the folder and accept the OS prompt when offered.
+On macOS, the form can open **System Settings > Privacy & Security > Files and
+Folders**. The App supplies purpose descriptions for Documents, Desktop,
+Downloads, removable and network volumes. A read-only folder instead points to
+**Finder > Get Info > Sharing & Permissions** or a writable disk. Windows
+guidance points to folder **Properties > Security**; Linux guidance points to
+read/write/traverse permissions in the file manager. Patchfleet does not change
+ACLs, enable Full Disk Access or silently modify folder permissions. OS consent
+and filesystem access remain under the owner's control.
+
+Success, rejection and failure feedback have distinct styles, a dismiss action
+and relevant recovery. Internal codes are in **Technical details**. Retry keeps
+the original command identity; choosing a different folder starts a new action.
+An exact canonical retry of an already-recorded registration returns its
+original receipt even if that folder has since lost access or been deleted.
+
+Select an added folder when queueing work, and use
 the provider cards to verify availability. Codex control requires a tested
 stable app-server surface on 0.144.1 or newer. The sandbox remains
 `workspace-write` with approval policy `never`. Claude and Gemini control are
 not advertised.
 
-Create a stable Project and explicitly link one or more registered worktrees.
+Create a stable Project and explicitly link one or more registered worktrees
+from its card after adding them.
 Existing unlinked worktrees stay usable. Project Memory stores messages and owner
 sources for new bound tasks/teams; it does not silently import historical work or
 provider transcripts. Select a project to read its bounded source page, filter by

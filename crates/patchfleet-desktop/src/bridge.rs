@@ -1,4 +1,5 @@
-use crate::command::{safe_error, Command};
+use crate::command::{safe_error, Command, Notice};
+use crate::folder;
 use eframe::egui;
 use patchfleet_core::Host;
 use serde_json::Value;
@@ -20,6 +21,7 @@ enum Request {
 enum Message {
     Snapshot(Result<Value, String>),
     Outcome(Command, Result<Value, String>, Result<Value, String>),
+    Folder(folder::Target, Option<folder::Selection>),
     Closed,
 }
 
@@ -27,13 +29,17 @@ pub struct Bridge {
     runtime: Runtime,
     requests: mpsc::Sender<Request>,
     messages: mpsc::Receiver<Message>,
+    output: mpsc::Sender<Message>,
+    picker: Option<JoinHandle<()>>,
     worker: Option<JoinHandle<()>>,
     host: Arc<Mutex<Option<Arc<Host>>>>,
     close_requested: Arc<AtomicBool>,
     pub snapshot: Option<Value>,
     memory_page: Option<Value>,
     pub error: Option<String>,
-    pub feedback: Option<String>,
+    pub feedback: Option<Notice>,
+    pub picking_folder: bool,
+    pub folder_selection: Option<(folder::Target, Option<folder::Selection>)>,
     pub pending: Option<Command>,
     pub busy: bool,
     pub closing: bool,
@@ -99,6 +105,7 @@ impl Bridge {
             .expect("Could not create local async runtime");
         let (requests, mut input) = mpsc::channel(4);
         let (output, messages) = mpsc::channel(4);
+        let picker_output = output.clone();
         let host_slot = Arc::new(Mutex::new(None));
         let host_worker = Arc::clone(&host_slot);
         let close_requested = Arc::new(AtomicBool::new(false));
@@ -155,6 +162,8 @@ impl Bridge {
             runtime,
             requests,
             messages,
+            output: picker_output,
+            picker: None,
             worker: Some(worker),
             host: host_slot,
             close_requested,
@@ -162,6 +171,8 @@ impl Bridge {
             memory_page: None,
             error: None,
             feedback: None,
+            picking_folder: false,
+            folder_selection: None,
             pending: None,
             busy: false,
             closing: false,
@@ -180,20 +191,23 @@ impl Bridge {
                                 self.memory_page = Some(receipt.clone());
                             }
                             self.pending = None;
-                            self.feedback = (command.action != "project_memory_read").then(|| {
-                                receipt["reasonCode"]
-                                    .as_str()
-                                    .unwrap_or("ACTION_RECORDED")
-                                    .replace('_', " ")
-                            });
+                            self.feedback = (command.action != "project_memory_read")
+                                .then(|| Notice::receipt(command.action, &receipt));
                         }
                         Err(error) => {
+                            self.feedback = Some(Notice::error(command.action, &error));
                             self.pending = Some(command);
-                            self.feedback = Some(error.replace('_', " "));
                         }
                     }
                     self.apply_snapshot(snapshot);
                     self.busy = false;
+                }
+                Message::Folder(target, selection) => {
+                    self.picking_folder = false;
+                    self.picker = None;
+                    if !self.closing {
+                        self.folder_selection = Some((target, selection));
+                    }
                 }
                 Message::Closed => self.closed = true,
             }
@@ -227,7 +241,7 @@ impl Bridge {
     }
 
     pub fn submit(&mut self, command: Command) {
-        if self.busy || self.closing || self.error.is_some() {
+        if self.busy || self.closing || self.picking_folder || self.error.is_some() {
             return;
         }
         match self.requests.try_send(Request::Action(command.clone())) {
@@ -240,16 +254,49 @@ impl Bridge {
                 }
                 self.busy = true;
                 self.pending = Some(command);
+                self.feedback = None;
             }
-            Err(_) => {
-                self.feedback = Some("The local host is not ready for another action.".into())
-            }
+            Err(_) => self.feedback = Some(Notice::error(command.action, "HOST_BUSY")),
+        }
+    }
+
+    pub fn choose_folder(
+        &mut self,
+        ctx: egui::Context,
+        target: folder::Target,
+        choice: impl std::future::Future<Output = Option<PathBuf>> + Send + 'static,
+    ) {
+        if self.busy || self.closing || self.picking_folder || self.error.is_some() {
+            return;
+        }
+        self.dismiss_feedback();
+        self.picking_folder = true;
+        ctx.request_repaint();
+        let output = self.output.clone();
+        self.picker = Some(self.runtime.spawn(async move {
+            let selection = match choice.await {
+                Some(path) => Some(folder::check(path).await),
+                None => None,
+            };
+            notify(&ctx, &output, Message::Folder(target, selection)).await;
+        }));
+    }
+
+    pub fn dismiss_feedback(&mut self) {
+        self.feedback = None;
+        if !self.busy {
+            self.pending = None;
         }
     }
 
     pub fn begin_close(&mut self) {
         if !self.closing {
             self.closing = true;
+            if let Some(picker) = self.picker.take() {
+                picker.abort();
+            }
+            self.picking_folder = false;
+            self.folder_selection = None;
             self.close_requested.store(true, Ordering::SeqCst);
             if let Some(host) = self.host.lock().unwrap().as_ref() {
                 host.request_shutdown();
@@ -349,6 +396,58 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         panic!("Local bridge did not deliver its outcome");
+    }
+
+    #[test]
+    fn folder_cancel_check_and_close_never_submit_an_owner_action() {
+        let data = tempfile::tempdir().unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), data.path().to_owned(), false);
+        await_idle(&mut bridge);
+        for choice in [None, Some(candidate.path().to_owned())] {
+            bridge.choose_folder(
+                egui::Context::default(),
+                folder::Target::Registration,
+                std::future::ready(choice.clone()),
+            );
+            for _ in 0..200 {
+                bridge.poll();
+                if !bridge.picking_folder {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            assert!(!bridge.picking_folder);
+            let (target, result) = bridge.folder_selection.take().unwrap();
+            assert_eq!(target, folder::Target::Registration);
+            if choice.is_none() {
+                assert!(result.is_none());
+            } else {
+                assert_eq!(
+                    result.unwrap().problem.as_deref(),
+                    Some("WORKSPACE_NOT_GIT_ROOT")
+                );
+            }
+            assert!(bridge.pending.is_none());
+            assert!(bridge.feedback.is_none());
+            assert!(!data.path().join("events.jsonl").exists());
+        }
+        bridge.choose_folder(
+            egui::Context::default(),
+            folder::Target::Task,
+            std::future::pending(),
+        );
+        bridge.submit(Command::new(
+            "project_create",
+            serde_json::json!({"name":"Must not be submitted"}),
+        ));
+        assert!(bridge.pending.is_none());
+        bridge.begin_close();
+        bridge.shutdown();
+        assert!(!bridge.picking_folder);
+        assert!(bridge.folder_selection.is_none());
+        assert!(Host::open(data.path().to_owned()).is_ok());
+        assert!(!data.path().join("events.jsonl").exists());
     }
 
     #[test]

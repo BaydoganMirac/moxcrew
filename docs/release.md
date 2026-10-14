@@ -32,6 +32,14 @@ Local output is `dist/native`. Windows formats are `nsis,wix`; Linux uses
 configured binaries directory, archives only installer outputs, and preserves
 executable permissions. It does not publish a release or use signing secrets.
 
+The native folder picker is pinned to RFD 0.17.2: AppKit on macOS, Shell on
+Windows, and XDG portal/Zenity fallback on Linux. Verify the macOS bundle's
+folder-access purpose keys from `assets/macos-permissions.plist`. Native Linux
+checks must exercise a distribution-provided portal backend or Zenity, with
+`libdbus-1-3` available; no GTK/WebView runtime is bundled. macOS access denial
+must not be worked around by silently changing ACLs or requesting Full Disk
+Access.
+
 macOS public distribution requires Developer ID signing/notarization; Windows
 publisher signing needs owner credentials. Keep credentials outside source and
 model context.
@@ -42,6 +50,17 @@ Test-only `ui-smoke` builds support eframe's screenshot capture and timed normal
 close in an explicitly empty test directory. Set `PATCHFLEET_NATIVE_SMOKE=1` to
 prevent provider probing. These controls are absent from production builds.
 The UI tests also paint all tabs without a display and exercise action payloads.
+The `projects`, `folder-picker` and `folder-error` test scenes create an isolated
+Git fixture. The error scene removes write permission only from that fixture;
+restore its mode during test cleanup. `PATCHFLEET_SMOKE_MIN_WINDOW=1` checks the
+800×560 layout, and `PATCHFLEET_SMOKE_LANGUAGE=en` selects English. Check actual
+native dialog opening, neutral cancellation and normal close with the sheet
+open. These scene controls are also absent from production.
+For a modal, use `PATCHFLEET_SMOKE_SCREENSHOT_TO=/absolute/test-image.png` rather
+than eframe's early two-pass screenshot: it waits for sizing frames, requests
+the rendered image, saves it and closes through Host shutdown. Its PNG writer
+is an optional test-only dependency already used by eframe, not a new production
+runtime component.
 
 The screenshot feature reads the OpenGL framebuffer; it alone does not prove
 that macOS presented the shipped window. Also launch the production App through

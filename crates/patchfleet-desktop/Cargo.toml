@@ -12,9 +12,11 @@ serde_json.workspace = true
 tokio.workspace = true
 chrono.workspace = true
 uuid.workspace = true
+rfd = { version = "=0.17.2", default-features = false, features = ["xdg-portal", "wayland"] }
+image = { version = "=0.25.10", default-features = false, features = ["png"], optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true
 
 [features]
-ui-smoke = ["eframe/__screenshot"]
+ui-smoke = ["eframe/__screenshot", "dep:image"]

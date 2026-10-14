@@ -10,6 +10,11 @@ use std::process::Command;
 use std::sync::Arc;
 use tempfile::tempdir;
 
+fn legacy(mut bundle: Value) -> Value {
+    bundle.as_object_mut().unwrap().remove("projectMemory");
+    bundle
+}
+
 fn fixture() -> Value {
     serde_json::from_str(include_str!("fixtures/parity-v1.json")).unwrap()
 }
@@ -48,13 +53,13 @@ fn legacy_javascript_replay_matches_every_projection_and_prefix() {
     for case in cases {
         let events = case["events"].as_array().unwrap();
         assert_eq!(
-            project_events(events).unwrap(),
+            legacy(project_events(events).unwrap()),
             case["expected"],
             "complete {}",
             case["name"]
         );
         for (index, expected) in case["prefixSha256"].as_array().unwrap().iter().enumerate() {
-            let value = project_events(&events[..=index]).unwrap();
+            let value = legacy(project_events(&events[..=index]).unwrap());
             let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
             assert_eq!(
                 digest,
@@ -87,7 +92,7 @@ fn canonical_log_reopens_and_rebuilds_all_five_projection_shapes() {
         }
         let store = Store::open(dir.path().into()).unwrap();
         assert_eq!(store.read_events().unwrap(), events);
-        assert_eq!(store.projections().unwrap(), case["expected"]);
+        assert_eq!(legacy(store.projections().unwrap()), case["expected"]);
         for (key, file) in [
             ("observation", "observation.json"),
             ("work", "work-items.json"),
@@ -504,7 +509,7 @@ fn cached_reads_do_not_replay_or_rewrite_projection_files() {
         })
         .collect();
     for _ in 0..100 {
-        assert_eq!(store.projections().unwrap(), case["expected"]);
+        assert_eq!(legacy(store.projections().unwrap()), case["expected"]);
         assert_eq!(
             store.read_events().unwrap(),
             case["events"].as_array().unwrap().clone()
@@ -522,7 +527,7 @@ fn cached_reads_do_not_replay_or_rewrite_projection_files() {
     assert_eq!(before, after);
     let projection_path = dir.path().join("work-items.json");
     fs::write(&projection_path, "broken-cache").unwrap();
-    assert_eq!(store.projections().unwrap(), case["expected"]);
+    assert_eq!(legacy(store.projections().unwrap()), case["expected"]);
     assert_eq!(
         fs::read(&projection_path).unwrap(),
         b"broken-cache",
@@ -542,15 +547,17 @@ fn projection_write_failure_does_not_hide_fsynced_events_or_receipts() {
     let events = case["events"].as_array().unwrap().clone();
     assert!(store.append(events.clone()).is_err());
     assert_eq!(store.read_events().unwrap(), events);
-    assert_eq!(store.projections().unwrap(), case["expected"]);
+    assert_eq!(legacy(store.projections().unwrap()), case["expected"]);
     fs::remove_dir(dir.path().join("work-items.json")).unwrap();
     store.recover().unwrap();
     drop(store);
     assert_eq!(
-        Store::open(dir.path().into())
-            .unwrap()
-            .projections()
-            .unwrap(),
+        legacy(
+            Store::open(dir.path().into())
+                .unwrap()
+                .projections()
+                .unwrap()
+        ),
         case["expected"]
     );
 }

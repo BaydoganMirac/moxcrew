@@ -828,6 +828,9 @@ fn validate_observation_event(kind: &str, p: &Value) -> Result<()> {
 }
 
 pub fn validate_event(v: &Value) -> Result<()> {
+    if v["schemaVersion"] == 3 {
+        return crate::project_memory::validate_event(v);
+    }
     exact(v, &["id", "schemaVersion", "type", "recordedAt", "payload"])?;
     matches(&v["id"], &format!("(?i)^{UUID_PATTERN}$"))?;
     iso(&v["recordedAt"])?;
@@ -2217,7 +2220,7 @@ fn project_teams(events: &[Value], work: &Value) -> Result<Value> {
 
 /// Replay all projections from canonical events, rejecting unknown complete
 /// records, duplicate identifiers and facts that lack their required request.
-pub fn project_events(events: &[Value]) -> Result<Value> {
+pub(crate) fn project_legacy_events(events: &[Value]) -> Result<Value> {
     let mut seen = HashSet::new();
     for e in events {
         validate_event(e)?;
@@ -2232,4 +2235,10 @@ pub fn project_events(events: &[Value]) -> Result<Value> {
     Ok(
         json!({"observation":observation,"work":work,"workspaces":workspaces,"packs":packs,"teams":teams}),
     )
+}
+
+pub fn project_events(events: &[Value]) -> Result<Value> {
+    let mut bundle = project_legacy_events(events)?;
+    bundle["projectMemory"] = crate::project_memory::project_validated(events)?;
+    Ok(bundle)
 }

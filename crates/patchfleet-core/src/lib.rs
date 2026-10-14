@@ -1,6 +1,7 @@
 pub mod cloud;
 pub mod domain;
 mod host;
+pub mod project_memory;
 pub mod providers;
 pub mod store;
 mod teams;

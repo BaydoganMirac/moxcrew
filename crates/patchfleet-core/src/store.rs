@@ -17,6 +17,7 @@ const PROJECTIONS: &[(&str, &str)] = &[
     ("workspaces", "workspaces.json"),
     ("packs", "agent-packs.json"),
     ("teams", "agent-teams.json"),
+    ("projectMemory", "project-memory.json"),
 ];
 
 pub struct Store {
@@ -549,6 +550,74 @@ impl Store {
         let state = self.guard()?;
         self.ensure_unchanged(&state)?;
         Ok(state.projected.clone())
+    }
+    /// Operational snapshots never clone source text or subject bindings.
+    pub fn runtime_projections(&self) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        let mut bundle = serde_json::Map::new();
+        for key in ["observation", "work", "workspaces", "packs", "teams"] {
+            bundle.insert(key.into(), state.projected[key].clone());
+        }
+        bundle.insert(
+            "projectMemory".into(),
+            crate::project_memory::metadata(&state.projected["projectMemory"]),
+        );
+        Ok(Value::Object(bundle))
+    }
+    pub fn read_memory(&self, payload: &Value) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        let mut input = payload.clone();
+        if let Some(fields) = input.as_object_mut() {
+            for key in ["commandId", "createdAt", "expiresAt"] {
+                fields.remove(key);
+            }
+        }
+        crate::project_memory::read(&state.projected["projectMemory"], &input)
+    }
+    pub fn workspace_project(&self, workspace_id: &str) -> Result<Option<String>> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        Ok(state.projected["projectMemory"]["projects"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|p| {
+                p["workspaceIds"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|w| w == workspace_id)
+            })
+            .and_then(|p| p["projectId"].as_str())
+            .map(str::to_owned))
+    }
+    pub fn subject_project(&self, kind: &str, subject_id: &str) -> Result<Option<String>> {
+        if !["work", "team"].contains(&kind) {
+            return Err(Error("INVALID_PROJECT_SUBJECT".into()));
+        }
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        Ok(state.projected["projectMemory"]["bindings"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|b| b["subjectKind"] == kind && b["subjectId"] == subject_id)
+            .and_then(|b| b["projectId"].as_str())
+            .map(str::to_owned))
+    }
+    pub fn event_cursor(&self) -> Result<(usize, Option<String>)> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        Ok((
+            state.events.len(),
+            state
+                .events
+                .last()
+                .and_then(|e| e["recordedAt"].as_str())
+                .map(str::to_owned),
+        ))
     }
     pub fn append(&self, additions: Vec<Value>) -> Result<()> {
         let mut state = self.guard()?;

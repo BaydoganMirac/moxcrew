@@ -14,6 +14,7 @@ const RED: Color32 = Color32::from_rgb(246, 142, 151);
 enum Tab {
     #[default]
     Projects,
+    Memory,
     Work,
     Teams,
     Agents,
@@ -21,8 +22,9 @@ enum Tab {
     Cloud,
 }
 impl Tab {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Projects,
+        Self::Memory,
         Self::Work,
         Self::Teams,
         Self::Agents,
@@ -32,6 +34,7 @@ impl Tab {
     fn name(self) -> &'static str {
         match self {
             Self::Projects => "Projects",
+            Self::Memory => "Memory",
             Self::Work => "Work",
             Self::Teams => "Teams",
             Self::Agents => "Agents",
@@ -41,9 +44,8 @@ impl Tab {
     }
     fn summary(self) -> &'static str {
         match self {
-            Self::Projects => {
-                "Register a local Git worktree once, then use it for tasks and teams."
-            }
+            Self::Projects => "Stable projects, linked worktrees and shared local context.",
+            Self::Memory => "Project sources with provenance. ADR extraction comes next.",
             Self::Work => "Queue a bounded task, start Codex, and verify its durable outcome.",
             Self::Teams => "Choose agents and a bounded plan. Owner decisions stay explicit.",
             Self::Agents => {
@@ -75,14 +77,14 @@ impl WorkDraft {
         let selected = self.workspace.trim();
         let manual = self.path.trim();
         if selected.is_empty() == manual.is_empty() {
-            return Err("Choose a registered project or one absolute worktree path.");
+            return Err("Choose a registered worktree or one absolute worktree path.");
         }
         if !selected.is_empty()
             && !items(&snapshot["workspaces"])
                 .iter()
                 .any(|w| text(w, "workspaceId") == selected)
         {
-            return Err("That project is no longer registered. Choose a current project.");
+            return Err("That worktree is no longer registered. Choose a current worktree.");
         }
         Ok(
             json!({"title":self.title.trim(),"instruction":self.instruction.trim(),"workspaceId":selected,"workingDirectory":manual}),
@@ -130,7 +132,7 @@ impl TeamDraft {
             .iter()
             .any(|w| text(w, "workspaceId") == self.workspace)
         {
-            return Err("Choose a registered project.");
+            return Err("Choose a registered worktree.");
         }
         if !array(&snapshot["templates"])
             .iter()
@@ -177,9 +179,103 @@ impl TeamDraft {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+struct MemoryRequest {
+    project: String,
+    revision: u64,
+    offset: u64,
+    query: String,
+}
+#[derive(Default)]
+struct MemoryDraft {
+    project: String,
+    title: String,
+    body: String,
+    keyword_input: String,
+    query: String,
+    offset: u64,
+    requested: Option<MemoryRequest>,
+    refresh_requested: bool,
+    edit: Option<SourceEdit>,
+}
+struct SourceEdit {
+    project: String,
+    source: String,
+    revision: u64,
+    title: String,
+    body: String,
+}
+impl MemoryDraft {
+    fn select(&mut self, project: &str) {
+        if self.project != project {
+            *self = Self {
+                project: project.to_owned(),
+                ..Default::default()
+            };
+        }
+    }
+    fn page_matches(&self, page: &Value, project: &Value) -> bool {
+        text(page, "projectId") == self.project
+            && revision(page) == revision(project)
+            && page["offset"].as_u64() == Some(self.offset)
+            && text(page, "query") == self.query
+            && text(page, "reasonCode") == "PROJECT_MEMORY_READ"
+    }
+    fn next_read(&mut self, project: &Value, page: &Value, busy: bool) -> Option<Command> {
+        if busy
+            || self.project.is_empty()
+            || revision(project) == 0
+            || (!self.refresh_requested && self.page_matches(page, project))
+        {
+            return None;
+        }
+        let same = self.requested.as_ref().is_some_and(|r| {
+            r.project == self.project
+                && r.revision == revision(project)
+                && r.offset == self.offset
+                && r.query == self.query
+        });
+        if same && !self.refresh_requested {
+            return None;
+        }
+        self.refresh_requested = false;
+        self.requested = Some(MemoryRequest {
+            project: self.project.clone(),
+            revision: revision(project),
+            offset: self.offset,
+            query: self.query.clone(),
+        });
+        Some(Command::new(
+            "project_memory_read",
+            json!({"projectId":self.project,"offset":self.offset,"limit":10,"query":self.query}),
+        ))
+    }
+    fn message_payload(&self, project: &Value) -> Result<Value, &'static str> {
+        if text(project, "projectId") != self.project || revision(project) == 0 {
+            return Err("Choose a current project before writing a message.");
+        }
+        required(
+            &self.title,
+            160,
+            "Add a message title of up to 160 characters.",
+        )?;
+        required(
+            &self.body,
+            50_000,
+            "Add source text of up to 50,000 characters.",
+        )?;
+        Ok(
+            json!({"projectId":self.project,"title":self.title.trim(),"text":self.body.trim(),"expectedProjectRevision":project["revision"]}),
+        )
+    }
+}
+
 #[derive(Default)]
 pub struct Console {
     tab: Tab,
+    new_project_name: String,
+    link_choices: HashMap<String, String>,
+    memory: MemoryDraft,
     project_name: String,
     project_path: String,
     work: WorkDraft,
@@ -195,6 +291,11 @@ pub struct Console {
 }
 
 impl Console {
+    #[cfg(feature = "ui-smoke")]
+    pub fn memory_smoke(&mut self) {
+        self.tab = Tab::Memory;
+    }
+
     pub fn show(&mut self, ui: &mut Ui, snapshot: &Value, busy: bool) -> Vec<Command> {
         ui.style_mut().animation_time = 0.0;
         ui.style_mut().scroll_animation = egui::style::ScrollAnimation::none();
@@ -227,7 +328,8 @@ impl Console {
                 ui.add_space(8.0);
                 for tab in Tab::ALL {
                     let count = match tab {
-                        Tab::Projects => items(&snapshot["workspaces"]).len(),
+                        Tab::Projects => array(&snapshot["projectMemory"]["projects"]).len(),
+                        Tab::Memory => 0,
                         Tab::Work => items(&snapshot["work"]).len(),
                         Tab::Teams => items(&snapshot["teams"]).len(),
                         _ => 0,
@@ -299,6 +401,7 @@ impl Console {
                         ui.set_max_width(ui.available_width().min(1040.0));
                         ui.add_enabled_ui(!busy, |ui| match self.tab {
                             Tab::Projects => self.projects(ui, snapshot, &mut commands),
+                            Tab::Memory => self.project_memory(ui, snapshot, &mut commands),
                             Tab::Work => self.work_panel(ui, snapshot, &mut commands),
                             Tab::Teams => self.teams(ui, snapshot, &mut commands),
                             Tab::Agents => self.agents(ui, snapshot, &mut commands),
@@ -311,129 +414,153 @@ impl Console {
     }
 
     fn projects(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
-        let workspaces = items(&snapshot["workspaces"]);
-        if workspaces.is_empty() {
+        let projects = array(&snapshot["projectMemory"]["projects"]);
+        if projects.is_empty() {
             ui.label(RichText::new("YOUR LOCAL WORKSPACE").size(10.0).color(MINT));
             ui.add_space(8.0);
             ui.label(
-                RichText::new("Add your first project")
+                RichText::new("Create your first project")
                     .size(28.0)
                     .strong()
                     .color(TEXT),
             );
             ui.add_space(8.0);
-            ui.label(
-                RichText::new("Connect a repository. Give your agents a place to work.")
-                    .size(13.0)
-                    .color(MUTED),
+            hint(
+                ui,
+                "Give your project a stable home for worktrees, tasks and local context.",
             );
-            ui.add_space(28.0);
-            if ui.available_width() >= 720.0 {
-                ui.columns(2, |columns| {
-                    self.project_form(&mut columns[0], commands);
-                    egui::Frame::new()
-                        .inner_margin(egui::Margin {
-                            left: 16,
-                            right: 0,
-                            top: 8,
-                            bottom: 0,
-                        })
-                        .show(&mut columns[1], onboarding);
-                });
-            } else {
-                self.project_form(ui, commands);
-                ui.add_space(20.0);
-                onboarding(ui);
-            }
-            ui.add_space(26.0);
-            ui.separator();
-            ui.add_space(18.0);
-            ui.label(RichText::new("YOUR PROVIDERS").size(10.0).color(MUTED));
-            ui.add_space(10.0);
-            ui.columns(3, |columns| {
-                for (index, (id, name)) in [
-                    ("codex", "Codex"),
-                    ("claude", "Claude Code"),
-                    ("gemini", "Gemini CLI"),
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    card(&mut columns[index], |ui| {
-                        ui.horizontal(|ui| {
-                            let (rect, _) = ui
-                                .allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
-                            draw_icon(ui.painter(), rect, Tab::Providers, MUTED);
-                            ui.label(RichText::new(name).size(12.0).strong().color(TEXT));
-                        });
-                        ui.add_space(9.0);
-                        let observation = array(&snapshot["observation"]["observations"])
-                            .iter()
-                            .find(|o| text(&o["provider"], "id") == id);
-                        status(
-                            ui,
-                            observation
-                                .map(|o| text(&o["provider"], "state"))
-                                .unwrap_or("Not checked"),
-                        );
-                    });
-                }
-            });
+            ui.add_space(24.0);
+            constrained(ui, 560.0, |ui| self.create_project_form(ui, commands));
         } else {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("REGISTERED PROJECTS").size(10.0).color(MUTED));
-                ui.label(
-                    RichText::new(workspaces.len().to_string())
-                        .size(11.0)
-                        .color(TEXT),
-                );
+            egui::CollapsingHeader::new("Create a project").show(ui, |ui| {
+                constrained(ui, 560.0, |ui| self.create_project_form(ui, commands))
             });
-            ui.add_space(10.0);
-            for workspace in workspaces {
-                ui.push_id(text(workspace,"workspaceId"),|ui|card(ui,|ui| {
-                ui.horizontal(|ui| {
-                    let (r,_) = ui.allocate_exact_size(egui::vec2(28.0,28.0),egui::Sense::hover());draw_icon(ui.painter(),r,Tab::Projects,MINT);
-                    ui.vertical(|ui| {ui.label(RichText::new(text(workspace,"displayName")).size(14.0).strong().color(TEXT));hint(ui,text(workspace,"workingDirectory"));});
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{action(ui,commands,"Unregister","workspace_remove",revision(workspace)>0,||json!({"workspaceId":workspace["workspaceId"],"expectedWorkspaceRevision":workspace["revision"]}));});
+            ui.add_space(14.0);
+            for project in projects {
+                ui.push_id(text(project,"projectId"),|ui|card(ui,|ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(text(project,"name")).size(16.0).strong().color(TEXT));
+                    status(ui,&format!("{} sources",project["sourceCount"].as_u64().unwrap_or(0)));
+                    if control(ui,"Open memory",true).clicked(){self.memory.select(text(project,"projectId"));self.tab=Tab::Memory;}
                 });
+                hint(ui,"Linked worktrees share this project's source context.");ui.add_space(10.0);
+                for id in array(&project["workspaceIds"]) {
+                    let workspace=items(&snapshot["workspaces"]).iter().find(|w|w["workspaceId"]==*id);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(workspace.map(|w|text(w,"displayName")).unwrap_or("Removed worktree"));
+                        action(ui,commands,"Unlink","project_unlink_workspace",revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":id,"expectedProjectRevision":project["revision"]}));
+                    });
+                    if let Some(workspace)=workspace {hint(ui,text(workspace,"workingDirectory"));}
+                }
+                let available:Vec<_>=items(&snapshot["workspaces"]).iter().filter(|w|!projects.iter().any(|p|array(&p["workspaceIds"]).contains(&w["workspaceId"]))).collect();
+                if available.is_empty(){hint(ui,"Register an unlinked worktree below to link it here.");}
+                else {
+                    let selected=self.link_choices.entry(text(project,"projectId").to_owned()).or_default();
+                    choose_refs(ui,"link-worktree","Link a registered worktree",selected,&available,("workspaceId","workingDirectory"),true);
+                    let workspace=available.iter().find(|w|text(w,"workspaceId")==selected);
+                    if let Some(workspace)=workspace {hint(ui,text(workspace,"workingDirectory"));}
+                    let exists=workspace.is_some();
+                    action(ui,commands,"Link worktree","project_link_workspace",exists&&revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":selected,"expectedProjectRevision":project["revision"]}));
+                }
+                ui.collapsing("Project identity",|ui|{ui.monospace(text(project,"projectId"));hint(ui,&format!("Revision {} · created {}",revision(project),format_time(text(project,"createdAt"))));});
             }));
-                ui.add_space(8.0);
+                ui.add_space(12.0);
             }
-            ui.add_space(16.0);
-            egui::CollapsingHeader::new("Add another project").show(ui, |ui| {
-                constrained(ui, 520.0, |ui| self.project_form(ui, commands))
-            });
         }
+        ui.add_space(22.0);
+        ui.separator();
+        ui.add_space(18.0);
+        ui.label(
+            RichText::new("REGISTERED WORKTREES")
+                .size(10.0)
+                .color(MUTED),
+        );
+        hint(ui,"Worktrees are execution folders. Unlinked worktrees remain usable for tasks and teams.");
+        ui.add_space(10.0);
+        for workspace in items(&snapshot["workspaces"]) {
+            ui.push_id(text(workspace,"workspaceId"),|ui|card(ui,|ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(text(workspace,"displayName")).size(13.0).strong().color(TEXT));
+                let project=projects.iter().find(|p|array(&p["workspaceIds"]).contains(&workspace["workspaceId"]));
+                status(ui,project.map(|p|text(p,"name")).unwrap_or("Unlinked"));
+                action(ui,commands,"Unregister","workspace_remove",revision(workspace)>0,||json!({"workspaceId":workspace["workspaceId"],"expectedWorkspaceRevision":workspace["revision"]}));
+            });
+            hint(ui,text(workspace,"workingDirectory"));
+        }));
+            ui.add_space(8.0);
+        }
+        egui::CollapsingHeader::new("Register a worktree")
+            .default_open(items(&snapshot["workspaces"]).is_empty())
+            .show(ui, |ui| {
+                constrained(ui, 560.0, |ui| self.project_form(ui, commands))
+            });
+    }
+
+    fn create_project_form(&mut self, ui: &mut Ui, commands: &mut Vec<Command>) {
+        card(ui, |ui| {
+            section_title(
+                ui,
+                "Project",
+                "A stable identity independent of repository paths.",
+            );
+            ui.add_space(14.0);
+            field_hint(
+                ui,
+                "Project name",
+                &mut self.new_project_name,
+                80,
+                "e.g. Patchfleet, Website, Mobile app",
+            );
+            if submit(ui, "Create project", "project_create") {
+                match required(
+                    &self.new_project_name,
+                    80,
+                    "Enter a project name of up to 80 characters.",
+                ) {
+                    Ok(()) => {
+                        commands.push(Command::new(
+                            "project_create",
+                            json!({"name":self.new_project_name.trim()}),
+                        ));
+                        self.form_error = None;
+                    }
+                    Err(error) => self.form_error = Some(error),
+                }
+            }
+            hint(ui,"Link worktrees after creating the project. Existing folders are not grouped automatically.");
+        });
     }
 
     fn project_form(&mut self, ui: &mut Ui, commands: &mut Vec<Command>) {
         card(ui, |ui| {
             section_title(
                 ui,
-                "Repository",
-                "An existing Git repository on this device.",
+                "Register worktree",
+                "An existing Git worktree used to execute tasks.",
             );
             ui.add_space(16.0);
             field_hint(
                 ui,
-                "Repository path",
+                "Worktree path",
                 &mut self.project_path,
                 4096,
                 "/absolute/path/to/repository",
             );
             field_hint(
                 ui,
-                "Project name · optional",
+                "Worktree label · optional",
                 &mut self.project_name,
                 160,
                 "e.g. Website, API, Mobile app",
             );
             ui.add_space(8.0);
-            if submit(ui, "Add project", "workspace_register") {
+            if submit(ui, "Register worktree", "workspace_register") {
                 if self.project_path.trim().is_empty() {
                     self.form_error = Some("Enter the absolute path of an existing Git worktree.");
                 } else if utf16_len(self.project_path.trim()) > 4096 {
-                    self.form_error = Some("The project path is too long.");
+                    self.form_error = Some("The worktree path is too long.");
+                } else if utf16_len(self.project_name.trim()) > 160 {
+                    self.form_error = Some("The worktree label is limited to 160 characters.");
                 } else {
                     commands.push(Command::new("workspace_register",json!({"workingDirectory":self.project_path.trim(),"displayName":self.project_name.trim()})));
                     self.form_error = None;
@@ -442,6 +569,241 @@ impl Console {
             ui.add_space(10.0);
             hint(ui, "Files stay where they are. Nothing is uploaded.");
         });
+    }
+
+    fn project_memory(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        let projects = array(&snapshot["projectMemory"]["projects"]);
+        if projects.is_empty() {
+            empty(
+                ui,
+                "Create a project first",
+                "Project memory keeps owner sources together across explicitly linked worktrees.",
+            );
+            return;
+        }
+        ui.horizontal_wrapped(|ui| {
+            status(ui, "Source context");
+            hint(
+                ui,
+                "ADR extraction comes next. These records are not accepted decisions.",
+            );
+        });
+        ui.add_space(16.0);
+        if self.memory.project.is_empty() && projects.len() == 1 {
+            self.memory.select(text(&projects[0], "projectId"));
+        }
+        let previous = self.memory.project.clone();
+        choose(
+            ui,
+            "memory-project",
+            "Project",
+            &mut self.memory.project,
+            projects,
+            ("projectId", "name"),
+            true,
+        );
+        if self.memory.project != previous {
+            let selected = self.memory.project.clone();
+            self.memory.project = previous;
+            self.memory.select(&selected);
+        }
+        let Some(project) = projects
+            .iter()
+            .find(|p| text(p, "projectId") == self.memory.project)
+        else {
+            hint(
+                ui,
+                "Choose a project to read or write its local source context.",
+            );
+            return;
+        };
+        let page = &snapshot["memoryPage"];
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Keyword filter").size(11.0).color(MUTED));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.memory.keyword_input)
+                    .desired_width(230.0)
+                    .font(egui::TextStyle::Body)
+                    .margin(egui::Margin::symmetric(10, 7))
+                    .char_limit(160)
+                    .hint_text("Words in source titles or text"),
+            );
+            if control(ui, "Apply keyword", true).clicked() {
+                if utf16_len(&self.memory.keyword_input) <= 160 {
+                    self.memory.query = self.memory.keyword_input.trim().to_owned();
+                    self.memory.offset = 0;
+                    self.memory.requested = None;
+                    self.memory.refresh_requested = true;
+                    self.form_error = None;
+                } else {
+                    self.form_error = Some("Keyword filter is limited to 160 characters.");
+                }
+            }
+            if control(ui, "Refresh memory", true).clicked() {
+                self.memory.requested = None;
+                self.memory.refresh_requested = true;
+            }
+        });
+        ui.add_space(18.0);
+        let page_current = self.memory.page_matches(page, project);
+        if let Some(edit) = self.memory.edit.as_mut() {
+            let current = page_current
+                && self.memory.project == edit.project
+                && text(project, "projectId") == edit.project
+                && page["projectId"] == edit.project
+                && revision(page) == revision(project)
+                && array(&page["sources"]).iter().any(|s| {
+                    text(s, "sourceId") == edit.source
+                        && text(s, "projectId") == edit.project
+                        && text(s, "kind") == "message"
+                        && revision(s) == edit.revision
+                });
+            let mut cancel = false;
+            constrained(ui, 700.0, |ui| {
+                card(ui, |ui| {
+                    section_title(
+                        ui,
+                        "Edit project message",
+                        "Captured task and team sources remain immutable.",
+                    );
+                    ui.add_space(12.0);
+                    field(ui, "Title", &mut edit.title, 160, false);
+                    multiline(ui, "Source text", &mut edit.body, 50_000, 4);
+                    let valid = current
+                        && required(&edit.title, 160, "").is_ok()
+                        && required(&edit.body, 50_000, "").is_ok();
+                    ui.horizontal(|ui| {
+                    action(ui,commands,"Save message","project_source_edit",valid,||json!({"projectId":edit.project,"sourceId":edit.source,"title":edit.title.trim(),"text":edit.body.trim(),"expectedSourceRevision":edit.revision}));
+                    if control(ui,"Cancel edit",true).clicked(){cancel=true;}
+                });
+                    if !current {
+                        hint(ui,"This source is no longer current on this page. Cancel and reopen it before saving.");
+                    }
+                })
+            });
+            if cancel {
+                self.memory.edit = None;
+            }
+        } else {
+            egui::CollapsingHeader::new("Write a project message").default_open(project["sourceCount"]==0).show(ui,|ui|constrained(ui,700.0,|ui|card(ui,|ui| {
+                field(ui,"Message title",&mut self.memory.title,160,false);multiline(ui,"Source text",&mut self.memory.body,50_000,4);
+                if submit(ui,"Add message","project_message"){match self.memory.message_payload(project){Ok(payload)=>{commands.push(Command::new("project_message",payload));self.form_error=None;},Err(error)=>self.form_error=Some(error)}}
+                hint(ui,"Owner-authored context stays local. Adding it does not accept an ADR.");
+            })));
+        }
+        ui.add_space(18.0);
+        if self.memory.page_matches(page, project) {
+            let total = page["total"].as_u64().unwrap_or(0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!(
+                    "{} sources{}",
+                    total,
+                    if self.memory.query.is_empty() {
+                        ""
+                    } else {
+                        " matching keyword"
+                    }
+                ));
+                if control(ui, "Previous sources", self.memory.offset > 0).clicked() {
+                    self.memory.offset = self.memory.offset.saturating_sub(10);
+                    self.memory.requested = None;
+                }
+                ui.label(format!("Page {}", self.memory.offset / 10 + 1));
+                if control(
+                    ui,
+                    "Next sources",
+                    self.memory.offset.saturating_add(10) < total,
+                )
+                .clicked()
+                {
+                    self.memory.offset = self.memory.offset.saturating_add(10);
+                    self.memory.requested = None;
+                }
+            });
+            ui.add_space(10.0);
+            if self.memory.page_matches(page, project) && array(&page["sources"]).is_empty() {
+                empty(
+                    ui,
+                    if self.memory.query.is_empty() {
+                        "No sources yet"
+                    } else {
+                        "No keyword matches"
+                    },
+                    "Write a project message or submit work through a linked worktree.",
+                );
+            }
+            for source in
+                array(&page["sources"])
+                    .iter()
+                    .take(if self.memory.page_matches(page, project) {
+                        10
+                    } else {
+                        0
+                    })
+            {
+                ui.push_id(text(source, "sourceId"), |ui| {
+                    card(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(
+                                RichText::new(text(source, "title"))
+                                    .size(14.0)
+                                    .strong()
+                                    .color(TEXT),
+                            );
+                            status(ui, source_kind_label(text(source, "kind")));
+                            hint(ui, &format!("Revision {}", revision(source)));
+                        });
+                        let preview: String = text(source, "text").chars().take(240).collect();
+                        ui.label(preview);
+                        ui.collapsing("Full source and provenance", |ui| {
+                            ui.label(text(source, "text"));
+                            ui.separator();
+                            ui.monospace(text(source, "sourceId"));
+                            hint(
+                                ui,
+                                &format!(
+                                    "Author {} · updated {}",
+                                    text(source, "actorId"),
+                                    format_time(text(source, "updatedAt"))
+                                ),
+                            );
+                            hint(
+                                ui,
+                                &format!(
+                                    "Origin {} · {} · {}",
+                                    text(&source["origin"], "type"),
+                                    text(&source["origin"], "id"),
+                                    text(&source["origin"], "eventId")
+                                ),
+                            );
+                        });
+                        if text(source, "kind") == "message"
+                            && text(source, "projectId") == self.memory.project
+                        {
+                            if control(ui, "Edit message", true).clicked() {
+                                self.memory.edit = Some(SourceEdit {
+                                    project: self.memory.project.clone(),
+                                    source: text(source, "sourceId").to_owned(),
+                                    revision: revision(source),
+                                    title: text(source, "title").to_owned(),
+                                    body: text(source, "text").to_owned(),
+                                });
+                            }
+                        } else {
+                            hint(ui, "Captured source · read only");
+                        }
+                    })
+                });
+                ui.add_space(10.0);
+            }
+        } else {
+            hint(ui,"The current source page is unavailable. Use Refresh memory to retry a failed read.");
+        }
+        if commands.is_empty() {
+            if let Some(command) = self.memory.next_read(project, page, !ui.is_enabled()) {
+                commands.push(command);
+            }
+        }
     }
 
     fn work_panel(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -516,7 +878,7 @@ impl Console {
             ui.push_id(text(item,"workItemId"), |ui| card(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {ui.strong(text(item,"title"));status(ui,text(item,"status"));});
                 let workspace = items(&snapshot["workspaces"]).iter().find(|w| w["workingDirectory"]==item["workingDirectory"]);
-                hint(ui,workspace.map(|w|text(w,"displayName")).unwrap_or("Unregistered local project"));
+                hint(ui,workspace.map(|w|text(w,"displayName")).unwrap_or("Unregistered worktree"));
                 let run = array(&work["runs"]).iter().rev().find(|r|r["workItemId"]==item["workItemId"]);
                 ui.collapsing("Local task details",|ui| {ui.monospace(text(item,"workingDirectory"));ui.label(text(item,"instruction"));if let Some(run)=run {ui.monospace(format!("Run {} · turn {}",text(run,"runId"),text(run,"providerTurnId")));}});
                 ui.add_space(8.0);
@@ -1068,10 +1430,10 @@ fn choose_workspace(ui: &mut Ui, id: &str, selected: &mut String, snapshot: &Val
     choose(
         ui,
         id,
-        "Local project",
+        "Registered worktree",
         selected,
         items(&snapshot["workspaces"]),
-        ("workspaceId", "displayName"),
+        ("workspaceId", "workingDirectory"),
         true,
     );
 }
@@ -1109,6 +1471,7 @@ fn choose_refs(
         });
     egui::ComboBox::from_id_salt(egui::Id::new(id))
         .selected_text(current)
+        .truncate()
         .width(ui.available_width().min(600.0))
         .show_ui(ui, |ui| {
             if empty {
@@ -1123,6 +1486,17 @@ fn choose_refs(
             }
         });
     ui.add_space(8.0);
+}
+fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
+    let response = ui.add_enabled(enabled, egui::Button::new(label));
+    #[cfg(test)]
+    ui.data_mut(|data| {
+        data.insert_temp(
+            egui::Id::new(("test-action", "memory_control", label)),
+            response.rect,
+        )
+    });
+    response
 }
 fn submit(ui: &mut Ui, label: &str, action: &str) -> bool {
     let response = ui.add(
@@ -1193,43 +1567,14 @@ fn field_hint(ui: &mut Ui, label: &str, value: &mut String, max: usize, placehol
     );
     ui.add_space(12.0);
 }
-fn onboarding(ui: &mut Ui) {
-    ui.label(
-        RichText::new("A workspace that grows with you")
-            .size(16.0)
-            .strong()
-            .color(TEXT),
-    );
-    ui.add_space(18.0);
-    for (tab, title, copy) in [
-        (
-            Tab::Projects,
-            "Connect a repository",
-            "Point Patchfleet at an existing Git worktree.",
-        ),
-        (
-            Tab::Work,
-            "Run a focused task",
-            "Give Codex one clear outcome, then start when ready.",
-        ),
-        (
-            Tab::Teams,
-            "Bring your agents together",
-            "Choose roles, set limits, and keep decisions in your hands.",
-        ),
-    ] {
-        ui.horizontal_top(|ui| {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
-            ui.painter()
-                .rect_filled(rect, 6, Color32::from_rgb(28, 35, 40));
-            draw_icon(ui.painter(), rect.shrink(4.0), tab, MINT);
-            ui.vertical(|ui| {
-                ui.label(RichText::new(title).size(12.0).strong().color(TEXT));
-                ui.add_space(3.0);
-                hint(ui, copy);
-            });
-        });
-        ui.add_space(18.0);
+fn source_kind_label(kind: &str) -> &'static str {
+    match kind {
+        "message" => "Project message",
+        "work_instruction" => "Task instruction",
+        "team_goal" => "Team goal",
+        "owner_answer" => "Owner answer",
+        "approval_note" => "Approval note",
+        _ => "Source context",
     }
 }
 fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize) -> bool {
@@ -1303,6 +1648,17 @@ fn draw_icon(painter: &egui::Painter, rect: egui::Rect, tab: Tab, color: Color32
             line((2.0, 8.0), (2.0, 5.0));
             line((2.0, 5.0), (9.0, 5.0));
             line((9.0, 5.0), (12.0, 8.0));
+        }
+        Tab::Memory => {
+            painter.rect_stroke(
+                egui::Rect::from_min_max(p(4.0, 3.0), p(20.0, 21.0)),
+                2,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            line((8.0, 8.0), (16.0, 8.0));
+            line((8.0, 12.0), (16.0, 12.0));
+            line((8.0, 16.0), (13.0, 16.0));
         }
         Tab::Work => {
             painter.rect_stroke(
@@ -1378,6 +1734,7 @@ mod tests {
             "work":{"items":[{"workItemId":"work:fixture","title":"Fixture task","instruction":"Bounded fixture","workingDirectory":"/tmp/fixture","status":"queued","revision":7}],"runs":[],"receipts":[]},
             "packs":[{"id":"pack:orchestrator","name":"Orchestrator","role":"orchestrator","provenance":{"kind":"built-in"}}, {"id":"pack:qa","name":"QA Engineer","role":"qa","provenance":{"kind":"built-in"}}],
             "templates":[{"id":"product-feature","name":"Product feature"}],"teams":{"items":[]},"cloud":{"paired":false},
+            "projectMemory":{"schemaVersion":3,"revision":0,"projects":[]},"memoryPage":null,
             "observation":{"observations":[{"provider":{"id":"codex","displayName":"Codex","state":"available","version":"0.144.1","capabilities":{"recentObservation":true,"explicitLiveStatus":true}},"sessions":[]}]}})
     }
     fn render(
@@ -1521,7 +1878,7 @@ mod tests {
             &fresh,
             false,
             "workspace_register",
-            "Add project",
+            "Register worktree",
         );
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].action, "workspace_register");
@@ -1634,5 +1991,351 @@ mod tests {
         assert!(ctx.data(|d| d.get_temp::<Rect>(pair_id)).is_none());
         let reset_id = egui::Id::new(("test-action", "cloud_unpair", "Reset Cloud connection"));
         assert!(ctx.data(|d| d.get_temp::<Rect>(reset_id)).is_none());
+    }
+    fn memory_snapshot() -> Value {
+        let mut snapshot = snapshot();
+        snapshot["projectMemory"] = json!({"schemaVersion":3,"revision":9,"projects":[{"projectId":"project:fixture","name":"Billing sandbox","revision":9,"workspaceIds":[],"sourceCount":0}]});
+        snapshot["memoryPage"] = json!({"reasonCode":"PROJECT_MEMORY_READ","projectId":"project:fixture","revision":9,"offset":0,"query":"","total":0,"sources":[]});
+        snapshot
+    }
+
+    #[test]
+    fn stable_project_create_and_explicit_link_unlink_preserve_target_revision() {
+        let ctx = egui::Context::default();
+        let mut console = Console {
+            new_project_name: "Stable project".into(),
+            ..Default::default()
+        };
+        let command = click(
+            &ctx,
+            &mut console,
+            &snapshot(),
+            false,
+            "project_create",
+            "Create project",
+        );
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].action, "project_create");
+        assert_eq!(command[0].payload["name"], "Stable project");
+        let mut data = memory_snapshot();
+        console
+            .link_choices
+            .insert("project:fixture".into(), "workspace:fixture".into());
+        let command = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_link_workspace",
+            "Link worktree",
+        );
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].payload["workspaceId"], "workspace:fixture");
+        assert_eq!(command[0].payload["expectedProjectRevision"], 9);
+        data["projectMemory"]["projects"][0]["workspaceIds"] = json!(["workspace:fixture"]);
+        let command = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_unlink_workspace",
+            "Unlink",
+        );
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].payload["expectedProjectRevision"], 9);
+    }
+
+    #[test]
+    fn memory_message_and_message_edit_clicks_use_scoped_current_revisions() {
+        let ctx = egui::Context::default();
+        let mut console = Console {
+            tab: Tab::Memory,
+            ..Default::default()
+        };
+        let mut data = memory_snapshot();
+        console.memory.select("project:fixture");
+        console.memory.title = "Owner message".into();
+        console.memory.body = "Local source context".into();
+        let command = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_message",
+            "Add message",
+        );
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].action, "project_message");
+        assert_eq!(command[0].payload["projectId"], "project:fixture");
+        assert_eq!(command[0].payload["expectedProjectRevision"], 9);
+        data["projectMemory"]["projects"][0]["sourceCount"] = json!(1);
+        data["memoryPage"]["sources"] = json!([{"sourceId":"source:fixture","projectId":"project:fixture","kind":"message","title":"Owner message","text":"Local source context","revision":3,"actorId":"local-owner","origin":{"type":"message","id":"cmd:fixture","eventId":"event:fixture"}}]);
+        data["memoryPage"]["total"] = json!(1);
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Edit message"
+        )
+        .is_empty());
+        console.memory.edit.as_mut().unwrap().body = "Revised context".into();
+        let command = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_source_edit",
+            "Save message",
+        );
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].payload["expectedSourceRevision"], 3);
+        assert_eq!(command[0].payload["text"], "Revised context");
+        data["memoryPage"]["sources"][0]["revision"] = json!(4);
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_source_edit",
+            "Save message"
+        )
+        .is_empty());
+        data["memoryPage"]["sources"][0]["revision"] = json!(3);
+        data["memoryPage"]["sources"][0]["kind"] = json!("work_instruction");
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_source_edit",
+            "Save message"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn memory_reader_does_not_spin_on_failure_and_busy_does_not_consume_request() {
+        let project = json!({"projectId":"project:fixture","revision":9});
+        let mut memory = MemoryDraft::default();
+        memory.select("project:fixture");
+        assert!(memory.next_read(&project, &Value::Null, true).is_none());
+        assert!(memory.requested.is_none());
+        let first = memory.next_read(&project, &Value::Null, false).unwrap();
+        assert_eq!(first.payload["limit"], 10);
+        assert!(memory.next_read(&project, &Value::Null, false).is_none());
+        memory.refresh_requested = true;
+        assert!(memory.next_read(&project, &Value::Null, false).is_some());
+        let changed = json!({"projectId":"project:fixture","revision":10});
+        assert!(memory.next_read(&changed, &Value::Null, false).is_some());
+        memory.edit = Some(SourceEdit {
+            project: "project:fixture".into(),
+            source: "source:fixture".into(),
+            revision: 1,
+            title: "Private title".into(),
+            body: "Old project draft".into(),
+        });
+        memory.select("project:other");
+        assert!(memory.edit.is_none());
+        assert!(memory.title.is_empty());
+        assert!(memory.query.is_empty());
+        assert!(memory.requested.is_none());
+    }
+
+    #[test]
+    fn keyword_filter_and_page_controls_emit_bounded_reads_and_hide_stale_pages() {
+        let ctx = egui::Context::default();
+        let mut console = Console {
+            tab: Tab::Memory,
+            ..Default::default()
+        };
+        let mut data = memory_snapshot();
+        console.memory.select("project:fixture");
+        console.memory.keyword_input = "billing".into();
+        let command = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Apply keyword",
+        );
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].action, "project_memory_read");
+        assert_eq!(command[0].payload["query"], "billing");
+        assert_eq!(command[0].payload["offset"], 0);
+        assert!(!console
+            .memory
+            .page_matches(&data["memoryPage"], &data["projectMemory"]["projects"][0]));
+        data["memoryPage"]["query"] = json!("billing");
+        data["memoryPage"]["total"] = json!(25);
+        let command = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Next sources",
+        );
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].payload["offset"], 10);
+        assert_eq!(command[0].payload["limit"], 10);
+        data["memoryPage"]["offset"] = json!(10);
+        let command = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Previous sources",
+        );
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].payload["offset"], 0);
+    }
+
+    #[test]
+    fn opening_other_project_drops_edit_and_reads_its_scope_once_then_refresh_retries() {
+        let ctx = egui::Context::default();
+        let mut console = Console::default();
+        let mut data = memory_snapshot();
+        data["projectMemory"]["projects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "projectId":"project:other","name":"Other project","revision":4,
+                "workspaceIds":[],"sourceCount":2
+            }));
+        console.memory.select("project:fixture");
+        console.memory.title = "Old draft".into();
+        console.memory.edit = Some(SourceEdit {
+            project: "project:fixture".into(),
+            source: "source:fixture".into(),
+            revision: 3,
+            title: "Old title".into(),
+            body: "Old text".into(),
+        });
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Open memory"
+        )
+        .is_empty());
+        assert!(console.tab == Tab::Memory);
+        assert_eq!(console.memory.project, "project:other");
+        assert!(console.memory.edit.is_none());
+        assert!(console.memory.title.is_empty());
+        let command = render(&ctx, &mut console, &data, false, vec![]).0;
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].action, "project_memory_read");
+        assert_eq!(command[0].payload["projectId"], "project:other");
+        assert_eq!(command[0].payload["offset"], 0);
+        assert_eq!(command[0].payload["limit"], 10);
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        let retry = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Refresh memory",
+        );
+        assert_eq!(retry.len(), 1);
+        assert_eq!(retry[0].payload["projectId"], "project:other");
+        data["memoryPage"] = json!({"reasonCode":"PROJECT_MEMORY_READ","projectId":"project:other","revision":4,"offset":0,"query":"","total":0,"sources":[]});
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        let refresh = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Refresh memory",
+        );
+        assert_eq!(
+            refresh.len(),
+            1,
+            "a valid cached page can be refreshed explicitly"
+        );
+    }
+
+    #[test]
+    fn preloaded_memory_page_renders_without_read_and_stale_query_disables_edit() {
+        let ctx = egui::Context::default();
+        let mut console = Console {
+            tab: Tab::Memory,
+            ..Default::default()
+        };
+        let mut data = memory_snapshot();
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert_eq!(console.memory.project, "project:fixture");
+        data["memoryPage"]["sources"] = json!([{"sourceId":"source:fixture","projectId":"project:fixture","kind":"message","title":"Message","text":"Context","revision":3}]);
+        console.memory.edit = Some(SourceEdit {
+            project: "project:fixture".into(),
+            source: "source:fixture".into(),
+            revision: 3,
+            title: "Message".into(),
+            body: "Updated context".into(),
+        });
+        console.memory.query = "other keyword".into();
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_source_edit",
+            "Save message",
+        );
+        assert!(!commands.iter().any(|c| c.action == "project_source_edit"));
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Cancel edit"
+        )
+        .is_empty());
+        assert!(console.memory.edit.is_none());
+    }
+
+    #[test]
+    fn memory_filter_controls_fit_the_minimum_native_window() {
+        let ctx = egui::Context::default();
+        let mut console = Console {
+            tab: Tab::Memory,
+            ..Default::default()
+        };
+        let data = memory_snapshot();
+        let screen = Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 560.0));
+        let output = ctx.run_ui(
+            RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| {
+                assert!(console.show(ui, &data, false).is_empty());
+            },
+        );
+        output.drop_without_applying_deltas();
+        for label in ["Apply keyword", "Refresh memory"] {
+            let rect: Rect = ctx.data(|d| {
+                d.get_temp(egui::Id::new(("test-action", "memory_control", label)))
+                    .unwrap()
+            });
+            assert!(
+                screen.contains_rect(rect),
+                "{label} must stay reachable in the minimum window"
+            );
+        }
     }
 }

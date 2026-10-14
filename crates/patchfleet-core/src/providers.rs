@@ -926,33 +926,149 @@ impl Controller {
     }
 }
 pub async fn validate_workspace(value: &str) -> Result<String> {
+    validate_workspace_for_registration(value)
+        .await
+        .map_err(|_| "WORKSPACE_NOT_ALLOWED".into())
+}
+
+/// Local setup diagnostics never enter the provider-control receipt contract.
+pub async fn validate_workspace_for_registration(value: &str) -> Result<String> {
     if value.is_empty()
         || value.len() > 4096
         || value.contains('\0')
         || !Path::new(value).is_absolute()
     {
-        return Err("WORKSPACE_NOT_ALLOWED".into());
+        return Err("WORKSPACE_PATH_INVALID".into());
     }
-    let p = tokio::fs::canonicalize(value)
+    let value = value.to_owned();
+    tokio::task::spawn_blocking(move || validate_registration_directory(&value))
         .await
-        .map_err(|_| "WORKSPACE_NOT_ALLOWED")?;
-    let meta = tokio::fs::metadata(&p)
-        .await
-        .map_err(|_| "WORKSPACE_NOT_ALLOWED")?;
+        .map_err(|_| "WORKSPACE_UNAVAILABLE")?
+}
+
+fn workspace_io_code(error: &std::io::Error, writing: bool) -> &'static str {
+    use std::io::ErrorKind;
+    #[cfg(unix)]
+    if error.raw_os_error() == Some(libc::EPERM) {
+        return "WORKSPACE_ACCESS_DENIED";
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{ERROR_PRIVILEGE_NOT_HELD, ERROR_WRITE_PROTECT};
+        if error.raw_os_error() == Some(ERROR_PRIVILEGE_NOT_HELD as i32) {
+            return "WORKSPACE_ACCESS_DENIED";
+        }
+        if error.raw_os_error() == Some(ERROR_WRITE_PROTECT as i32) {
+            return "WORKSPACE_READ_ONLY";
+        }
+    }
+    match error.kind() {
+        ErrorKind::NotFound => "WORKSPACE_FOLDER_NOT_FOUND",
+        ErrorKind::NotADirectory => "WORKSPACE_NOT_DIRECTORY",
+        ErrorKind::PermissionDenied if writing => "WORKSPACE_READ_ONLY",
+        ErrorKind::PermissionDenied => "WORKSPACE_ACCESS_DENIED",
+        ErrorKind::ReadOnlyFilesystem => "WORKSPACE_READ_ONLY",
+        ErrorKind::InvalidInput | ErrorKind::InvalidData | ErrorKind::InvalidFilename => {
+            "WORKSPACE_PATH_INVALID"
+        }
+        _ => "WORKSPACE_UNAVAILABLE",
+    }
+}
+
+fn validate_registration_directory(value: &str) -> Result<String> {
+    let p = std::fs::canonicalize(value).map_err(|e| workspace_io_code(&e, false))?;
+    let canonical = p
+        .to_str()
+        .filter(|s| s.len() <= 4096)
+        .ok_or("WORKSPACE_PATH_INVALID")?;
+    let meta = std::fs::metadata(&p).map_err(|e| workspace_io_code(&e, false))?;
+    if !meta.is_dir() {
+        return Err("WORKSPACE_NOT_DIRECTORY".into());
+    }
     let home =
         std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
-    if !meta.is_dir()
-        || p.parent().is_none()
-        || home.is_some_and(|h| std::fs::canonicalize(h).is_ok_and(|h| h == p))
-        || !tokio::fs::metadata(p.join(".git"))
-            .await
-            .is_ok_and(|m| m.is_dir() || m.is_file())
+    if p.parent().is_none() || home.is_some_and(|h| std::fs::canonicalize(h).is_ok_and(|h| h == p))
     {
-        return Err("WORKSPACE_NOT_ALLOWED".into());
+        return Err("WORKSPACE_UNSAFE_ROOT".into());
     }
-    p.to_str()
-        .map(str::to_string)
-        .ok_or("WORKSPACE_NOT_ALLOWED".into())
+    let git = std::fs::metadata(p.join(".git")).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            "WORKSPACE_NOT_GIT_ROOT"
+        } else {
+            workspace_io_code(&e, false)
+        }
+    })?;
+    if !git.is_dir() && !git.is_file() {
+        return Err("WORKSPACE_NOT_GIT_ROOT".into());
+    }
+    let mut entries = std::fs::read_dir(&p).map_err(|e| workspace_io_code(&e, false))?;
+    if let Some(entry) = entries.next() {
+        entry.map_err(|e| workspace_io_code(&e, false))?;
+    }
+    workspace_access(&p, false).map_err(|e| workspace_io_code(&e, false))?;
+    workspace_access(&p, true).map_err(|e| workspace_io_code(&e, true))?;
+    Ok(canonical.to_owned())
+}
+
+#[cfg(unix)]
+fn workspace_access(path: &Path, writing: bool) -> std::io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let path = CString::new(path.as_os_str().as_bytes())?;
+    let mode = if writing {
+        libc::W_OK
+    } else {
+        libc::R_OK | libc::X_OK
+    };
+    // Effective credentials and filesystem ACLs matter; mode bits alone do not.
+    if unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), mode, libc::AT_EACCESS) } == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(windows)]
+fn workspace_access(path: &Path, writing: bool) -> std::io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY,
+        FILE_TRAVERSE,
+    };
+    let access = if writing {
+        FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY
+    } else {
+        FILE_LIST_DIRECTORY | FILE_TRAVERSE
+    };
+    std::fs::OpenOptions::new()
+        .access_mode(access)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .map(|_| ())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn workspace_access(_path: &Path, _writing: bool) -> std::io::Result<()> {
+    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+}
+
+#[cfg(all(test, unix))]
+#[test]
+fn workspace_policy_denials_stay_distinct_from_read_only_access() {
+    let denied = std::io::Error::from_raw_os_error(libc::EACCES);
+    assert_eq!(workspace_io_code(&denied, false), "WORKSPACE_ACCESS_DENIED");
+    assert_eq!(workspace_io_code(&denied, true), "WORKSPACE_READ_ONLY");
+    assert_eq!(
+        workspace_io_code(&std::io::Error::from_raw_os_error(libc::EPERM), true),
+        "WORKSPACE_ACCESS_DENIED"
+    );
+    assert_eq!(
+        workspace_io_code(&std::io::Error::from_raw_os_error(libc::EROFS), true),
+        "WORKSPACE_READ_ONLY"
+    );
+    assert_eq!(
+        workspace_io_code(&std::io::Error::other("private detail"), false),
+        "WORKSPACE_UNAVAILABLE"
+    );
 }
 
 /// Strip the opt-in native hook payload to the five-field lifecycle contract.

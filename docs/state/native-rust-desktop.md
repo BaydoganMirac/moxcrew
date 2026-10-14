@@ -50,7 +50,7 @@ Unpaired Cloud returns before copying projections and canonical history.
 
 ## Current evidence
 
-- Rust workspace: 95 tests pass, including 30 native command/bridge/UI/localization
+- Rust workspace: 96 tests pass, including 31 native command/bridge/UI/localization
   tests. One manual large-log timing probe remains outside the ordinary suite.
 - UI checks paint all sections with empty/populated snapshots and exercise
   registration, work revisions, busy/capability controls, owner decisions,
@@ -103,10 +103,10 @@ Unpaired Cloud returns before copying projections and canonical history.
 - `dist/native/Patchfleet.app` contains the production binary, without test-only
   screenshot/timed-close features. Version is 0.5.1 and the bundle identifier
   remains `com.patchfleet.desktop`.
-- `dist/native/Patchfleet_0.5.1_aarch64.dmg` is 6,055,128 bytes (about 5.77 MiB).
-  SHA-256: `b5046a0585a0c048548e5887150001fdf29740fa9c037c4041accf0c045d4134`.
+- `dist/native/Patchfleet_0.5.1_aarch64.dmg` is 6,056,199 bytes (about 5.78 MiB).
+  SHA-256: `ca89f61955f5c2b41952479bfbf18c7ab192f134802c733a60bc22975f5a372b`.
 - The signed executable is 11,670,480 bytes, SHA-256
-  `b88af06dbd297a694669977e8100cd0ccfadaea31362ca910d5280ca9eae7fa5`.
+  `3929d77901674e7f4df5c5d4e576315b26ade8585903c5dbd099dde163c0cb40`.
   Its linked frameworks are native system
   graphics/window libraries; WebKit is absent.
 - DMG integrity, App ad hoc signature, all five folder-access purpose keys and

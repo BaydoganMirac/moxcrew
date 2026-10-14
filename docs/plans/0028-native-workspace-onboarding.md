@@ -51,7 +51,7 @@ No installed application replacement, owner-state migration, push/publication.
 
 - Core builder commits `ce7dd0f` and `7381a90` preserve V1 runtime error meaning
   while adding detailed registration access checks and stable canonical retries.
-- 95 Rust tests and 149 legacy contract tests pass; strict workspace Clippy and
+- 96 Rust tests and 149 legacy contract tests pass; strict workspace Clippy and
   formatting pass. No event schema, source capture or Cloud field changed.
 - Actual macOS folder-sheet opening and normal close with the sheet open pass.
   A disposable Git repository at mode 0500 produces the localized read-only

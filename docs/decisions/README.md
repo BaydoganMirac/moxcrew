@@ -25,3 +25,6 @@ supersedes the old one.
 | [0018](0018-support-node-22-and-24-for-the-public-beta.md) | Accepted | Support Node 22 and verify Node 24 compatibility |
 | [0019](0019-declarative-packs-and-local-team-orchestration.md) | Accepted | Use declarative local agent packs and a bounded local team orchestrator |
 | [0020](0020-capability-negotiated-team-protocol-v2.md) | Accepted | Add capability-negotiated sanitized Cloud team supervision |
+| [0021](0021-project-scoped-local-decision-memory.md) | Accepted product contract | Project-scoped local memory with sourced ADR drafts and explicit owner acceptance |
+| [0022](0022-rust-local-host-with-a-web-ui.md) | Proposed | Evaluate a Rust local host while retaining the web UI and Cloud stack |
+| [0023](0023-rust-tauri-desktop-runtime.md) | Accepted | Rust host and Tauri desktop supersede earlier Node deployment assumptions |

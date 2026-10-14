@@ -9,25 +9,29 @@ import test from "node:test";
 const exec = promisify(execFile);
 const cli = join(process.cwd(), "bin", "patchfleet.mjs");
 
-test("package metadata exposes the supported Node CLI release surface", async () => {
+test("desktop package retires the Node CLI release surface", async () => {
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
-  assert.equal(packageJson.private, undefined);
-  assert.equal(packageJson.bin.patchfleet, "bin/patchfleet.mjs");
-  assert.equal(packageJson.engines.node, ">=22.0.0");
+  assert.equal(packageJson.private, true);
+  assert.equal(packageJson.bin, undefined);
+  assert.equal(packageJson.publishConfig, undefined);
+  assert.equal(packageJson.scripts.prepack, undefined);
+  assert.equal(packageJson.engines.node, ">=22.18.0");
   assert.equal(packageJson.repository.url, "git+https://github.com/BaydoganMirac/patchfleet.git");
-  assert.equal(packageJson.publishConfig.access, "public");
   assert.equal(packageJson.homepage, "https://github.com/BaydoganMirac/patchfleet#readme");
   assert.equal(packageJson.bugs, "https://github.com/BaydoganMirac/patchfleet/issues");
-  assert.equal(packageJson.dependencies.next, "15.5.19");
-  assert.equal(packageJson.scripts.prepack, "npm run build");
-  assert.match(packageJson.scripts.build, /sanitize-package/);
-  assert.doesNotMatch(packageJson.scripts.build, /--turbopack/, "production start needs the complete Next routes manifest");
-  assert(packageJson.files.includes(".next"));
-  assert.equal(packageJson.files.includes("tests"), false);
-  const publishWorkflow = await readFile(".github/workflows/publish.yml", "utf8");
-  assert.match(publishWorkflow, /id-token: write/);
-  assert.match(publishWorkflow, /npm@11\.5\.1/);
-  assert.match(publishWorkflow, /npm publish --access public --tag beta/);
+  assert.equal(packageJson.dependencies.next, undefined);
+  assert.equal(packageJson.devDependencies.next, "15.5.19");
+  assert.equal(packageJson.scripts["desktop:build"], "tauri build");
+  assert.equal(packageJson.scripts.start, "tauri dev");
+  assert.match(packageJson.scripts.build, /vite build/);
+  assert.doesNotMatch(packageJson.scripts.build, /next|sanitize-package/);
+  assert.match(packageJson.scripts["legacy:build"], /next build/);
+  await assert.rejects(readFile(".github/workflows/publish.yml"), { code: "ENOENT" });
+  const desktopWorkflow = await readFile(".github/workflows/desktop.yml", "utf8");
+  for (const target of ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]) {
+    assert(desktopWorkflow.includes(target));
+  }
+  assert.doesNotMatch(desktopWorkflow, /id-token: write|npm publish|gh release/);
 });
 
 test("CLI help, diagnostics, stopped status, stale metadata cleanup, and empty recovery are safe", async () => {

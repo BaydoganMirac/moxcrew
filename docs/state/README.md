@@ -16,6 +16,8 @@
 | V0 publishable Local beta | Done | 2026-07-17 | [v0-local-beta.md](v0-local-beta.md) |
 | External beta activation | In progress | 2026-07-17 | [external-beta-activation.md](external-beta-activation.md) |
 | Agent packs and teams | Done | 2026-07-20 | [agent-teams.md](agent-teams.md) |
+| Project memory and automatic ADR drafts | Planned | 2026-10-14 | [project-memory.md](project-memory.md) |
+| Rust and Tauri desktop | Implemented; native release checks pending | 2026-10-14 | [rust-desktop.md](rust-desktop.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.
@@ -28,6 +30,10 @@ changing the Cloud protocol.
 External beta release preparation is locally verified. Publication, hosted
 release, live receipt proof, and moderated-user evidence remain explicit
 release gates rather than being recorded as completed work.
+
+The 0.3 Rust/Tauri desktop supersedes the Node deployment described by the
+historical V0/beta records above. Its state file records current native artifacts
+and remaining platform release checks. Project memory is the next product slice.
 
 State files are resumable handoffs. Update the relevant file whenever a work
 session changes implementation status, blockers, decisions, or next steps.

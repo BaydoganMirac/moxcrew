@@ -1,70 +1,38 @@
-# Public beta release
+# Desktop release
 
-This runbook prepares the public npm package. Publishing, pushing a branch, or
-changing registry settings always requires explicit owner action.
+The 0.3 source package builds a Rust/Tauri desktop application. npm publishing
+is retired; the old publish workflow was removed and package.json is private.
+Publishing installers, pushing a branch, signing and deploying Cloud remain
+explicit owner release actions.
 
-## Before the first release
+## Verify a reviewed version
 
-1. Restore `main` on `github.com/BaydoganMirac/patchfleet` and require the CI
-   job before merge. Do not force-push over an unknown remote history.
-2. Verify that `patchfleet` is still unclaimed on npm.
-3. Run the Node 22 macOS, Windows, and Linux jobs plus Linux Node 24.
-4. From a clean review commit run:
+1. Run frontend tests/build, Rust workspace tests, Clippy and formatting checks.
+2. Run `.github/workflows/desktop.yml` on the reviewed commit. Inspect native
+   macOS ARM64/Intel, Windows x64 and Linux x64/ARM64 checks and installers.
+3. Exercise startup, a fresh data directory, workspace/work/team flows, provider
+   loss/cancel, normal exit and offline-copy migration on each advertised OS.
+4. Verify the sanitized Cloud boundary using test fixtures and an approved
+   staging pairing. Test signing/installer behavior independently of model access.
+5. Preserve installer checksums and a pre-migration data backup. Do not claim an
+   unrun platform or an ad hoc signature as a verified signed public release.
 
-   ```sh
-   npm ci
-   npm test
-   npm run build
-   npm run test:package
-   npm publish --dry-run --access public --tag beta
-   ```
+## Artifacts and signing
 
-Review the dry-run file list and reject any credential, environment file,
-machine path, test fixture, private Cloud document, or unexpected build output.
+macOS produces application/DMG, Windows NSIS/MSI, and Linux Deb/AppImage outputs.
+CI uploads development artifacts inside tar archives so executable permissions
+survive download. The workflow does not publish a GitHub release or use secrets.
 
-## First-package bootstrap
+macOS public distribution needs Developer ID signing and notarization; Windows
+publisher signing needs its own owner credentials. Keep those secrets out of
+source and local model context. No signing credential is configured here.
 
-npm requires a package to exist before a trusted publisher can be attached.
-Because `patchfleet` is currently unclaimed, the owner must create its first
-beta version interactively with npm account 2FA after a separate release
-approval:
+## Rollback
 
-```sh
-npm publish --access public --tag beta
-```
+Close the application and restore a compatible version plus its verified
+backup. New local V2 audit events cannot be read by the Node 0.2 host; restoring
+the old reader also restores the unchanged pre-migration directory. Never run
+two canonical writers against one directory.
 
-Do not put an OTP or registry token in the command, shell history, repository,
-or GitHub secret. Confirm the owner and package contents on npm immediately.
-
-## Enable trusted publishing
-
-After the package exists:
-
-1. Create a protected GitHub environment named `npm` with required owner
-   approval.
-2. In the npm package's trusted-publisher settings select GitHub Actions and
-   enter owner `BaydoganMirac`, repository `patchfleet`, workflow
-   `publish.yml`, environment `npm`, and allow `npm publish`.
-3. Require 2FA and disallow traditional publishing tokens after the OIDC path
-   succeeds.
-4. Bump to a new version, merge the reviewed commit to `main`, and manually run
-   **Publish npm beta**. The workflow publishes with OIDC and automatic
-   provenance; it contains no npm token.
-
-The workflow pins npm 11.5.1 because that is the minimum CLI version for npm
-trusted publishing. It runs only from `main`, uses a GitHub-hosted runner, and
-requires the protected `npm` environment.
-
-## Verify and recover
-
-After publication:
-
-```sh
-npm view patchfleet version dist-tags repository --json
-npx --yes patchfleet@beta doctor
-```
-
-If the artifact is wrong, stop promotion and deprecate the affected version
-with an actionable message. Prefer a corrected version over unpublishing: npm
-versions are immutable and cannot be reused. Local Patchfleet remains usable
-from the reviewed tarball while registry or Cloud release work is paused.
+See [installation](install.md), [ADR 0023](decisions/0023-rust-tauri-desktop-runtime.md)
+and [current evidence](state/rust-desktop.md).

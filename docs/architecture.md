@@ -1,8 +1,8 @@
 # Patchfleet architecture
 
-Status: V0 target architecture
+Status: Implemented Rust desktop architecture
 
-Updated: 2026-07-20
+Updated: 2026-10-14
 
 ## System boundary
 
@@ -62,16 +62,21 @@ notifications, history, and billing consume only that sanitized Cloud state.
 Cloud does not own provider credentials, repository contents, canonical run
 events, local process control, or shell execution.
 
-## V0 deployable shape
+## Desktop deployable shape
 
-V0 is one local Node.js/Next.js application. UI routes, server-side runtime
-modules, adapters, storage, and Cloud sync are separate code boundaries inside
-one deployable process.
+`crates/patchfleet-core` owns the Rust host, domain validation, provider
+processes, durable storage, team scheduler and outbound Cloud sync. `src-tauri`
+embeds it with the static React/Vite interface in `desktop`. The application
+does not launch a Node/Next server. The optional native CLI uses the same core.
 
-Do not create microservices or a desktop wrapper before the control loop works.
-A background host process may be extracted later when reliable boot-time and
-headless operation require it. A desktop shell may be added later for packaging
-and OS integration without moving canonical state into the shell.
+The bundled main window calls only `host_snapshot` and `host_action` through
+restricted Tauri IPC. CSP and navigation rules deny remote pages access. One
+desktop instance owns its platform data directory; background ticks advance
+bounded teams and sync Cloud. Normal exit awaits provider process cleanup.
+
+[ADR 0023](decisions/0023-rust-tauri-desktop-runtime.md) records the owner's
+accepted Rust/desktop direction. Historical Node modules remain parity inputs;
+the current product does not execute them as a sidecar.
 
 ## Core domain
 
@@ -99,6 +104,24 @@ Provider-native fields may be retained in a local namespaced extension. They do
 not enter the shared contract or Cloud projection until a concrete product use
 case and data classification exist.
 
+## Planned project memory boundary
+
+Project is a stable local scope above registered workspaces, runs, and teams.
+Several worktrees may share project memory while keeping execution files
+separate. Owner source inputs and ADR lifecycle changes use the canonical local
+writer. The local vector database stores full searchable records, metadata,
+and model-versioned embeddings as a rebuildable projection.
+
+The planned memory service belongs to the Rust host under ADR 0023. Scoped
+MCP tools or local service calls authenticate a run-bound project; agents cannot
+select another project by supplying an ID or access raw database files.
+Automatic extraction proposes records, while the owner accepts decisions.
+Binding decision status is read from canonical facts rather than similarity
+score. Memory text, queries, vectors, and tool credentials are local-only.
+
+[ADR 0021](decisions/0021-project-scoped-local-decision-memory.md) defines this
+planned contract; the runtime does not implement it yet.
+
 ## Provider adapter boundary
 
 The first read-only slice needs only:
@@ -119,13 +142,21 @@ the same conformance cases. V0 is not provider-complete until all three pass.
 
 ## Local persistence
 
-A single writer appends versioned JSON events to a local log using Node.js file
-primitives. Derived JSON projections are written atomically and may always be
-rebuilt from events.
+A single Rust writer with an exclusive OS file lock appends versioned JSON
+events and fsyncs acknowledged changes. Derived JSON projections are written
+atomically and rebuilt from events. The owning host caches accepted state;
+unchanged UI reads do not replay history or rewrite caches. Unexpected log or
+writer-lock replacement fails closed.
+
+Private files reject symbolic links, reparse points and multiple hard links.
+Unix permissions and protected Windows owner+SYSTEM ACLs precede private data
+writes. V1 event meaning remains compatible; V2 local owner/remote-team audit
+records add durable request and receipt recovery. Old provider ownership is
+marked lost, and uncertain starts are never resent.
 
 Workspace registration uses this same writer and command/receipt contract. The
-CLI mutates the registry; the UI sends only an opaque local workspace ID, which
-the server resolves before creating a work item. Manual path entry is a local
+desktop or offline CLI mutates the registry. Work forms send an opaque local
+workspace ID, which the Rust host resolves before creating a work item. Manual path entry is a local
 advanced fallback and does not change the Cloud protocol.
 
 Agent-pack installation and team lifecycle use the same single writer. Team

@@ -1,105 +1,102 @@
-# Install and operate Patchfleet
+# Install and operate Patchfleet Desktop
 
-Status: beta release contract
+Status: 0.3 desktop development distribution
 
-Updated: 2026-07-20
+Updated: 2026-10-14
 
-## Requirements
+## Application requirements
 
-- macOS, Windows, or Linux;
-- Node.js 22 or newer and npm (Node 24 is also tested);
-- supported provider CLIs installed separately.
+- macOS 11+; Windows 10+ with WebView2; or Linux with the required WebKitGTK 4.1
+  runtime libraries.
+- Provider CLIs installed separately. Their own Node/model/account requirements
+  are independent of the Rust Patchfleet application.
+- Native Windows/Linux installer and runtime checks remain CI/release evidence;
+  the local development package has been built on macOS ARM64.
 
-The owner supplies a reviewed Patchfleet npm tarball. Installation and package
-publication are separate owner release actions:
+Use the platform installer: macOS DMG/application, Windows NSIS/MSI, or Linux
+Deb/AppImage. Development artifacts have no public Developer ID notarization or
+Windows publisher signature. Installers are built from source/CI; no public
+release is claimed by this change.
 
-    npm install --global ./patchfleet-0.2.0.tgz
+For development, follow [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/),
+then `npm ci` and `npm run desktop:dev`. Node is build tooling. The installed
+application embeds static UI assets and executes its host in Rust.
 
-Operate the local host with:
+## Local operation
 
-    patchfleet workspace add .
-    patchfleet workspace list
-    patchfleet doctor
-    patchfleet start
-    patchfleet status
-    patchfleet stop
-    patchfleet recover
+Register a Git workspace in the desktop, select it when queueing work, and use
+the provider cards to verify availability. Codex control requires a tested
+stable app-server surface on 0.144.1 or newer. The sandbox remains
+`workspace-write` with approval policy `never`. Claude and Gemini control are
+not advertised.
 
-Inspect or install declarative local agent packs with:
+Form teams from installed packs and templates. Background advancement does not
+require a manual refresh. Owner questions and approval gates remain explicit.
+Cancel a team before unregistering its workspace. Closing the desktop shuts
+down owned provider processes; reopening marks lost ownership rather than
+reattaching or resending uncertain work.
 
-    patchfleet agent-pack list
-    patchfleet agent-pack show pack:orchestrator
-    patchfleet agent-pack install ./pack.json
-    patchfleet agent-pack remove pack:custom
+The platform application-data directory is:
 
-The browser console forms and controls bounded multi-agent teams from the
-registered projects and installed packs. Pack manifests are versioned JSON;
-they contain no executable hooks and cannot expand provider permissions.
+| Platform | Default |
+|---|---|
+| macOS | `~/Library/Application Support/com.patchfleet.desktop` |
+| Windows | `%APPDATA%\com.patchfleet.desktop` |
+| Linux | `$XDG_DATA_HOME/com.patchfleet.desktop` or `~/.local/share/com.patchfleet.desktop` |
 
-Run `patchfleet workspace add .` from each Git worktree you want to use. The
-command validates and stores its canonical local path; the console then lets
-you select the project by name. Remove an entry with the opaque ID printed by
-`workspace list`:
+An explicitly set absolute `PATCHFLEET_DATA_DIR` selects an alternate directory.
+One Rust host owns it. Unix modes are 0700/0600; Windows replaces inherited
+grants with a protected current-owner+SYSTEM ACL. Private state files reject
+symlink/reparse redirection. Do not run the old host against this directory.
 
-    patchfleet workspace remove workspace:...
+Cloud pairing is optional. Pair through the desktop Cloud panel using a
+short-lived code. Invalid pairing storage leaves local operation available and
+reports recovery needed; close the app, back up the private file and repair or
+remove it explicitly before re-pairing. Credentials never appear in IPC status.
 
-Workspace paths remain in the owner-only local event log and projection. They
-are not included in Patchfleet Cloud payloads.
+## Migrating from 0.2
 
-The UI binds only to `http://127.0.0.1:3000`. Override the port with
-`PATCHFLEET_PORT`. Runtime state and logs live under `~/.patchfleet` by default;
-override only for testing with `PATCHFLEET_DATA_DIR`.
+1. Stop the old Node host with its old `patchfleet stop` command. Close any
+   development server using the same directory.
+2. Back up the entire old directory while stopped. Keep it unchanged for rollback.
+3. Copy `events.jsonl` into a new empty desktop data directory. Optionally copy
+   `cloud.json` to retain pairing; it contains private credentials. Do not copy
+   old `runtime.json`, `writer.lock` or derived projection files.
+4. Start the Rust desktop with that destination selected. It validates complete
+   records, recovers an incomplete final tail on the next append, rebuilds caches,
+   finishes pending local state receipts and marks old provider ownership lost.
+5. Verify work/workspaces/teams before creating new work. No provider side effect
+   is replayed merely because the old request existed.
 
-On macOS and Linux, Patchfleet enforces mode `0700` on its data directory and
-`0600` on runtime metadata and logs. On Windows, the default directory stays
-inside the current user's profile and inherits that profile's ACL. Do not point
-`PATCHFLEET_DATA_DIR` at a shared folder.
+New V2 audit events require the Rust reader. Rollback restores the unchanged
+pre-migration backup to the old host; never point the old reader at upgraded data.
 
-Run `patchfleet doctor` whenever installation, startup, project selection, or
-Cloud pairing is unclear. It reports only bounded health information; it does
-not print credentials, event contents, prompts, paths, or provider output. An
-empty first install produces actionable warnings rather than a failure.
+## Offline Rust CLI
 
-`recover` requires the host to be stopped. It validates the Cloud connection
-file and rebuilds derived observation, work, and workspace projections from the
-durable event log. It never invents a receipt or retries a provider side
-effect.
+The optional native CLI uses the same core and data directory:
 
-## Upgrade
+```sh
+cargo run -p patchfleet-core --bin patchfleet -- --help
+cargo run -p patchfleet-core --bin patchfleet -- --data-dir /absolute/test-data recover
+```
 
-Stop the host, install the reviewed replacement tarball, run recovery, and
-start again:
+`status`, `recover`, and `action ACTION < payload.json` require the desktop to be
+closed because it owns the writer lock. `run` starts the headless owner until
+Ctrl-C. `action` accepts the same validated action vocabulary as the desktop;
+it cannot run arbitrary shell strings. Native hook ingress writes a sanitized
+inbox rather than opening the canonical log.
 
-    patchfleet stop
-    npm install --global ./patchfleet-NEW_VERSION.tgz
-    patchfleet recover
-    patchfleet start
+## Gemini lifecycle ingress
 
-Do not delete `~/.patchfleet` during an upgrade. Copy that directory while the
-host is stopped for a local backup. Restore it only to the same or a compatible
-newer Patchfleet version, then run `patchfleet recover`.
+The legacy source extension still uses its checked-in Node helper. For the
+desktop, configure the owner-approved native hook command with Gemini's own
+extension/settings consent. The desktop executable supports `--gemini-hook`,
+reading bounded native hook JSON on stdin and storing only lifecycle metadata.
+Use the same absolute data directory as the desktop. The executable path and
+quoting are platform-specific; Patchfleet does not rewrite provider settings.
 
-## Uninstall
+## Upgrade and uninstall
 
-Stop the host before removing the package:
-
-    patchfleet stop
-    npm uninstall --global patchfleet
-
-The owner data directory is deliberately retained so an uninstall cannot erase
-acknowledged local work. After confirming that no backup or reinstall is
-needed, remove `~/.patchfleet` using the operating system's normal file manager.
-
-## Provider compatibility
-
-Use the provider cards in the console or `patchfleet doctor` to distinguish an
-unavailable CLI from an observation-only integration. Codex is the only beta
-provider with proven start and cancel control. Claude Code and Gemini CLI are
-observation-only until their supported interfaces expose an equally bounded
-lifecycle control surface.
-
-## Gemini lifecycle extension
-
-The package includes `extensions/patchfleet-gemini`. Link that directory with
-Gemini CLI, restart Gemini, and use Gemini's native extension status/uninstall
-commands. Its sanitized inbox uses the same Patchfleet user-data directory.
+Close the application, back up its data, and install a reviewed compatible
+replacement. Uninstall the application through the OS while keeping owner data
+for recovery. Delete that directory only through an explicit owner action.

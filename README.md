@@ -7,6 +7,10 @@ window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
 
+The native interface supports Turkish and English. Change the language in the
+sidebar; the owner Host saves it locally for the next launch. Source messages,
+work instructions, code and custom user content retain their original language.
+
 Create stable projects, link multiple Git worktrees, keep project messages and
 owner task/team sources in local Project Memory. Queue and control supported Codex work, configure twelve
 agent packs and six bounded team templates, answer owner gates, and inspect

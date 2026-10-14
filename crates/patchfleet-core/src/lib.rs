@@ -1,4 +1,5 @@
 pub mod cloud;
+mod desktop_preferences;
 pub mod domain;
 mod host;
 pub mod project_memory;

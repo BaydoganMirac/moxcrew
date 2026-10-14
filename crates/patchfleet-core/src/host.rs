@@ -24,11 +24,17 @@ pub struct Host {
     operations: AsyncMutex<()>,
     cloud: AsyncMutex<Option<Cloud>>,
     cloud_status: Mutex<Value>,
+    desktop_preferences: Mutex<Value>,
     pub(crate) closing: AtomicBool,
 }
 fn second_event(kind: &str, payload: Value) -> Value {
     let mut e = event(kind, payload);
     e["schemaVersion"] = json!(2);
+    e
+}
+fn owner_event(kind: &str, payload: Value, version: u64) -> Value {
+    let mut e = event(kind, payload);
+    e["schemaVersion"] = json!(version);
     e
 }
 fn public_templates() -> Vec<Value> {
@@ -58,6 +64,7 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
             "expectedSourceRevision",
         ],
         "project_memory_read" => &["projectId", "offset", "limit", "query"],
+        "desktop_language" => &["language"],
         "work_enqueue" => &["title", "instruction", "workspaceId", "workingDirectory"],
         "work_start" | "work_retry" | "work_remove" => &["workItemId", "expectedItemRevision"],
         "work_cancel" => &["runId", "expectedRunRevision"],
@@ -88,7 +95,7 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
     let obj = p
         .as_object()
         .ok_or_else(|| Error("INVALID_PAYLOAD".into()))?;
-    if serde_json::to_vec(p)?.len() > 128 * 1024
+    if serde_json::to_vec(p)?.len() > Host::action_payload_limit(action)
         || obj.keys().any(|k| {
             !allowed.contains(&k.as_str())
                 && !["commandId", "createdAt", "expiresAt"].contains(&k.as_str())
@@ -100,6 +107,13 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
 }
 
 impl Host {
+    pub fn action_payload_limit(action: &str) -> usize {
+        if matches!(action, "project_message" | "project_source_edit") {
+            192 * 1024
+        } else {
+            128 * 1024
+        }
+    }
     pub fn open(data_dir: PathBuf) -> Result<Arc<Self>> {
         if !data_dir.is_absolute() {
             return Err(Error("DATA_DIRECTORY_MUST_BE_ABSOLUTE".into()));
@@ -121,6 +135,7 @@ impl Host {
             store,
             epoch: uuid::Uuid::new_v4().to_string(),
             controller: providers::Controller::new(),
+            desktop_preferences: Mutex::new(crate::desktop_preferences::load(&data_dir)),
             data_dir,
             operations: AsyncMutex::new(()),
             cloud: AsyncMutex::new(cloud),
@@ -160,7 +175,7 @@ impl Host {
         host.reconcile_ownership()?;
         host.store.transaction(|events| {
             let pending=events.iter().filter(|e|e["type"]=="owner.command.requested" && !events.iter().any(|r|r["type"]=="owner.command.receipted" && r["payload"]["commandId"]==e["payload"]["commandId"]));
-            let additions=pending.map(|e|second_event("owner.command.receipted",json!({"commandId":e["payload"]["commandId"],"result":{"outcome":"failed","reasonCode":"OWNER_COMMAND_OUTCOME_UNKNOWN"}}))).collect();
+            let additions=pending.map(|e|owner_event("owner.command.receipted",json!({"commandId":e["payload"]["commandId"],"result":{"outcome":"failed","reasonCode":"OWNER_COMMAND_OUTCOME_UNKNOWN"}}),e["schemaVersion"].as_u64().unwrap())).collect();
             Ok((additions,Value::Null))
         })?;
         Ok(host)
@@ -200,6 +215,11 @@ impl Host {
             .clone();
         bundle["appVersion"] = json!(env!("CARGO_PKG_VERSION"));
         bundle["hostEpoch"] = json!(self.epoch);
+        bundle["desktopPreferences"] = self
+            .desktop_preferences
+            .lock()
+            .map_err(|_| Error("HOST_STATE_UNAVAILABLE".into()))?
+            .clone();
         Ok(bundle)
     }
 
@@ -217,7 +237,10 @@ impl Host {
                 .store
                 .transaction(|events| project_memory::apply(events, action, &payload));
         }
-        let audit = action.starts_with("team_") || action.starts_with("pack_");
+        let audit = action.starts_with("team_")
+            || action.starts_with("pack_")
+            || action == "desktop_language";
+        let audit_version = if action == "desktop_language" { 3 } else { 2 };
         let mut command = Value::Null;
         if audit {
             let base = intent("owner_action", Value::Null, &payload);
@@ -232,7 +255,6 @@ impl Host {
                     != payload["expiresAt"]
                 || expires <= created
                 || expires.signed_duration_since(created).num_milliseconds() > 300_000
-                || created > chrono::Utc::now() + chrono::Duration::seconds(60)
             {
                 return Err(Error("INVALID_COMMAND_TIME".into()));
             }
@@ -247,7 +269,10 @@ impl Host {
                     let r=events.iter().find(|r|r["type"]=="owner.command.receipted" && r["payload"]["commandId"]==command);
                     return Ok((vec![],r.map(|r|r["payload"]["result"].clone()).unwrap_or(json!({"outcome":"failed","reasonCode":"OWNER_COMMAND_OUTCOME_UNKNOWN"}))));
                 }
-                Ok((vec![second_event("owner.command.requested",requested)],Value::Null))
+                if created > chrono::Utc::now() + chrono::Duration::seconds(60) {
+                    return Err(Error("INVALID_COMMAND_TIME".into()));
+                }
+                Ok((vec![owner_event("owner.command.requested",requested,audit_version)],Value::Null))
             })?;
             if !prior.is_null() {
                 return Ok(prior);
@@ -263,9 +288,10 @@ impl Host {
                 Ok(v) => v.clone(),
                 Err(_) => json!({"outcome":"rejected","reasonCode":"INVALID_ACTION"}),
             };
-            self.store.append(vec![second_event(
+            self.store.append(vec![owner_event(
                 "owner.command.receipted",
                 json!({"commandId":command,"result":recorded}),
+                audit_version,
             )])?;
         }
         result
@@ -287,6 +313,11 @@ impl Host {
             }
         }
         match action {
+            "desktop_language" => {
+                let value = crate::desktop_preferences::save(&self.data_dir, text(p,"language")?)?;
+                *self.desktop_preferences.lock().map_err(|_| Error("HOST_STATE_UNAVAILABLE".into()))? = value.clone();
+                Ok(json!({"reasonCode":"DESKTOP_LANGUAGE_SET","language":value["language"]}))
+            },
             "observe"=>{self.observe().await?;self.advance_all().await?;Ok(json!({"reasonCode":"OBSERVED"}))},
             "workspace_register"|"workspace_remove"=>self.workspace_action(action,p).await,
             "work_enqueue"=>{

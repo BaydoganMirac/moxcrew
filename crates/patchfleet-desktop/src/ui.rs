@@ -1,4 +1,5 @@
 use crate::command::Command;
+use crate::i18n::{self, Language};
 use eframe::egui::{self, Color32, RichText, Ui};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -9,6 +10,12 @@ const SURFACE: Color32 = Color32::from_rgb(22, 26, 32);
 const TEXT: Color32 = Color32::from_rgb(232, 235, 239);
 const BORDER: Color32 = Color32::from_rgb(43, 48, 57);
 const RED: Color32 = Color32::from_rgb(246, 142, 151);
+
+macro_rules! localized_format {
+    ($ui:expr,$key:literal,$($value:expr),+ $(,)?) => {
+        tf($ui,$key,&[$(&$value.to_string()),+])
+    };
+}
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -297,6 +304,12 @@ impl Console {
     }
 
     pub fn show(&mut self, ui: &mut Ui, snapshot: &Value, busy: bool) -> Vec<Command> {
+        ui.ctx().data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("console-language"),
+                Language::from_snapshot(snapshot),
+            )
+        });
         ui.style_mut().animation_time = 0.0;
         ui.style_mut().scroll_animation = egui::style::ScrollAnimation::none();
         let mut commands = Vec::new();
@@ -321,10 +334,15 @@ impl Console {
                         egui::FontId::proportional(16.0),
                         Color32::from_rgb(18, 37, 29),
                     );
-                    ui.label(RichText::new("Patchfleet").size(15.0).strong().color(TEXT));
+                    ui.label(
+                        RichText::new(t(ui, "Patchfleet"))
+                            .size(15.0)
+                            .strong()
+                            .color(TEXT),
+                    );
                 });
                 ui.add_space(26.0);
-                ui.label(RichText::new("WORKSPACE").size(10.0).color(MUTED));
+                ui.label(RichText::new(t(ui, "WORKSPACE")).size(10.0).color(MUTED));
                 ui.add_space(8.0);
                 for tab in Tab::ALL {
                     let count = match tab {
@@ -351,11 +369,13 @@ impl Console {
                                 .color(MUTED),
                         );
                         ui.horizontal(|ui| {
-                            ui.colored_label(MINT, "•");
-                            ui.label(RichText::new("Local engine").size(11.0).color(TEXT));
+                            ui.colored_label(MINT, t(ui, "•"));
+                            ui.label(RichText::new(t(ui, "Local engine")).size(11.0).color(TEXT));
                         });
                         ui.add_space(7.0);
                         ui.separator();
+                        ui.add_space(9.0);
+                        language_selector(ui, snapshot, busy, &mut commands);
                     },
                 );
             });
@@ -368,7 +388,7 @@ impl Console {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(
-                        RichText::new(self.tab.name())
+                        RichText::new(t(ui, self.tab.name()))
                             .size(23.0)
                             .strong()
                             .color(TEXT),
@@ -383,15 +403,19 @@ impl Console {
                             || json!({}),
                         );
                         if busy {
-                            ui.label("Applying action…");
+                            ui.label(t(ui, "Applying action…"));
                         }
                     });
                 });
                 ui.add_space(3.0);
-                ui.label(RichText::new(self.tab.summary()).size(12.0).color(MUTED));
+                ui.label(
+                    RichText::new(i18n::tr_for_snapshot(snapshot, self.tab.summary()))
+                        .size(12.0)
+                        .color(MUTED),
+                );
                 ui.add_space(24.0);
                 if let Some(error) = self.form_error {
-                    ui.colored_label(RED, error);
+                    ui.colored_label(RED, t(ui, error));
                     ui.add_space(8.0);
                 }
                 egui::ScrollArea::vertical()
@@ -416,10 +440,14 @@ impl Console {
     fn projects(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let projects = array(&snapshot["projectMemory"]["projects"]);
         if projects.is_empty() {
-            ui.label(RichText::new("YOUR LOCAL WORKSPACE").size(10.0).color(MINT));
+            ui.label(
+                RichText::new(t(ui, "YOUR LOCAL WORKSPACE"))
+                    .size(10.0)
+                    .color(MINT),
+            );
             ui.add_space(8.0);
             ui.label(
-                RichText::new("Create your first project")
+                RichText::new(t(ui, "Create your first project"))
                     .size(28.0)
                     .strong()
                     .color(TEXT),
@@ -432,7 +460,7 @@ impl Console {
             ui.add_space(24.0);
             constrained(ui, 560.0, |ui| self.create_project_form(ui, commands));
         } else {
-            egui::CollapsingHeader::new("Create a project").show(ui, |ui| {
+            egui::CollapsingHeader::new(t(ui, "Create a project")).show(ui, |ui| {
                 constrained(ui, 560.0, |ui| self.create_project_form(ui, commands))
             });
             ui.add_space(14.0);
@@ -440,14 +468,14 @@ impl Console {
                 ui.push_id(text(project,"projectId"),|ui|card(ui,|ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(text(project,"name")).size(16.0).strong().color(TEXT));
-                    status(ui,&format!("{} sources",project["sourceCount"].as_u64().unwrap_or(0)));
+                    status(ui,&localized_format!(ui, "{0} sources",project["sourceCount"].as_u64().unwrap_or(0)));
                     if control(ui,"Open memory",true).clicked(){self.memory.select(text(project,"projectId"));self.tab=Tab::Memory;}
                 });
                 hint(ui,"Linked worktrees share this project's source context.");ui.add_space(10.0);
                 for id in array(&project["workspaceIds"]) {
                     let workspace=items(&snapshot["workspaces"]).iter().find(|w|w["workspaceId"]==*id);
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(workspace.map(|w|text(w,"displayName")).unwrap_or("Removed worktree"));
+                        ui.label(workspace.map(|w|std::borrow::Cow::Borrowed(text(w,"displayName"))).unwrap_or_else(||t(ui,"Removed worktree")));
                         action(ui,commands,"Unlink","project_unlink_workspace",revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":id,"expectedProjectRevision":project["revision"]}));
                     });
                     if let Some(workspace)=workspace {hint(ui,text(workspace,"workingDirectory"));}
@@ -462,7 +490,7 @@ impl Console {
                     let exists=workspace.is_some();
                     action(ui,commands,"Link worktree","project_link_workspace",exists&&revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":selected,"expectedProjectRevision":project["revision"]}));
                 }
-                ui.collapsing("Project identity",|ui|{ui.monospace(text(project,"projectId"));hint(ui,&format!("Revision {} · created {}",revision(project),format_time(text(project,"createdAt"))));});
+                ui.collapsing(t(ui, "Project identity"),|ui|{ui.monospace(text(project,"projectId"));hint(ui,&localized_format!(ui, "Revision {0} · created {1}",revision(project),format_time(ui,text(project,"createdAt"))));});
             }));
                 ui.add_space(12.0);
             }
@@ -471,7 +499,7 @@ impl Console {
         ui.separator();
         ui.add_space(18.0);
         ui.label(
-            RichText::new("REGISTERED WORKTREES")
+            RichText::new(t(ui, "REGISTERED WORKTREES"))
                 .size(10.0)
                 .color(MUTED),
         );
@@ -482,14 +510,14 @@ impl Console {
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(text(workspace,"displayName")).size(13.0).strong().color(TEXT));
                 let project=projects.iter().find(|p|array(&p["workspaceIds"]).contains(&workspace["workspaceId"]));
-                status(ui,project.map(|p|text(p,"name")).unwrap_or("Unlinked"));
+                if let Some(project)=project {raw_status(ui,text(project,"name"));} else {status(ui,"Unlinked");}
                 action(ui,commands,"Unregister","workspace_remove",revision(workspace)>0,||json!({"workspaceId":workspace["workspaceId"],"expectedWorkspaceRevision":workspace["revision"]}));
             });
             hint(ui,text(workspace,"workingDirectory"));
         }));
             ui.add_space(8.0);
         }
-        egui::CollapsingHeader::new("Register a worktree")
+        egui::CollapsingHeader::new(t(ui, "Register a worktree"))
             .default_open(items(&snapshot["workspaces"]).is_empty())
             .show(ui, |ui| {
                 constrained(ui, 560.0, |ui| self.project_form(ui, commands))
@@ -619,14 +647,18 @@ impl Console {
         };
         let page = &snapshot["memoryPage"];
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Keyword filter").size(11.0).color(MUTED));
+            ui.label(
+                RichText::new(t(ui, "Keyword filter"))
+                    .size(11.0)
+                    .color(MUTED),
+            );
             ui.add(
                 egui::TextEdit::singleline(&mut self.memory.keyword_input)
                     .desired_width(230.0)
                     .font(egui::TextStyle::Body)
                     .margin(egui::Margin::symmetric(10, 7))
                     .char_limit(160)
-                    .hint_text("Words in source titles or text"),
+                    .hint_text(t(ui, "Words in source titles or text")),
             );
             if control(ui, "Apply keyword", true).clicked() {
                 if utf16_len(&self.memory.keyword_input) <= 160 {
@@ -685,7 +717,7 @@ impl Console {
                 self.memory.edit = None;
             }
         } else {
-            egui::CollapsingHeader::new("Write a project message").default_open(project["sourceCount"]==0).show(ui,|ui|constrained(ui,700.0,|ui|card(ui,|ui| {
+            egui::CollapsingHeader::new(t(ui, "Write a project message")).default_open(project["sourceCount"]==0).show(ui,|ui|constrained(ui,700.0,|ui|card(ui,|ui| {
                 field(ui,"Message title",&mut self.memory.title,160,false);multiline(ui,"Source text",&mut self.memory.body,50_000,4);
                 if submit(ui,"Add message","project_message"){match self.memory.message_payload(project){Ok(payload)=>{commands.push(Command::new("project_message",payload));self.form_error=None;},Err(error)=>self.form_error=Some(error)}}
                 hint(ui,"Owner-authored context stays local. Adding it does not accept an ADR.");
@@ -695,20 +727,24 @@ impl Console {
         if self.memory.page_matches(page, project) {
             let total = page["total"].as_u64().unwrap_or(0);
             ui.horizontal_wrapped(|ui| {
-                ui.label(format!(
-                    "{} sources{}",
-                    total,
+                ui.label(tf(
+                    ui,
                     if self.memory.query.is_empty() {
-                        ""
+                        "{0} sources"
                     } else {
-                        " matching keyword"
-                    }
+                        "{0} sources matching keyword"
+                    },
+                    &[&total.to_string()],
                 ));
                 if control(ui, "Previous sources", self.memory.offset > 0).clicked() {
                     self.memory.offset = self.memory.offset.saturating_sub(10);
                     self.memory.requested = None;
                 }
-                ui.label(format!("Page {}", self.memory.offset / 10 + 1));
+                ui.label(localized_format!(
+                    ui,
+                    "Page {0}",
+                    self.memory.offset / 10 + 1
+                ));
                 if control(
                     ui,
                     "Next sources",
@@ -751,26 +787,28 @@ impl Console {
                                     .color(TEXT),
                             );
                             status(ui, source_kind_label(text(source, "kind")));
-                            hint(ui, &format!("Revision {}", revision(source)));
+                            hint(ui, &localized_format!(ui, "Revision {0}", revision(source)));
                         });
                         let preview: String = text(source, "text").chars().take(240).collect();
                         ui.label(preview);
-                        ui.collapsing("Full source and provenance", |ui| {
+                        ui.collapsing(t(ui, "Full source and provenance"), |ui| {
                             ui.label(text(source, "text"));
                             ui.separator();
                             ui.monospace(text(source, "sourceId"));
                             hint(
                                 ui,
-                                &format!(
-                                    "Author {} · updated {}",
+                                &localized_format!(
+                                    ui,
+                                    "Author {0} · updated {1}",
                                     text(source, "actorId"),
-                                    format_time(text(source, "updatedAt"))
+                                    format_time(ui, text(source, "updatedAt"))
                                 ),
                             );
                             hint(
                                 ui,
-                                &format!(
-                                    "Origin {} · {} · {}",
+                                &localized_format!(
+                                    ui,
+                                    "Origin {0} · {1} · {2}",
                                     text(&source["origin"], "type"),
                                     text(&source["origin"], "id"),
                                     text(&source["origin"], "eventId")
@@ -833,7 +871,7 @@ impl Console {
     fn work_list(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let ready = codex_ready(snapshot);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("TASK QUEUE").size(10.0).color(MUTED));
+            ui.label(RichText::new(t(ui, "TASK QUEUE")).size(10.0).color(MUTED));
             ui.label(
                 RichText::new(items(&snapshot["work"]).len().to_string())
                     .size(11.0)
@@ -855,19 +893,23 @@ impl Console {
         if page_count > 1 {
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(self.work_page > 0, egui::Button::new("Previous"))
+                    .add_enabled(self.work_page > 0, egui::Button::new(t(ui, "Previous")))
                     .clicked()
                 {
                     self.work_page -= 1;
                 }
-                ui.label(format!(
-                    "Page {} of {} · {} tasks",
+                ui.label(localized_format!(
+                    ui,
+                    "Page {0} of {1} · {2} tasks",
                     self.work_page + 1,
                     page_count,
                     list.len()
                 ));
                 if ui
-                    .add_enabled(self.work_page + 1 < page_count, egui::Button::new("Next"))
+                    .add_enabled(
+                        self.work_page + 1 < page_count,
+                        egui::Button::new(t(ui, "Next")),
+                    )
                     .clicked()
                 {
                     self.work_page += 1;
@@ -878,9 +920,9 @@ impl Console {
             ui.push_id(text(item,"workItemId"), |ui| card(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {ui.strong(text(item,"title"));status(ui,text(item,"status"));});
                 let workspace = items(&snapshot["workspaces"]).iter().find(|w| w["workingDirectory"]==item["workingDirectory"]);
-                hint(ui,workspace.map(|w|text(w,"displayName")).unwrap_or("Unregistered worktree"));
+                if let Some(workspace)=workspace {raw_hint(ui,text(workspace,"displayName"));} else {hint(ui,"Unregistered worktree");}
                 let run = array(&work["runs"]).iter().rev().find(|r|r["workItemId"]==item["workItemId"]);
-                ui.collapsing("Local task details",|ui| {ui.monospace(text(item,"workingDirectory"));ui.label(text(item,"instruction"));if let Some(run)=run {ui.monospace(format!("Run {} · turn {}",text(run,"runId"),text(run,"providerTurnId")));}});
+                ui.collapsing(t(ui, "Local task details"),|ui| {ui.monospace(text(item,"workingDirectory"));ui.label(text(item,"instruction"));if let Some(run)=run {ui.monospace(localized_format!(ui, "Run {0} · turn {1}",text(run,"runId"),text(run,"providerTurnId")));}});
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
                     if text(item,"status")=="queued" {
@@ -900,7 +942,7 @@ impl Console {
             ui.add_space(10.0);
         }
         ui.add_space(16.0);
-        ui.collapsing("Recent durable activity", |ui| {
+        ui.collapsing(t(ui, "Recent durable activity"), |ui| {
             let receipts = array(&work["receipts"]);
             if receipts.is_empty() {
                 hint(
@@ -911,8 +953,8 @@ impl Console {
             for r in receipts.iter().rev().take(8) {
                 ui.horizontal_wrapped(|ui| {
                     status(ui, text(r, "outcome"));
-                    ui.label(text(r, "reasonCode").replace('_', " "));
-                    hint(ui, &format_time(text(r, "completedAt")));
+                    ui.label(t(ui, text(r, "reasonCode")));
+                    hint(ui, &format_time(ui, text(r, "completedAt")));
                 });
             }
         });
@@ -923,7 +965,7 @@ impl Console {
             ui.add_space(14.0);
             field(ui, "Task name", &mut self.work.title, 160, false);
             choose_workspace(ui, "work-project", &mut self.work.workspace, snapshot);
-            ui.collapsing("Use another Git worktree once", |ui| {
+            ui.collapsing(t(ui, "Use another Git worktree once"), |ui| {
                 field(
                     ui,
                     "Absolute worktree path",
@@ -952,7 +994,7 @@ impl Console {
 
     fn teams(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let teams = items(&snapshot["teams"]);
-        egui::CollapsingHeader::new("Form a local team")
+        egui::CollapsingHeader::new(t(ui, "Form a local team"))
             .default_open(teams.is_empty())
             .show(ui, |ui| {
                 card(ui, |ui| {
@@ -989,10 +1031,15 @@ impl Console {
                         choose_refs(
                             ui,
                             format!("worker-{slot}"),
-                            &format!(
-                                "Agent {}{}",
+                            &localized_format!(
+                                ui,
+                                "Agent {0}{1}",
                                 slot + 1,
-                                if slot == 0 { " (required)" } else { "" }
+                                if slot == 0 {
+                                    t(ui, " (required)").into_owned()
+                                } else {
+                                    String::new()
+                                }
                             ),
                             &mut self.team.workers[slot],
                             &workers,
@@ -1002,16 +1049,16 @@ impl Console {
                     }
                     ui.add_space(8.0);
                     ui.horizontal_wrapped(|ui| {
-                        ui.label("Concurrency");
+                        ui.label(t(ui, "Concurrency"));
                         ui.add(egui::DragValue::new(&mut self.team.concurrency).range(1..=4));
-                        ui.label("Retries");
+                        ui.label(t(ui, "Retries"));
                         ui.add(egui::DragValue::new(&mut self.team.retries).range(0..=3));
-                        ui.label("Minutes");
+                        ui.label(t(ui, "Minutes"));
                         ui.add(egui::DragValue::new(&mut self.team.minutes).range(5..=480));
                     });
                     ui.checkbox(
                         &mut self.team.continue_independent,
-                        "Continue independent tasks after a failure",
+                        t(ui, "Continue independent tasks after a failure"),
                     );
                     multiline(
                         ui,
@@ -1046,7 +1093,7 @@ impl Console {
         for team in teams {
             ui.push_id(text(team,"teamId"),|ui|card(ui,|ui| {
             ui.horizontal_wrapped(|ui|{ui.heading(text(team,"name"));status(ui,text(team,"status"));});
-            ui.label(text(team,"goal"));hint(ui,&format!("{} · concurrency {} · {} retries",text(team,"templateId").replace('-'," "),team["settings"]["concurrency"],team["settings"]["retryLimit"]));
+            ui.label(text(team,"goal"));hint(ui,&localized_format!(ui, "{0} · concurrency {1} · {2} retries",t(ui,&text(team,"templateId").replace('-'," ")),team["settings"]["concurrency"],team["settings"]["retryLimit"]));
             ui.add_space(10.0);
             let active=matches!(text(team,"status"),"active"|"waiting");
             ui.horizontal_wrapped(|ui| {
@@ -1055,9 +1102,9 @@ impl Console {
             });
             ui.add_space(10.0);
             for task in array(&team["tasks"]) {ui.push_id(text(task,"taskId"),|ui| {
-                ui.separator();ui.horizontal_wrapped(|ui|{ui.strong(text(task,"title"));status(ui,text(task,"status"));});
                 let agent=array(&team["agents"]).iter().find(|a|a["agentId"]==task["agentId"]);
-                hint(ui,&format!("{} · attempt {}/{}",agent.map(|a|text(&a["pack"],"name")).unwrap_or("Unassigned"),task["attempt"],task["maxAttempts"]));
+                ui.separator();ui.horizontal_wrapped(|ui|{ui.strong(task_title(ui,task,team,agent));status(ui,text(task,"status"));});
+                hint(ui,&localized_format!(ui, "{0} · attempt {1}/{2}",agent.map(|a|catalog_text(ui,&a["pack"],"name")).unwrap_or_else(||t(ui,"Unassigned")),task["attempt"],task["maxAttempts"]));
                 if active&&text(task,"status")=="waiting_question"&&!task["question"].is_null() {
                     let q=&task["question"];let key=format!("{}:{}",text(team,"teamId"),text(q,"questionId"));
                     let answer=self.answers.entry(key).or_default();let max=q["maxAnswerLength"].as_u64().unwrap_or(1000).min(50_000) as usize;
@@ -1075,8 +1122,8 @@ impl Console {
                 }
             });}
             ui.add_space(10.0);
-            ui.collapsing("Agents and controls",|ui|for agent in array(&team["agents"]) {ui.push_id(text(agent,"agentId"),|ui| {
-                ui.horizontal_wrapped(|ui| {ui.strong(text(&agent["pack"],"name"));status(ui,text(agent,"status"));
+            ui.collapsing(t(ui, "Agents and controls"),|ui|for agent in array(&team["agents"]) {ui.push_id(text(agent,"agentId"),|ui| {
+                ui.horizontal_wrapped(|ui| {ui.strong(catalog_text(ui,&agent["pack"],"name"));status(ui,text(agent,"status"));
                     if active&&agent["agentId"]!=team["orchestratorAgentId"]&&!matches!(text(agent,"status"),"completed"|"cancelled") {action(ui,commands,"Cancel agent","team_cancel_agent",revision(team)>0,||json!({"teamId":team["teamId"],"expectedTeamRevision":team["revision"],"agentId":agent["agentId"]}));}
                 });
             });});
@@ -1087,32 +1134,41 @@ impl Console {
 
     fn agents(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let packs = array(&snapshot["packs"]);
-        hint(ui, &format!("{} inspectable local packs", packs.len()));
+        hint(
+            ui,
+            &localized_format!(ui, "{0} inspectable local packs", packs.len()),
+        );
         ui.add_space(12.0);
         for pack in packs {
             ui.push_id(text(pack, "id"), |ui| {
                 card(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
-                        ui.strong(text(pack, "name"));
+                        ui.strong(catalog_text(ui, pack, "name"));
                         status(ui, text(pack, "role"));
                         hint(ui, text(&pack["provenance"], "kind"));
                     });
-                    ui.label(text(pack, "description"));
-                    egui::CollapsingHeader::new("Inspect pack contract").show(ui, |ui| {
-                        ui.label(format!(
-                            "Provider: {} · {} minutes · {} attempts",
+                    ui.label(catalog_text(ui, pack, "description"));
+                    egui::CollapsingHeader::new(t(ui, "Inspect pack contract")).show(ui, |ui| {
+                        ui.label(localized_format!(
+                            ui,
+                            "Provider: {0} · {1} minutes · {2} attempts",
                             text(pack, "providerId"),
                             pack["limits"]["timeoutMinutes"],
                             pack["limits"]["maxAttempts"]
                         ));
-                        ui.label(format!("Permissions: {}", joined(&pack["permissions"])));
-                        ui.label(format!(
-                            "Quality checks: {}",
+                        ui.label(localized_format!(
+                            ui,
+                            "Permissions: {0}",
+                            joined(&pack["permissions"])
+                        ));
+                        ui.label(localized_format!(
+                            ui,
+                            "Quality checks: {0}",
                             joined(&pack["qualityChecks"])
                         ));
-                        ui.label(text(pack, "instructions"));
-                        ui.strong("Expected output");
-                        ui.label(text(pack, "expectedOutput"));
+                        ui.label(catalog_text(ui, pack, "instructions"));
+                        ui.strong(t(ui, "Expected output"));
+                        ui.label(catalog_text(ui, pack, "expectedOutput"));
                         ui.monospace(format!("{}@{}", text(pack, "id"), text(pack, "version")));
                         if text(&pack["provenance"], "kind") == "local" {
                             action(
@@ -1131,7 +1187,7 @@ impl Console {
         }
         ui.add_space(12.0);
         card(ui, |ui| {
-            ui.heading("Install a custom pack");
+            ui.heading(t(ui, "Install a custom pack"));
             multiline(
                 ui,
                 "Inspectable JSON manifest",
@@ -1171,38 +1227,48 @@ impl Console {
                     });
                     hint(
                         ui,
-                        &format!(
-                            "CLI version: {}",
-                            provider["version"].as_str().unwrap_or("Not available")
+                        &localized_format!(
+                            ui,
+                            "CLI version: {0}",
+                            provider["version"]
+                                .as_str()
+                                .map(std::borrow::Cow::Borrowed)
+                                .unwrap_or_else(|| t(ui, "Not available"))
                         ),
                     );
-                    ui.label(format!(
-                        "Recent observation: {} · explicit live status: {}",
+                    ui.label(localized_format!(
+                        ui,
+                        "Recent observation: {0} · explicit live status: {1}",
                         if provider["capabilities"]["recentObservation"] == true {
-                            "supported"
+                            t(ui, "supported")
                         } else {
-                            "unavailable"
+                            t(ui, "unavailable")
                         },
                         if provider["capabilities"]["explicitLiveStatus"] == true {
-                            "supported"
+                            t(ui, "supported")
                         } else {
-                            "unavailable"
+                            t(ui, "unavailable")
                         }
                     ));
                     if !provider["error"].is_null() {
-                        ui.colored_label(RED, text(&provider["error"], "message"));
+                        ui.colored_label(RED, t(ui, text(&provider["error"], "message")));
                         ui.monospace(text(&provider["error"], "code"));
                     }
                     hint(
                         ui,
-                        &format!(
-                            "Stored snapshot from {}",
-                            format_time(text(observation, "observedAt"))
+                        &localized_format!(
+                            ui,
+                            "Stored snapshot from {0}",
+                            format_time(ui, text(observation, "observedAt"))
                         ),
                     );
                     let sessions = array(&observation["sessions"]);
                     ui.add_space(12.0);
-                    ui.strong(format!("Recent sessions ({})", sessions.len()));
+                    ui.strong(localized_format!(
+                        ui,
+                        "Recent sessions ({0})",
+                        sessions.len()
+                    ));
                     if sessions.is_empty() {
                         hint(ui, "No recent interactive sessions returned.");
                     }
@@ -1213,9 +1279,10 @@ impl Console {
                         });
                         hint(
                             ui,
-                            &format!(
-                                "Last observed {}",
-                                format_time(text(session, "lastObservedAt"))
+                            &localized_format!(
+                                ui,
+                                "Last observed {0}",
+                                format_time(ui, text(session, "lastObservedAt"))
                             ),
                         );
                     }
@@ -1229,7 +1296,7 @@ impl Console {
         let cloud = &snapshot["cloud"];
         card(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.heading("Patchfleet Cloud");
+                ui.heading(t(ui, "Patchfleet Cloud"));
                 status(
                     ui,
                     if cloud["paired"] == true {
@@ -1244,9 +1311,12 @@ impl Console {
             if cloud["error"] == true {
                 ui.colored_label(
                     RED,
-                    "Cloud settings need local recovery. Local work remains available.",
+                    t(
+                        ui,
+                        "Cloud settings need local recovery. Local work remains available.",
+                    ),
                 );
-                ui.label("Close Patchfleet and back up the private cloud.json file in its data directory. Explicitly repair or remove that file, then reopen the app.");
+                ui.label(t(ui, "Close Patchfleet and back up the private cloud.json file in its data directory. Explicitly repair or remove that file, then reopen the app."));
                 hint(
                     ui,
                     "Pairing is unavailable until the local Cloud state can be read safely.",
@@ -1255,16 +1325,17 @@ impl Console {
             }
             if cloud["paired"] == true {
                 ui.label(text(cloud, "cloudUrl"));
-                ui.monospace(format!("Host {}", text(cloud, "hostId")));
+                ui.monospace(localized_format!(ui, "Host {0}", text(cloud, "hostId")));
                 hint(
                     ui,
-                    &format!(
-                        "Last successful sync: {}",
-                        format_time(text(cloud, "lastSuccessAt"))
+                    &localized_format!(
+                        ui,
+                        "Last successful sync: {0}",
+                        format_time(ui, text(cloud, "lastSuccessAt"))
                     ),
                 );
                 if let Some(code) = cloud["lastErrorCode"].as_str() {
-                    ui.colored_label(RED, cloud_error(code));
+                    ui.colored_label(RED, t(ui, cloud_error(code)));
                     ui.monospace(code);
                 }
                 ui.horizontal(|ui| {
@@ -1301,6 +1372,91 @@ impl Console {
 
 fn array(value: &Value) -> &[Value] {
     value.as_array().map(Vec::as_slice).unwrap_or(&[])
+}
+fn language(ui: &Ui) -> Language {
+    ui.ctx()
+        .data(|data| data.get_temp(egui::Id::new("console-language")))
+        .unwrap_or_default()
+}
+fn t<'a>(ui: &Ui, key: &'a str) -> std::borrow::Cow<'a, str> {
+    i18n::tr(language(ui), key)
+}
+fn tf(ui: &Ui, key: &str, args: &[&str]) -> String {
+    i18n::format(language(ui), key, args)
+}
+fn catalog_text<'a>(ui: &Ui, value: &'a Value, key: &str) -> std::borrow::Cow<'a, str> {
+    let raw = text(value, key);
+    let builtin = text(&value["provenance"], "kind") == "built-in"
+        || (value["provenance"].is_null()
+            && matches!(
+                text(value, "id"),
+                "product-feature"
+                    | "bug-fix"
+                    | "saas-launch"
+                    | "design-frontend"
+                    | "security-audit"
+                    | "release"
+            ));
+    if !builtin {
+        return std::borrow::Cow::Borrowed(raw);
+    }
+    i18n::catalog(language(ui), raw)
+}
+fn task_title<'a>(
+    ui: &Ui,
+    task: &'a Value,
+    team: &Value,
+    agent: Option<&Value>,
+) -> std::borrow::Cow<'a, str> {
+    let raw = text(task, "title");
+    if let Some(pack) = agent
+        .map(|agent| &agent["pack"])
+        .filter(|pack| text(&pack["provenance"], "kind") == "built-in")
+    {
+        let template = text(team, "templateId").replace('-', " ");
+        if raw == format!("{}: {}", text(pack, "name"), template) {
+            return std::borrow::Cow::Owned(localized_format!(
+                ui,
+                "{0}: {1}",
+                catalog_text(ui, pack, "name"),
+                t(ui, &template)
+            ));
+        }
+    }
+    std::borrow::Cow::Borrowed(raw)
+}
+fn language_selector(ui: &mut Ui, snapshot: &Value, busy: bool, commands: &mut Vec<Command>) {
+    ui.label(RichText::new(t(ui, "Language")).size(10.0).color(MUTED));
+    ui.add_enabled_ui(!busy, |ui| {
+        ui.horizontal(|ui| {
+            for (choice, label) in [(Language::Tr, "Türkçe"), (Language::En, "English")] {
+                let selected = language(ui) == choice;
+                let response = ui.selectable_label(selected, label);
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new(("test-action", "desktop_language", label)),
+                        response.rect,
+                    )
+                });
+                if response.clicked()
+                    && (!selected || snapshot["desktopPreferences"]["error"] == true)
+                    && commands.is_empty()
+                {
+                    commands.push(Command::new(
+                        "desktop_language",
+                        json!({"language":choice.code()}),
+                    ));
+                }
+            }
+        })
+    });
+    if snapshot["desktopPreferences"]["error"] == true {
+        hint(
+            ui,
+            "Language preference could not be read. Select a language to replace it.",
+        );
+    }
 }
 fn items(value: &Value) -> &[Value] {
     array(&value["items"])
@@ -1347,10 +1503,10 @@ fn joined(value: &Value) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
-fn format_time(value: &str) -> String {
+fn format_time(ui: &Ui, value: &str) -> String {
     chrono::DateTime::parse_from_rfc3339(value)
-        .map(|t| t.format("%b %d, %H:%M UTC").to_string())
-        .unwrap_or_else(|_| "Not recorded".into())
+        .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
+        .unwrap_or_else(|_| t(ui, "Not recorded").into_owned())
 }
 fn cloud_error(code: &str) -> &'static str {
     match code {
@@ -1361,6 +1517,9 @@ fn cloud_error(code: &str) -> &'static str {
     }
 }
 fn hint(ui: &mut Ui, value: &str) {
+    ui.label(RichText::new(t(ui, value)).size(11.0).color(MUTED));
+}
+fn raw_hint(ui: &mut Ui, value: &str) {
     ui.label(RichText::new(value).size(11.0).color(MUTED));
 }
 fn status(ui: &mut Ui, value: &str) {
@@ -1369,7 +1528,13 @@ fn status(ui: &mut Ui, value: &str) {
         "failed" | "rejected" | "timed_out" => RED,
         _ => MUTED,
     };
-    let label = value.replace('_', " ");
+    let label = t(ui, value).replace('_', " ");
+    paint_status(ui, label, color);
+}
+fn raw_status(ui: &mut Ui, value: &str) {
+    paint_status(ui, value.to_owned(), MUTED);
+}
+fn paint_status(ui: &mut Ui, label: String, color: Color32) {
     let galley =
         ui.painter()
             .layout_no_wrap(label.clone(), egui::FontId::proportional(10.0), color);
@@ -1396,14 +1561,14 @@ fn card(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
 }
 fn empty(ui: &mut Ui, title: &str, description: &str) {
     card(ui, |ui| {
-        ui.heading(title);
+        ui.heading(t(ui, title));
         ui.add_space(8.0);
         hint(ui, description);
     });
     ui.add_space(14.0);
 }
 fn field(ui: &mut Ui, label: &str, value: &mut String, max: usize, password: bool) {
-    ui.label(RichText::new(label).size(11.0).color(MUTED));
+    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
     ui.add(
         egui::TextEdit::singleline(value)
             .desired_width(f32::INFINITY)
@@ -1415,7 +1580,7 @@ fn field(ui: &mut Ui, label: &str, value: &mut String, max: usize, password: boo
     ui.add_space(8.0);
 }
 fn multiline(ui: &mut Ui, label: &str, value: &mut String, max: usize, rows: usize) {
-    ui.label(RichText::new(label).size(11.0).color(MUTED));
+    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
     ui.add(
         egui::TextEdit::multiline(value)
             .desired_width(f32::INFINITY)
@@ -1459,15 +1624,26 @@ fn choose_refs(
     empty: bool,
 ) {
     let (id_key, name_key) = keys;
-    ui.label(RichText::new(label).size(11.0).color(MUTED));
+    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
     let current = options
         .iter()
         .find(|v| text(v, id_key) == selected)
-        .map(|v| text(v, name_key))
-        .unwrap_or(if selected.is_empty() {
-            "Choose…"
-        } else {
-            "Unavailable selection"
+        .map(|v| {
+            if id_key == "id" {
+                catalog_text(ui, v, name_key)
+            } else {
+                std::borrow::Cow::Borrowed(text(v, name_key))
+            }
+        })
+        .unwrap_or_else(|| {
+            t(
+                ui,
+                if selected.is_empty() {
+                    "Choose…"
+                } else {
+                    "Unavailable selection"
+                },
+            )
         });
     egui::ComboBox::from_id_salt(egui::Id::new(id))
         .selected_text(current)
@@ -1475,20 +1651,24 @@ fn choose_refs(
         .width(ui.available_width().min(600.0))
         .show_ui(ui, |ui| {
             if empty {
-                ui.selectable_value(selected, String::new(), "None");
+                ui.selectable_value(selected, String::new(), t(ui, "None"));
             }
             for value in options {
                 ui.selectable_value(
                     selected,
                     text(value, id_key).to_owned(),
-                    text(value, name_key),
+                    if id_key == "id" {
+                        catalog_text(ui, value, name_key)
+                    } else {
+                        std::borrow::Cow::Borrowed(text(value, name_key))
+                    },
                 );
             }
         });
     ui.add_space(8.0);
 }
 fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
-    let response = ui.add_enabled(enabled, egui::Button::new(label));
+    let response = ui.add_enabled(enabled, egui::Button::new(t(ui, label)));
     #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(
@@ -1501,7 +1681,7 @@ fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
 fn submit(ui: &mut Ui, label: &str, action: &str) -> bool {
     let response = ui.add(
         egui::Button::new(
-            RichText::new(label)
+            RichText::new(t(ui, label))
                 .size(12.0)
                 .strong()
                 .color(Color32::from_rgb(18, 37, 29)),
@@ -1528,7 +1708,7 @@ fn action(
 ) {
     let response = ui.add_enabled(
         enabled,
-        egui::Button::new(RichText::new(label).size(11.0).color(TEXT))
+        egui::Button::new(RichText::new(t(ui, label)).size(11.0).color(TEXT))
             .fill(Color32::TRANSPARENT)
             .stroke(egui::Stroke::new(1.0, BORDER))
             .corner_radius(5)
@@ -1551,19 +1731,19 @@ fn constrained(ui: &mut Ui, max_width: f32, contents: impl FnOnce(&mut Ui)) {
     );
 }
 fn section_title(ui: &mut Ui, title: &str, description: &str) {
-    ui.label(RichText::new(title).size(16.0).strong().color(TEXT));
+    ui.label(RichText::new(t(ui, title)).size(16.0).strong().color(TEXT));
     ui.add_space(3.0);
     hint(ui, description);
 }
 fn field_hint(ui: &mut Ui, label: &str, value: &mut String, max: usize, placeholder: &str) {
-    ui.label(RichText::new(label).size(11.0).color(MUTED));
+    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
     ui.add(
         egui::TextEdit::singleline(value)
             .desired_width(f32::INFINITY)
             .font(egui::TextStyle::Body)
             .margin(egui::Margin::symmetric(10, 7))
             .char_limit(max)
-            .hint_text(placeholder),
+            .hint_text(t(ui, placeholder)),
     );
     ui.add_space(12.0);
 }
@@ -1585,7 +1765,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize) -> bool {
             egui::WidgetType::SelectableLabel,
             true,
             selected,
-            tab.name(),
+            t(ui, tab.name()),
         )
     });
     let background = if selected {
@@ -1613,7 +1793,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize) -> bool {
     ui.painter().text(
         rect.min + egui::vec2(39.0, 17.0),
         egui::Align2::LEFT_CENTER,
-        tab.name(),
+        t(ui, tab.name()),
         egui::FontId::proportional(13.0),
         color,
     );
@@ -2337,5 +2517,129 @@ mod tests {
                 "{label} must stay reachable in the minimum window"
             );
         }
+    }
+
+    fn painted_copy(ctx: &egui::Context, console: &mut Console, data: &Value) -> Vec<String> {
+        fn collect(shape: &egui::Shape, copy: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Text(text) => copy.push(text.galley.text().to_owned()),
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        collect(shape, copy)
+                    }
+                }
+                _ => {}
+            }
+        }
+        let output = ctx.run_ui(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 880.0))),
+                ..Default::default()
+            },
+            |ui| {
+                console.show(ui, data, false);
+            },
+        );
+        let mut copy = Vec::new();
+        for shape in &output.shapes {
+            collect(&shape.shape, &mut copy);
+        }
+        output.drop_without_applying_deltas();
+        copy
+    }
+
+    #[test]
+    fn language_switch_changes_controls_and_keeps_owner_key_collisions_and_drafts_raw() {
+        let ctx = egui::Context::default();
+        let mut console = Console {
+            tab: Tab::Memory,
+            ..Default::default()
+        };
+        let mut data = memory_snapshot();
+        data["desktopPreferences"] = json!({"language":"tr","error":false});
+        data["projectMemory"]["projects"][0]["name"] = json!("Work");
+        data["projectMemory"]["projects"][0]["sourceCount"] = json!(1);
+        data["memoryPage"]["total"] = json!(1);
+        data["memoryPage"]["sources"] = json!([{"sourceId":"source:locale","projectId":"project:fixture","kind":"message","revision":2,"title":"Memory","text":"Work"}]);
+        let copy = painted_copy(&ctx, &mut console, &data);
+        assert!(copy.iter().any(|v| v == "Hafıza"));
+        assert!(copy.iter().any(|v| v == "Anahtar kelime filtresi"));
+        assert!(copy.iter().any(|v| v == "Memory"), "source title stays raw");
+        assert!(
+            copy.iter().filter(|v| *v == "Work").count() >= 2,
+            "project name and source text stay raw"
+        );
+        console.memory.title = "Projects".into();
+        console.memory.body = "Memory".into();
+        let command = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "desktop_language",
+            "English",
+        );
+        assert_eq!(command.len(), 1);
+        assert_eq!(command[0].action, "desktop_language");
+        assert_eq!(command[0].payload["language"], "en");
+        data["desktopPreferences"]["language"] = json!("en");
+        let copy = painted_copy(&ctx, &mut console, &data);
+        assert!(copy.iter().any(|v| v == "Keyword filter"));
+        assert!(!copy.iter().any(|v| v == "Anahtar kelime filtresi"));
+        assert_eq!(console.memory.title, "Projects");
+        assert_eq!(console.memory.body, "Memory");
+        assert_eq!(data["memoryPage"]["sources"][0]["title"], "Memory");
+        assert_eq!(data["memoryPage"]["sources"][0]["text"], "Work");
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            true,
+            "desktop_language",
+            "Türkçe"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn corrupted_language_preference_can_be_explicitly_replaced_by_current_default() {
+        let ctx = egui::Context::default();
+        let mut console = Console::default();
+        let mut data = snapshot();
+        data["desktopPreferences"] = json!({"language":"tr","error":true});
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "desktop_language",
+            "Türkçe",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].payload["language"], "tr");
+        data["desktopPreferences"]["error"] = json!(false);
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "desktop_language",
+            "Türkçe"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn built_in_catalog_translation_never_changes_a_custom_pack_with_the_same_name() {
+        let ctx = egui::Context::default();
+        let output=ctx.run_ui(RawInput::default(),|ui| {
+            ui.ctx().data_mut(|data|data.insert_temp(egui::Id::new("console-language"),Language::Tr));
+            let custom=json!({"id":"pack:custom","name":"Orchestrator","description":"Memory","provenance":{"kind":"local"}});
+            assert_eq!(catalog_text(ui,&custom,"name"),"Orchestrator");
+            assert_eq!(catalog_text(ui,&custom,"description"),"Memory");
+            let builtin=json!({"id":"pack:orchestrator","name":"Orchestrator","provenance":{"kind":"built-in"}});
+            assert_eq!(catalog_text(ui,&builtin,"name"),"Koordinatör");
+        });
+        output.drop_without_applying_deltas();
     }
 }

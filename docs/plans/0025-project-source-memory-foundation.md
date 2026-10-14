@@ -4,6 +4,10 @@ Status: Approved — implementing
 
 Owner direction: 2026-10-14, “Onaylı yap”
 
+Owner extension: “Dil desteği ekleyelim muhakkak” — include Turkish/English
+desktop localization, a persisted in-app language selector and translated native
+controls/help/errors while preserving owner-authored source and work text.
+
 Implements Slice A of Task 0022 under ADR 0025 and the native runtime in ADR 0024.
 
 ## Outcome
@@ -27,6 +31,8 @@ Projection key `projectMemory`, cache file `project-memory.json`:
 - Project/source IDs use `project:<uuid>` / `source:<uuid>`.
 - Kinds: `message`, `work_instruction`, `team_goal`, `owner_answer`, `approval_note`.
 - Project/source titles 160 UTF-16 units, project names 80; source text 50,000.
+  Message/edit intake allows a bounded192KiB JSON envelope in Host and native CLI
+  so valid multilingual text fits. Other actions retain128KiB.
 
 Owner actions (normal commandId/createdAt/expiresAt envelope):
 
@@ -37,7 +43,7 @@ Owner actions (normal commandId/createdAt/expiresAt envelope):
 - `project_source_edit {projectId, sourceId, title, text, expectedSourceRevision}`
   (message sources only).
 - `project_memory_read {projectId, offset, limit, query}` returns
-  `{reasonCode:"PROJECT_MEMORY_READ", projectId, revision, offset, total, sources:[]}`.
+  `{reasonCode:"PROJECT_MEMORY_READ", projectId, revision, offset, query, total, sources:[]}`.
   Offset defaults 0, limit 10 and max20, query defaults empty (max160).
 
 Module API:
@@ -73,7 +79,8 @@ revisions, and surfaces read outcomes without persisting read queries.
   desktop `bridge.rs`/`main.rs`/`command.rs`, integration tests, version/build/package verification.
 - Runtime builder: new `project_memory.rs`, `domain.rs`, `store.rs`, `lib.rs`,
   new `tests/project_memory.rs`, narrowly affected projection/parity tests.
-- Console builder: desktop `ui.rs` (native projects/linking/memory, UI tests).
+- Console builder: desktop `ui.rs` and `i18n.rs` (native console, Turkish/English
+  lookup and localization tests).
 - Reviewer: stable implementation commit, read-only durability/isolation/Cloud audit.
 
 Workers read AGENTS and applicable runtime/team skills, preserve V1/V2 contracts,
@@ -95,6 +102,8 @@ credentials, pushing or publishing are in scope.
 - Crash-prefix recovery gives each accepted command a terminal outcome.
 - Memory contents/IDs/query canaries never enter V1/V2 Cloud projections.
 - Native project/message/edit/link/paging actions have bounded, usable feedback.
+- Turkish/English controls switch in-app and persist across restart. No source,
+  task instruction, identifier, provider brand or custom user text is translated.
 - Rust tests/fmt/clippy and legacy regression checks pass; actual macOS native
   rendering and a fresh development package are verified. Other platforms remain
   native CI validation requirements.

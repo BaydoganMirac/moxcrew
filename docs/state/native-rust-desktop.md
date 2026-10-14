@@ -43,6 +43,11 @@ Unpaired Cloud returns before copying projections and canonical history.
   clock correction recovery and language/source boundaries.
 - A real native macOS ARM64 frame renders the UI and Rust snapshot. Timed
   normal close exits successfully using disposable data and no provider probes.
+- Production launch proof now also covers macOS window presentation: the
+  installed 0.5 App and packaged executable have identical SHA-256 hashes, and
+  a normal LaunchServices launch with disposable data displays the native
+  console in an OS window capture. The older screenshot-feature checks below
+  read the GL framebuffer and did not establish this presentation evidence.
 - Actual 0.5 Turkish and English frames were captured in 0.823 and 0.286 seconds,
   including disposable Host fixture creation, PNG capture and process exit; the
   second used warmed system caches. Final Turkish memory-scene idle RSS samples
@@ -76,6 +81,17 @@ Unpaired Cloud returns before copying projections and canonical history.
   upload or live-data migration was performed.
 
 ## Visual follow-up
+
+The subsequent entirely-white-window report was reproduced with the mounted
+0.3 WebView App. While that test instance was running, a normal LaunchServices
+request for the installed 0.5 App returned the old instance's PID and displayed
+the same white window. Closing that test instance and normally launching the
+installed 0.5 App displayed the console. Both checks used disposable directories
+and failing provider test commands; owner data and the mounted image were left
+intact. No native renderer change or version bump was justified. See
+[Task 0027](../plans/0027-native-production-startup.md), the
+[production window](../screenshots/native-production-0.5-tr.png) and the
+[reproduced old window](../screenshots/native-legacy-0.3-blank.png).
 
 The owner rejected the first native appearance. The implemented redesign uses
 quiet icon navigation, consistent typography/color tokens, padded inputs,

@@ -43,6 +43,15 @@ close in an explicitly empty test directory. Set `PATCHFLEET_NATIVE_SMOKE=1` to
 prevent provider probing. These controls are absent from production builds.
 The UI tests also paint all tabs without a display and exercise action payloads.
 
+The screenshot feature reads the OpenGL framebuffer; it alone does not prove
+that macOS presented the shipped window. Also launch the production App through
+LaunchServices with an explicit disposable `PATCHFLEET_DATA_DIR`, then inspect
+an OS capture of only that test process's window. Close all older Patchfleet
+instances first: the shared bundle identifier can route an Applications launch
+to an already-running 0.3 WebView copy. Record the actual launched PID/bundle,
+version and executable hash. Keep provider probes disabled or bound to failing
+test executables, and terminate only the test instances.
+
 When a developer already has an older Patchfleet DMG mounted, the packager's
 create-dmg helper may collide with its volume name. Preserve that owner mount.
 Package the App first, then use hdiutil with a distinct versioned volume name

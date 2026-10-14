@@ -1,6 +1,6 @@
 # Task 0022 Project memory and decision service
 
-Status: Ready for implementation breakdown
+Status: Slice A complete; remaining slices ready for separate implementation cards
 
 Owner direction: 2026-10-14
 
@@ -75,9 +75,10 @@ and native platform release checks tracked separately. New memory slices belong
 to that Rust host and its single canonical writer; no Node memory subsystem or
 second database authority is introduced.
 
-Slice A remains stable Project identity, explicit workspace linkage and durable
-owner source capture. The migration alone does not implement these product
-objects, MCP access, vectors or automatic ADR extraction.
+Slice A is implemented under Task 0025: stable Project identity, explicit workspace
+linkage, durable owner sources and a native memory screen. Turkish/English display
+support is also verified. The remaining decision/index, MCP and automatic extraction
+slices are separate work and are not implied by the migration or source foundation.
 
 ## Local storage choice
 
@@ -143,12 +144,11 @@ Changed decisions mark downstream context stale for refresh or owner review.
 | C Agent access | An agent and a team in separate worktrees read the same accepted decision through scoped tools | Real provider MCP handshake, expired/revoked binding, cross-project denial and bounded responses |
 | D Automatic drafts | A Patchfleet message produces a sourced draft without changing active decisions | Structured output, source validation, deduplication, source edit race, no-ADR case and extraction failure recovery |
 
-With the Rust foundation selected, Slice A is the first memory implementation card.
-Its scope is stable Project identity,
-explicit workspace linkage, source ingestion, event replay, and a local UI
-surface. It does not need an embedding dependency or a model API key. Specify
-the exact domain, writer, registry, intake route, UI and behavior-test ownership
-before starting that runtime change.
+With the Rust foundation selected, Slice A was completed in
+[Task 0025](0025-project-source-memory-foundation.md). Its scope is stable Project
+identity, workspace linkage, source ingestion, replay and a native UI; it required
+no embedding dependency or model API key. Decision/index work needs its own
+approved card and exact writer/index/UI/behavior-test ownership before starting.
 
 Each slice produces a feature-state update and a reviewable local diff. Only
 broaden checks after a new failure or dependency warrants it. Do not build all

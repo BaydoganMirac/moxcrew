@@ -1,6 +1,6 @@
 # Project memory feature state
 
-Status: Slice A implemented; validation and native packaging in progress
+Status: Slice A complete; decision/index/agent/extraction slices remain planned
 
 Last updated: 2026-10-14
 
@@ -42,12 +42,12 @@ only explicit owner acceptance makes a decision authoritative.
   move historical sources or erase project history.
 - The protected `project-memory.json` projection rebuilds from the log. Operational
   snapshots clone project metadata only. Memory reads are project-specific, max20
-  sources per page, with optional keyword filtering; the native UI uses pages of10.
+  sources per page, with optional keyword filtering; the native UI uses pages of 10.
   Cached pages are invalidated when project revision changes or scope/filter changes.
 - Cloud sync uses an event cursor rather than copying source-bearing canonical
   history. Its existing field allowlists omit all memory text, identities and queries.
 
-## Initial evidence
+## Verified evidence
 
 - An actual Host integration flow persists all five source kinds, retries owner
   commands without duplicates, relinks a worktree to a second project, verifies
@@ -55,12 +55,28 @@ only explicit owner acceptance makes a decision authoritative.
 - Generated team work is present in the work queue without being captured as a
   separate owner source. Cross-project message edits fail.
 - V1/V2 Cloud canaries exclude source text and project identities.
-- All149 legacy tests pass. Additional Rust boundary/UI checks, independent review
-  and macOS native packaging are being completed before final handoff.
+- All 81 Rust tests and 149 legacy tests pass; all 246 original V1 prefix hashes
+  remain intact. Rustfmt and strict all-target/all-feature Clippy pass.
+- Twelve memory checks cover all five pure command crash prefixes, source edit
+  history, same-project access, duplicate commands and recovery across clock
+  corrections. Only fresh commands are subject to future-time admission checks.
+- Source message/edit intake shares a bounded 192 KiB Host/CLI envelope. Actual
+  50,000-unit CJK creation and editing round-trip without truncation.
+- Twenty-four native console/bridge/localization checks cover owner clicks,
+  stale scope/revision pages, atomic outcome/snapshot delivery and exact retries.
+- Turkish/English controls switch through the owner Host and persist in protected,
+  bounded `desktop-preferences.json`. Owner/custom text remains original even when
+  it matches a translation key. Invalid/damaged preferences preserve canonical data.
+- Independent review confirmed the clock/intake fixes, historical project scope,
+  source immutability, Cloud allowlists and translation boundaries.
+- Actual native macOS ARM64 [Turkish](../screenshots/native-memory-0.5-tr.png) and
+  [English](../screenshots/native-memory-0.5-en.png) frames render real disposable
+  Host source records. Version 0.5 development App/DMG, signature, identifier and
+  image integrity are verified; no installed app or owner data was modified.
 
 ## Next
 
-Complete Slice A validation, then verify decision proposal/acceptance, embedded
+Verify decision proposal/acceptance, embedded
 database packaging and accepted-decision retrieval before
 adding real agent tools and automatic extraction.
 

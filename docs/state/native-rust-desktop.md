@@ -1,6 +1,6 @@
 # Native Rust desktop state
 
-Status: 0.5.1 implemented; independent acceptance review and platform release checks pending
+Status: 0.5.1 implemented and independently accepted; platform release checks pending
 
 Updated: 2026-10-15
 
@@ -58,6 +58,10 @@ Unpaired Cloud returns before copying projections and canonical history.
 - Independent review confirmed immediate close signaling, writer release,
   durable retry identities, safe errors, Cloud recovery, immutable project evidence,
   clock correction recovery and language/source boundaries.
+- Task 0028 was independently accepted through `f155721`, covering new access
+  diagnostics, canonical registration retries, neutral picker cancel/close,
+  explicit project linking and idle recovery controls. No remaining concrete
+  blocker was found; platform/presentation limits below remain explicit.
 - A real native macOS ARM64 frame renders the UI and Rust snapshot. Timed
   normal close exits successfully using disposable data and no provider probes.
 - Task 0027 established macOS window presentation for production 0.5.0: the
@@ -89,7 +93,7 @@ Unpaired Cloud returns before copying projections and canonical history.
   resident shared graphics/framework pages; window-server costs, large history,
   actual provider processes and other platforms are separate. These are measured
   local observations, not cross-platform performance promises.
-- The final 0.5.1 production sample reached 105.3 MiB RSS and 0.13 seconds
+- The final 0.5.1 production sample reached 105.2 MiB RSS and 0.14 seconds
   cumulative CPU over an eight-second cold launch, including startup and failing
   probe stubs. Separate sheet/error tests reached 105–106 MiB and exited normally.
   These short samples do not establish sustained idle/active-work performance.

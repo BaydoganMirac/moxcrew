@@ -1,6 +1,6 @@
 # Task 0028 Native folder selection and workspace onboarding
 
-Status: Implemented — independent acceptance review pending
+Status: Implemented — independent acceptance review accepted
 
 Owner direction: 2026-10-14, native workspace error screenshot; replace path
 typing with a folder picker, request relevant access and improve warnings/design.
@@ -36,7 +36,7 @@ No installed application replacement, owner-state migration, push/publication.
 - Folder selection uses OS consent; missing/denied/not-repository/unsafe paths
   have distinct safe messages. Denied access offers a new picker selection and
   platform settings guidance. No claim that OS/ACL access can be forced.
-- Host revalidates canonical folders at registration. Root/home rejection,
+- Host revalidates canonical folders for new registrations. Root/home rejection,
   linked worktrees, command identity, expiry, revisions and Cloud privacy remain.
 - Feedback distinguishes success/rejection/failure, has a dismiss action and
   relevant recovery. Editing/selecting a new folder does not retry an old action.
@@ -69,3 +69,13 @@ No installed application replacement, owner-state migration, push/publication.
 - Windows/Linux native dialog and global macOS TCC deny/grant checks remain
   platform release limits. No installed App, owner data or OS privacy settings
   were changed. See [current state](../state/native-rust-desktop.md).
+
+## Acceptance review
+
+The independent reviewer accepted the integrated implementation through
+`f155721`, including core commits `ce7dd0f`/`7381a90` and native integration
+`80f5c1f`. Selection/cancellation/close, explicit project linking, canonical
+receipt replay, idle recovery controls and minimum-window TR/EN layouts have no
+remaining concrete blocker. Review was read-only and did not rerun tests.
+Windows/Linux dialogs, global macOS TCC deny/grant and the unavailable final
+production OS pixel capture remain the documented release boundaries above.

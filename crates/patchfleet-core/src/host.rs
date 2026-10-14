@@ -384,11 +384,34 @@ impl Host {
 
     async fn workspace_action(&self, action: &str, p: &Value) -> Result<Value> {
         let mut request = if action == "workspace_register" {
-            let canonical =
-                providers::validate_workspace_for_registration(text(p, "workingDirectory")?)
-                    .await
-                    .map_err(Error)?;
             let base = intent("register_workspace", Value::Null, p);
+            let directory = text(p, "workingDirectory")?;
+            let canonical_replay = self.store.transaction(|events| {
+                let previous = events.iter().find(|e| {
+                    let old = &e["payload"]["intent"];
+                    e["type"] == "workspace.command.requested"
+                        && (old["intentId"] == base["intentId"]
+                            || old["idempotencyKey"] == base["idempotencyKey"])
+                });
+                let replay = previous.is_some_and(|e| {
+                    let old = &e["payload"]["intent"];
+                    old["type"] == "register_workspace"
+                        && old["payload"]["workspace"]["workingDirectory"] == directory
+                        && events.iter().any(|r| {
+                            r["type"] == "workspace.command.receipted"
+                                && r["payload"]["receipt"]["intentId"] == old["intentId"]
+                        })
+                });
+                Ok((vec![], json!(replay)))
+            })?;
+            // Only exact canonical retries with a receipt bypass current eligibility.
+            let canonical = if canonical_replay == true {
+                directory.to_owned()
+            } else {
+                providers::validate_workspace_for_registration(directory)
+                    .await
+                    .map_err(Error)?
+            };
             let display = p["displayName"]
                 .as_str()
                 .filter(|s| !s.trim().is_empty())

@@ -397,3 +397,118 @@ fn version_isolation_and_forged_fact_provenance_fail_closed() {
     bad[2]["payload"]["receipt"]["projectRevision"] = json!(999);
     assert!(domain::project_events(&bad).is_err());
 }
+
+fn shift_recorded_clock(value: &mut Value) {
+    match value {
+        Value::Object(fields) => {
+            for (key, child) in fields {
+                if [
+                    "recordedAt",
+                    "createdAt",
+                    "updatedAt",
+                    "completedAt",
+                    "expiresAt",
+                ]
+                .contains(&key.as_str())
+                {
+                    let recorded =
+                        chrono::DateTime::parse_from_rfc3339(child.as_str().unwrap()).unwrap();
+                    *child = json!((recorded + chrono::Duration::hours(1))
+                        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+                } else {
+                    shift_recorded_clock(child);
+                }
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                shift_recorded_clock(child);
+            }
+        }
+        _ => (),
+    }
+}
+fn accepted_future_fixture() -> (Vec<Value>, Value) {
+    let payload = command(json!({"name":"Accepted before clock correction"}));
+    let (mut events, _) = memory::apply(&[], "project_create", &payload).unwrap();
+    // This is a valid accepted history from a previously fast wall clock. Only
+    // stored timestamps move; UUIDs, revisions and request/fact relationships
+    // remain unchanged. No actual system clock mutation is needed.
+    for event in &mut events {
+        shift_recorded_clock(event);
+    }
+    domain::project_events(&events).unwrap();
+    (events, payload)
+}
+
+#[test]
+fn clock_rollback_exact_retry_returns_the_durable_receipt() {
+    let (events, mut payload) = accepted_future_fixture();
+    let receipt = events[2]["payload"]["receipt"].clone();
+    for key in ["createdAt", "expiresAt"] {
+        payload[key] = events[0]["payload"][key].clone();
+    }
+    let (additions, retried) = memory::apply(&events, "project_create", &payload).unwrap();
+    assert!(additions.is_empty());
+    assert_eq!(retried, receipt);
+    let mut conflicting = payload.clone();
+    conflicting["name"] = json!("Changed retry");
+    assert!(memory::apply(&events, "project_create", &conflicting).is_err());
+    payload["expiresAt"] = json!((chrono::DateTime::parse_from_rfc3339(
+        payload["expiresAt"].as_str().unwrap()
+    )
+    .unwrap()
+        + chrono::Duration::milliseconds(1))
+    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+    assert!(
+        memory::apply(&events, "project_create", &payload).is_err(),
+        "existing requests still validate their canonical five minute window"
+    );
+}
+
+#[test]
+fn clock_rollback_pending_pure_commands_recover_and_receipt_once() {
+    let (original, payload) = accepted_future_fixture();
+    for prefix in [1, 2] {
+        let mut events = original[..prefix].to_vec();
+        let recovery = memory::recover(&events).unwrap();
+        events.extend(recovery);
+        domain::project_events(&events).unwrap();
+        assert!(memory::recover(&events).unwrap().is_empty());
+        let (additions, receipt) = memory::apply(&events, "project_create", &payload).unwrap();
+        assert!(additions.is_empty());
+        assert_eq!(receipt["outcome"], "applied");
+        assert_eq!(
+            receipt["projectId"],
+            original[2]["payload"]["receipt"]["projectId"]
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["type"] == "project.created")
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e["type"] == "project.command.receipted")
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn unseen_future_project_command_still_fails_admission_without_records() {
+    let created = chrono::Utc::now() + chrono::Duration::hours(1);
+    let payload = command(
+        json!({"name":"Future fresh command","createdAt":created.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),"expiresAt":(created+chrono::Duration::minutes(5)).to_rfc3339_opts(chrono::SecondsFormat::Millis,true)}),
+    );
+    assert_eq!(
+        memory::apply(&[], "project_create", &payload)
+            .unwrap_err()
+            .0,
+        "INVALID_PROJECT_TIME"
+    );
+}

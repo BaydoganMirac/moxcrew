@@ -878,10 +878,15 @@ fn normalized(events: &[Value], action: &str, payload: &Value, at: &str) -> Resu
         .collect();
     let request = json!({"commandId":command,"action":action,"actorId":"local-owner","createdAt":created,"expiresAt":expires,"payload":input});
     validate_request(&request)?;
-    require(
-        iso(&request["createdAt"])? <= iso(&json!(at))? + chrono::Duration::seconds(60),
-        "INVALID_PROJECT_TIME",
-    )?;
+    // Wall-clock admission is checked once. A validated durable request stays
+    // accepted across clock corrections; exact identity/payload equality below
+    // still prevents changing a retried command or bypassing its time window.
+    if prior.is_none() {
+        require(
+            iso(&request["createdAt"])? <= iso(&json!(at))? + chrono::Duration::seconds(60),
+            "INVALID_PROJECT_TIME",
+        )?;
+    }
     Ok(request)
 }
 pub fn apply(events: &[Value], action: &str, payload: &Value) -> Result<(Vec<Value>, Value)> {

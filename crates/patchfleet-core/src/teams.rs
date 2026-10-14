@@ -50,7 +50,7 @@ fn string_input(v: &Value, key: &str, max: usize) -> Result<String> {
 
 impl Host {
     pub(crate) fn create_team(&self, input: &Value) -> Result<Value> {
-        let bundle = self.store.projections()?;
+        let bundle = self.store.runtime_projections()?;
         if find(&bundle["workspaces"], "workspaceId", &input["workspaceId"]).is_none() {
             return Err(Error("WORKSPACE_NOT_REGISTERED".into()));
         }
@@ -129,8 +129,19 @@ impl Host {
             "settings":{"concurrency":settings["concurrency"].as_u64().unwrap_or(2),"retryLimit":settings["retryLimit"].as_u64().unwrap_or(1),
                 "timeoutMinutes":settings["timeoutMinutes"].as_u64().unwrap_or(120),"failurePolicy":settings["failurePolicy"].as_str().unwrap_or("stop")},"createdAt":now()});
         domain::validate_team(&team)?;
-        self.store
-            .append(vec![event("team.created", json!({"team":team}))])?;
+        let mut additions = Vec::new();
+        // Only the local owner's creation path assigns source memory scope.
+        if input["commandId"].is_string() {
+            if let Some(project) = self.store.workspace_project(text(input, "workspaceId")?)? {
+                additions.push(crate::project_memory::bind(
+                    &project,
+                    "team",
+                    text(&team, "teamId")?,
+                ));
+            }
+        }
+        additions.push(event("team.created", json!({"team":team})));
+        self.store.append(additions)?;
         Ok(json!({"reasonCode":"TEAM_CREATED","teamId":team["teamId"]}))
     }
 
@@ -200,7 +211,7 @@ impl Host {
             .iter()
             .filter(|t| agent.map(|a| t["agentId"] == *a).unwrap_or(true))
         {
-            let work = self.store.projections()?["work"].clone();
+            let work = self.store.runtime_projections()?["work"].clone();
             if let Some(item) = find(&work, "workItemId", &task["workItemId"]) {
                 if item["status"] == "queued" {
                     self.apply_work_intent(intent("remove_queued_work",json!({"workItemId":item["workItemId"],"expectedItemRevision":item["revision"]}),&Value::Null)).await?;
@@ -221,7 +232,7 @@ impl Host {
     }
 
     pub(crate) async fn advance_team(&self, id: &Value) -> Result<Value> {
-        let mut bundle = self.store.projections()?;
+        let mut bundle = self.store.runtime_projections()?;
         let mut team =
             find(&bundle["teams"], "teamId", id).ok_or_else(|| Error("TEAM_NOT_FOUND".into()))?;
         if !matches!(team["status"].as_str(), Some("active" | "waiting")) {
@@ -236,7 +247,7 @@ impl Host {
         {
             self.team_event("team.timed_out", json!({"teamId":id}))?;
             self.stop_team_work(&team, None).await?;
-            return Ok(find(&self.store.projections()?["teams"], "teamId", id).unwrap());
+            return Ok(find(&self.store.runtime_projections()?["teams"], "teamId", id).unwrap());
         }
         for task in array(&team, "tasks")
             .iter()
@@ -247,7 +258,7 @@ impl Host {
                 json!({"teamId":id,"taskId":task["taskId"],"previousAttempt":task["attempt"]}),
             )?;
         }
-        bundle = self.store.projections()?;
+        bundle = self.store.runtime_projections()?;
         team = find(&bundle["teams"], "teamId", id).unwrap();
         let workspace = find(&bundle["workspaces"], "workspaceId", &team["workspaceId"])
             .ok_or_else(|| Error("WORKSPACE_NOT_REGISTERED".into()))?;
@@ -272,7 +283,11 @@ impl Host {
                 break;
             }
             let item_id = json!(work_id(&team, task)?);
-            let mut item = find(&self.store.projections()?["work"], "workItemId", &item_id);
+            let mut item = find(
+                &self.store.runtime_projections()?["work"],
+                "workItemId",
+                &item_id,
+            );
             if item.is_none() {
                 let pack = &array(&team, "agents")
                     .iter()
@@ -286,7 +301,11 @@ impl Host {
                     text(&team,"name")?,text(&team,"goal")?,text(task,"title")?,text(task,"instruction")?,text(pack,"instructions")?,pack["permissions"],pack["qualityChecks"],text(pack,"expectedOutput")?,task["answer"]["answer"].as_str().unwrap_or(""),task["approval"]["note"].as_str().unwrap_or(""));
                 self.apply_work_intent(intent("enqueue_work",json!({"workItem":{"schemaVersion":1,"workItemId":item_id,"title":title,"instruction":instruction,
                     "providerId":"codex","workingDirectory":workspace["workingDirectory"],"status":"queued","createdAt":now(),"revision":1}}),&Value::Null)).await?;
-                item = find(&self.store.projections()?["work"], "workItemId", &item_id);
+                item = find(
+                    &self.store.runtime_projections()?["work"],
+                    "workItemId",
+                    &item_id,
+                );
             }
             if let Some(item) = item.filter(|i| i["status"] == "queued") {
                 let r = self
@@ -303,6 +322,6 @@ impl Host {
                 }
             }
         }
-        Ok(find(&self.store.projections()?["teams"], "teamId", id).unwrap())
+        Ok(find(&self.store.runtime_projections()?["teams"], "teamId", id).unwrap())
     }
 }

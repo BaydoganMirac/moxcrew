@@ -1,6 +1,6 @@
 # Native desktop release
 
-The 0.4 source builds a standalone Rust/egui desktop. Installers use
+The 0.5 source builds a standalone Rust/egui desktop. Installers use
 cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or desktop
 build requirements. npm publication is retired. Pushing, publishing installers,
 public signing and Cloud deployment remain explicit owner release actions.
@@ -53,6 +53,9 @@ Verify the resulting compressed image before handing it off.
 
 Close the app and restore a compatible executable and verified data backup.
 Native 0.4 keeps the 0.3 Rust data layout; no migration is required between them.
+Native 0.5 reads that existing state and adds V3 project/source facts only when
+new owner memory commands or bound work occur. The 0.3/0.4 readers cannot read
+V3 events; rollback restores the stopped, unchanged pre-upgrade backup.
 The historical Node 0.2 reader cannot read local V2 audit events: restore its
 unchanged pre-migration data when rolling back to Node. Never run two writers.
 

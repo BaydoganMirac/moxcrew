@@ -48,9 +48,16 @@ Cloud repository implements it.
   model keys, or pairing secrets;
 - Git remote URLs containing credentials;
 - arbitrary provider-native payloads.
+- project memory identities, source text/provenance, query text, excerpts,
+  decision drafts and vectors.
 
 Sanitization is an allowlist projection. It is not a collection of regular
 expressions applied after serializing the complete local object.
+
+Local V3 project/source events from ADR 0025 do not negotiate a Cloud protocol
+version or add remote memory commands. V1 and capability-negotiated V2 serializers
+remain explicit operational allowlists. The native memory read result is local
+and cannot be supplied as an outbound projection.
 
 ## Pairing
 

@@ -1,6 +1,6 @@
 use crate::{
     cloud::Cloud,
-    domain, event, now, providers,
+    domain, event, now, project_memory, providers,
     store::Store,
     teams::{catalog, templates},
     work::{array, find, intent, text},
@@ -45,6 +45,19 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
         "observe" | "cloud_unpair" | "cloud_sync" => &[],
         "workspace_register" => &["workingDirectory", "displayName"],
         "workspace_remove" => &["workspaceId", "expectedWorkspaceRevision"],
+        "project_create" => &["name"],
+        "project_link_workspace" | "project_unlink_workspace" => {
+            &["projectId", "workspaceId", "expectedProjectRevision"]
+        }
+        "project_message" => &["projectId", "title", "text", "expectedProjectRevision"],
+        "project_source_edit" => &[
+            "projectId",
+            "sourceId",
+            "title",
+            "text",
+            "expectedSourceRevision",
+        ],
+        "project_memory_read" => &["projectId", "offset", "limit", "query"],
         "work_enqueue" => &["title", "instruction", "workspaceId", "workingDirectory"],
         "work_start" | "work_retry" | "work_remove" => &["workItemId", "expectedItemRevision"],
         "work_cancel" => &["runId", "expectedRunRevision"],
@@ -114,6 +127,8 @@ impl Host {
             cloud_status: Mutex::new(status),
             closing: AtomicBool::new(false),
         });
+        host.store
+            .transaction(|events| Ok((project_memory::recover(events)?, Value::Null)))?;
         let events = host.store.read_events()?;
         let workspace_receipts: std::collections::HashSet<_> = events
             .iter()
@@ -152,7 +167,7 @@ impl Host {
     }
 
     pub fn snapshot(&self) -> Result<Value> {
-        let mut bundle = self.store.projections()?;
+        let mut bundle = self.store.runtime_projections()?;
         if bundle["work"].is_null() {
             bundle["work"] =
                 json!({"schemaVersion":1,"revision":0,"items":[],"runs":[],"receipts":[]});
@@ -193,6 +208,14 @@ impl Host {
         let _guard = self.operations.lock().await;
         if self.closing.load(Ordering::SeqCst) {
             return Err(Error("HOST_CLOSING".into()));
+        }
+        if action == "project_memory_read" {
+            return self.store.read_memory(&payload);
+        }
+        if action.starts_with("project_") {
+            return self
+                .store
+                .transaction(|events| project_memory::apply(events, action, &payload));
         }
         let audit = action.starts_with("team_") || action.starts_with("pack_");
         let mut command = Value::Null;
@@ -253,8 +276,12 @@ impl Host {
             && action != "team_create"
             && !p["expectedTeamRevision"].is_null()
         {
-            let team = find(&self.store.projections()?["teams"], "teamId", &p["teamId"])
-                .ok_or_else(|| Error("TEAM_NOT_FOUND".into()))?;
+            let team = find(
+                &self.store.runtime_projections()?["teams"],
+                "teamId",
+                &p["teamId"],
+            )
+            .ok_or_else(|| Error("TEAM_NOT_FOUND".into()))?;
             if team["revision"] != p["expectedTeamRevision"] {
                 return Err(Error("STALE_TEAM_REVISION".into()));
             }
@@ -266,34 +293,38 @@ impl Host {
                 let selected=p["workspaceId"].as_str().unwrap_or(""); let manual=p["workingDirectory"].as_str().unwrap_or("").trim();
                 if !selected.is_empty() && !manual.is_empty() {return Err(Error("WORKSPACE_SELECTION_CONFLICT".into()));}
                 let directory=if selected.is_empty() {providers::validate_workspace(manual).await.map_err(Error)?}
-                    else {text(&find(&self.store.projections()?["workspaces"],"workspaceId",&json!(selected)).ok_or_else(||Error("WORKSPACE_NOT_REGISTERED".into()))?,"workingDirectory")?.to_owned()};
+                    else {text(&find(&self.store.runtime_projections()?["workspaces"],"workspaceId",&json!(selected)).ok_or_else(||Error("WORKSPACE_NOT_REGISTERED".into()))?,"workingDirectory")?.to_owned()};
                 let base=intent("enqueue_work",Value::Null,p);
                 let item=json!({"schemaVersion":1,"workItemId":format!("work:{}",text(&base,"intentId")?.trim_start_matches("cmd:")),
                     "title":text(p,"title")?.trim(),"instruction":text(p,"instruction")?.trim(),"providerId":"codex","workingDirectory":directory,"status":"queued","createdAt":base["createdAt"],"revision":1});
-                let mut i=base;i["payload"]=json!({"workItem":item});self.apply_work_intent(i).await
+                let workspaces=self.store.runtime_projections()?["workspaces"].clone();
+                let workspace_id=array(&workspaces,"items").iter().find(|w|w["workingDirectory"]==item["workingDirectory"]).and_then(|w|w["workspaceId"].as_str());
+                let project=workspace_id.map(|id|self.store.workspace_project(id)).transpose()?.flatten();
+                let mut i=base;i["payload"]=json!({"workItem":item});self.apply_queue_intent_bound(i,project.as_deref())
             },
             "work_start"|"work_remove"=>self.apply_work_intent(intent(if action=="work_start" {"start_work"} else {"remove_queued_work"},json!({"workItemId":p["workItemId"],"expectedItemRevision":p["expectedItemRevision"]}),p)).await,
             "work_cancel"=>self.apply_work_intent(intent("cancel_run",json!({"runId":p["runId"],"expectedRunRevision":p["expectedRunRevision"]}),p)).await,
             "work_retry"=>{
-                let item=find(&self.store.projections()?["work"],"workItemId",&p["workItemId"]).ok_or_else(||Error("WORK_ITEM_NOT_FOUND".into()))?;
+                let item=find(&self.store.runtime_projections()?["work"],"workItemId",&p["workItemId"]).ok_or_else(||Error("WORK_ITEM_NOT_FOUND".into()))?;
                 if !matches!(item["status"].as_str(),Some("failed"|"interrupted"|"blocked")) || item["revision"]!=p["expectedItemRevision"] {return Err(Error("WORK_RETRY_UNAVAILABLE".into()));}
                 let mut new=item.clone();let base=intent("enqueue_work",Value::Null,p);
                 new["workItemId"]=json!(format!("work:{}",text(&base,"intentId")?.trim_start_matches("cmd:")));
                 new["status"]=json!("queued");new["revision"]=json!(1);new["createdAt"]=base["createdAt"].clone();
-                let mut i=base;i["payload"]=json!({"workItem":new});self.apply_work_intent(i).await
+                let project=self.store.subject_project("work",text(&item,"workItemId")?)?;
+                let mut i=base;i["payload"]=json!({"workItem":new});self.apply_queue_intent_bound(i,project.as_deref())
             },
             "pack_install"=>self.install_pack(&p["manifest"]),
             "pack_remove"=>self.remove_pack(&p["packId"]),
             "team_create"=>self.create_team(p),
             "team_start"=>{
-                let bundle=self.store.projections()?;
+                let bundle=self.store.runtime_projections()?;
                 let team=find(&bundle["teams"],"teamId",&p["teamId"]).ok_or_else(||Error("TEAM_NOT_FOUND".into()))?;
                 if find(&bundle["workspaces"],"workspaceId",&team["workspaceId"]).is_none() {return Err(Error("WORKSPACE_NOT_REGISTERED".into()));}
                 self.team_event("team.started",json!({"teamId":p["teamId"]}))?;self.advance_team(&p["teamId"]).await
             },
             "team_advance"=>self.advance_team(&p["teamId"]).await,
             "team_cancel"|"team_cancel_agent"=>{
-                let team=find(&self.store.projections()?["teams"],"teamId",&p["teamId"]).ok_or_else(||Error("TEAM_NOT_FOUND".into()))?;
+                let team=find(&self.store.runtime_projections()?["teams"],"teamId",&p["teamId"]).ok_or_else(||Error("TEAM_NOT_FOUND".into()))?;
                 if !p["expectedTeamRevision"].is_null() && p["expectedTeamRevision"]!=team["revision"] {return Err(Error("STALE_TEAM_REVISION".into()));}
                 self.team_event(if action=="team_cancel" {"team.cancelled"} else {"team.agent.cancelled"},if action=="team_cancel" {json!({"teamId":p["teamId"]})} else {json!({"teamId":p["teamId"],"agentId":p["agentId"]})})?;
                 self.stop_team_work(&team,if action=="team_cancel_agent" {Some(&p["agentId"])} else {None}).await?;
@@ -450,7 +481,7 @@ impl Host {
         let provider = &observation["provider"];
         let provider_id = &provider["id"];
         let at = &observation["observedAt"];
-        let old = self.store.projections()?["observation"]["observations"]
+        let old = self.store.runtime_projections()?["observation"]["observations"]
             .as_array()
             .and_then(|v| v.iter().find(|o| o["provider"]["id"] == *provider_id))
             .cloned()
@@ -501,7 +532,7 @@ impl Host {
                     || (o["provider"]["state"] == "degraded"
                         && o["provider"]["error"]["code"] != "GEMINI_HOOK_SETUP_REQUIRED"))
             {
-                let old = self.store.projections()?["observation"]["observations"]
+                let old = self.store.runtime_projections()?["observation"]["observations"]
                     .as_array()
                     .and_then(|items| items.iter().find(|item| item["provider"]["id"] == "gemini"))
                     .cloned()
@@ -514,7 +545,7 @@ impl Host {
             }
             self.persist_observation(&o)?;
         }
-        let bundle = self.store.projections()?;
+        let bundle = self.store.runtime_projections()?;
         let active = bundle["observation"]["observations"]
             .as_array()
             .and_then(|items| {
@@ -548,7 +579,7 @@ impl Host {
     async fn persist_signals(&self) -> Result<()> {
         for signal in self.controller.drain_signals().await {
             if signal["providerId"] == "codex" && signal["status"] == "unknown" {
-                let work = self.store.projections()?["work"].clone();
+                let work = self.store.runtime_projections()?["work"].clone();
                 let lost = array(&work, "runs")
                     .iter()
                     .filter(|r| {
@@ -579,7 +610,7 @@ impl Host {
         Ok(())
     }
     async fn advance_all(&self) -> Result<()> {
-        let bundle = self.store.projections()?;
+        let bundle = self.store.runtime_projections()?;
         for team in array(&bundle["teams"], "items")
             .iter()
             .filter(|t| matches!(t["status"].as_str(), Some("active" | "waiting")))
@@ -634,14 +665,12 @@ impl Host {
                 return Ok(json!({"kind":"unpaired"}));
             }
         }
-        let mut bundle = self.store.projections()?;
-        let events = self.store.read_events()?;
+        let mut bundle = self.store.runtime_projections()?;
+        let (sequence, recorded_at) = self.store.event_cursor()?;
         bundle["agentPacks"] = json!(catalog(&bundle));
-        bundle["sequence"] = json!(events.len());
-        bundle["recordedAt"] = events
-            .last()
-            .map(|e| e["recordedAt"].clone())
-            .unwrap_or(json!("1970-01-01T00:00:00.000Z"));
+        bundle["sequence"] = json!(sequence);
+        bundle["recordedAt"] =
+            json!(recorded_at.unwrap_or_else(|| "1970-01-01T00:00:00.000Z".into()));
         let batch = {
             let mut state = self.cloud.lock().await;
             let c = state
@@ -715,7 +744,11 @@ impl Host {
         }
         let kind = text(request, "type")?;
         let p = &request["payload"];
-        let mut team = find(&self.store.projections()?["teams"], "teamId", &p["teamId"]);
+        let mut team = find(
+            &self.store.runtime_projections()?["teams"],
+            "teamId",
+            &p["teamId"],
+        );
         let mut outcome = "applied";
         let mut reason = match kind {
             "start_team" => "TEAM_STARTED",
@@ -727,7 +760,7 @@ impl Host {
         };
         if kind == "start_team" {
             team = find(
-                &self.store.projections()?["teams"],
+                &self.store.runtime_projections()?["teams"],
                 "teamId",
                 &json!(format!("team:{}", text(request, "intentId")?)),
             );
@@ -779,7 +812,7 @@ impl Host {
                             .installation_id()
                             .to_owned()
                     };
-                    let workspaces = self.store.projections()?["workspaces"].clone();
+                    let workspaces = self.store.runtime_projections()?["workspaces"].clone();
                     let workspace = array(&workspaces, "items").iter().find(|w| {
                         crate::cloud::workspace_alias(
                             &installation,
@@ -828,7 +861,7 @@ impl Host {
         } else {
             p["teamId"].clone()
         };
-        team = find(&self.store.projections()?["teams"], "teamId", &id);
+        team = find(&self.store.runtime_projections()?["teams"], "teamId", &id);
         let r = json!({"schemaVersion":2,"intentId":request["intentId"],"idempotencyKey":request["idempotencyKey"],"commandType":kind,"outcome":outcome,"reasonCode":reason,"completedAt":now(),"teamId":team.as_ref().map(|t|t["teamId"].clone()).unwrap_or_else(||if kind=="start_team" {Value::Null} else {p["teamId"].clone()}),"teamRevision":team.as_ref().map(|t|t["revision"].clone()).unwrap_or(json!(0))});
         self.store.append(vec![second_event(
             "cloud_team.command.receipted",

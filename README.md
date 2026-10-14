@@ -2,12 +2,13 @@
 
 Your coding agents. One local Rust desktop command center.
 
-Patchfleet 0.4 runs its interface and host in Rust. egui/eframe renders the native
+Patchfleet 0.5 runs its interface and host in Rust. egui/eframe renders the native
 window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
 
-Register projects, queue and control supported Codex work, configure twelve
+Create stable projects, link multiple Git worktrees, keep project messages and
+owner task/team sources in local Project Memory. Queue and control supported Codex work, configure twelve
 agent packs and six bounded team templates, answer owner gates, and inspect
 provider status. Claude Code and Gemini CLI remain observation-only. Provider
 CLIs and their own model/account/runtime requirements are installed separately.
@@ -46,9 +47,10 @@ build/runtime evidence and remaining signing/platform checks are recorded in
 [native state](docs/state/native-rust-desktop.md).
 
 Read [installation and recovery](docs/install.md), [architecture](docs/architecture.md)
-and [release checks](docs/release.md). Project-scoped local memory and sourced
-ADR drafts are the next feature phase; only explicit owner acceptance binds
-agents to a decision.
+and [release checks](docs/release.md). [Project Memory](docs/state/project-memory.md)
+supports durable sources, message revisions and scoped keyword reads. Accepted
+ADRs, vector search, agent memory tools and automatic drafts are later slices;
+only explicit owner acceptance will bind agents to a decision.
 
 ## Product boundaries
 

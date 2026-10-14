@@ -9,8 +9,9 @@ pub struct Command {
 impl Command {
     pub fn new(action: &'static str, mut payload: Value) -> Self {
         payload["commandId"] = json!(format!("cmd:{}", uuid::Uuid::new_v4()));
-        payload["createdAt"] = json!(patchfleet_core::now());
-        payload["expiresAt"] = json!((chrono::Utc::now() + chrono::Duration::minutes(5))
+        let created = chrono::Utc::now();
+        payload["createdAt"] = json!(created.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+        payload["expiresAt"] = json!((created + chrono::Duration::minutes(5))
             .to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
         Self { action, payload }
     }
@@ -48,8 +49,10 @@ mod tests {
         let expires =
             chrono::DateTime::parse_from_rfc3339(command.payload["expiresAt"].as_str().unwrap())
                 .unwrap();
-        assert!((299_990..=300_010)
-            .contains(&expires.signed_duration_since(created).num_milliseconds()));
+        assert_eq!(
+            expires.signed_duration_since(created).num_milliseconds(),
+            300_000
+        );
         assert_ne!(
             command.payload["commandId"],
             Command::new("work_start", json!({})).payload["commandId"]

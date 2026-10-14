@@ -9,12 +9,11 @@ commitments.
 
 ## Now
 
-- Prepare project-scoped agents/teams and shared local decision memory under
-  [Task 0022](plans/0022-project-memory-and-decision-service.md): use the
-  [accepted Rust host](decisions/0023-rust-tauri-desktop-runtime.md), then
-  establish stable Project identity and owner source capture before local
-  retrieval, scoped agent access, and automatic ADR drafts with explicit
-  acceptance.
+- Complete the approved [Project/source foundation](plans/0025-project-source-memory-foundation.md),
+  then implement decision proposal/acceptance and evaluate a rebuildable local
+  index under [Task 0022](plans/0022-project-memory-and-decision-service.md).
+  Scoped agent access and automatic ADR drafts follow independently verified
+  decision retrieval; owner acceptance remains explicit.
 - Keep the completed Phase 1 observation, Phase 2 local control, and Phase 3
   paired Cloud control loops stable.
 - Stabilize the shipped declarative agent catalog, owner-composed teams,

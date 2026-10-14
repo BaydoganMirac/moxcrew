@@ -21,8 +21,12 @@ pub(crate) fn intent(kind: &str, payload: Value, command: &Value) -> Value {
         .as_str()
         .map(str::to_owned)
         .unwrap_or_else(|| {
-            (chrono::Utc::now() + chrono::Duration::minutes(5))
-                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            chrono::DateTime::parse_from_rfc3339(&created)
+                .map(|at| {
+                    (at + chrono::Duration::minutes(5))
+                        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                })
+                .unwrap_or_else(|_| now())
         });
     let id = command["commandId"]
         .as_str()
@@ -176,6 +180,17 @@ impl Host {
     }
 
     pub(crate) fn apply_queue_intent(&self, request: Value) -> Result<Value> {
+        self.apply_queue_intent_bound(request, None)
+    }
+
+    pub(crate) fn apply_queue_intent_bound(
+        &self,
+        request: Value,
+        project: Option<&str>,
+    ) -> Result<Value> {
+        if self.closing.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(Error("HOST_CLOSING".into()));
+        }
         domain::validate_command_intent(&request)?;
         let kind = text(&request, "type")?.to_owned();
         if !matches!(kind.as_str(), "enqueue_work" | "remove_queued_work") {
@@ -198,7 +213,16 @@ impl Host {
                     item_id = item["workItemId"].clone();
                     if request["expiresAt"].as_str().unwrap_or("") <= now().as_str() { outcome="expired"; reason="COMMAND_EXPIRED"; }
                     else if events.iter().any(|e|e["type"]=="work.enqueued" && e["payload"]["workItem"]["workItemId"]==item_id) { outcome="rejected"; reason="WORK_ITEM_EXISTS"; }
-                    else { add.push(event("work.enqueued",json!({"intentId":request["intentId"],"workItem":item}))); reason="WORK_ENQUEUED"; }
+                    else {
+                        if let Some(project) = project {
+                            let memory = crate::project_memory::project(events)?;
+                            if !array(&memory,"bindings").iter().any(|b|b["subjectKind"]=="work" && b["subjectId"]==item_id) {
+                                // Bind first so any durable crash prefix retains the original scope.
+                                add.insert(0,crate::project_memory::bind(project,"work",text(item,"workItemId")?));
+                            }
+                        }
+                        add.push(event("work.enqueued",json!({"intentId":request["intentId"],"workItem":item}))); reason="WORK_ENQUEUED";
+                    }
                 } else {
                     item_id=request["payload"]["workItemId"].clone();
                     let item=find(&work,"workItemId",&item_id);
@@ -221,7 +245,7 @@ impl Host {
         if matches!(kind.as_str(), "enqueue_work" | "remove_queued_work") {
             return self.apply_queue_intent(request);
         }
-        let available = self.store.projections()?["observation"]["observations"]
+        let available = self.store.runtime_projections()?["observation"]["observations"]
             .as_array()
             .map(|items| items.iter().any(crate::providers::supports_codex_control))
             .unwrap_or(false);

@@ -48,19 +48,23 @@ coordinates bounded provider runs and keeps task ownership, decisions, retries,
 questions, and receipts durable. Cloud receives only the sanitized operational
 projection and allowlisted expiring intents.
 
-## Planned project memory
+## Project memory
 
-The next product focus gives a project its own agents, teams, and shared local
-decision memory across worktrees. Patchfleet-authored project messages, task
-instructions, and owner answers are the default sources; external agent
-conversations require an explicit import.
+The project/source foundation gives a project a stable identity across worktrees.
+Owners explicitly link registered workspaces, enter project messages, and inspect
+locally captured task instructions, team goals, owner answers and approval notes.
+Message edits retain revision history; changing a worktree link does not move old
+sources into another project. Keyword filtering and bounded native pages keep
+reads scoped. Sources remain context until the later decision lifecycle exists.
 
-Automatic extraction creates source-backed ADR drafts. Only explicit owner
+The planned next slices add accepted decisions and a rebuildable local index,
+then scoped agent tools and automatic source-backed ADR drafts. Only explicit owner
 acceptance makes a decision authoritative. A local vector database stores
 searchable decision text and metadata, and scoped agent tools expose the same
 accepted decisions to the project's agents. See
-[Task 0022](plans/0022-project-memory-and-decision-service.md). This capability
-is planned and does not widen the default Cloud data boundary.
+[Task 0022](plans/0022-project-memory-and-decision-service.md). External agent
+conversations require an explicit import; this foundation does not import them.
+Memory does not widen the default Cloud data boundary.
 
 ## V0 promise
 

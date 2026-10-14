@@ -83,8 +83,18 @@ impl Patchfleet {
                 "Native smoke host failed to open"
             );
         }
+        let console = ui::Console::default();
+        #[cfg(feature = "ui-smoke")]
+        let console = {
+            let mut console = console;
+            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("memory") {
+                console.memory_smoke();
+                bridge.memory_smoke();
+            }
+            console
+        };
         Self {
-            console: ui::Console::default(),
+            console,
             bridge,
             directory,
             observe,
@@ -96,6 +106,29 @@ impl Patchfleet {
                 .map(|seconds| Instant::now() + Duration::from_secs(seconds)),
         }
     }
+}
+
+#[cfg(feature = "ui-smoke")]
+fn seed_memory_scene(directory: &std::path::Path) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        let created = host.action("project_create", command::Command::new("project_create", serde_json::json!({"name":"Billing sandbox"})).payload).await.unwrap();
+        for (title, text) in [
+            ("Money in minor units", "Store amounts as integer minor units. Keep the currency code beside each amount; avoid floating-point invoice calculations."),
+            ("Yuvarlama sınırı", "Yuvarlama yalnızca toplam hesaplanırken yapılır. Vergi ve indirim kuralları ayrı kaynaklarla açıklanmalıdır."),
+            ("Native preview fixture", "These illustrative messages were entered through the real local Host for this disposable rendering check. They are source context, not accepted ADRs or real agent activity."),
+        ] {
+            let snapshot = host.snapshot().unwrap();
+            let project = &snapshot["projectMemory"]["projects"][0];
+            let args = serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"title":title,"text":text});
+            host.action("project_message", command::Command::new("project_message", args).payload).await.unwrap();
+        }
+        host.shutdown().await;
+    });
 }
 
 impl eframe::App for Patchfleet {
@@ -190,6 +223,10 @@ fn main() {
             directory.is_dir() && std::fs::read_dir(&directory).unwrap().next().is_none(),
             "Native smoke requires an empty test directory"
         );
+        #[cfg(feature = "ui-smoke")]
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("memory") {
+            seed_memory_scene(&directory);
+        }
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

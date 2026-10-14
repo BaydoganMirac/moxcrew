@@ -1,6 +1,6 @@
 # Install and operate Patchfleet Desktop
 
-Status: 0.4 native Rust desktop development distribution
+Status: 0.5 native Rust desktop development distribution
 
 Updated: 2026-10-14
 
@@ -23,9 +23,11 @@ Run `cargo run --locked -p patchfleet-desktop`. Build a production executable wi
 `cargo build --locked --release -p patchfleet-desktop`, then package it using
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
 
-For a native 0.4 upgrade, close the old application and replace its application
+For a native 0.5 upgrade, close the old application and replace its application
 bundle through the reviewed installer. The bundle identifier and data directory
-remain the same; existing Rust state remains compatible. Uninstalling must not
+remain the same; existing Rust state can be read by the new application. Back up
+the stopped data directory before creating project memory: new V3 facts require
+the 0.5 reader. Rolling back to 0.3/0.4 requires that pre-upgrade backup. Uninstalling must not
 delete the canonical data directory.
 
 ## Local operation
@@ -35,6 +37,15 @@ the provider cards to verify availability. Codex control requires a tested
 stable app-server surface on 0.144.1 or newer. The sandbox remains
 `workspace-write` with approval policy `never`. Claude and Gemini control are
 not advertised.
+
+Create a stable Project and explicitly link one or more registered worktrees.
+Existing unlinked worktrees stay usable. Project Memory stores messages and owner
+sources for new bound tasks/teams; it does not silently import historical work or
+provider transcripts. Select a project to read its bounded source page, filter by
+keyword, enter a message or revise a directly entered message. Captured task/team
+sources preserve their original text and project. Unlinking/unregistering a worktree
+does not erase history. No accepted ADRs, semantic/vector search or agent memory
+tools are enabled in this foundation.
 
 Form teams from installed packs and templates. Background advancement does not
 require a manual refresh. Owner questions and approval gates remain explicit.

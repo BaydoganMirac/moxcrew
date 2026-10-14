@@ -19,7 +19,7 @@ enum Request {
 
 enum Message {
     Snapshot(Result<Value, String>),
-    Outcome(Command, Result<Value, String>),
+    Outcome(Command, Result<Value, String>, Result<Value, String>),
     Closed,
 }
 
@@ -31,6 +31,7 @@ pub struct Bridge {
     host: Arc<Mutex<Option<Arc<Host>>>>,
     close_requested: Arc<AtomicBool>,
     pub snapshot: Option<Value>,
+    memory_page: Option<Value>,
     pub error: Option<String>,
     pub feedback: Option<String>,
     pub pending: Option<Command>,
@@ -67,6 +68,29 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 }
 
 impl Bridge {
+    #[cfg(feature = "ui-smoke")]
+    pub fn memory_smoke(&mut self) {
+        if let Some(project) = self
+            .snapshot
+            .as_ref()
+            .and_then(|s| s["projectMemory"]["projects"].as_array())
+            .and_then(|projects| projects.first())
+        {
+            let id = project["projectId"].clone();
+            self.submit(Command::new(
+                "project_memory_read",
+                serde_json::json!({"projectId":id,"offset":0,"limit":10,"query":""}),
+            ));
+            for _ in 0..400 {
+                self.poll();
+                if !self.busy {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+
     pub fn new(ctx: egui::Context, directory: PathBuf, observe: bool) -> Self {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -105,9 +129,8 @@ impl Bridge {
                         Some(Request::Action(command)) => {
                             let result = host.action(command.action, command.payload.clone()).await.map_err(safe_error);
                             if command.action == "observe" { last_observation = Some(tokio::time::Instant::now()); }
-                            if !notify(&ctx, &output, Message::Outcome(command, result)).await { break; }
                             snapshot = host.snapshot().map_err(safe_error);
-                            if !notify(&ctx, &output, Message::Snapshot(snapshot.clone())).await { break; }
+                            if !notify(&ctx, &output, Message::Outcome(command, result, snapshot.clone())).await { break; }
                             let delay = snapshot.as_ref().map(poll_delay).unwrap_or(Duration::from_secs(60));
                             timer.as_mut().reset(tokio::time::Instant::now() + delay);
                         }
@@ -136,6 +159,7 @@ impl Bridge {
             host: host_slot,
             close_requested,
             snapshot: None,
+            memory_page: None,
             error: None,
             feedback: None,
             pending: None,
@@ -148,28 +172,28 @@ impl Bridge {
     pub fn poll(&mut self) {
         while let Ok(message) = self.messages.try_recv() {
             match message {
-                Message::Snapshot(Ok(snapshot)) => {
-                    self.snapshot = Some(snapshot);
-                    self.error = None;
-                }
-                Message::Snapshot(Err(error)) => self.error = Some(error),
-                Message::Outcome(command, result) => {
-                    self.busy = false;
+                Message::Snapshot(snapshot) => self.apply_snapshot(snapshot),
+                Message::Outcome(command, result, snapshot) => {
                     match result {
                         Ok(receipt) => {
+                            if command.action == "project_memory_read" {
+                                self.memory_page = Some(receipt.clone());
+                            }
                             self.pending = None;
-                            self.feedback = Some(
+                            self.feedback = (command.action != "project_memory_read").then(|| {
                                 receipt["reasonCode"]
                                     .as_str()
                                     .unwrap_or("ACTION_RECORDED")
-                                    .replace('_', " "),
-                            );
+                                    .replace('_', " ")
+                            });
                         }
                         Err(error) => {
                             self.pending = Some(command);
                             self.feedback = Some(error.replace('_', " "));
                         }
                     }
+                    self.apply_snapshot(snapshot);
+                    self.busy = false;
                 }
                 Message::Closed => self.closed = true,
             }
@@ -179,12 +203,41 @@ impl Bridge {
         }
     }
 
+    fn apply_snapshot(&mut self, snapshot: Result<Value, String>) {
+        match snapshot {
+            Ok(mut snapshot) => {
+                if self.memory_page.as_ref().is_some_and(|page| {
+                    !snapshot["projectMemory"]["projects"]
+                        .as_array()
+                        .is_some_and(|projects| {
+                            projects.iter().any(|project| {
+                                project["projectId"] == page["projectId"]
+                                    && project["revision"] == page["revision"]
+                            })
+                        })
+                }) {
+                    self.memory_page = None;
+                }
+                snapshot["memoryPage"] = self.memory_page.clone().unwrap_or(Value::Null);
+                self.snapshot = Some(snapshot);
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
+
     pub fn submit(&mut self, command: Command) {
         if self.busy || self.closing || self.error.is_some() {
             return;
         }
         match self.requests.try_send(Request::Action(command.clone())) {
             Ok(()) => {
+                if command.action == "project_memory_read" {
+                    self.memory_page = None;
+                    if let Some(snapshot) = self.snapshot.as_mut() {
+                        snapshot["memoryPage"] = Value::Null;
+                    }
+                }
                 self.busy = true;
                 self.pending = Some(command);
             }
@@ -285,5 +338,48 @@ mod tests {
         }
         assert!(failed.error.is_some());
         failed.shutdown();
+    }
+
+    fn await_idle(bridge: &mut Bridge) {
+        for _ in 0..400 {
+            bridge.poll();
+            if !bridge.busy && bridge.snapshot.is_some() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("Local bridge did not deliver its outcome");
+    }
+
+    #[test]
+    fn memory_page_tracks_project_revision_and_clears_before_a_new_read() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        bridge.submit(Command::new("project_create", json!({"name":"Billing"})));
+        await_idle(&mut bridge);
+        let project = bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0].clone();
+        bridge.submit(Command::new("project_message", json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],"title":"Amounts","text":"Use integer minor units."})));
+        await_idle(&mut bridge);
+        bridge.submit(Command::new(
+            "project_memory_read",
+            json!({"projectId":project["projectId"],"query":"integer","limit":10,"offset":0}),
+        ));
+        await_idle(&mut bridge);
+        let page = &bridge.snapshot.as_ref().unwrap()["memoryPage"];
+        assert_eq!(page["sources"][0]["text"], "Use integer minor units.");
+        assert_eq!(page["query"], "integer");
+        let current = bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0].clone();
+        bridge.submit(Command::new("project_message", json!({"projectId":current["projectId"],"expectedProjectRevision":current["revision"],"title":"Currency","text":"Store the currency code."})));
+        await_idle(&mut bridge);
+        assert!(bridge.snapshot.as_ref().unwrap()["memoryPage"].is_null());
+        bridge.submit(Command::new(
+            "project_memory_read",
+            json!({"projectId":project["projectId"],"query":"currency"}),
+        ));
+        assert!(bridge.snapshot.as_ref().unwrap()["memoryPage"].is_null());
+        await_idle(&mut bridge);
+        assert_eq!(bridge.snapshot.as_ref().unwrap()["memoryPage"]["total"], 1);
+        bridge.shutdown();
     }
 }

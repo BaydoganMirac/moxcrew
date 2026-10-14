@@ -94,6 +94,8 @@ The normalized model starts small:
   capabilities.
 - Workspace: an opaque local registration for one canonical Git worktree; its
   absolute path never enters the Cloud projection.
+- Project: a stable local identity linking multiple registered workspaces.
+- ProjectSource: revisioned owner context with identity and canonical provenance.
 - AgentPack: a versioned declarative local role, capability, permission, limit,
   expected-output, and provenance contract.
 - Team: immutable selected packs, limits, and one orchestrator for a workspace.
@@ -111,23 +113,32 @@ Provider-native fields may be retained in a local namespaced extension. They do
 not enter the shared contract or Cloud projection until a concrete product use
 case and data classification exist.
 
-## Planned project memory boundary
+## Project memory boundary
 
 Project is a stable local scope above registered workspaces, runs, and teams.
 Several worktrees may share project memory while keeping execution files
-separate. Owner source inputs and ADR lifecycle changes use the canonical local
-writer. The local vector database stores full searchable records, metadata,
-and model-versioned embeddings as a rebuildable projection.
+separate. Slice A captures project messages and explicitly bound local work/team
+sources through the canonical writer. V3 facts extend the log; strict V1/V2
+operational contracts retain their meaning. Bindings freeze historical scope and
+generated team prompts remain outside owner source capture. Removing a workspace
+preserves its project's history. The native console requests bounded pages and
+keyword filtering; ordinary snapshots carry only project metadata.
 
-The planned memory service belongs to the Rust host under ADR 0023. Scoped
+`project-memory.json` is a protected, rebuildable projection. It is excluded from
+default Cloud serialization. Directly entered messages support append-only edits;
+captured task/team facts remain immutable evidence. These records are context,
+not accepted architecture decisions. ADR 0025 defines this implemented foundation.
+
+The future decision/vector service belongs to the same native Rust host. Scoped
 MCP tools or local service calls authenticate a run-bound project; agents cannot
 select another project by supplying an ID or access raw database files.
 Automatic extraction proposes records, while the owner accepts decisions.
 Binding decision status is read from canonical facts rather than similarity
 score. Memory text, queries, vectors, and tool credentials are local-only.
 
-[ADR 0021](decisions/0021-project-scoped-local-decision-memory.md) defines this
-planned contract; the runtime does not implement it yet.
+[ADR 0021](decisions/0021-project-scoped-local-decision-memory.md) defines the full
+contract. Vectors, decision acceptance, agent tools and automatic extraction
+remain later slices of Task 0022.
 
 ## Provider adapter boundary
 

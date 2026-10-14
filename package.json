@@ -1,6 +1,6 @@
 {
   "name": "patchfleet",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local-first coding-agent teams and command center for Codex, Claude Code, and Gemini CLI.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/BaydoganMirac/patchfleet#readme",
@@ -16,51 +16,44 @@
     "type": "git",
     "url": "git+https://github.com/BaydoganMirac/patchfleet.git"
   },
-  "bin": {
-    "patchfleet": "bin/patchfleet.mjs"
-  },
-  "files": [
-    ".next",
-    "app",
-    "agent-packs",
-    "bin",
-    "docs/install.md",
-    "extensions",
-    "lib",
-    "scripts",
-    "middleware.js",
-    "next.config.mjs",
-    "README.md",
-    "LICENSE"
-  ],
   "engines": {
-    "node": ">=22.0.0"
-  },
-  "publishConfig": {
-    "access": "public"
+    "node": ">=22.18.0"
   },
   "scripts": {
-    "dev": "node scripts/local-next.mjs dev",
-    "build": "next build && node scripts/sanitize-package.mjs",
-    "prepack": "npm run build",
-    "start": "node scripts/local-next.mjs start",
-    "test": "node --test --test-concurrency=1 tests/*.test.*",
-    "test:package": "node smoke/package-smoke.mjs"
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "start": "tauri dev",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "tauri": "tauri",
+    "typecheck": "tsc -p tsconfig.desktop.json",
+    "test:desktop": "node --experimental-strip-types --test desktop/*.test.ts",
+    "legacy:dev": "node scripts/local-next.mjs dev",
+    "legacy:build": "next build && node scripts/sanitize-package.mjs",
+    "legacy:start": "node scripts/local-next.mjs start",
+    "test": "npm run test:desktop",
+    "legacy:test": "node --test --test-concurrency=1 tests/*.test.*",
+    "legacy:test:package": "node smoke/package-smoke.mjs"
   },
   "dependencies": {
-    "next": "15.5.19",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "@tauri-apps/api": "2.12.3"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5"
+    "typescript": "^5",
+    "next": "15.5.19",
+    "@tauri-apps/cli": "2.12.2",
+    "vite": "8.3.4",
+    "@vitejs/plugin-react": "6.1.2"
   },
   "overrides": {
     "next": {
       "postcss": "8.5.10"
     }
-  }
+  },
+  "private": true
 }

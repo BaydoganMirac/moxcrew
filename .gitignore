@@ -57,3 +57,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Rust / desktop build and local toolchain
+/target/
+/dist/
+/.tooling/
+/src-tauri/gen/

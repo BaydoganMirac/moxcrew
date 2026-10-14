@@ -1,0 +1,506 @@
+[
+  {
+    "id": "product-feature",
+    "name": "Product feature",
+    "description": "Plan, design, implement, test, and review a product slice.",
+    "roles": {
+      "product": {
+        "phase": 0,
+        "title": "Product Manager: product feature",
+        "instruction": "Own the product portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "design": {
+        "phase": 1,
+        "title": "UI/UX Designer: product feature",
+        "instruction": "Own the design portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "frontend": {
+        "phase": 2,
+        "title": "Frontend Engineer: product feature",
+        "instruction": "Own the frontend portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "backend": {
+        "phase": 2,
+        "title": "Backend Engineer: product feature",
+        "instruction": "Own the backend portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "fullstack": {
+        "phase": 2,
+        "title": "Full-stack Engineer: product feature",
+        "instruction": "Own the fullstack portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "qa": {
+        "phase": 3,
+        "title": "QA Engineer: product feature",
+        "instruction": "Own the qa portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "review": {
+        "phase": 4,
+        "title": "Code Reviewer: product feature",
+        "instruction": "Own the review portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "security": {
+        "phase": 3,
+        "title": "Security Reviewer: product feature",
+        "instruction": "Own the security portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "release": {
+        "phase": 5,
+        "title": "Release Engineer: product feature",
+        "instruction": "Own the release portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "docs": {
+        "phase": 4,
+        "title": "Documentation Writer: product feature",
+        "instruction": "Own the docs portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "research": {
+        "phase": 0,
+        "title": "Researcher: product feature",
+        "instruction": "Own the research portion of this product feature goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      }
+    }
+  },
+  {
+    "id": "bug-fix",
+    "name": "Bug fix",
+    "description": "Diagnose, fix, verify, and review one reproducible defect.",
+    "roles": {
+      "product": {
+        "phase": 0,
+        "title": "Product Manager: bug fix",
+        "instruction": "Own the product portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "design": {
+        "phase": 5,
+        "title": "UI/UX Designer: bug fix",
+        "instruction": "Own the design portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "frontend": {
+        "phase": 1,
+        "title": "Frontend Engineer: bug fix",
+        "instruction": "Own the frontend portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "backend": {
+        "phase": 1,
+        "title": "Backend Engineer: bug fix",
+        "instruction": "Own the backend portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "fullstack": {
+        "phase": 1,
+        "title": "Full-stack Engineer: bug fix",
+        "instruction": "Own the fullstack portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "qa": {
+        "phase": 2,
+        "title": "QA Engineer: bug fix",
+        "instruction": "Own the qa portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "review": {
+        "phase": 3,
+        "title": "Code Reviewer: bug fix",
+        "instruction": "Own the review portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "security": {
+        "phase": 2,
+        "title": "Security Reviewer: bug fix",
+        "instruction": "Own the security portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "release": {
+        "phase": 4,
+        "title": "Release Engineer: bug fix",
+        "instruction": "Own the release portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "docs": {
+        "phase": 3,
+        "title": "Documentation Writer: bug fix",
+        "instruction": "Own the docs portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "research": {
+        "phase": 0,
+        "title": "Researcher: bug fix",
+        "instruction": "Own the research portion of this bug fix goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      }
+    }
+  },
+  {
+    "id": "saas-launch",
+    "name": "SaaS launch",
+    "description": "Check product, security, quality, and release readiness behind an owner gate.",
+    "roles": {
+      "product": {
+        "phase": 0,
+        "title": "Product Manager: saas launch",
+        "instruction": "Own the product portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "design": {
+        "phase": 1,
+        "title": "UI/UX Designer: saas launch",
+        "instruction": "Own the design portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "frontend": {
+        "phase": 2,
+        "title": "Frontend Engineer: saas launch",
+        "instruction": "Own the frontend portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "backend": {
+        "phase": 2,
+        "title": "Backend Engineer: saas launch",
+        "instruction": "Own the backend portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "fullstack": {
+        "phase": 2,
+        "title": "Full-stack Engineer: saas launch",
+        "instruction": "Own the fullstack portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "qa": {
+        "phase": 3,
+        "title": "QA Engineer: saas launch",
+        "instruction": "Own the qa portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "review": {
+        "phase": 4,
+        "title": "Code Reviewer: saas launch",
+        "instruction": "Own the review portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "security": {
+        "phase": 3,
+        "title": "Security Reviewer: saas launch",
+        "instruction": "Own the security portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "release": {
+        "phase": 5,
+        "title": "Release Engineer: saas launch",
+        "instruction": "Own the release portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": true,
+        "asksReleaseQuestion": true
+      },
+      "docs": {
+        "phase": 4,
+        "title": "Documentation Writer: saas launch",
+        "instruction": "Own the docs portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "research": {
+        "phase": 0,
+        "title": "Researcher: saas launch",
+        "instruction": "Own the research portion of this saas launch goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      }
+    }
+  },
+  {
+    "id": "design-frontend",
+    "name": "Design + frontend",
+    "description": "Define an accessible interaction and implement its responsive frontend.",
+    "roles": {
+      "product": {
+        "phase": 0,
+        "title": "Product Manager: design frontend",
+        "instruction": "Own the product portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "design": {
+        "phase": 1,
+        "title": "UI/UX Designer: design frontend",
+        "instruction": "Own the design portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "frontend": {
+        "phase": 2,
+        "title": "Frontend Engineer: design frontend",
+        "instruction": "Own the frontend portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "backend": {
+        "phase": 5,
+        "title": "Backend Engineer: design frontend",
+        "instruction": "Own the backend portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "fullstack": {
+        "phase": 2,
+        "title": "Full-stack Engineer: design frontend",
+        "instruction": "Own the fullstack portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "qa": {
+        "phase": 3,
+        "title": "QA Engineer: design frontend",
+        "instruction": "Own the qa portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "review": {
+        "phase": 3,
+        "title": "Code Reviewer: design frontend",
+        "instruction": "Own the review portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "security": {
+        "phase": 5,
+        "title": "Security Reviewer: design frontend",
+        "instruction": "Own the security portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "release": {
+        "phase": 5,
+        "title": "Release Engineer: design frontend",
+        "instruction": "Own the release portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "docs": {
+        "phase": 4,
+        "title": "Documentation Writer: design frontend",
+        "instruction": "Own the docs portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "research": {
+        "phase": 0,
+        "title": "Researcher: design frontend",
+        "instruction": "Own the research portion of this design frontend goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      }
+    }
+  },
+  {
+    "id": "security-audit",
+    "name": "Security audit",
+    "description": "Threat-model, remediate selected risks, verify, and review.",
+    "roles": {
+      "product": {
+        "phase": 0,
+        "title": "Product Manager: security audit",
+        "instruction": "Own the product portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "design": {
+        "phase": 5,
+        "title": "UI/UX Designer: security audit",
+        "instruction": "Own the design portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "frontend": {
+        "phase": 2,
+        "title": "Frontend Engineer: security audit",
+        "instruction": "Own the frontend portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "backend": {
+        "phase": 2,
+        "title": "Backend Engineer: security audit",
+        "instruction": "Own the backend portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "fullstack": {
+        "phase": 2,
+        "title": "Full-stack Engineer: security audit",
+        "instruction": "Own the fullstack portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "qa": {
+        "phase": 3,
+        "title": "QA Engineer: security audit",
+        "instruction": "Own the qa portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "review": {
+        "phase": 4,
+        "title": "Code Reviewer: security audit",
+        "instruction": "Own the review portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "security": {
+        "phase": 1,
+        "title": "Security Reviewer: security audit",
+        "instruction": "Own the security portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "release": {
+        "phase": 5,
+        "title": "Release Engineer: security audit",
+        "instruction": "Own the release portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "docs": {
+        "phase": 4,
+        "title": "Documentation Writer: security audit",
+        "instruction": "Own the docs portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "research": {
+        "phase": 0,
+        "title": "Researcher: security audit",
+        "instruction": "Own the research portion of this security audit goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      }
+    }
+  },
+  {
+    "id": "release",
+    "name": "Release",
+    "description": "Verify and prepare one rollback-safe release behind an owner gate.",
+    "roles": {
+      "product": {
+        "phase": 0,
+        "title": "Product Manager: release",
+        "instruction": "Own the product portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "design": {
+        "phase": 4,
+        "title": "UI/UX Designer: release",
+        "instruction": "Own the design portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "frontend": {
+        "phase": 4,
+        "title": "Frontend Engineer: release",
+        "instruction": "Own the frontend portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "backend": {
+        "phase": 4,
+        "title": "Backend Engineer: release",
+        "instruction": "Own the backend portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "fullstack": {
+        "phase": 4,
+        "title": "Full-stack Engineer: release",
+        "instruction": "Own the fullstack portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "qa": {
+        "phase": 1,
+        "title": "QA Engineer: release",
+        "instruction": "Own the qa portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "review": {
+        "phase": 2,
+        "title": "Code Reviewer: release",
+        "instruction": "Own the review portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "security": {
+        "phase": 1,
+        "title": "Security Reviewer: release",
+        "instruction": "Own the security portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "release": {
+        "phase": 3,
+        "title": "Release Engineer: release",
+        "instruction": "Own the release portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": true,
+        "asksReleaseQuestion": true
+      },
+      "docs": {
+        "phase": 2,
+        "title": "Documentation Writer: release",
+        "instruction": "Own the docs portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      },
+      "research": {
+        "phase": 0,
+        "title": "Researcher: release",
+        "instruction": "Own the research portion of this release goal. Produce the declared output and leave verifiable handoff evidence for dependent agents.",
+        "approvalRequired": false,
+        "asksReleaseQuestion": false
+      }
+    }
+  }
+]

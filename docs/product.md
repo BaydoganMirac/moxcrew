@@ -2,7 +2,7 @@
 
 Status: working product contract
 
-Updated: 2026-07-20
+Updated: 2026-10-14
 
 ## One-line promise
 
@@ -29,7 +29,7 @@ Patchfleet has two products with a hard trust boundary:
 
 ### Patchfleet
 
-The public local application. It detects providers, normalizes their observable
+The public Rust/Tauri desktop application. It detects providers, normalizes their observable
 state, stores canonical local events, presents the local console, and applies
 validated commands. It works offline from Patchfleet Cloud.
 
@@ -48,6 +48,20 @@ coordinates bounded provider runs and keeps task ownership, decisions, retries,
 questions, and receipts durable. Cloud receives only the sanitized operational
 projection and allowlisted expiring intents.
 
+## Planned project memory
+
+The next product focus gives a project its own agents, teams, and shared local
+decision memory across worktrees. Patchfleet-authored project messages, task
+instructions, and owner answers are the default sources; external agent
+conversations require an explicit import.
+
+Automatic extraction creates source-backed ADR drafts. Only explicit owner
+acceptance makes a decision authoritative. A local vector database stores
+searchable decision text and metadata, and scoped agent tools expose the same
+accepted decisions to the project's agents. See
+[Task 0022](plans/0022-project-memory-and-decision-service.md). This capability
+is planned and does not widen the default Cloud data boundary.
+
 ## V0 promise
 
 V0 is complete when one user can:
@@ -61,8 +75,9 @@ V0 is complete when one user can:
 6. view sanitized status remotely;
 7. issue the safe V1 remote cancel action and receive a definitive receipt.
 
-macOS is the development reference platform. Windows support is a V0 release
-gate, not a requirement for the first vertical slice.
+macOS is the development reference platform. Native Windows and Linux build
+and runtime evidence are desktop release gates. The CI matrix includes macOS
+ARM64/Intel, Windows x64, and Linux x64/ARM64 targets.
 
 ## Explicit non-goals for V0
 

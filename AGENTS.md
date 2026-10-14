@@ -62,9 +62,12 @@ Read a matching skill completely before acting:
    domain contract. Provider-specific parsing and process behavior stay inside
    provider adapters.
 5. Add abstractions only after a second real implementation proves the need.
-6. Prefer the Node.js standard library before adding a dependency.
-7. The V0 deployable stays one local Node/Next.js application. Code boundaries
-   may be clean without becoming separate services.
+6. Prefer the Rust standard library before adding a core dependency. Node is
+   frontend build tooling and a legacy parity reference, not the desktop host.
+7. The local deployable is a Rust host inside a Tauri desktop application for
+   macOS, Windows and Linux. Keep one canonical writer; do not add a Node
+   sidecar or separate execution authority. ADR 0023 supersedes the Node-only
+   deployment assumptions after the owner's 2026-10-14 direction.
 8. Durable changes are written as append-only events by one local writer;
    user-facing state is a rebuildable projection.
 9. Every command is idempotent, attributable, time-bounded, and produces a

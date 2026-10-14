@@ -12,14 +12,25 @@ and trust boundaries come before implementation details.
 3. [Host-to-Cloud protocol](protocol.md) — data policy, pairing, projections,
    command intents, and receipts.
 4. [Roadmap](roadmap.md) — public Now / Next / Later technical direction.
-5. [Install and operate](install.md) — closed-alpha package, lifecycle, upgrade,
+5. [Install and operate](install.md) — desktop installation, lifecycle, upgrade,
    recovery, and Gemini extension instructions.
-6. [Release](release.md) — npm beta verification, first-package bootstrap,
-   trusted publishing, provenance, and recovery.
+6. [Release](release.md) — native desktop verification, signing, artifacts and rollback.
 7. [Agent operating model](agent-operating-model.md) — when parallel agents
    help and how their ownership is bounded.
 7. [Project skills](../.agents/skills/) — task-triggered rules for adapters,
    local state, the Cloud boundary, and team delegation.
+
+## Current product focus
+
+[Rust desktop migration](plans/0023-rust-desktop-migration.md) ports the local
+host and console to Rust/Tauri. See [runtime state](state/rust-desktop.md) and
+[ADR 0023](decisions/0023-rust-tauri-desktop-runtime.md) for current evidence.
+
+[Project memory and decision service](plans/0022-project-memory-and-decision-service.md)
+defines the planned project-scoped agent/team workflow, automatic sourced ADR
+drafts, explicit owner acceptance, and local retrieval tools. See
+[ADR 0021](decisions/0021-project-scoped-local-decision-memory.md) for the trust
+contract and [feature state](state/project-memory.md) for implementation status.
 
 ## Execution records
 

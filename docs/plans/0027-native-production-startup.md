@@ -1,6 +1,6 @@
 # Task 0027 Native production startup repair
 
-Status: Verified — independent review pending
+Status: Completed — legacy launch routing reproduced and recovery verified
 
 Owner direction: 2026-10-14, screenshot of an entirely white installed app.
 
@@ -51,7 +51,9 @@ pairing were exercised.
   Its SHA-256 remains
   `c695ce7f7a56bbcb00c20a3919f9f08c7feead67c3f17060491c2ceb8e74bf83`.
 - Formatting, strict workspace/all-target/all-feature Clippy and the restored
-  production release build pass. Independent scope review is pending.
+  production release build pass. Independent read-only review accepted
+  `e436aa3` with no blockers: documentation/evidence-only scope, preserved data,
+  accurate production presentation proof and historical-screenshot limitations.
   No public release or owner-state migration.
 
 ## Scope and ownership

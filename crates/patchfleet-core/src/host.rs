@@ -384,9 +384,10 @@ impl Host {
 
     async fn workspace_action(&self, action: &str, p: &Value) -> Result<Value> {
         let mut request = if action == "workspace_register" {
-            let canonical = providers::validate_workspace(text(p, "workingDirectory")?)
-                .await
-                .map_err(Error)?;
+            let canonical =
+                providers::validate_workspace_for_registration(text(p, "workingDirectory")?)
+                    .await
+                    .map_err(Error)?;
             let base = intent("register_workspace", Value::Null, p);
             let display = p["displayName"]
                 .as_str()

@@ -2,6 +2,7 @@
 
 mod bridge;
 mod command;
+mod i18n;
 mod ui;
 
 use bridge::Bridge;
@@ -116,6 +117,9 @@ fn seed_memory_scene(directory: &std::path::Path) {
         .unwrap();
     runtime.block_on(async {
         let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        if std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en") {
+            host.action("desktop_language", command::Command::new("desktop_language", serde_json::json!({"language":"en"})).payload).await.unwrap();
+        }
         let created = host.action("project_create", command::Command::new("project_create", serde_json::json!({"name":"Billing sandbox"})).payload).await.unwrap();
         for (title, text) in [
             ("Money in minor units", "Store amounts as integer minor units. Keep the currency code beside each amount; avoid floating-point invoice calculations."),
@@ -134,6 +138,12 @@ fn seed_memory_scene(directory: &std::path::Path) {
 impl eframe::App for Patchfleet {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.bridge.poll();
+        let language = self
+            .bridge
+            .snapshot
+            .as_ref()
+            .map(i18n::Language::from_snapshot)
+            .unwrap_or(i18n::Language::Tr);
         let ctx = ui.ctx().clone();
         if ctx.input(|i| i.viewport().close_requested()) && !self.bridge.closed {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -150,21 +160,39 @@ impl eframe::App for Patchfleet {
         if self.bridge.closed {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        if self.bridge.feedback.is_some() || self.bridge.busy || self.bridge.closing {
+        let preference_error = self
+            .bridge
+            .snapshot
+            .as_ref()
+            .is_some_and(|s| s["desktopPreferences"]["error"] == true);
+        if self.bridge.feedback.is_some()
+            || self.bridge.busy
+            || self.bridge.closing
+            || preference_error
+        {
             egui::Panel::top("host_status").show(ui, |ui| {
                 ui.horizontal(|ui| {
                     if self.bridge.closing {
-                        ui.label("Stopping owned agents…");
+                        ui.label(i18n::tr(language, "Stopping owned agents…"));
                     } else if self.bridge.busy {
-                        ui.label("Applying action…");
+                        ui.label(i18n::tr(language, "Applying action…"));
                     }
                 });
                 if let Some(message) = &self.bridge.feedback {
-                    ui.label(message);
+                    ui.label(i18n::tr(language, message));
+                }
+                if preference_error {
+                    ui.label(i18n::tr(
+                        language,
+                        "Language preference could not be read. Select a language to replace it.",
+                    ));
                 }
                 if !self.bridge.busy && !self.bridge.closing {
                     if let Some(command) = self.bridge.pending.clone() {
-                        if ui.button("Retry the same action").clicked() {
+                        if ui
+                            .button(i18n::tr(language, "Retry the same action"))
+                            .clicked()
+                        {
                             self.bridge.submit(command);
                         }
                     }
@@ -173,10 +201,10 @@ impl eframe::App for Patchfleet {
         }
         if let Some(error) = self.bridge.error.clone() {
             egui::CentralPanel::default().show(ui, |ui| {
-                ui.heading("The local host needs attention");
-                ui.label("Close another Patchfleet instance if it owns this data directory. Your local state is preserved.");
-                ui.monospace(error);
-                if !self.bridge.closing && ui.button("Retry opening the host").clicked() {
+                ui.heading(i18n::tr(language,"The local host needs attention"));
+                ui.label(i18n::tr(language,"Close another Patchfleet instance if it owns this data directory. Your local state is preserved."));
+                ui.monospace(i18n::tr(language,&error));
+                if !self.bridge.closing && ui.button(i18n::tr(language,"Retry opening the host")).clicked() {
                     self.bridge.shutdown();
                     self.bridge = Bridge::new(ctx.clone(), self.directory.clone(), self.observe);
                 }
@@ -190,8 +218,8 @@ impl eframe::App for Patchfleet {
             }
         } else {
             egui::CentralPanel::default().show(ui, |ui| {
-                ui.heading("Opening Patchfleet");
-                ui.label("Loading the local Rust host…");
+                ui.heading(i18n::tr(language, "Opening Patchfleet"));
+                ui.label(i18n::tr(language, "Loading the local Rust host…"));
             });
         }
     }

@@ -48,8 +48,11 @@ async fn run() -> Result<()> {
         "action" => {
             let action = args.next().ok_or_else(|| Error("ACTION_REQUIRED".into()))?;
             let mut input = String::new();
-            io::stdin().take(131_073).read_to_string(&mut input)?;
-            if input.len() > 131_072 {
+            let maximum = Host::action_payload_limit(&action);
+            io::stdin()
+                .take((maximum + 1) as u64)
+                .read_to_string(&mut input)?;
+            if input.len() > maximum {
                 return Err(Error("PAYLOAD_TOO_LARGE".into()));
             }
             let payload = serde_json::from_str(&input)?;

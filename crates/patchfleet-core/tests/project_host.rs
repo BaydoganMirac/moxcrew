@@ -275,3 +275,131 @@ async fn task_retry_inherits_original_scope_including_no_project() {
     );
     host.shutdown().await;
 }
+
+#[tokio::test]
+async fn language_preferences_persist_without_changing_sources_or_cloud() {
+    let directory = tempfile::tempdir().unwrap();
+    let host = Host::open(directory.path().to_owned()).unwrap();
+    assert_eq!(
+        host.snapshot().unwrap()["desktopPreferences"]["language"],
+        "tr"
+    );
+    let project = host
+        .action("project_create", command(json!({"name":"Yerel proje"})))
+        .await
+        .unwrap()["projectId"]
+        .clone();
+    host.action("project_message", command(json!({"projectId":project,"expectedProjectRevision":1,"title":"Kullanıcı kaynağı","text":"Do not translate this source · Türkçe kalır"}))).await.unwrap();
+    let sources = host
+        .action("project_memory_read", json!({"projectId":project}))
+        .await
+        .unwrap();
+    let en = command(json!({"language":"en"}));
+    let receipt = host.action("desktop_language", en.clone()).await.unwrap();
+    assert_eq!(
+        host.action("desktop_language", en.clone()).await.unwrap(),
+        receipt
+    );
+    assert_eq!(
+        host.snapshot().unwrap()["desktopPreferences"]["language"],
+        "en"
+    );
+    assert!(host
+        .action("desktop_language", command(json!({"language":"xx"})))
+        .await
+        .is_err());
+    assert_eq!(
+        host.action("project_memory_read", json!({"projectId":project}))
+            .await
+            .unwrap(),
+        sources
+    );
+    host.shutdown().await;
+    drop(host);
+    let host = Host::open(directory.path().to_owned()).unwrap();
+    assert_eq!(
+        host.snapshot().unwrap()["desktopPreferences"]["language"],
+        "en"
+    );
+    assert_eq!(host.action("desktop_language", en).await.unwrap(), receipt);
+    let mut input = host.snapshot().unwrap();
+    input["sequence"] = json!(1);
+    input["recordedAt"] = json!(now());
+    for version in [1, 2] {
+        assert!(
+            !patchfleet_core::cloud::build_projection(&input, version, 1, "install:test")
+                .unwrap()
+                .to_string()
+                .contains("desktopPreferences")
+        );
+    }
+    host.shutdown().await;
+    drop(host);
+    std::fs::write(
+        directory.path().join("desktop-preferences.json"),
+        "damaged preference",
+    )
+    .unwrap();
+    let host = Host::open(directory.path().to_owned()).unwrap();
+    assert_eq!(
+        host.snapshot().unwrap()["desktopPreferences"],
+        json!({"language":"tr","error":true})
+    );
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("desktop-preferences.json")).unwrap(),
+        "damaged preference"
+    );
+    host.action("desktop_language", command(json!({"language":"tr"})))
+        .await
+        .unwrap();
+    assert_eq!(
+        host.snapshot().unwrap()["desktopPreferences"]["error"],
+        false
+    );
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn multilingual_source_limit_survives_host_intake_and_edit_without_truncation() {
+    let directory = tempfile::tempdir().unwrap();
+    let host = Host::open(directory.path().to_owned()).unwrap();
+    let p = host
+        .action("project_create", command(json!({"name":"Multilingual"})))
+        .await
+        .unwrap()["projectId"]
+        .clone();
+    let original = "記".repeat(50_000);
+    let input = command(
+        json!({"projectId":p,"title":"Source","text":original,"expectedProjectRevision":1}),
+    );
+    assert!(serde_json::to_vec(&input).unwrap().len() > 128 * 1024);
+    let first = host.action("project_message", input).await.unwrap();
+    assert_eq!(first["outcome"], "applied");
+    assert_eq!(
+        host.action("project_memory_read", json!({"projectId":p}))
+            .await
+            .unwrap()["sources"][0]["text"],
+        original
+    );
+    let edited = "漢".repeat(50_000);
+    let result = host.action("project_source_edit",command(json!({"projectId":p,"sourceId":first["sourceId"],"expectedSourceRevision":1,"title":"Edited","text":edited}))).await.unwrap();
+    assert_eq!(result["outcome"], "applied");
+    assert_eq!(
+        host.action("project_memory_read", json!({"projectId":p}))
+            .await
+            .unwrap()["sources"][0]["text"],
+        edited
+    );
+    let oversized = command(
+        json!({"projectId":p,"expectedProjectRevision":3,"title":"Too large","text":"記".repeat(70_000)}),
+    );
+    assert_eq!(
+        host.action("project_message", oversized)
+            .await
+            .unwrap_err()
+            .0,
+        "INVALID_PAYLOAD"
+    );
+    assert_eq!(Host::action_payload_limit("work_enqueue"), 128 * 1024);
+    host.shutdown().await;
+}

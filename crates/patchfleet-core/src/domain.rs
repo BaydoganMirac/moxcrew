@@ -828,15 +828,36 @@ fn validate_observation_event(kind: &str, p: &Value) -> Result<()> {
 }
 
 pub fn validate_event(v: &Value) -> Result<()> {
-    if v["schemaVersion"] == 3 {
-        return crate::project_memory::validate_event(v);
-    }
     exact(v, &["id", "schemaVersion", "type", "recordedAt", "payload"])?;
     matches(&v["id"], &format!("(?i)^{UUID_PATTERN}$"))?;
     iso(&v["recordedAt"])?;
     let p = &v["payload"];
     let kind = string(&v["type"])?;
     object(p)?;
+    if v["schemaVersion"] == 3
+        && matches!(kind, "owner.command.requested" | "owner.command.receipted")
+    {
+        match kind {
+            "owner.command.requested" => {
+                exact(p, &["commandId", "action", "payload"])?;
+                opaque(&p["commandId"])?;
+                require(
+                    p["action"] == "desktop_language",
+                    "unsupported V3 owner action",
+                )?;
+                bounded_object(&p["payload"])?;
+            }
+            _ => {
+                exact(p, &["commandId", "result"])?;
+                opaque(&p["commandId"])?;
+                bounded_object(&p["result"])?;
+            }
+        }
+        return Ok(());
+    }
+    if v["schemaVersion"] == 3 {
+        return crate::project_memory::validate_event(v);
+    }
     if v["schemaVersion"] == 2 {
         match kind {
             "cloud_team.command.requested" => {

@@ -47,6 +47,12 @@ sources preserve their original text and project. Unlinking/unregistering a work
 does not erase history. No accepted ADRs, semantic/vector search or agent memory
 tools are enabled in this foundation.
 
+Choose Türkçe or English in the sidebar. Turkish is the default; the selected
+interface language is saved locally in protected `desktop-preferences.json`.
+Source and task text are never automatically translated. A damaged preference
+falls back to Turkish and shows a safe message; explicitly selecting a language
+replaces only this display configuration, preserving canonical work and memory.
+
 Form teams from installed packs and templates. Background advancement does not
 require a manual refresh. Owner questions and approval gates remain explicit.
 Cancel a team before unregistering its workspace. Closing the desktop shuts

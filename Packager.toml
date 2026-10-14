@@ -1,7 +1,7 @@
 # cargo-packager 0.11.8; build the Rust executable before running the packager.
 name = "patchfleet-desktop"
 product-name = "Patchfleet"
-version = "0.5.0"
+version = "0.5.1"
 identifier = "com.patchfleet.desktop"
 publisher = "Patchfleet"
 authors = ["Patchfleet contributors"]
@@ -27,6 +27,7 @@ main = true
 minimum-system-version = "11.0"
 # Development artifacts use an ad-hoc signature; public signing is a separate release action.
 signing-identity = "-"
+info-plist-path = "crates/patchfleet-desktop/assets/macos-permissions.plist"
 
 [nsis]
 installMode = "currentUser"
@@ -43,4 +44,5 @@ depends = [
   "libxkbcommon0", "libxkbcommon-x11-0",
   "libegl1", "libgl1",
   "libwayland-client0", "libwayland-cursor0", "libwayland-egl1",
+  "libdbus-1-3", "xdg-desktop-portal", "zenity",
 ]

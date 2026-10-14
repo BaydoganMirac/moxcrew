@@ -1,8 +1,8 @@
 # Native Rust desktop state
 
-Status: Implemented and native render verified; platform release checks pending
+Status: 0.5.1 implemented; independent acceptance review and platform release checks pending
 
-Updated: 2026-10-14
+Updated: 2026-10-15
 
 ## Scope and architecture
 
@@ -19,6 +19,23 @@ appear in the window. Close immediately prevents new host work and then waits
 for cleanup; a provider prepare cannot proceed to turn start during closing.
 The exclusive writer remains owned until shutdown completes.
 
+The 0.5.1 Projects view uses compact project cards, an explicit native folder
+setup action and collapsed technical identity. Registration and one-off work
+paths are read-only previews selected through RFD's platform dialog. A bounded
+preflight and Host revalidation distinguish missing, unsafe, non-Git, denied
+and read-only folders. OS selection/settings guidance does not change ACLs or
+request Full Disk Access. AppKit folder purpose keys are bundled. Existing
+canonical registration receipts survive later access loss/deletion through the
+unchanged intent equality check; new commands still validate current access.
+
+The picker is created on the UI thread and awaited on the existing runtime.
+App logic consumes background results and close signaling even while UI drawing
+is occluded. Cancel preserves the draft and writes no owner command. Success,
+warning and error feedback are localized, dismissible and expose only safe
+technical codes; folder recovery starts a new selection instead of retrying an
+old path. Confirmation footers stay outside the scroll body and paths truncate
+with a complete tooltip. See [ADR 0028](../decisions/0028-native-folder-consent-and-feedback.md).
+
 Seven native sections cover stable projects, source memory, work, teams, packs,
 providers and Cloud. Turkish/English controls switch through the owner Host and
 persist in protected display configuration; owner source and custom text stay raw.
@@ -33,7 +50,7 @@ Unpaired Cloud returns before copying projections and canonical history.
 
 ## Current evidence
 
-- Rust workspace: 81 tests pass, including 24 native command/bridge/UI/localization
+- Rust workspace: 95 tests pass, including 30 native command/bridge/UI/localization
   tests. One manual large-log timing probe remains outside the ordinary suite.
 - UI checks paint all sections with empty/populated snapshots and exercise
   registration, work revisions, busy/capability controls, owner decisions,
@@ -43,12 +60,26 @@ Unpaired Cloud returns before copying projections and canonical history.
   clock correction recovery and language/source boundaries.
 - A real native macOS ARM64 frame renders the UI and Rust snapshot. Timed
   normal close exits successfully using disposable data and no provider probes.
-- Production launch proof now also covers macOS window presentation: the
-  installed 0.5 App and packaged executable have identical SHA-256 hashes, and
+- Task 0027 established macOS window presentation for production 0.5.0: the
+  then-installed App and packaged executable had identical SHA-256 hashes, and
   a normal LaunchServices launch with disposable data displays the native
   console in an OS window capture. The older screenshot-feature checks below
   read the GL framebuffer and did not establish this presentation evidence.
-- Actual 0.5 Turkish and English frames were captured in 0.823 and 0.286 seconds,
+- For 0.5.1, an actual AppKit folder sheet opened with a localized title and
+  OS controls. Timed close succeeded with the sheet open and with an actual
+  read-only disposable Git folder; no owner registration was submitted. The
+  permission fixture's mode was restored during cleanup. Final Turkish/English
+  800×560 form captures show complete footer buttons, wrapped guidance and
+  truncated paths; these final images are GL readbacks after sizing, not OS
+  presentation captures. Headless tests also check the footer's visible clip.
+- The 0.5.1 production App launched through NSWorkspace as a fresh instance with
+  explicit disposable data and failing provider stubs. The returned bundle/PID
+  matched the packaged App, a native window was listed, and normal termination
+  released the process/writer. The final OS pixel capture returned “could not
+  create image from window”; no successful final production screenshot is
+  claimed. Earlier 0.5.1 sheet pixels were inspected locally, but are not committed
+  because the OS sidebar contains machine-specific details.
+- Earlier 0.5.0 Turkish and English frames were captured in 0.823 and 0.286 seconds,
   including disposable Host fixture creation, PNG capture and process exit; the
   second used warmed system caches. Final Turkish memory-scene idle RSS samples
   were 89.7–92.4 MiB. Earlier local samples ranged up to 107.5 MiB. Eight seconds
@@ -58,6 +89,10 @@ Unpaired Cloud returns before copying projections and canonical history.
   resident shared graphics/framework pages; window-server costs, large history,
   actual provider processes and other platforms are separate. These are measured
   local observations, not cross-platform performance promises.
+- The final 0.5.1 production sample reached 105.3 MiB RSS and 0.13 seconds
+  cumulative CPU over an eight-second cold launch, including startup and failing
+  probe stubs. Separate sheet/error tests reached 105–106 MiB and exited normally.
+  These short samples do not establish sustained idle/active-work performance.
 - Legacy event/protocol reference: all 149 tests pass after the native package
   contract update.
 - Runtime dependency tree contains egui/eframe/Glow and no Tauri/Wry/WebKit,
@@ -66,15 +101,18 @@ Unpaired Cloud returns before copying projections and canonical history.
 ## Final local package
 
 - `dist/native/Patchfleet.app` contains the production binary, without test-only
-  screenshot/timed-close features. Version is 0.5.0 and the bundle identifier
+  screenshot/timed-close features. Version is 0.5.1 and the bundle identifier
   remains `com.patchfleet.desktop`.
-- `dist/native/Patchfleet_0.5.0_aarch64.dmg` is 5,844,693 bytes (about 5.57 MiB).
-  SHA-256: `c695ce7f7a56bbcb00c20a3919f9f08c7feead67c3f17060491c2ceb8e74bf83`.
-- The executable is 11,586,624 bytes. Its linked frameworks are native system
+- `dist/native/Patchfleet_0.5.1_aarch64.dmg` is 6,055,128 bytes (about 5.77 MiB).
+  SHA-256: `b5046a0585a0c048548e5887150001fdf29740fa9c037c4041accf0c045d4134`.
+- The signed executable is 11,670,480 bytes, SHA-256
+  `b88af06dbd297a694669977e8100cd0ccfadaea31362ca910d5280ca9eae7fa5`.
+  Its linked frameworks are native system
   graphics/window libraries; WebKit is absent.
-- DMG integrity, App ad hoc signature and bundle version/identifier checks pass.
-  Final production native hook ingress also passes with five sanitized fields
-  and no canonical writer, window or provider process.
+- DMG integrity, App ad hoc signature, all five folder-access purpose keys and
+  bundle version/identifier checks pass. Test-only scene/capture controls are
+  absent from the production binary. Production hook ingress was verified in
+  Task 0027; Task 0028 does not change it.
 - cargo-packager produced the App. The local DMG was created with hdiutil using
   a distinct versioned volume name to preserve the owner's already-mounted old
   Patchfleet image. No installed application, owner state, branch push, public
@@ -102,11 +140,21 @@ onboarding. The actual final native frame is preserved in
 [English](../screenshots/native-memory-0.5-en.png) native frames show disposable
 project memory entered through the actual Host. Fixture text explicitly identifies
 its illustrative purpose; provider status is not fabricated as real work.
+Current 0.5.1 [project setup](../screenshots/native-projects-0.5.1-tr.png),
+[Turkish access form](../screenshots/native-folder-access-0.5.1-tr.png) and
+[English access form](../screenshots/native-folder-access-0.5.1-en.png) use only
+disposable illustrative data. The form images are minimum-window GL captures.
 
 ## Release limits
 
 - Native CI targets macOS ARM64/Intel, Windows x64 and Linux x64/ARM64, but its
   unrun platform jobs are not local build/runtime evidence.
+- Actual Windows/Linux folder dialogs and permission behavior, and global macOS
+  TCC deny/grant settings were not exercised. The Windows directory-handle access
+  helper was type-checked against cached MSVC metadata; a full cross-target build
+  remains blocked by unavailable Windows SDK headers in the existing ring build.
+  Linux requires a working desktop portal backend or Zenity; these are declared
+  runtime prerequisites. Owner privacy settings were not altered for a test.
 - Local development artifacts use ad hoc signing. Public signing/notarization
   and publication remain owner release actions.
 - Live provider turns/cancels, staging Cloud pairing and owner-data migrations

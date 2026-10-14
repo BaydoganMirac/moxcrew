@@ -173,9 +173,16 @@ records add durable request and receipt recovery. Old provider ownership is
 marked lost, and uncertain starts are never resent.
 
 Workspace registration uses this same writer and command/receipt contract. The
-desktop or offline CLI mutates the registry. Work forms send an opaque local
-workspace ID, which the Rust host resolves before creating a work item. Manual path entry is a local
-advanced fallback and does not change the Cloud protocol.
+desktop or offline CLI mutates the registry. The desktop uses a native OS folder
+picker for registration and one-off work; paths are displayed read-only. A
+bounded asynchronous preflight provides safe folder/access diagnostics, then
+new registrations revalidate through the Host. Completed canonical registration
+retries retain their original receipts rather than depending on current folder
+eligibility. Work forms send an opaque local workspace ID, which the Rust host
+resolves before creating a work item. Direct paths remain supported by the
+offline CLI contract and do not change the Cloud protocol. OS consent does not
+override filesystem permissions or provider sandboxing. See
+[ADR 0028](decisions/0028-native-folder-consent-and-feedback.md).
 
 Agent-pack installation and team lifecycle use the same single writer. Team
 events project independently but ordinary task attempts enter the existing work

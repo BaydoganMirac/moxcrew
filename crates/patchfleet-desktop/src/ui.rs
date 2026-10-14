@@ -1,4 +1,5 @@
-use crate::command::Command;
+use crate::command::{Command, Notice, NoticeKind};
+use crate::folder;
 use crate::i18n::{self, Language};
 use eframe::egui::{self, Color32, RichText, Ui};
 use serde_json::{json, Value};
@@ -51,7 +52,7 @@ impl Tab {
     }
     fn summary(self) -> &'static str {
         match self {
-            Self::Projects => "Stable projects, linked worktrees and shared local context.",
+            Self::Projects => "Your projects, local folders and shared memory.",
             Self::Memory => "Project sources with provenance. ADR extraction comes next.",
             Self::Work => "Queue a bounded task, start Codex, and verify its durable outcome.",
             Self::Teams => "Choose agents and a bounded plan. Owner decisions stay explicit.",
@@ -72,6 +73,7 @@ struct WorkDraft {
     instruction: String,
     workspace: String,
     path: String,
+    path_problem: Option<String>,
 }
 impl WorkDraft {
     fn payload(&self, snapshot: &Value) -> Result<Value, &'static str> {
@@ -83,6 +85,9 @@ impl WorkDraft {
         )?;
         let selected = self.workspace.trim();
         let manual = self.path.trim();
+        if !manual.is_empty() && self.path_problem.is_some() {
+            return Err("Choose an accessible Git folder before adding this task.");
+        }
         if selected.is_empty() == manual.is_empty() {
             return Err("Choose a registered worktree or one absolute worktree path.");
         }
@@ -285,6 +290,12 @@ pub struct Console {
     memory: MemoryDraft,
     project_name: String,
     project_path: String,
+    project_path_problem: Option<String>,
+    registration_open: bool,
+    new_project_open: bool,
+    registration_project: Option<String>,
+    folder_request: Option<folder::Target>,
+    pub notice_action: Option<NoticeAction>,
     work: WorkDraft,
     team: TeamDraft,
     manifest: String,
@@ -297,13 +308,85 @@ pub struct Console {
     work_page: usize,
 }
 
+#[derive(Clone, Copy)]
+pub enum NoticeAction {
+    Dismiss,
+    Retry,
+    #[cfg(target_os = "macos")]
+    Settings,
+}
+
 impl Console {
     #[cfg(feature = "ui-smoke")]
     pub fn memory_smoke(&mut self) {
         self.tab = Tab::Memory;
     }
 
-    pub fn show(&mut self, ui: &mut Ui, snapshot: &Value, busy: bool) -> Vec<Command> {
+    #[cfg(feature = "ui-smoke")]
+    pub fn folder_smoke(&mut self, path: &std::path::Path) {
+        self.project_path = path.to_string_lossy().into_owned();
+        self.folder_request = Some(folder::Target::Registration);
+    }
+
+    pub fn take_folder_request(&mut self) -> Option<folder::Target> {
+        self.folder_request.take()
+    }
+
+    pub fn folder_path(&self, target: folder::Target) -> &str {
+        match target {
+            folder::Target::Registration => &self.project_path,
+            folder::Target::Task => &self.work.path,
+        }
+    }
+
+    pub fn accept_folder(&mut self, target: folder::Target, selection: Option<folder::Selection>) {
+        let Some(selection) = selection else {
+            return;
+        };
+        self.form_error = None;
+        match target {
+            folder::Target::Registration => {
+                let old_name = std::path::Path::new(&self.project_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if self.project_name.is_empty() || self.project_name == old_name {
+                    self.project_name = std::path::Path::new(&selection.path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_owned();
+                }
+                self.project_path = selection.path;
+                self.project_path_problem = selection.problem;
+                self.registration_open = true;
+            }
+            folder::Target::Task => {
+                self.work.path = selection.path;
+                self.work.path_problem = selection.problem;
+                self.work.workspace.clear();
+            }
+        }
+    }
+
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        busy: bool,
+        notice: Option<&Notice>,
+        can_retry: bool,
+    ) -> Vec<Command> {
+        if let Some(project) = &self.registration_project {
+            if let Some(workspace) = items(&snapshot["workspaces"])
+                .iter()
+                .find(|w| text(w, "workingDirectory") == self.project_path)
+            {
+                self.link_choices
+                    .insert(project.clone(), text(workspace, "workspaceId").to_owned());
+                self.registration_project = None;
+            }
+        }
         ui.ctx().data_mut(|data| {
             data.insert_temp(
                 egui::Id::new("console-language"),
@@ -394,14 +477,16 @@ impl Console {
                             .color(TEXT),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        action(
-                            ui,
-                            &mut commands,
-                            "Refresh providers",
-                            "observe",
-                            !busy,
-                            || json!({}),
-                        );
+                        if matches!(self.tab, Tab::Providers | Tab::Work | Tab::Teams) {
+                            action(
+                                ui,
+                                &mut commands,
+                                "Refresh providers",
+                                "observe",
+                                !busy,
+                                || json!({}),
+                            );
+                        }
                         if busy {
                             ui.label(t(ui, "Applying action…"));
                         }
@@ -414,6 +499,10 @@ impl Console {
                         .color(MUTED),
                 );
                 ui.add_space(24.0);
+                if let Some(notice) = notice {
+                    self.feedback(ui, notice, can_retry && !busy);
+                    ui.add_space(14.0);
+                }
                 if let Some(error) = self.form_error {
                     ui.colored_label(RED, t(ui, error));
                     ui.add_space(8.0);
@@ -434,11 +523,98 @@ impl Console {
                         });
                     });
             });
+        if self.registration_open {
+            let id = egui::Id::new("register-folder");
+            let modal = egui::Modal::new(id)
+                .area(egui::Modal::default_area(id).fade_in(false))
+                .show(ui.ctx(), |ui| {
+                    ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 460.0));
+                    ui.add_enabled_ui(!busy, |ui| self.project_form(ui, snapshot, &mut commands));
+                });
+            if modal.should_close() {
+                self.registration_open = false;
+            }
+        }
+        if self.new_project_open {
+            let id = egui::Id::new("create-project");
+            let modal = egui::Modal::new(id)
+                .area(egui::Modal::default_area(id).fade_in(false))
+                .show(ui.ctx(), |ui| {
+                    ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 460.0));
+                    ui.add_enabled_ui(!busy, |ui| self.create_project_form(ui, &mut commands));
+                });
+            if modal.should_close() {
+                self.new_project_open = false;
+            }
+        }
         commands
+    }
+
+    fn feedback(&mut self, ui: &mut Ui, notice: &Notice, can_retry: bool) {
+        if notice.kind == NoticeKind::Success {
+            egui::Frame::new()
+                .fill(MINT.gamma_multiply(0.06))
+                .corner_radius(8)
+                .inner_margin(10)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let message = t(ui, &notice.code);
+                        ui.label(
+                            RichText::new(if message == notice.code {
+                                t(ui, "The local action was recorded.")
+                            } else {
+                                message
+                            })
+                            .color(MINT),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button(t(ui, "Dismiss")).clicked() {
+                                self.notice_action = Some(NoticeAction::Dismiss);
+                            }
+                        });
+                    });
+                });
+            return;
+        }
+        let color = match notice.kind {
+            NoticeKind::Success => MINT,
+            NoticeKind::Warning => Color32::from_rgb(239, 197, 132),
+            NoticeKind::Error => RED,
+        };
+        egui::Frame::new().fill(color.gamma_multiply(0.07)).stroke(egui::Stroke::new(1.0,color.gamma_multiply(0.3))).corner_radius(8).inner_margin(12).show(ui,|ui| {
+            let title = match notice.code.as_str() {
+                "WORKSPACE_ACCESS_DENIED" | "WORKSPACE_READ_ONLY" => "Folder access needs attention",
+                "WORKSPACE_NOT_GIT_ROOT" => "Select the repository folder",
+                _ => match notice.kind { NoticeKind::Success=>"Action completed",NoticeKind::Warning=>"Action was not applied",NoticeKind::Error=>"Action could not be completed" },
+            };
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(t(ui,title)).strong().color(color));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
+                    if ui.small_button(t(ui,"Dismiss")).clicked() { self.notice_action = Some(NoticeAction::Dismiss); }
+                });
+            });
+            let description = t(ui,&notice.code);
+            if description == notice.code {
+                hint(ui, if notice.kind == NoticeKind::Success { "The local action was recorded." } else { "Review the current state and try the action again. Details are available below." });
+            } else { ui.label(description); }
+            if folder::is_problem(&notice.code) {
+                if matches!(notice.code.as_str(),"WORKSPACE_ACCESS_DENIED" | "WORKSPACE_READ_ONLY") { hint(ui,folder::permission_guidance(&notice.code)); }
+                ui.horizontal_wrapped(|ui| {
+                    if matches!(notice.action,"workspace_register" | "work_enqueue") && control(ui,"Choose another folder",can_retry || notice.kind != NoticeKind::Error).clicked() {
+                        self.folder_request = Some(if notice.action == "work_enqueue" { folder::Target::Task } else { folder::Target::Registration });
+                        self.notice_action = Some(NoticeAction::Dismiss);
+                    }
+                    #[cfg(target_os="macos")]
+                    if notice.code == "WORKSPACE_ACCESS_DENIED" && control(ui,"Open permission settings",true).clicked() { self.notice_action = Some(NoticeAction::Settings); }
+                });
+            } else if can_retry && notice.retryable() && control(ui,"Retry the same action",true).clicked() { self.notice_action = Some(NoticeAction::Retry); }
+            if notice.kind != NoticeKind::Success { ui.collapsing(t(ui,"Technical details"),|ui| { ui.monospace(&notice.code); }); }
+        });
     }
 
     fn projects(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let projects = array(&snapshot["projectMemory"]["projects"]);
+        let workspaces = items(&snapshot["workspaces"]);
         if projects.is_empty() {
             ui.label(
                 RichText::new(t(ui, "YOUR LOCAL WORKSPACE"))
@@ -452,76 +628,125 @@ impl Console {
                     .strong()
                     .color(TEXT),
             );
-            ui.add_space(8.0);
-            hint(
-                ui,
-                "Give your project a stable home for worktrees, tasks and local context.",
-            );
-            ui.add_space(24.0);
+            hint(ui, "Keep your folders, agents and project memory together.");
+            ui.add_space(18.0);
             constrained(ui, 560.0, |ui| self.create_project_form(ui, commands));
         } else {
-            egui::CollapsingHeader::new(t(ui, "Create a project")).show(ui, |ui| {
-                constrained(ui, 560.0, |ui| self.create_project_form(ui, commands))
+            ui.horizontal(|ui| {
+                hint(
+                    ui,
+                    &localized_format!(
+                        ui,
+                        "{0} projects · {1} local folders",
+                        projects.len(),
+                        workspaces.len()
+                    ),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if control(ui, "New project", true).clicked() {
+                        self.new_project_open = true;
+                        self.form_error = None;
+                    }
+                });
             });
             ui.add_space(14.0);
             for project in projects {
-                ui.push_id(text(project,"projectId"),|ui|card(ui,|ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(text(project,"name")).size(16.0).strong().color(TEXT));
-                    status(ui,&localized_format!(ui, "{0} sources",project["sourceCount"].as_u64().unwrap_or(0)));
-                    if control(ui,"Open memory",true).clicked(){self.memory.select(text(project,"projectId"));self.tab=Tab::Memory;}
-                });
-                hint(ui,"Linked worktrees share this project's source context.");ui.add_space(10.0);
-                for id in array(&project["workspaceIds"]) {
-                    let workspace=items(&snapshot["workspaces"]).iter().find(|w|w["workspaceId"]==*id);
+                ui.push_id(text(project,"projectId"), |ui| card(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(workspace.map(|w|std::borrow::Cow::Borrowed(text(w,"displayName"))).unwrap_or_else(||t(ui,"Removed worktree")));
-                        action(ui,commands,"Unlink","project_unlink_workspace",revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":id,"expectedProjectRevision":project["revision"]}));
+                        let (rect, _) = ui.allocate_exact_size(egui::vec2(34.0, 34.0), egui::Sense::hover());
+                        ui.painter().rect_filled(rect, 8, Color32::from_rgb(31, 53, 44));
+                        draw_icon(ui.painter(), rect.shrink(8.0), Tab::Projects, MINT);
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new(text(project,"name")).size(18.0).strong().color(TEXT));
+                            hint(ui, &localized_format!(ui,"{0} folders · {1} sources",array(&project["workspaceIds"]).len(),project["sourceCount"].as_u64().unwrap_or(0)));
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if control(ui,"Open memory",true).clicked() { self.memory.select(text(project,"projectId")); self.tab = Tab::Memory; }
+                        });
                     });
-                    if let Some(workspace)=workspace {hint(ui,text(workspace,"workingDirectory"));}
-                }
-                let available:Vec<_>=items(&snapshot["workspaces"]).iter().filter(|w|!projects.iter().any(|p|array(&p["workspaceIds"]).contains(&w["workspaceId"]))).collect();
-                if available.is_empty(){hint(ui,"Register an unlinked worktree below to link it here.");}
-                else {
-                    let selected=self.link_choices.entry(text(project,"projectId").to_owned()).or_default();
-                    choose_refs(ui,"link-worktree","Link a registered worktree",selected,&available,("workspaceId","workingDirectory"),true);
-                    let workspace=available.iter().find(|w|text(w,"workspaceId")==selected);
-                    if let Some(workspace)=workspace {hint(ui,text(workspace,"workingDirectory"));}
-                    let exists=workspace.is_some();
-                    action(ui,commands,"Link worktree","project_link_workspace",exists&&revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":selected,"expectedProjectRevision":project["revision"]}));
-                }
-                ui.collapsing(t(ui, "Project identity"),|ui|{ui.monospace(text(project,"projectId"));hint(ui,&localized_format!(ui, "Revision {0} · created {1}",revision(project),format_time(ui,text(project,"createdAt"))));});
-            }));
+                    ui.add_space(14.0);
+                    if array(&project["workspaceIds"]).is_empty() {
+                        egui::Frame::new().fill(Color32::from_rgb(18,22,28)).corner_radius(8).inner_margin(12).show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.label(RichText::new(t(ui,"Connect a local folder")).strong().color(TEXT));
+                            hint(ui,"Choose the Git repository where your agents will work.");
+                            ui.add_space(8.0);
+                            if submit(ui,"Choose folder","folder_picker") {
+                                self.registration_project = Some(text(project,"projectId").to_owned());
+                                self.folder_request = Some(folder::Target::Registration);
+                                self.form_error = None;
+                            }
+                        });
+                    } else {
+                        for id in array(&project["workspaceIds"]) {
+                            let workspace = workspaces.iter().find(|w|w["workspaceId"] == *id);
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(workspace.map(|w|std::borrow::Cow::Borrowed(text(w,"displayName"))).unwrap_or_else(||t(ui,"Removed folder")));
+                                action(ui,commands,"Unlink","project_unlink_workspace",revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":id,"expectedProjectRevision":project["revision"]}));
+                            });
+                            if let Some(workspace) = workspace { path_label(ui,text(workspace,"workingDirectory")); }
+                            ui.add_space(5.0);
+                        }
+                        if control(ui,"Add another folder",true).clicked() {
+                            self.registration_project = Some(text(project,"projectId").to_owned());
+                            self.folder_request = Some(folder::Target::Registration);
+                        }
+                    }
+                    let available: Vec<_> = workspaces.iter().filter(|w|!projects.iter().any(|p|array(&p["workspaceIds"]).contains(&w["workspaceId"]))).collect();
+                    if !available.is_empty() {
+                        ui.add_space(12.0);
+                        let selected = self.link_choices.entry(text(project,"projectId").to_owned()).or_default();
+                        if selected.is_empty() && available.len() == 1 { *selected = text(available[0],"workspaceId").to_owned(); }
+                        choose_refs(ui,"link-worktree","Link an existing folder",selected,&available,("workspaceId","displayName"),true);
+                        let workspace = available.iter().find(|w|text(w,"workspaceId") == selected);
+                        if let Some(workspace) = workspace { path_label(ui,text(workspace,"workingDirectory")); }
+                        action(ui,commands,"Link folder","project_link_workspace",workspace.is_some()&&revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":selected,"expectedProjectRevision":project["revision"]}));
+                    }
+                    ui.add_space(8.0);
+                    ui.collapsing(t(ui,"Project details"),|ui| {
+                        ui.monospace(text(project,"projectId"));
+                        hint(ui,&localized_format!(ui,"Revision {0} · created {1}",revision(project),format_time(ui,text(project,"createdAt"))));
+                    });
+                }));
                 ui.add_space(12.0);
             }
         }
-        ui.add_space(22.0);
-        ui.separator();
         ui.add_space(18.0);
-        ui.label(
-            RichText::new(t(ui, "REGISTERED WORKTREES"))
-                .size(10.0)
-                .color(MUTED),
-        );
-        hint(ui,"Worktrees are execution folders. Unlinked worktrees remain usable for tasks and teams.");
-        ui.add_space(10.0);
-        for workspace in items(&snapshot["workspaces"]) {
-            ui.push_id(text(workspace,"workspaceId"),|ui|card(ui,|ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(text(workspace,"displayName")).size(13.0).strong().color(TEXT));
-                let project=projects.iter().find(|p|array(&p["workspaceIds"]).contains(&workspace["workspaceId"]));
-                if let Some(project)=project {raw_status(ui,text(project,"name"));} else {status(ui,"Unlinked");}
-                action(ui,commands,"Unregister","workspace_remove",revision(workspace)>0,||json!({"workspaceId":workspace["workspaceId"],"expectedWorkspaceRevision":workspace["revision"]}));
+        ui.separator();
+        ui.add_space(16.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(t(ui, "LOCAL FOLDERS"))
+                    .size(10.0)
+                    .color(MUTED),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if control(ui, "Add folder", true).clicked() {
+                    self.registration_project = None;
+                    self.folder_request = Some(folder::Target::Registration);
+                    self.form_error = None;
+                }
             });
-            hint(ui,text(workspace,"workingDirectory"));
-        }));
-            ui.add_space(8.0);
+        });
+        if workspaces.is_empty() {
+            hint(
+                ui,
+                "No folders added yet. Choose a repository using the system folder picker.",
+            );
+        } else {
+            for workspace in workspaces {
+                ui.push_id(text(workspace,"workspaceId"),|ui| {
+                    ui.add_space(10.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new(text(workspace,"displayName")).strong().color(TEXT));
+                        if let Some(project) = projects.iter().find(|p|array(&p["workspaceIds"]).contains(&workspace["workspaceId"])) { raw_status(ui,text(project,"name")); }
+                        else { status(ui,"Unlinked"); }
+                        action(ui,commands,"Remove folder","workspace_remove",revision(workspace)>0,||json!({"workspaceId":workspace["workspaceId"],"expectedWorkspaceRevision":workspace["revision"]}));
+                    });
+                    path_label(ui,text(workspace,"workingDirectory"));
+                });
+            }
         }
-        egui::CollapsingHeader::new(t(ui, "Register a worktree"))
-            .default_open(items(&snapshot["workspaces"]).is_empty())
-            .show(ui, |ui| {
-                constrained(ui, 560.0, |ui| self.project_form(ui, commands))
-            });
     }
 
     fn create_project_form(&mut self, ui: &mut Ui, commands: &mut Vec<Command>) {
@@ -551,6 +776,7 @@ impl Console {
                             json!({"name":self.new_project_name.trim()}),
                         ));
                         self.form_error = None;
+                        self.new_project_open = false;
                     }
                     Err(error) => self.form_error = Some(error),
                 }
@@ -559,43 +785,87 @@ impl Console {
         });
     }
 
-    fn project_form(&mut self, ui: &mut Ui, commands: &mut Vec<Command>) {
-        card(ui, |ui| {
-            section_title(
-                ui,
-                "Register worktree",
-                "An existing Git worktree used to execute tasks.",
-            );
-            ui.add_space(16.0);
-            field_hint(
-                ui,
-                "Worktree path",
-                &mut self.project_path,
-                4096,
-                "/absolute/path/to/repository",
-            );
-            field_hint(
-                ui,
-                "Worktree label · optional",
-                &mut self.project_name,
-                160,
-                "e.g. Website, API, Mobile app",
-            );
-            ui.add_space(8.0);
-            if submit(ui, "Register worktree", "workspace_register") {
-                if self.project_path.trim().is_empty() {
-                    self.form_error = Some("Enter the absolute path of an existing Git worktree.");
-                } else if utf16_len(self.project_path.trim()) > 4096 {
-                    self.form_error = Some("The worktree path is too long.");
-                } else if utf16_len(self.project_name.trim()) > 160 {
-                    self.form_error = Some("The worktree label is limited to 160 characters.");
-                } else {
-                    commands.push(Command::new("workspace_register",json!({"workingDirectory":self.project_path.trim(),"displayName":self.project_name.trim()})));
-                    self.form_error = None;
+    fn project_form(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        section_title(
+            ui,
+            "Add a local folder",
+            "Your agents work here. Files stay on this device.",
+        );
+        ui.add_space(16.0);
+        let existing = items(&snapshot["workspaces"])
+            .iter()
+            .find(|w| text(w, "workingDirectory") == self.project_path);
+        egui::ScrollArea::vertical().id_salt("folder-setup-body").max_height((ui.ctx().viewport_rect().height()-180.0).max(150.0)).show(ui, |ui| {
+        folder_preview(ui, &self.project_path);
+        if control(ui, "Change folder", true).clicked() {
+            self.folder_request = Some(folder::Target::Registration);
+        }
+        if let Some(code) = &self.project_path_problem {
+            ui.add_space(12.0);
+            ui.colored_label(RED, t(ui, code));
+            if matches!(
+                code.as_str(),
+                "WORKSPACE_ACCESS_DENIED" | "WORKSPACE_READ_ONLY"
+            ) {
+                hint(ui, folder::permission_guidance(code));
+                #[cfg(target_os = "macos")]
+                if code == "WORKSPACE_ACCESS_DENIED" && control(ui, "Open permission settings", true).clicked() {
+                    self.notice_action = Some(NoticeAction::Settings);
                 }
             }
-            ui.add_space(10.0);
-            hint(ui, "Files stay where they are. Nothing is uploaded.");
+        } else {
+            ui.add_space(8.0);
+            hint(
+                ui,
+                "Git folder found. Access will be checked again when you add it.",
+            );
+        }
+        if let Some(existing) = existing {
+            if let Some(project) = array(&snapshot["projectMemory"]["projects"])
+                .iter()
+                .find(|p| array(&p["workspaceIds"]).contains(&existing["workspaceId"]))
+            {
+                hint(ui,&localized_format!(ui,"This folder is linked to {0}. Choose another folder or unlink it there first.",text(project,"name")));
+            } else {
+                hint(
+                    ui,
+                    "This folder is already added. You can link it from the project card.",
+                );
+            }
+        }
+        ui.add_space(16.0);
+        field_hint(
+            ui,
+            "Folder label · optional",
+            &mut self.project_name,
+            160,
+            "e.g. Website, API, Mobile app",
+        );
+        if self.registration_project.is_some() {
+            hint(
+                ui,
+                "After adding this folder, link it from the project card.",
+            );
+        }
+        if let Some(error) = self.form_error {
+            ui.colored_label(RED, t(ui, error));
+        }
+        });
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            let allowed = !self.project_path.is_empty() && self.project_path_problem.is_none() && existing.is_none();
+            let clicked = ui.add_enabled_ui(allowed,|ui|submit(ui,"Add folder","workspace_register")).inner;
+            if clicked {
+                if utf16_len(self.project_name.trim()) > 160 { self.form_error = Some("The folder label is limited to 160 characters."); }
+                else {
+                    commands.push(Command::new("workspace_register",json!({"workingDirectory":self.project_path,"displayName":self.project_name.trim()})));
+                    self.form_error = None;
+                    self.registration_open = false;
+                }
+            }
+            if control(ui,"Cancel",true).clicked() { self.registration_open = false; }
         });
     }
 
@@ -964,16 +1234,48 @@ impl Console {
             section_title(ui, "New task", "One clear outcome for Codex.");
             ui.add_space(14.0);
             field(ui, "Task name", &mut self.work.title, 160, false);
+            let previous_workspace = self.work.workspace.clone();
             choose_workspace(ui, "work-project", &mut self.work.workspace, snapshot);
+            if self.work.workspace != previous_workspace && !self.work.workspace.is_empty() {
+                self.work.path.clear();
+                self.work.path_problem = None;
+            }
             ui.collapsing(t(ui, "Use another Git worktree once"), |ui| {
-                field(
+                if !self.work.path.is_empty() {
+                    folder_preview(ui, &self.work.path);
+                }
+                if control(
                     ui,
-                    "Absolute worktree path",
-                    &mut self.work.path,
-                    4096,
-                    false,
+                    if self.work.path.is_empty() {
+                        "Choose folder"
+                    } else {
+                        "Change folder"
+                    },
+                    true,
+                )
+                .clicked()
+                {
+                    self.folder_request = Some(folder::Target::Task);
+                }
+                if let Some(code) = &self.work.path_problem {
+                    ui.colored_label(RED, t(ui, code));
+                    if matches!(
+                        code.as_str(),
+                        "WORKSPACE_ACCESS_DENIED" | "WORKSPACE_READ_ONLY"
+                    ) {
+                        hint(ui, folder::permission_guidance(code));
+                    }
+                }
+                if !self.work.path.is_empty()
+                    && control(ui, "Use a registered folder instead", true).clicked()
+                {
+                    self.work.path.clear();
+                    self.work.path_problem = None;
+                }
+                hint(
+                    ui,
+                    "Select a folder for this task, or choose a registered folder above.",
                 );
-                hint(ui, "Leave this blank when selecting a registered project.");
             });
             multiline(ui, "Instruction", &mut self.work.instruction, 50_000, 3);
             if submit(ui, "Add to queue", "work_enqueue") {
@@ -1522,6 +1824,48 @@ fn hint(ui: &mut Ui, value: &str) {
 fn raw_hint(ui: &mut Ui, value: &str) {
     ui.label(RichText::new(value).size(11.0).color(MUTED));
 }
+
+fn path_label(ui: &mut Ui, value: &str) {
+    ui.add(egui::Label::new(RichText::new(value).size(11.0).color(MUTED)).truncate())
+        .on_hover_text(value);
+}
+
+fn folder_preview(ui: &mut Ui, path: &str) {
+    egui::Frame::new()
+        .fill(Color32::from_rgb(18, 22, 28))
+        .stroke(egui::Stroke::new(1.0, BORDER))
+        .corner_radius(8)
+        .inner_margin(12)
+        .show(ui, |ui| {
+            let text_width = (ui.available_width() - 28.0 - ui.spacing().item_spacing.x).max(0.0);
+            ui.horizontal(|ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
+                draw_icon(ui.painter(), rect.shrink(4.0), Tab::Projects, MINT);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(text_width, 0.0),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        ui.set_max_width(text_width);
+                        let name = std::path::Path::new(path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(path);
+                        if name.is_empty() {
+                            ui.label(t(ui, "No folder selected"));
+                        } else {
+                            ui.add(
+                                egui::Label::new(RichText::new(name).strong().color(TEXT))
+                                    .truncate(),
+                            );
+                            path_label(ui, path);
+                        }
+                    },
+                );
+            });
+        });
+    ui.add_space(8.0);
+}
 fn status(ui: &mut Ui, value: &str) {
     let color = match value {
         "available" | "completed" | "applied" | "Codex ready" | "Paired" => MINT,
@@ -1670,11 +2014,14 @@ fn choose_refs(
 fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
     let response = ui.add_enabled(enabled, egui::Button::new(t(ui, label)));
     #[cfg(test)]
+    let visibility = (ui.clip_rect(), ui.is_visible());
+    #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(
             egui::Id::new(("test-action", "memory_control", label)),
             response.rect,
-        )
+        );
+        data.insert_temp(egui::Id::new(("test-action-visibility", label)), visibility);
     });
     response
 }
@@ -1931,7 +2278,7 @@ mod tests {
             ..Default::default()
         };
         let output = ctx.run_ui(input, |ui| {
-            commands.extend(console.show(ui, snapshot, busy))
+            commands.extend(console.show(ui, snapshot, busy, None, false))
         });
         let shapes = output.shapes.len();
         output.drop_without_applying_deltas();
@@ -2048,17 +2395,19 @@ mod tests {
             tab: Tab::Projects,
             project_name: "Native fixture".into(),
             project_path: "/tmp/native-fixture".into(),
+            registration_open: true,
             ..Default::default()
         };
         let mut fresh = snapshot();
         fresh["workspaces"]["items"] = json!([]);
+        render(&ctx, &mut console, &fresh, false, vec![]);
         let commands = click(
             &ctx,
             &mut console,
             &fresh,
             false,
             "workspace_register",
-            "Register worktree",
+            "Add folder",
         );
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].action, "workspace_register");
@@ -2069,6 +2418,188 @@ mod tests {
     }
 
     #[test]
+    fn folder_selection_is_explicit_and_cancel_preserves_the_draft() {
+        let ctx = egui::Context::default();
+        let mut console = Console {
+            project_path: "/tmp/old-folder".into(),
+            project_name: "Custom label".into(),
+            ..Default::default()
+        };
+        console.accept_folder(folder::Target::Registration, None);
+        assert_eq!(console.project_path, "/tmp/old-folder");
+        assert_eq!(console.project_name, "Custom label");
+        let commands = click(
+            &ctx,
+            &mut console,
+            &snapshot(),
+            false,
+            "memory_control",
+            "Add folder",
+        );
+        assert!(commands.is_empty());
+        assert_eq!(
+            console.take_folder_request(),
+            Some(folder::Target::Registration)
+        );
+        console.accept_folder(
+            folder::Target::Registration,
+            Some(folder::Selection {
+                path: "/tmp/not-a-repository".into(),
+                problem: Some("WORKSPACE_NOT_GIT_ROOT".into()),
+            }),
+        );
+        assert_eq!(console.project_name, "Custom label");
+        assert!(click(
+            &ctx,
+            &mut console,
+            &snapshot(),
+            false,
+            "workspace_register",
+            "Add folder"
+        )
+        .is_empty());
+        console.accept_folder(
+            folder::Target::Registration,
+            Some(folder::Selection {
+                path: "/tmp/valid-repository".into(),
+                problem: None,
+            }),
+        );
+        let commands = click(
+            &ctx,
+            &mut console,
+            &snapshot(),
+            false,
+            "workspace_register",
+            "Add folder",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(
+            commands[0].payload["workingDirectory"],
+            "/tmp/valid-repository"
+        );
+        assert_eq!(commands[0].payload["displayName"], "Custom label");
+        assert!(!console.registration_open);
+        assert!(commands
+            .iter()
+            .all(|c| c.action != "project_link_workspace"));
+    }
+
+    #[test]
+    fn choosing_one_off_folder_clears_the_registered_target_and_blocks_invalid_access() {
+        let mut console = Console {
+            work: WorkDraft {
+                title: "Task".into(),
+                instruction: "One outcome".into(),
+                workspace: "workspace:fixture".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        console.accept_folder(
+            folder::Target::Task,
+            Some(folder::Selection {
+                path: "/tmp/read-only".into(),
+                problem: Some("WORKSPACE_READ_ONLY".into()),
+            }),
+        );
+        assert!(console.work.workspace.is_empty());
+        assert!(console.work.payload(&snapshot()).is_err());
+        console.accept_folder(folder::Target::Task, None);
+        assert_eq!(console.work.path, "/tmp/read-only");
+        assert!(console.work.path_problem.is_some());
+        console.accept_folder(
+            folder::Target::Task,
+            Some(folder::Selection {
+                path: "/tmp/valid-repository".into(),
+                problem: None,
+            }),
+        );
+        assert_eq!(
+            console.work.payload(&snapshot()).unwrap()["workingDirectory"],
+            "/tmp/valid-repository"
+        );
+    }
+
+    #[test]
+    fn registration_suggests_a_link_once_without_overriding_a_later_selection() {
+        let ctx = egui::Context::default();
+        let mut console = Console {
+            project_path: "/tmp/fixture".into(),
+            registration_project: Some("project:fixture".into()),
+            ..Default::default()
+        };
+        let mut data = memory_snapshot();
+        data["workspaces"]["items"].as_array_mut().unwrap().push(json!({"workspaceId":"workspace:other","displayName":"Other folder","workingDirectory":"/tmp/other","revision":1}));
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert_eq!(console.link_choices["project:fixture"], "workspace:fixture");
+        assert!(console.registration_project.is_none());
+        console
+            .link_choices
+            .insert("project:fixture".into(), "workspace:other".into());
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert_eq!(console.link_choices["project:fixture"], "workspace:other");
+    }
+
+    #[test]
+    fn permission_form_fits_the_minimum_window_and_localized_error_is_actionable() {
+        let ctx = egui::Context::default();
+        let mut console = Console::default();
+        console.accept_folder(
+            folder::Target::Registration,
+            Some(folder::Selection {
+                path: "/tmp/read-only-repository".into(),
+                problem: Some("WORKSPACE_READ_ONLY".into()),
+            }),
+        );
+        for _ in 0..3 {
+            let output = ctx.run_ui(
+                RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 560.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    assert!(console.show(ui, &snapshot(), false, None, false).is_empty());
+                },
+            );
+            output.drop_without_applying_deltas();
+        }
+        let rect: Rect = ctx.data(|d| {
+            d.get_temp(egui::Id::new(("test-action", "memory_control", "Cancel")))
+                .unwrap()
+        });
+        assert!(
+            rect.min.x >= 0.0 && rect.max.x <= 800.0 && rect.min.y >= 0.0 && rect.max.y <= 560.0,
+            "{rect:?}"
+        );
+        let (clip, visible): (Rect, bool) = ctx.data(|d| {
+            d.get_temp(egui::Id::new(("test-action-visibility", "Cancel")))
+                .unwrap()
+        });
+        assert!(
+            visible && clip.contains_rect(rect),
+            "{rect:?} clipped by {clip:?}"
+        );
+        for language in [Language::Tr, Language::En] {
+            for code in [
+                "WORKSPACE_NOT_GIT_ROOT",
+                "WORKSPACE_FOLDER_NOT_FOUND",
+                "WORKSPACE_ACCESS_DENIED",
+                "WORKSPACE_READ_ONLY",
+                "WORKSPACE_NOT_ALLOWED",
+            ] {
+                let message = i18n::tr(language, code);
+                assert_ne!(message, code);
+                assert!(!message.contains("/tmp/"));
+            }
+        }
+    }
+
+    #[test]
     fn draft_validation_rejects_ambiguous_project_duplicate_roles_and_bad_limits() {
         let snapshot = snapshot();
         let mut work = WorkDraft {
@@ -2076,6 +2607,7 @@ mod tests {
             instruction: "One outcome".into(),
             workspace: "workspace:fixture".into(),
             path: "/tmp/another".into(),
+            path_problem: None,
         };
         assert!(work.payload(&snapshot).is_err());
         work.path.clear();
@@ -2207,7 +2739,7 @@ mod tests {
             &data,
             false,
             "project_link_workspace",
-            "Link worktree",
+            "Link folder",
         );
         assert_eq!(command.len(), 1);
         assert_eq!(command[0].payload["workspaceId"], "workspace:fixture");
@@ -2503,7 +3035,7 @@ mod tests {
                 ..Default::default()
             },
             |ui| {
-                assert!(console.show(ui, &data, false).is_empty());
+                assert!(console.show(ui, &data, false, None, false).is_empty());
             },
         );
         output.drop_without_applying_deltas();
@@ -2537,7 +3069,7 @@ mod tests {
                 ..Default::default()
             },
             |ui| {
-                console.show(ui, data, false);
+                console.show(ui, data, false, None, false);
             },
         );
         let mut copy = Vec::new();

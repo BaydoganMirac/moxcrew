@@ -2,6 +2,7 @@
 
 mod bridge;
 mod command;
+mod folder;
 mod i18n;
 mod ui;
 
@@ -18,6 +19,10 @@ struct Patchfleet {
     observe: bool,
     #[cfg(feature = "ui-smoke")]
     smoke_deadline: Option<Instant>,
+    #[cfg(feature = "ui-smoke")]
+    smoke_capture: Option<PathBuf>,
+    #[cfg(feature = "ui-smoke")]
+    smoke_capture_requested: bool,
 }
 
 impl Patchfleet {
@@ -92,6 +97,27 @@ impl Patchfleet {
                 console.memory_smoke();
                 bridge.memory_smoke();
             }
+            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("folder-picker")
+            {
+                console.folder_smoke(&directory.join("preview-repository"));
+            }
+            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("folder-error")
+            {
+                bridge.choose_folder(
+                    cc.egui_ctx.clone(),
+                    folder::Target::Registration,
+                    std::future::ready(Some(directory.join("preview-repository"))),
+                );
+                // The test framebuffer capture runs before asynchronous UI results settle.
+                for _ in 0..400 {
+                    bridge.poll();
+                    if !bridge.picking_folder {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                assert!(!bridge.picking_folder, "Native folder check did not finish");
+            }
             console
         };
         Self {
@@ -105,6 +131,12 @@ impl Patchfleet {
                 .and_then(|v| v.parse::<u64>().ok())
                 .filter(|seconds| (1..=120).contains(seconds))
                 .map(|seconds| Instant::now() + Duration::from_secs(seconds)),
+            #[cfg(feature = "ui-smoke")]
+            smoke_capture: (!observe)
+                .then(|| std::env::var_os("PATCHFLEET_SMOKE_SCREENSHOT_TO").map(PathBuf::from))
+                .flatten(),
+            #[cfg(feature = "ui-smoke")]
+            smoke_capture_requested: false,
         }
     }
 }
@@ -136,18 +168,42 @@ fn seed_memory_scene(directory: &std::path::Path) {
 }
 
 impl eframe::App for Patchfleet {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    #[cfg(feature = "ui-smoke")]
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, input: &mut egui::RawInput) {
+        for event in &input.events {
+            if let egui::Event::Screenshot { image, .. } = event {
+                if let Some(path) = self.smoke_capture.take() {
+                    image::save_buffer(
+                        path,
+                        image.as_raw(),
+                        image.width() as u32,
+                        image.height() as u32,
+                        image::ColorType::Rgba8,
+                    )
+                    .expect("Native smoke screenshot could not be saved");
+                    self.bridge.begin_close();
+                }
+            }
+        }
+    }
+
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.bridge.poll();
-        let language = self
-            .bridge
-            .snapshot
-            .as_ref()
-            .map(i18n::Language::from_snapshot)
-            .unwrap_or(i18n::Language::Tr);
-        let ctx = ui.ctx().clone();
+        if let Some((target, selection)) = self.bridge.folder_selection.take() {
+            self.console.accept_folder(target, selection);
+        }
         if ctx.input(|i| i.viewport().close_requested()) && !self.bridge.closed {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.bridge.begin_close();
+        }
+        #[cfg(feature = "ui-smoke")]
+        if self.smoke_capture.is_some() && !self.smoke_capture_requested {
+            // Areas need a sizing frame before their contents appear in a GL readback.
+            ctx.request_repaint();
+            if ctx.cumulative_frame_nr() >= 3 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+                self.smoke_capture_requested = true;
+            }
         }
         #[cfg(feature = "ui-smoke")]
         if let Some(deadline) = self.smoke_deadline {
@@ -160,16 +216,22 @@ impl eframe::App for Patchfleet {
         if self.bridge.closed {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let language = self
+            .bridge
+            .snapshot
+            .as_ref()
+            .map(i18n::Language::from_snapshot)
+            .unwrap_or(i18n::Language::Tr);
+        let ctx = ui.ctx().clone();
         let preference_error = self
             .bridge
             .snapshot
             .as_ref()
             .is_some_and(|s| s["desktopPreferences"]["error"] == true);
-        if self.bridge.feedback.is_some()
-            || self.bridge.busy
-            || self.bridge.closing
-            || preference_error
-        {
+        if self.bridge.closing || preference_error {
             egui::Panel::top("host_status").show(ui, |ui| {
                 ui.horizontal(|ui| {
                     if self.bridge.closing {
@@ -178,43 +240,64 @@ impl eframe::App for Patchfleet {
                         ui.label(i18n::tr(language, "Applying action…"));
                     }
                 });
-                if let Some(message) = &self.bridge.feedback {
-                    ui.label(i18n::tr(language, message));
-                }
                 if preference_error {
                     ui.label(i18n::tr(
                         language,
                         "Language preference could not be read. Select a language to replace it.",
                     ));
                 }
-                if !self.bridge.busy && !self.bridge.closing {
-                    if let Some(command) = self.bridge.pending.clone() {
-                        if ui
-                            .button(i18n::tr(language, "Retry the same action"))
-                            .clicked()
-                        {
-                            self.bridge.submit(command);
-                        }
-                    }
-                }
             });
         }
         if let Some(error) = self.bridge.error.clone() {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.heading(i18n::tr(language,"The local host needs attention"));
-                ui.label(i18n::tr(language,"Close another Patchfleet instance if it owns this data directory. Your local state is preserved."));
-                ui.monospace(i18n::tr(language,&error));
+                if error == "LOCAL_WRITER_ALREADY_RUNNING" {
+                    ui.label(i18n::tr(language,"Close another Patchfleet instance if it owns this data directory. Your local state is preserved."));
+                } else {
+                    ui.label(i18n::tr(language,"Local data could not be opened safely. Close Patchfleet and back up its data before checking the storage or access permissions."));
+                }
+                ui.collapsing(i18n::tr(language,"Technical details"), |ui| { ui.monospace(&error); });
                 if !self.bridge.closing && ui.button(i18n::tr(language,"Retry opening the host")).clicked() {
                     self.bridge.shutdown();
                     self.bridge = Bridge::new(ctx.clone(), self.directory.clone(), self.observe);
                 }
             });
         } else if let Some(snapshot) = &self.bridge.snapshot {
-            let commands = self
-                .console
-                .show(ui, snapshot, self.bridge.busy || self.bridge.closing);
+            let commands = self.console.show(
+                ui,
+                snapshot,
+                self.bridge.busy || self.bridge.closing || self.bridge.picking_folder,
+                self.bridge.feedback.as_ref(),
+                self.bridge.pending.is_some(),
+            );
             if let Some(command) = commands.into_iter().next() {
                 self.bridge.submit(command);
+            }
+            if let Some(action) = self.console.notice_action.take() {
+                match action {
+                    ui::NoticeAction::Dismiss => self.bridge.dismiss_feedback(),
+                    ui::NoticeAction::Retry => if let Some(command) = self.bridge.pending.clone() { self.bridge.submit(command); },
+                    #[cfg(target_os="macos")]
+                    ui::NoticeAction::Settings => ctx.open_url(egui::OpenUrl::new_tab("x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")),
+                }
+            }
+            if let Some(target) = self.console.take_folder_request() {
+                if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
+                    let mut dialog = rfd::AsyncFileDialog::new()
+                        .set_title(
+                            i18n::tr(language, "Choose your Git repository folder").into_owned(),
+                        )
+                        .set_can_create_directories(false)
+                        .set_parent(frame);
+                    let previous = self.console.folder_path(target);
+                    if !previous.is_empty() {
+                        dialog = dialog.set_directory(previous);
+                    }
+                    let choice = dialog.pick_folder();
+                    self.bridge.choose_folder(ctx.clone(), target, async move {
+                        choice.await.map(|file| file.path().to_owned())
+                    });
+                }
             }
         } else {
             egui::CentralPanel::default().show(ui, |ui| {
@@ -252,15 +335,46 @@ fn main() {
             "Native smoke requires an empty test directory"
         );
         #[cfg(feature = "ui-smoke")]
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("memory") {
+        if matches!(
+            std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+            Ok("memory" | "projects" | "folder-picker" | "folder-error")
+        ) {
             seed_memory_scene(&directory);
+            if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() != Ok("memory") {
+                let path = directory.join("preview-repository");
+                std::fs::create_dir(&path).unwrap();
+                assert!(std::process::Command::new("git")
+                    .args(["init", "--quiet"])
+                    .arg(&path)
+                    .status()
+                    .unwrap()
+                    .success());
+                std::fs::write(
+                    path.join("README.md"),
+                    "Disposable native folder-picker fixture. Not owner work.\n",
+                )
+                .unwrap();
+                #[cfg(unix)]
+                if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("folder-error") {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500))
+                        .unwrap();
+                }
+            }
         }
     }
+    let window_size = [1280.0, 880.0];
+    #[cfg(feature = "ui-smoke")]
+    let window_size = if !observe && std::env::var_os("PATCHFLEET_SMOKE_MIN_WINDOW").is_some() {
+        [800.0, 560.0]
+    } else {
+        window_size
+    };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Patchfleet")
             .with_app_id("com.patchfleet.desktop")
-            .with_inner_size([1280.0, 880.0])
+            .with_inner_size(window_size)
             .with_min_inner_size([800.0, 560.0])
             .with_icon(
                 eframe::icon_data::from_png_bytes(include_bytes!("../assets/icons/128x128.png"))

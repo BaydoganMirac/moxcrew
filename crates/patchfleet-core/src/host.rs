@@ -593,11 +593,19 @@ impl Host {
         Ok(())
     }
     pub async fn tick(&self) -> Result<()> {
+        self.background_tick(true).await
+    }
+
+    pub async fn background_tick(&self, observe_providers: bool) -> Result<()> {
         let _guard = self.operations.lock().await;
         if self.closing.load(Ordering::SeqCst) {
             return Ok(());
         }
-        self.observe().await?;
+        if observe_providers {
+            self.observe().await?;
+        } else {
+            self.persist_signals().await?;
+        }
         if self.closing.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -605,14 +613,27 @@ impl Host {
         let _ = self.sync_cloud().await;
         Ok(())
     }
-    pub async fn shutdown(&self) {
+    pub fn request_shutdown(&self) {
         self.closing.store(true, Ordering::SeqCst);
+    }
+
+    pub async fn shutdown(&self) {
+        self.request_shutdown();
         let _guard = self.operations.lock().await;
         self.controller.shutdown().await;
         let _ = self.persist_signals().await;
     }
 
     async fn sync_cloud(&self) -> Result<Value> {
+        {
+            let state = self.cloud.lock().await;
+            let cloud = state
+                .as_ref()
+                .ok_or_else(|| Error("CLOUD_RECOVERY_REQUIRED".into()))?;
+            if cloud.public_status()["paired"] == false {
+                return Ok(json!({"kind":"unpaired"}));
+            }
+        }
         let mut bundle = self.store.projections()?;
         let events = self.store.read_events()?;
         bundle["agentPacks"] = json!(catalog(&bundle));

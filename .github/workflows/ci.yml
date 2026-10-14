@@ -35,5 +35,3 @@ jobs:
       - run: npm ci
       - name: Legacy event and protocol reference checks
         run: node --test --test-concurrency=1 tests/*.test.mjs
-      - run: npm test
-      - run: npm run build

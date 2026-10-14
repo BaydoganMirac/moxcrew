@@ -1,6 +1,6 @@
 # Patchfleet architecture
 
-Status: Implemented Rust desktop architecture
+Status: Native Rust desktop architecture
 
 Updated: 2026-10-14
 
@@ -37,7 +37,7 @@ The public repository owns:
 - normalized hosts, agents, work items, runs, questions, and receipts;
 - one durable local event writer;
 - rebuildable local projections;
-- the local web user interface;
+- the native Rust user interface;
 - pairing credentials stored in the private local data file with owner-only
   permissions;
 - payload sanitization before any network request;
@@ -64,19 +64,26 @@ events, local process control, or shell execution.
 
 ## Desktop deployable shape
 
-`crates/patchfleet-core` owns the Rust host, domain validation, provider
-processes, durable storage, team scheduler and outbound Cloud sync. `src-tauri`
-embeds it with the static React/Vite interface in `desktop`. The application
-does not launch a Node/Next server. The optional native CLI uses the same core.
+`crates/patchfleet-core` owns domain validation, provider processes, canonical
+storage, scheduling and outbound Cloud sync. `crates/patchfleet-desktop` renders
+the interface in egui/eframe using a native window and Glow renderer. No WebView,
+Node/Next server or embedded JavaScript bundle executes in the application.
 
-The bundled main window calls only `host_snapshot` and `host_action` through
-restricted Tauri IPC. CSP and navigation rules deny remote pages access. One
-desktop instance owns its platform data directory; background ticks advance
-bounded teams and sync Cloud. Normal exit awaits provider process cleanup.
+A bounded async bridge calls the existing Host directly, preserves owner
+command identities across retries, and keeps provider/network work off the
+render thread. The core still validates every action. One OS writer lock owns
+the data directory. Normal close awaits shutdown of owned provider processes.
 
-[ADR 0023](decisions/0023-rust-tauri-desktop-runtime.md) records the owner's
-accepted Rust/desktop direction. Historical Node modules remain parity inputs;
-the current product does not execute them as a sidecar.
+The UI reacts to events rather than redrawing continuously. Active work polls
+owned signals and scheduling every five seconds, while external provider probes
+run at most once a minute or on explicit refresh. Idle status checks are sparse;
+unpaired Cloud skips copying the event history. Canonical caches still scale
+with history length, and startup replays the log.
+
+[ADR 0024](decisions/0024-native-rust-desktop-ui.md) records the native interface
+and lightweight priority. It supersedes the Tauri/React interface in ADR 0023,
+while preserving the Rust core, data layout and trust boundary. Historical Node
+modules remain event/protocol parity references.
 
 ## Core domain
 

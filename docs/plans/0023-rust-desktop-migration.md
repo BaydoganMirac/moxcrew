@@ -60,6 +60,14 @@ exposed. The core owns one locked append-only event log and background tick.
 - Data migration uses copied fixtures or an explicit owner-selected directory;
   do not silently rewrite the existing installation during development.
 
+## Follow-up: blank macOS startup
+
+Owner reported a white screen after installing the 0.3 package on 2026-10-14.
+Approved scope: reproduce the bundled startup failure, correct local navigation
+or asset loading at its source, retain remote-page denial, and deliver a rebuilt
+macOS installer. Verify the exact bundled document URL and native WebView
+startup using disposable data; do not modify the owner's installation or state.
+
 ## Delivery limits
 
 Cross-platform build configuration is not evidence that unrun platform builds

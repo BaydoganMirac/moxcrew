@@ -17,14 +17,15 @@ and trust boundaries come before implementation details.
 6. [Release](release.md) — native desktop verification, signing, artifacts and rollback.
 7. [Agent operating model](agent-operating-model.md) — when parallel agents
    help and how their ownership is bounded.
-7. [Project skills](../.agents/skills/) — task-triggered rules for adapters,
+8. [Project skills](../.agents/skills/) — task-triggered rules for adapters,
    local state, the Cloud boundary, and team delegation.
 
 ## Current product focus
 
-[Rust desktop migration](plans/0023-rust-desktop-migration.md) ports the local
-host and console to Rust/Tauri. See [runtime state](state/rust-desktop.md) and
-[ADR 0023](decisions/0023-rust-tauri-desktop-runtime.md) for current evidence.
+[Native Rust interface](plans/0024-native-rust-desktop-ui.md) replaces the Tauri
+interface with a lightweight egui desktop. See [native state](state/native-rust-desktop.md)
+and [ADR 0024](decisions/0024-native-rust-desktop-ui.md) for current evidence.
+The [Rust core migration](plans/0023-rust-desktop-migration.md) remains its foundation.
 
 [Project memory and decision service](plans/0022-project-memory-and-decision-service.md)
 defines the planned project-scoped agent/team workflow, automatic sourced ADR

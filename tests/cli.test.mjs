@@ -21,10 +21,10 @@ test("desktop package retires the Node CLI release surface", async () => {
   assert.equal(packageJson.bugs, "https://github.com/BaydoganMirac/patchfleet/issues");
   assert.equal(packageJson.dependencies.next, undefined);
   assert.equal(packageJson.devDependencies.next, "15.5.19");
-  assert.equal(packageJson.scripts["desktop:build"], "tauri build");
-  assert.equal(packageJson.scripts.start, "tauri dev");
-  assert.match(packageJson.scripts.build, /vite build/);
-  assert.doesNotMatch(packageJson.scripts.build, /next|sanitize-package/);
+  assert.equal(packageJson.scripts["desktop:build"], "cargo build --locked --release -p patchfleet-desktop");
+  assert.equal(packageJson.scripts.start, "cargo run -p patchfleet-desktop");
+  assert.match(packageJson.scripts.build, /cargo build/);
+  assert.doesNotMatch(packageJson.scripts.build, /next|vite|tauri|sanitize-package/);
   assert.match(packageJson.scripts["legacy:build"], /next build/);
   await assert.rejects(readFile(".github/workflows/publish.yml"), { code: "ENOENT" });
   const desktopWorkflow = await readFile(".github/workflows/desktop.yml", "utf8");

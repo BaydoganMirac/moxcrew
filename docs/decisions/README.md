@@ -28,3 +28,4 @@ supersedes the old one.
 | [0021](0021-project-scoped-local-decision-memory.md) | Accepted product contract | Project-scoped local memory with sourced ADR drafts and explicit owner acceptance |
 | [0022](0022-rust-local-host-with-a-web-ui.md) | Proposed | Evaluate a Rust local host while retaining the web UI and Cloud stack |
 | [0023](0023-rust-tauri-desktop-runtime.md) | Accepted | Rust host and Tauri desktop supersede earlier Node deployment assumptions |
+| [0024](0024-native-rust-desktop-ui.md) | Accepted | Native Rust/egui interface supersedes Tauri; prioritize low RAM and event-driven rendering |

@@ -1,0 +1,46 @@
+# cargo-packager 0.11.8; build the Rust executable before running the packager.
+name = "patchfleet-desktop"
+product-name = "Patchfleet"
+version = "0.4.0"
+identifier = "com.patchfleet.desktop"
+publisher = "Patchfleet"
+authors = ["Patchfleet contributors"]
+description = "Local coding-agent teams and command center"
+homepage = "https://github.com/BaydoganMirac/patchfleet"
+license-file = "LICENSE"
+category = "DeveloperTool"
+out-dir = "dist/native"
+binaries-dir = "target/release"
+icons = [
+  "crates/patchfleet-desktop/assets/icons/32x32.png",
+  "crates/patchfleet-desktop/assets/icons/128x128.png",
+  "crates/patchfleet-desktop/assets/icons/128x128@2x.png",
+  "crates/patchfleet-desktop/assets/icons/icon.icns",
+  "crates/patchfleet-desktop/assets/icons/icon.ico",
+]
+
+[[binaries]]
+path = "patchfleet-desktop"
+main = true
+
+[macos]
+minimum-system-version = "11.0"
+# Development artifacts use an ad-hoc signature; public signing is a separate release action.
+signing-identity = "-"
+
+[nsis]
+installMode = "currentUser"
+installer-icon = "crates/patchfleet-desktop/assets/icons/icon.ico"
+# No appdata-paths: uninstallers must preserve the existing local canonical data.
+
+[deb]
+package-name = "patchfleet-desktop"
+section = "devel"
+depends = [
+  "libc6", "libgcc-s1", "libstdc++6",
+  "libx11-6", "libxcursor1", "libxi6", "libxrandr2",
+  "libxcb1", "libxcb-render0", "libxcb-shape0", "libxcb-xfixes0",
+  "libxkbcommon0", "libxkbcommon-x11-0",
+  "libegl1", "libgl1",
+  "libwayland-client0", "libwayland-cursor0", "libwayland-egl1",
+]

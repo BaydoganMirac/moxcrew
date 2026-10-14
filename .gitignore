@@ -62,4 +62,3 @@ next-env.d.ts
 /target/
 /dist/
 /.tooling/
-/src-tauri/gen/

@@ -148,9 +148,27 @@ async fn fresh_install_and_corrupt_optional_cloud_still_allow_local_work() {
     assert!(snapshot["work"]["runs"].is_array());
     assert_eq!(snapshot["cloud"]["error"], true);
     assert_eq!(
+        host.action("cloud_sync", json!({})).await.unwrap_err().0,
+        "CLOUD_RECOVERY_REQUIRED"
+    );
+    assert_eq!(
         std::fs::read_to_string(directory.path().join("cloud.json")).unwrap(),
         "malformed pairing record"
     );
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn local_only_sync_keeps_canonical_state_unchanged() {
+    let directory = tempfile::tempdir().unwrap();
+    let host = Host::open(directory.path().to_owned()).unwrap();
+    let before = host.snapshot().unwrap();
+    assert_eq!(
+        host.action("cloud_sync", json!({})).await.unwrap(),
+        json!({"kind":"unpaired"})
+    );
+    host.background_tick(false).await.unwrap();
+    assert_eq!(host.snapshot().unwrap(), before);
     host.shutdown().await;
 }
 

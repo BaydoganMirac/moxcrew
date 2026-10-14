@@ -21,7 +21,7 @@ only explicit owner acceptance makes a decision authoritative.
 - The current workspace represents one worktree, so shared project identity
   must precede per-project memory and cross-worktree retrieval.
 - [ADR 0023](../decisions/0023-rust-tauri-desktop-runtime.md) records the
-  accepted Rust/Tauri host. Its migration is implemented under Task 0023.
+  accepted Rust core from Task 0023, with the native Rust/egui interface from Task 0024.
 
 ## Next
 

@@ -1,13 +1,13 @@
 # Install and operate Patchfleet Desktop
 
-Status: 0.3 desktop development distribution
+Status: 0.4 native Rust desktop development distribution
 
 Updated: 2026-10-14
 
 ## Application requirements
 
-- macOS 11+; Windows 10+ with WebView2; or Linux with the required WebKitGTK 4.1
-  runtime libraries.
+- macOS 11+; Windows 10+ with suitable OpenGL drivers; or Linux with native
+  X11/Wayland and OpenGL runtime libraries. No WebView runtime is required.
 - Provider CLIs installed separately. Their own Node/model/account requirements
   are independent of the Rust Patchfleet application.
 - Native Windows/Linux installer and runtime checks remain CI/release evidence;
@@ -18,9 +18,15 @@ Deb/AppImage. Development artifacts have no public Developer ID notarization or
 Windows publisher signature. Installers are built from source/CI; no public
 release is claimed by this change.
 
-For development, follow [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/),
-then `npm ci` and `npm run desktop:dev`. Node is build tooling. The installed
-application embeds static UI assets and executes its host in Rust.
+For development, install Rust 1.99+ and platform compiler/window prerequisites.
+Run `cargo run --locked -p patchfleet-desktop`. Build a production executable with
+`cargo build --locked --release -p patchfleet-desktop`, then package it using
+cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
+
+For a native 0.4 upgrade, close the old application and replace its application
+bundle through the reviewed installer. The bundle identifier and data directory
+remain the same; existing Rust state remains compatible. Uninstalling must not
+delete the canonical data directory.
 
 ## Local operation
 

@@ -1,8 +1,10 @@
 # Rust and Tauri desktop state
 
-Status: Implemented locally; native release checks pending
+Status: Historical 0.3 migration; interface superseded by native Rust 0.4
 
 Updated: 2026-10-14
+
+The owner selected a WebView-free lightweight interface under [ADR 0024](../decisions/0024-native-rust-desktop-ui.md). Current implementation and artifacts are in [native state](native-rust-desktop.md). The evidence below records the earlier 0.3 migration.
 
 ## Delivered
 

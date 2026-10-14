@@ -69,7 +69,7 @@ output and no workspace writes before automatic extraction is enabled.
 
 ## Runtime foundation for Slice A
 
-The owner selected Rust and a cross-platform Tauri desktop in Task 0023. The
+The owner selected the Rust core in Task 0023 and a native Rust/egui interface in Task 0024. The
 local host migration is implemented, with macOS development packaging verified
 and native platform release checks tracked separately. New memory slices belong
 to that Rust host and its single canonical writer; no Node memory subsystem or

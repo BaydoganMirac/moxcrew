@@ -29,7 +29,7 @@ Patchfleet has two products with a hard trust boundary:
 
 ### Patchfleet
 
-The public Rust/Tauri desktop application. It detects providers, normalizes their observable
+The public native Rust/egui desktop application. It detects providers, normalizes their observable
 state, stores canonical local events, presents the local console, and applies
 validated commands. It works offline from Patchfleet Cloud.
 

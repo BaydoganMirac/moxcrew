@@ -30,6 +30,22 @@ the stopped data directory before creating project memory: new V3 facts require
 the 0.5 reader. Rolling back to 0.3/0.4 requires that pre-upgrade backup. Uninstalling must not
 delete the canonical data directory.
 
+### macOS opens an entirely white window
+
+An already-running 0.3 WebView copy can be reactivated even when opening the
+0.5 native application from Applications: both have the same bundle identifier.
+This launch routing was reproduced with disposable data. The installed 0.5
+production application draws correctly when the old process is closed.
+
+1. Quit all running Patchfleet copies with Command-Q.
+2. Eject the older Patchfleet disk image and close its installer window.
+3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.5.0`
+   and the Türkçe/English controls.
+
+If a Dock shortcut still opens the older disk-image copy, remove that shortcut
+and add the application from Applications. No data or preferences need to be
+deleted. See the [verified production window](screenshots/native-production-0.5-tr.png).
+
 ## Local operation
 
 Register a Git workspace in the desktop, select it when queueing work, and use

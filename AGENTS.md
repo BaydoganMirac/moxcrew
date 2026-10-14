@@ -11,7 +11,7 @@ Patchfleet is the public local product:
 - local agent and run observation;
 - local work intake and control;
 - canonical local events and derived projections;
-- the local web console;
+- the native desktop console;
 - the public host-to-cloud protocol.
 
 Patchfleet must remain useful without Patchfleet Cloud. The private Cloud repo
@@ -62,12 +62,11 @@ Read a matching skill completely before acting:
    domain contract. Provider-specific parsing and process behavior stay inside
    provider adapters.
 5. Add abstractions only after a second real implementation proves the need.
-6. Prefer the Rust standard library before adding a core dependency. Node is
-   frontend build tooling and a legacy parity reference, not the desktop host.
-7. The local deployable is a Rust host inside a Tauri desktop application for
-   macOS, Windows and Linux. Keep one canonical writer; do not add a Node
-   sidecar or separate execution authority. ADR 0023 supersedes the Node-only
-   deployment assumptions after the owner's 2026-10-14 direction.
+6. Prefer the Rust standard library before adding a core dependency. Node remains only a legacy parity reference, not a desktop build or runtime requirement.
+7. The local deployable is a native Rust/egui application for macOS, Windows
+   and Linux. Keep one canonical writer; do not add a browser engine, Node
+   sidecar or separate execution authority. ADR 0024 supersedes the Tauri
+   interface after the owner's explicit direction and lightweight requirement.
 8. Durable changes are written as append-only events by one local writer;
    user-facing state is a rebuildable projection.
 9. Every command is idempotent, attributable, time-bounded, and produces a

@@ -272,6 +272,9 @@ impl Host {
         let mut add = Vec::new();
         let (outcome, reason) = if kind == "start_work" {
             match self.controller.prepare(&target, &target).await {
+                Ok(_) if self.closing.load(std::sync::atomic::Ordering::SeqCst) => {
+                    ("failed", "PROVIDER_CONTROL_FAILED")
+                }
                 Ok(session) => {
                     self.store.append(vec![event("run.prepared",json!({"intentId":request["intentId"],"workItemId":target["workItemId"],"providerId":"codex","providerSessionId":session,"expectedItemRevision":request["payload"]["expectedItemRevision"],"ownerEpoch":self.epoch})),
                         event("turn.requested",json!({"intentId":request["intentId"],"providerSessionId":session,"ownerEpoch":self.epoch}))])?;

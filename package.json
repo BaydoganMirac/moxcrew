@@ -1,7 +1,7 @@
 {
   "name": "patchfleet",
-  "version": "0.3.0",
-  "description": "Local-first coding-agent teams and command center for Codex, Claude Code, and Gemini CLI.",
+  "version": "0.4.0",
+  "description": "Native Rust desktop command center for local coding-agent teams.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/BaydoganMirac/patchfleet#readme",
   "bugs": "https://github.com/BaydoganMirac/patchfleet/issues",
@@ -20,35 +20,27 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "npm run typecheck && vite build",
-    "start": "tauri dev",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build",
-    "tauri": "tauri",
-    "typecheck": "tsc -p tsconfig.desktop.json",
-    "test:desktop": "node --experimental-strip-types --test desktop/*.test.ts",
+    "dev": "cargo run -p patchfleet-desktop",
+    "build": "cargo build --locked --release -p patchfleet-desktop",
+    "start": "cargo run -p patchfleet-desktop",
+    "desktop:dev": "cargo run -p patchfleet-desktop",
+    "desktop:build": "cargo build --locked --release -p patchfleet-desktop",
+    "desktop:package": "cargo packager --config Packager.toml",
+    "test": "cargo test --locked --workspace",
     "legacy:dev": "node scripts/local-next.mjs dev",
     "legacy:build": "next build && node scripts/sanitize-package.mjs",
     "legacy:start": "node scripts/local-next.mjs start",
-    "test": "npm run test:desktop",
-    "legacy:test": "node --test --test-concurrency=1 tests/*.test.*",
-    "legacy:test:package": "node smoke/package-smoke.mjs"
+    "legacy:test": "node --test --test-concurrency=1 tests/*.test.mjs"
   },
-  "dependencies": {
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "@tauri-apps/api": "2.12.3"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "typescript": "^5",
     "next": "15.5.19",
-    "@tauri-apps/cli": "2.12.2",
-    "vite": "8.3.4",
-    "@vitejs/plugin-react": "6.1.2"
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
   },
   "overrides": {
     "next": {

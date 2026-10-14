@@ -1,68 +1,62 @@
 # Patchfleet
 
-Your coding agents. One local desktop command center.
+Your coding agents. One local Rust desktop command center.
 
-Patchfleet 0.3 runs a Rust host inside a Tauri desktop application with a React
-interface. The installed application does not need a Node server. It keeps
-canonical state on the developer machine and remains useful without Cloud.
+Patchfleet 0.4 runs its interface and host in Rust. egui/eframe renders the native
+window through one Glow backend; the installed application contains no WebView,
+HTML/JavaScript bundle or Node server. Local canonical state remains useful
+without Cloud. Accessibility support is enabled.
 
-The console provides provider observation, durable work intake, supported
-Codex start/cancel, workspace registration, twelve declarative agent packs and
-six bounded team templates. Teams advance in the background with concurrency,
-retry, time-budget and owner decision gates. Claude Code and Gemini CLI remain
-observation-only; provider CLIs are installed separately.
+Register projects, queue and control supported Codex work, configure twelve
+agent packs and six bounded team templates, answer owner gates, and inspect
+provider status. Claude Code and Gemini CLI remain observation-only. Provider
+CLIs and their own model/account/runtime requirements are installed separately.
 
-Patchfleet Cloud is an optional private SaaS receiving sanitized operational
-projections and returning typed, expiring intents. Local work text, paths,
-prompts, output and provider credentials stay local by default.
+Rendering reacts to input and state changes. Owned run signals are checked
+quickly during active work; idle provider probes are limited to once a minute.
+Cloud receives only allowlisted operational data. Work text, source, paths,
+prompts, output and credentials remain local by default.
 
-## Desktop development
+## Build and run
 
-Install [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/), Rust,
-and Node 22.18+ or Node 24 for frontend tooling, then run:
+Install Rust 1.99+ and platform native compiler/window prerequisites, then:
 
 ```sh
-npm ci
-npm run desktop:dev
+cargo run --locked -p patchfleet-desktop
+cargo build --locked --release -p patchfleet-desktop
 ```
 
-Build the native application and platform installers:
+The production binary is `target/release/patchfleet-desktop` (Windows `.exe`).
+Node/npm are not required to build or run the current desktop. Historical
+`app/`, `lib/`, `bin/` and Node tests remain event/protocol parity references.
+`legacy:*` scripts target that historical host, and npm publication is retired.
+
+## Package and verify
 
 ```sh
-npm run desktop:build
-```
-
-Build artifacts are under `target/release/bundle/`. The desktop CI matrix builds
-macOS ARM64/Intel, Windows x64, and Linux x64/ARM64 on their platform runners.
-Local macOS development packages are verified; other native platform runs and
-public signing remain release checks. See [runtime state](docs/state/rust-desktop.md).
-
-## Validation
-
-```sh
-npm test
-npm run build
+cargo install cargo-packager --version 0.11.8 --locked
+cargo packager --config Packager.toml --formats app,dmg
 cargo test --locked --workspace
 cargo clippy --locked --workspace --all-targets -- -D warnings
 ```
 
-The old `app/`, `lib/`, `bin/` and Node tests remain development references for
-event/protocol compatibility. `legacy:*` commands explicitly target that old
-host; it is not a dependency or sidecar of the desktop. npm package publication
-has been retired for this desktop source package.
+Build the executable before packaging. Local packages are under `dist/native`.
+Native CI targets macOS ARM64/Intel, Windows x64 and Linux x64/ARM64. Local Mac
+build/runtime evidence and remaining signing/platform checks are recorded in
+[native state](docs/state/native-rust-desktop.md).
 
-Read [installation and recovery](docs/install.md), the
-[documentation map](docs/README.md), and [architecture](docs/architecture.md).
-Project-scoped shared memory and automatic sourced ADR drafts are the next
-feature phase, with explicit owner acceptance as the binding decision boundary.
+Read [installation and recovery](docs/install.md), [architecture](docs/architecture.md)
+and [release checks](docs/release.md). Project-scoped local memory and sourced
+ADR drafts are the next feature phase; only explicit owner acceptance binds
+agents to a decision.
 
 ## Product boundaries
 
-- Local execution and its append-only events are canonical.
+- Local execution and append-only events are canonical.
 - Cloud cannot execute arbitrary shell commands.
-- Packs contain data and instructions; they cannot load code or widen permissions.
-- A lost or uncertain run is marked honestly, never silently restarted.
-- No source, prompts, transcripts, worktree paths or secrets upload by default.
+- Declarative packs cannot load code or widen permissions.
+- Lost or uncertain work is never silently restarted.
+- No private work data or credentials upload by default.
 
 ## License
 

@@ -339,7 +339,7 @@ impl Bridge {
             && self
                 .feedback
                 .as_ref()
-                .is_some_and(|notice| notice.kind == NoticeKind::Error && notice.retryable())
+                .is_some_and(|notice| notice.kind == NoticeKind::Error)
         {
             return;
         }

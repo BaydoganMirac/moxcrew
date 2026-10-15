@@ -262,6 +262,7 @@ impl Host {
         team = find(&bundle["teams"], "teamId", id).unwrap();
         let workspace = find(&bundle["workspaces"], "workspaceId", &team["workspaceId"])
             .ok_or_else(|| Error("WORKSPACE_NOT_REGISTERED".into()))?;
+        let project = self.store.subject_project("team", text(&team, "teamId")?)?;
         let active = array(&team, "tasks")
             .iter()
             .filter(|t| {
@@ -299,8 +300,8 @@ impl Host {
                     .collect::<String>();
                 let instruction=format!("Patchfleet team: {}\n\nTeam goal: {}\n\nAssigned task: {}\n\n{}\n\nAgent contract: {}\n\nDeclared permissions: {}. These declarations never widen the provider sandbox.\n\nRequired quality checks: {}.\n\nExpected output: {}.\nOwner answer: {}\nOwner approval note: {}",
                     text(&team,"name")?,text(&team,"goal")?,text(task,"title")?,text(task,"instruction")?,text(pack,"instructions")?,pack["permissions"],pack["qualityChecks"],text(pack,"expectedOutput")?,task["answer"]["answer"].as_str().unwrap_or(""),task["approval"]["note"].as_str().unwrap_or(""));
-                self.apply_work_intent(intent("enqueue_work",json!({"workItem":{"schemaVersion":1,"workItemId":item_id,"title":title,"instruction":instruction,
-                    "providerId":"codex","workingDirectory":workspace["workingDirectory"],"status":"queued","createdAt":now(),"revision":1}}),&Value::Null)).await?;
+                self.apply_queue_intent_bound(intent("enqueue_work",json!({"workItem":{"schemaVersion":1,"workItemId":item_id,"title":title,"instruction":instruction.trim(),
+                    "providerId":"codex","workingDirectory":workspace["workingDirectory"],"status":"queued","createdAt":now(),"revision":1}}),&Value::Null),project.as_deref())?;
                 item = find(
                     &self.store.runtime_projections()?["work"],
                     "workItemId",

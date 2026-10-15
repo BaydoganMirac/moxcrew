@@ -6231,18 +6231,21 @@ mod tests {
             };
             let mut data = snapshot();
             data["desktopPreferences"] = json!({"language":language});
-            data["agentMemory"] = json!({"contexts":[{"workItemId":"work:fixture","decisionRevision":2,"currentDecisionRevision":3,"stale":true,"manifestLoaded":true,"issue":null}]});
+            data["agentMemory"] = json!({"contexts":[{"runId":"run:ffffffff-ffff-4fff-8fff-ffffffffffff","workItemId":"work:fixture","decisionRevision":1,"currentDecisionRevision":3,"stale":true,"manifestLoaded":false,"issue":"AGENT_MEMORY_UNSUPPORTED"},{"runId":"run:00000000-0000-4000-8000-000000000000","workItemId":"work:fixture","decisionRevision":2,"currentDecisionRevision":3,"stale":true,"manifestLoaded":true,"issue":null}]});
             for _ in 0..3 {
                 painted_copy(&ctx, &mut console, &data);
             }
             assert!(painted_copy(&ctx, &mut console, &data)
                 .join("\n")
                 .contains(loaded));
-            data["agentMemory"]["contexts"][0]["manifestLoaded"] = json!(false);
+            assert!(!painted_copy(&ctx, &mut console, &data)
+                .join("\n")
+                .contains(unsupported));
+            data["agentMemory"]["contexts"][1]["manifestLoaded"] = json!(false);
             assert!(painted_copy(&ctx, &mut console, &data)
                 .join("\n")
                 .contains(stale));
-            data["agentMemory"]["contexts"][0]["issue"] = json!("AGENT_MEMORY_UNSUPPORTED");
+            data["agentMemory"]["contexts"][1]["issue"] = json!("AGENT_MEMORY_UNSUPPORTED");
             assert!(painted_copy(&ctx, &mut console, &data)
                 .join("\n")
                 .contains(unsupported));

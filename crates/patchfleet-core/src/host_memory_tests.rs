@@ -342,3 +342,107 @@ async fn installed_codex_uses_real_rust_host_from_two_worktrees_without_inferenc
         .all(|ticket| !ticket.active.load(Ordering::SeqCst)));
     f.host.shutdown().await;
 }
+
+#[tokio::test]
+async fn team_role_and_retry_keep_original_project_after_folder_relink() {
+    let mut f = fixture().await;
+    let accepted = decision(&f.host, &f.project, &f.source, "Original team rule", true).await;
+    let workspace = f.host.snapshot().unwrap()["workspaces"]["items"][0]["workspaceId"].clone();
+    let input = json!({"name":"Memory team","goal":"Follow accepted decisions","workspaceId":workspace,"templateId":"product-feature","orchestratorPackId":"pack:orchestrator","workerPackIds":["pack:backend"],"settings":{"concurrency":1,"retryLimit":1,"timeoutMinutes":10,"failurePolicy":"continue"}});
+    let team = f
+        .host
+        .action("team_create", command(input.clone()))
+        .await
+        .unwrap()["teamId"]
+        .clone();
+    apply(&f.host,"project_unlink_workspace",json!({"projectId":f.project,"workspaceId":workspace,"expectedProjectRevision":project_revision(&f.host,&f.project)})).await;
+    // A team created while unlinked must stay unbound even after a later link.
+    let mut unbound_input = input;
+    unbound_input["name"] = json!("Unbound team");
+    let unbound = f
+        .host
+        .action("team_create", command(unbound_input))
+        .await
+        .unwrap()["teamId"]
+        .clone();
+    apply(&f.host,"project_link_workspace",json!({"projectId":f.other,"workspaceId":workspace,"expectedProjectRevision":project_revision(&f.host,&f.other)})).await;
+    for id in [&team, &unbound] {
+        f.host
+            .team_event("team.started", json!({"teamId":id}))
+            .unwrap();
+        f.host.advance_team(id).await.unwrap();
+    }
+    let find_work = |id: &Value| {
+        f.host.snapshot().unwrap()["teams"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["teamId"] == *id)
+            .unwrap()["tasks"][0]["workItemId"]
+            .clone()
+    };
+    let role = find_work(&team);
+    let unbound_role = find_work(&unbound);
+    assert_eq!(
+        f.host
+            .store
+            .subject_project("work", role.as_str().unwrap())
+            .unwrap()
+            .as_deref(),
+        f.project.as_str()
+    );
+    assert!(f
+        .host
+        .store
+        .subject_project("work", unbound_role.as_str().unwrap())
+        .unwrap()
+        .is_none());
+    f.work.push(role);
+    let (target, ticket) = launch(&f, 2).await;
+    let credential = credentials(&ticket);
+    assert_eq!(
+        rpc(&credential, "project_context", json!({})).await["projectId"],
+        f.project
+    );
+    assert_eq!(
+        rpc(&credential, "decision_read", json!({"decisionId":accepted})).await["decision"]
+            ["title"],
+        "Original team rule"
+    );
+    let intent_id = target["runId"]
+        .as_str()
+        .unwrap()
+        .strip_prefix("run:")
+        .unwrap();
+    let session = format!("session:{}", uuid::Uuid::new_v4());
+    f.host.store.append(vec![
+        event("run.prepared",json!({"intentId":intent_id,"workItemId":target["workItemId"],"providerId":"codex","providerSessionId":session,"expectedItemRevision":target["revision"],"ownerEpoch":f.host.epoch})),
+        event("turn.requested",json!({"intentId":intent_id,"providerSessionId":session,"ownerEpoch":f.host.epoch})),
+        event("run.started",json!({"intentId":intent_id,"expectedItemRevision":target["revision"],"ownerEpoch":f.host.epoch,"run":{"schemaVersion":1,"runId":target["runId"],"workItemId":target["workItemId"],"providerId":"codex","providerSessionId":session,"providerTurnId":"turn:test","ownerEpoch":f.host.epoch,"status":"running","revision":1,"startedAt":now(),"terminalAt":null}})),
+        event("session.observed",json!({"providerId":"codex","providerSessionId":session,"status":"running","createdAt":now(),"lastObservedAt":now()})),
+        event("session.terminal",json!({"providerId":"codex","providerSessionId":session,"status":"failed","lastObservedAt":now()})),
+    ]).unwrap();
+    assert!(rpc(&credential, "project_context", json!({}))
+        .await
+        .to_string()
+        .contains("SCOPE_DENIED"));
+    let after = f.host.advance_team(&team).await.unwrap();
+    assert_eq!(after["tasks"][0]["attempt"], 2);
+    let retry = after["tasks"][0]["workItemId"].clone();
+    assert_ne!(retry, target["workItemId"]);
+    assert_eq!(
+        f.host
+            .store
+            .subject_project("work", retry.as_str().unwrap())
+            .unwrap()
+            .as_deref(),
+        f.project.as_str()
+    );
+    f.work.push(retry);
+    let (_, retry_ticket) = launch(&f, 3).await;
+    assert_eq!(
+        rpc(&credentials(&retry_ticket), "project_context", json!({})).await["projectId"],
+        f.project
+    );
+    f.host.shutdown().await;
+}

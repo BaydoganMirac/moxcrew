@@ -11,7 +11,7 @@ use std::{
     process::Stdio,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex as StdMutex, MutexGuard,
     },
     time::Duration,
 };
@@ -36,6 +36,134 @@ impl Drop for MemoryConfig {
     fn drop(&mut self) {
         self.active.store(false, Ordering::Release);
     }
+}
+
+// Reader revocation cannot wait for canonical lifecycle signals to be drained.
+enum MemoryTurn {
+    Prepared,
+    Starting(u64, HashSet<String>),
+    Running(String),
+}
+struct ReaderLease {
+    active: Arc<AtomicBool>,
+    turn: MemoryTurn,
+}
+struct ReaderLeases {
+    closed: bool,
+    pending: Option<Arc<AtomicBool>>,
+    threads: HashMap<String, ReaderLease>,
+}
+impl ReaderLeases {
+    fn close(&mut self) {
+        self.closed = true;
+        if let Some(active) = self.pending.take() {
+            active.store(false, Ordering::Release);
+        }
+        for (_, lease) in self.threads.drain() {
+            lease.active.store(false, Ordering::Release);
+        }
+    }
+    fn pending(&mut self, active: Arc<AtomicBool>) {
+        if self.closed {
+            active.store(false, Ordering::Release);
+        } else {
+            self.pending = Some(active);
+        }
+    }
+    fn prepared(&mut self, thread: &str, active: Arc<AtomicBool>) {
+        self.pending = None;
+        if self.closed {
+            active.store(false, Ordering::Release);
+        } else {
+            self.remove(thread);
+            self.threads.insert(
+                thread.into(),
+                ReaderLease {
+                    active,
+                    turn: MemoryTurn::Prepared,
+                },
+            );
+        }
+    }
+    fn remove(&mut self, thread: &str) {
+        if let Some(lease) = self.threads.remove(thread) {
+            lease.active.store(false, Ordering::Release);
+        }
+    }
+    fn starting(&mut self, thread: &str, request: u64) {
+        if let Some(lease) = self.threads.get_mut(thread) {
+            lease.turn = MemoryTurn::Starting(request, HashSet::new());
+        }
+    }
+    fn received(&mut self, message: &Value) -> Result<()> {
+        if message["method"] == "turn/completed" && message.get("id").is_none() {
+            let params = &message["params"];
+            let thread = params["threadId"]
+                .as_str()
+                .filter(|v| opaque(v))
+                .ok_or("CODEX_PROTOCOL_MALFORMED")?;
+            let turn = params["turn"]["id"]
+                .as_str()
+                .filter(|v| opaque(v))
+                .ok_or("CODEX_PROTOCOL_MALFORMED")?;
+            if !matches!(
+                params["turn"]["status"].as_str(),
+                Some("completed" | "failed" | "interrupted")
+            ) {
+                return Err("CODEX_PROTOCOL_MALFORMED".into());
+            }
+            if let Some(lease) = self.threads.get_mut(thread) {
+                match &mut lease.turn {
+                    MemoryTurn::Prepared => {}
+                    MemoryTurn::Starting(_, candidates) => {
+                        if candidates.len() >= 64 {
+                            return Err("CODEX_PROTOCOL_MALFORMED".into());
+                        }
+                        candidates.insert(turn.into());
+                    }
+                    MemoryTurn::Running(expected) if expected == turn => self.remove(thread),
+                    MemoryTurn::Running(_) => {}
+                }
+            }
+        } else if let Some(request) = message["id"]
+            .as_u64()
+            .filter(|_| message.get("method").is_none())
+        {
+            let thread = self.threads.iter().find_map(|(thread, lease)| {
+                matches!(lease.turn, MemoryTurn::Starting(id, _) if id == request)
+                    .then(|| thread.clone())
+            });
+            if let Some(thread) = thread {
+                if message.get("error").is_some() {
+                    self.remove(&thread);
+                    return Ok(());
+                }
+                let turn = &message["result"]["turn"];
+                let id = turn["id"].as_str().filter(|v| opaque(v));
+                let status = turn["status"].as_str();
+                if id.is_none()
+                    || !matches!(
+                        status,
+                        Some("inProgress" | "completed" | "failed" | "interrupted")
+                    )
+                {
+                    return Err("CODEX_PROTOCOL_MALFORMED".into());
+                }
+                let id = id.unwrap();
+                let lease = self.threads.get_mut(&thread).unwrap();
+                let terminal = matches!(&lease.turn, MemoryTurn::Starting(_, candidates) if candidates.contains(id));
+                if terminal || status != Some("inProgress") {
+                    self.remove(&thread);
+                } else {
+                    lease.turn = MemoryTurn::Running(id.into());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+fn lease_guard(leases: &StdMutex<ReaderLeases>) -> MutexGuard<'_, ReaderLeases> {
+    leases.lock().unwrap_or_else(|error| error.into_inner())
 }
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
@@ -374,15 +502,26 @@ struct AppServer {
     signals: Vec<Value>,
     owned: HashMap<String, String>,
     memory: HashMap<String, MemoryConfig>,
+    leases: Arc<StdMutex<ReaderLeases>>,
 }
 impl AppServer {
-    async fn open(program: &Path, bound: Duration) -> Result<Self> {
+    async fn open(
+        program: &Path,
+        bound: Duration,
+        pending: Option<Arc<AtomicBool>>,
+    ) -> Result<Self> {
         let mut child = command(program, &["app-server", "--stdio"])?
             .spawn()
             .map_err(|_| "CODEX_APP_SERVER_START_FAILED")?;
         let stdin = child.stdin.take().ok_or("CODEX_APP_SERVER_START_FAILED")?;
         let stdout = child.stdout.take().ok_or("CODEX_APP_SERVER_START_FAILED")?;
         let (tx, rx) = mpsc::channel(64);
+        let leases = Arc::new(StdMutex::new(ReaderLeases {
+            closed: false,
+            pending,
+            threads: HashMap::new(),
+        }));
+        let reader_leases = leases.clone();
         let reader = tokio::spawn(async move {
             let mut r = BufReader::new(stdout);
             let mut line = Vec::new();
@@ -392,11 +531,13 @@ impl AppServer {
                     let buf = match r.fill_buf().await {
                         Ok(b) => b,
                         Err(_) => {
+                            lease_guard(&reader_leases).close();
                             let _ = tx.send(Err("CODEX_APP_SERVER_EXITED".into())).await;
                             return;
                         }
                     };
                     if buf.is_empty() {
+                        lease_guard(&reader_leases).close();
                         let _ = tx.send(Err("CODEX_APP_SERVER_EXITED".into())).await;
                         return;
                     }
@@ -417,25 +558,26 @@ impl AppServer {
                     }
                 }
                 if too_large {
+                    lease_guard(&reader_leases).close();
                     let _ = tx.send(Err("CODEX_PROTOCOL_MALFORMED".into())).await;
                     return;
                 }
                 let message = serde_json::from_slice::<Value>(&line)
-                    .map_err(|_| "CODEX_PROTOCOL_INVALID_JSON".to_string());
-                line.clear();
-                let fatal = message.as_ref().map_or(true, |m| !m.is_object());
-                if tx
-                    .send(message.and_then(|m| {
-                        if m.is_object() {
-                            Ok(m)
-                        } else {
-                            Err("CODEX_PROTOCOL_MALFORMED".into())
+                    .map_err(|_| "CODEX_PROTOCOL_INVALID_JSON".to_string())
+                    .and_then(|message| {
+                        if !message.is_object() {
+                            return Err("CODEX_PROTOCOL_MALFORMED".into());
                         }
-                    }))
-                    .await
-                    .is_err()
-                    || fatal
-                {
+                        lease_guard(&reader_leases).received(&message)?;
+                        Ok(message)
+                    });
+                line.clear();
+                let fatal = message.is_err();
+                if fatal {
+                    lease_guard(&reader_leases).close();
+                }
+                if tx.send(message).await.is_err() || fatal {
+                    lease_guard(&reader_leases).close();
                     return;
                 }
             }
@@ -450,6 +592,7 @@ impl AppServer {
             signals: vec![],
             owned: HashMap::new(),
             memory: HashMap::new(),
+            leases,
         };
         let init=server.request("initialize",json!({"clientInfo":{"name":"patchfleet","title":"Patchfleet","version":env!("CARGO_PKG_VERSION")},"capabilities":null})).await;
         if !matches!(init,Ok(ref v) if v.is_object()) {
@@ -480,6 +623,9 @@ impl AppServer {
             let p = &m["params"];
             let id = p["threadId"].as_str().ok_or("CODEX_PROTOCOL_MALFORMED")?;
             if self.owned.contains_key(id) {
+                if self.owned[id].is_empty() {
+                    return Ok(());
+                }
                 let turn = &p["turn"];
                 let tid = turn["id"]
                     .as_str()
@@ -502,7 +648,7 @@ impl AppServer {
                 }
                 self.signals.push(json!({"schemaVersion":1,"providerId":"codex","providerSessionId":id,"status":status,"observedAt":now()}));
                 if status != "running" {
-                    self.memory.remove(id);
+                    self.revoke_memory(id);
                     self.owned.remove(id);
                 }
             }
@@ -512,9 +658,15 @@ impl AppServer {
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         let id = self.next;
         self.next += 1;
+        let starting =
+            (method == "turn/start").then(|| params["threadId"].as_str().unwrap_or("").to_owned());
+        if let Some(thread) = &starting {
+            lease_guard(&self.leases).starting(thread, id);
+        }
         self.write(json!({"method":method,"id":id,"params":params}))
             .await?;
         timeout(self.bound, async {
+            let mut deferred = Vec::new();
             loop {
                 let msg = self
                     .incoming
@@ -522,6 +674,21 @@ impl AppServer {
                     .await
                     .ok_or("CODEX_APP_SERVER_EXITED")??;
                 if msg["method"].is_string() {
+                    if starting
+                        .as_ref()
+                        .is_some_and(|thread| msg["params"]["threadId"] == *thread)
+                        && matches!(
+                            msg["method"].as_str(),
+                            Some("turn/started" | "turn/completed")
+                        )
+                        && msg.get("id").is_none()
+                    {
+                        if deferred.len() >= 64 {
+                            return Err("CODEX_PROTOCOL_MALFORMED".into());
+                        }
+                        deferred.push(msg);
+                        continue;
+                    }
                     self.notification(&msg).await?;
                     continue;
                 }
@@ -531,14 +698,40 @@ impl AppServer {
                 if msg.get("error").is_some() {
                     return Err("CODEX_PROTOCOL_METHOD_ERROR".into());
                 }
-                return msg
+                let result = msg
                     .get("result")
                     .cloned()
-                    .ok_or("CODEX_PROTOCOL_MALFORMED".into());
+                    .ok_or("CODEX_PROTOCOL_MALFORMED")?;
+                if let Some(thread) = &starting {
+                    let turn = result["turn"]["id"]
+                        .as_str()
+                        .filter(|v| opaque(v))
+                        .ok_or("CODEX_PROTOCOL_MALFORMED")?;
+                    if !matches!(
+                        result["turn"]["status"].as_str(),
+                        Some("inProgress" | "completed" | "failed" | "interrupted")
+                    ) {
+                        return Err("CODEX_PROTOCOL_MALFORMED".into());
+                    }
+                    *self
+                        .owned
+                        .get_mut(thread)
+                        .ok_or("CODEX_PROTOCOL_MALFORMED")? = turn.into();
+                    for notification in deferred {
+                        if notification["params"]["turn"]["id"] == turn {
+                            self.notification(&notification).await?;
+                        }
+                    }
+                }
+                return Ok(result);
             }
         })
         .await
         .map_err(|_| "CODEX_APP_SERVER_TIMEOUT".to_string())?
+    }
+    fn revoke_memory(&mut self, thread: &str) {
+        self.memory.remove(thread);
+        lease_guard(&self.leases).remove(thread);
     }
     async fn memory_ready(&mut self, thread: &str) -> Result<()> {
         timeout(self.bound, async {
@@ -592,6 +785,7 @@ impl AppServer {
         }
     }
     async fn close(&mut self) {
+        lease_guard(&self.leases).close();
         self.memory.clear();
         terminate(&mut self.child).await;
         self.reader.abort();
@@ -612,7 +806,7 @@ async fn observe_codex(p: &Programs) -> Value {
         Err(e) => return failed("codex", &e, None),
     };
     let observed_at = now();
-    let mut server = match AppServer::open(&p.codex, p.timeout).await {
+    let mut server = match AppServer::open(&p.codex, p.timeout, None).await {
         Ok(c) => c,
         Err(e) => return failed("codex", &e, Some(&version)),
     };
@@ -804,6 +998,7 @@ impl Controller {
     }
     async fn discard(&self, guard: &mut Option<AppServer>) {
         if let Some(s) = guard.as_mut() {
+            lease_guard(&s.leases).close();
             s.memory.clear();
             let mut lost = self.lost.lock().await;
             lost.append(&mut s.signals);
@@ -850,10 +1045,20 @@ impl Controller {
         }
         let mut guard = self.server.lock().await;
         if guard.is_none() {
-            *guard = Some(AppServer::open(&self.programs.codex, self.programs.timeout).await?);
+            *guard = Some(
+                AppServer::open(
+                    &self.programs.codex,
+                    self.programs.timeout,
+                    memory.as_ref().map(|v| v.active.clone()),
+                )
+                .await?,
+            );
         }
         let source = format!("patchfleet:{intent}");
         let s = guard.as_mut().unwrap();
+        if let Some(memory) = memory.as_ref() {
+            lease_guard(&s.leases).pending(memory.active.clone());
+        }
         let mut params = json!({"cwd":cwd,"approvalPolicy":"never","sandbox":"workspace-write","ephemeral":false,"threadSource":source,"experimentalRawEvents":false});
         if let Some(memory) = memory.as_ref() {
             params["config"] = memory.config.clone();
@@ -867,6 +1072,9 @@ impl Controller {
             t["id"].as_str().filter(|s| opaque(s)).map(str::to_string)
         });
         if let Some(id) = id {
+            if let Some(memory) = memory.as_ref() {
+                lease_guard(&s.leases).prepared(&id, memory.active.clone());
+            }
             if memory.is_some() && s.memory_ready(&id).await.is_err() {
                 self.discard(&mut guard).await;
                 return Err("MEMORY_CONNECTION_FAILED".into());
@@ -934,7 +1142,7 @@ impl Controller {
             .get(session)
             .is_some_and(|v| !v.active.load(Ordering::Acquire))
         {
-            s.memory.remove(session);
+            s.revoke_memory(session);
             return Err("MEMORY_CONNECTION_FAILED".into());
         }
         let result=s.request("turn/start",json!({"threadId":session,"clientUserMessageId":intent,"input":[{"type":"text","text":instruction,"text_elements":[]}]})).await;
@@ -964,7 +1172,7 @@ impl Controller {
                 s.owned.insert(session.into(), id.clone());
             }
             if status != Some("inProgress") {
-                s.memory.remove(session);
+                s.revoke_memory(session);
                 s.signals.push(json!({"schemaVersion":1,"providerId":"codex","providerSessionId":session,"status":status,"observedAt":now()}));
                 s.owned.remove(session);
             }
@@ -997,7 +1205,7 @@ impl Controller {
         if s.owned.get(session).map(String::as_str) != Some(tid) {
             return Err("CODEX_SESSION_LOST".into());
         }
-        s.memory.remove(session);
+        s.revoke_memory(session);
         let result = s
             .request("turn/interrupt", json!({"threadId":session,"turnId":tid}))
             .await;

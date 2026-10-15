@@ -2,13 +2,17 @@
 
 Status: active
 
-Updated: 2026-10-14
+Updated: 2026-10-15
 
 This roadmap describes public technical direction, not dates or commercial
 commitments.
 
 ## Now
 
+- Apply the owner-selected [free Local/subscription Cloud boundary](decisions/0029-free-local-and-subscription-cloud.md)
+  to the next memory and commercial implementation cards. Existing Cloud
+  Free/Solo enforcement remains unchanged until its separately scoped transition;
+  shared Cloud memory and pgvector are proposed, not implemented.
 - Build on the completed [Project/source foundation](plans/0025-project-source-memory-foundation.md)
   to implement decision proposal/acceptance and evaluate a rebuildable local
   index under [Task 0022](plans/0022-project-memory-and-decision-service.md).
@@ -30,8 +34,8 @@ commitments.
 
 - Validate the completed macOS, Windows, and Linux package, diagnostics,
   upgrade, uninstall, and recovery paths with external beta users.
-- Validate the self-service Cloud Free release and the full Local-to-Cloud team
-  journey with moderated external users.
+- Validate the subscription Cloud product and the full Local-to-Cloud team
+  journey with moderated external users after its commercial transition.
 - Enable outbound notifications and Paddle entitlements in production only
   after operator configuration and provider sandbox evidence pass.
 - Generalize execution control to Claude Code or Gemini only after a provider

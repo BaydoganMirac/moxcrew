@@ -2,7 +2,7 @@
 
 Status: Slice A complete; decision/index/agent/extraction slices remain planned
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 ## Owner selected outcome
 
@@ -10,6 +10,14 @@ Multiple agents or teams share project-scoped local memory. Patchfleet project
 messages, tasks, and owner answers are the default sources. External agent
 conversations are optional imports. Automatic extraction creates ADR drafts;
 only explicit owner acceptance makes a decision authoritative.
+
+[ADR 0029](../decisions/0029-free-local-and-subscription-cloud.md) adds the
+owner-selected commercial boundary: Local and its planned memory capabilities
+remain free; optional hosted/shared memory belongs to subscription Cloud.
+Cloud PostgreSQL/pgvector and project opt-in publication are proposed next work,
+not existing memory storage. Pricing, quotas, sync authority, embedding choice
+and the new memory protocol remain unresolved. No default upload boundary or
+runtime entitlement changed.
 
 ## Recorded
 

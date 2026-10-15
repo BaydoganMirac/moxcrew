@@ -2,7 +2,7 @@
 
 Status: working product contract
 
-Updated: 2026-10-14
+Updated: 2026-10-15
 
 ## One-line promise
 
@@ -48,6 +48,21 @@ coordinates bounded provider runs and keeps task ownership, decisions, retries,
 questions, and receipts durable. Cloud receives only the sanitized operational
 projection and allowlisted expiring intents.
 
+## Product and subscription boundary
+
+Local is free and works without an account or subscription. Local projects,
+agent teams and the planned local decision/search/ADR capabilities remain in
+that free product. Users supply their own coding-provider access and pay any
+provider costs independently.
+
+Cloud is an optional subscription service for hosted and cross-device value:
+remote supervision, notifications, sync and explicitly shared project memory
+as each capability is implemented. There is no permanent Cloud Free tier in
+the new product model. Pricing, allowances and any trial are not finalized.
+Existing Cloud Free/Solo behavior has not yet been migrated to this model.
+Cancellation never disables Local or removes downloaded local data. See
+[ADR 0029](decisions/0029-free-local-and-subscription-cloud.md).
+
 ## Project memory
 
 The project/source foundation gives a project a stable identity across worktrees.
@@ -64,7 +79,10 @@ searchable decision text and metadata, and scoped agent tools expose the same
 accepted decisions to the project's agents. See
 [Task 0022](plans/0022-project-memory-and-decision-service.md). External agent
 conversations require an explicit import; this foundation does not import them.
-Memory does not widen the default Cloud data boundary.
+Memory does not widen the default Cloud data boundary. The proposed subscription
+sharing service requires explicit project opt-in and a new memory contract;
+payment and ordinary pairing alone do not upload local memory. It is not yet
+implemented.
 
 ## V0 promise
 

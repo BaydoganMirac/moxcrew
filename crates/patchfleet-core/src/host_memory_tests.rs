@@ -359,6 +359,7 @@ async fn team_role_and_retry_keep_original_project_after_folder_relink() {
     // A team created while unlinked must stay unbound even after a later link.
     let mut unbound_input = input;
     unbound_input["name"] = json!("Unbound team");
+    unbound_input["settings"]["retryLimit"] = json!(0);
     let unbound = f
         .host
         .action("team_create", command(unbound_input))
@@ -366,6 +367,12 @@ async fn team_role_and_retry_keep_original_project_after_folder_relink() {
         .unwrap()["teamId"]
         .clone();
     apply(&f.host,"project_link_workspace",json!({"projectId":f.other,"workspaceId":workspace,"expectedProjectRevision":project_revision(&f.host,&f.other)})).await;
+    let owner_sources = f
+        .host
+        .store
+        .read_memory(&json!({"projectId":f.project}))
+        .unwrap()["total"]
+        .clone();
     for id in [&team, &unbound] {
         f.host
             .team_event("team.started", json!({"teamId":id}))
@@ -383,6 +390,15 @@ async fn team_role_and_retry_keep_original_project_after_folder_relink() {
     };
     let role = find_work(&team);
     let unbound_role = find_work(&unbound);
+    let cursor = f.host.store.event_cursor().unwrap();
+    for id in [&team, &unbound] {
+        f.host.advance_team(id).await.unwrap();
+    }
+    assert_eq!(
+        f.host.store.event_cursor().unwrap(),
+        cursor,
+        "failed provider starts must not loop on automatic team advancement"
+    );
     assert_eq!(
         f.host
             .store
@@ -443,6 +459,14 @@ async fn team_role_and_retry_keep_original_project_after_folder_relink() {
     assert_eq!(
         rpc(&credentials(&retry_ticket), "project_context", json!({})).await["projectId"],
         f.project
+    );
+    assert_eq!(
+        f.host
+            .store
+            .read_memory(&json!({"projectId":f.project}))
+            .unwrap()["total"],
+        owner_sources,
+        "generated role contracts must not become owner evidence"
     );
     f.host.shutdown().await;
 }

@@ -15,6 +15,11 @@ runId, workItemId, ownerEpoch, projectId and the starting decisionRevision.
 The existing canonical writer remains the only writer. Operational context
 metadata is rebuilt from facts; current revision, stale state, manifest-loaded
 state and connection issues are derived. Queries and credentials are never facts.
+Generated role contracts do not become owner-source evidence; original owner
+tasks, team goals, owner answers and notes retain their existing capture rules.
+After a terminal failed role start, background advancement pauses that queued
+work item. The owner fixes the provider and starts it explicitly from Work;
+canonical receipts remain unchanged and new failed-run attempts keep their limits.
 
 One lazy authenticated HTTP reader lives inside the Host on literal 127.0.0.1.
 The existing executable's `--memory-mcp <absolute-ticket-path>` mode handles

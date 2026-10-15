@@ -309,6 +309,17 @@ impl Host {
                 );
             }
             if let Some(item) = item.filter(|i| i["status"] == "queued") {
+                let work = self.store.runtime_projections()?["work"].clone();
+                if array(&work, "receipts")
+                    .iter()
+                    .rev()
+                    .find(|r| r["commandType"] == "start_work" && r["workItemId"] == item_id)
+                    .is_some_and(|r| r["outcome"] != "applied")
+                {
+                    // A terminal failed start needs an explicit owner retry in Work.
+                    // Background team ticks must not spawn an unbounded prepare loop.
+                    continue;
+                }
                 let r = self
                     .apply_work_intent(intent(
                         "start_work",

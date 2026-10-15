@@ -364,6 +364,28 @@ pub fn validate_receipt(r: &Value, operation: &Value) -> Result<()> {
                 "MEMORY_RECEIPT_MISMATCH",
             )?;
         }
+    } else if r["outcome"] == "rejected" {
+        let kind = string(&p["type"])?;
+        let reason = string(&r["reasonCode"])?;
+        let revision = number(&r["revision"], 0, MAX_SAFE)?;
+        let expected = p["expectedRevision"].as_u64();
+        require(
+            !r["sharedProjectId"].is_null()
+                && r["role"] == "publisher"
+                && r["enabled"].is_boolean(),
+            "MEMORY_RECEIPT_MISMATCH",
+        )?;
+        let matches = match (kind, reason) {
+            ("publish" | "sharing", "MEMORY_STALE_REVISION") => Some(revision) != expected,
+            ("publish", "MEMORY_CAPACITY_EXCEEDED" | "MEMORY_CONFLICT") => {
+                Some(revision) == expected && r["enabled"] == true
+            }
+            ("sharing", "MEMORY_CONFLICT") => {
+                Some(revision) == expected && revision == MAX_SAFE && r["enabled"] != p["enabled"]
+            }
+            _ => false,
+        };
+        require(matches, "MEMORY_RECEIPT_MISMATCH")?;
     } else if r["outcome"] == "expired" {
         require(
             r["reasonCode"] == "MEMORY_OPERATION_EXPIRED"
@@ -969,7 +991,7 @@ impl State {
                 } else {
                     op["payload"]["sharedProjectId"].clone()
                 };
-                self.mappings.insert(project.clone(),json!({"projectId":project,"connection":r["connection"],"sharedProjectId":shared,"role":null,"enabled":null,"sharedRevision":0,"lastSyncAt":null,"lastErrorCode":null,"lastPublishedDecisionId":null,"lastPublishedRevision":0}));
+                self.mappings.insert(project.clone(),json!({"projectId":project,"connection":r["connection"],"sharedProjectId":shared,"role":null,"enabled":null,"sharedRevision":0,"lastSyncAt":null,"lastErrorCode":null,"lastErrorTerminal":false,"lastPublishedDecisionId":null,"lastPublishedRevision":0}));
             }
             let previous_enabled = self
                 .mappings
@@ -978,8 +1000,13 @@ impl State {
                 .unwrap_or(Value::Null);
             self.operations.insert(id(op,"operationId"),json!({"projectId":project,"connection":r["connection"],"operation":op,"state":"queued","attemptedAt":null,"receipt":null,"lastErrorCode":null,"previousEnabled":previous_enabled}));
         }
-        if let Some(m) = self.mappings.get_mut(&project) {
+        if let Some(m) = self
+            .mappings
+            .get_mut(&project)
+            .filter(|_| e["type"] == "shared_memory.operation.queued")
+        {
             m["lastErrorCode"] = Value::Null;
+            m["lastErrorTerminal"] = json!(false);
         }
         self.touch()?;
         let reason = if e["type"] == "shared_memory.sync.queued" {
@@ -1131,6 +1158,7 @@ impl State {
                     .get_mut(&id(p, "projectId"))
                     .ok_or_else(|| invalid("MEMORY_NOT_LINKED"))?;
                 require(m["connection"] == bound, "MEMORY_CONNECTION_CHANGED")?;
+                m["lastErrorTerminal"] = json!(r["outcome"] != "applied");
                 if r["outcome"] == "applied" {
                     m["role"] = r["role"].clone();
                     if r["revision"].as_u64() >= m["sharedRevision"].as_u64() {
@@ -1166,6 +1194,7 @@ impl State {
                     "MEMORY_CONNECTION_CHANGED",
                 )?;
                 m["lastErrorCode"] = p["reasonCode"].clone();
+                m["lastErrorTerminal"] = json!(false);
                 self.touch()?;
             }
             "shared_memory.manifest.observed" => {
@@ -1183,7 +1212,9 @@ impl State {
                 m["sharedRevision"] = p["revision"].clone();
                 m["enabled"] = json!(true);
                 m["lastSyncAt"] = json!(at);
-                m["lastErrorCode"] = Value::Null;
+                if m["lastErrorTerminal"] != true {
+                    m["lastErrorCode"] = Value::Null;
+                }
                 self.touch()?;
             }
             _ => unreachable!(),
@@ -1651,7 +1682,8 @@ pub fn metadata(projection: &Value, reader: &Value, c: &Value) -> Value {
         let stale = changed
             || old
             || p["enabled"] != true
-            || !p["lastErrorCode"].is_null()
+            || (!p["lastErrorCode"].is_null()
+                && mapping.is_none_or(|m| m["lastErrorTerminal"] != true))
             || cache.is_some_and(|r| r["manifest"]["revision"] != p["sharedRevision"]);
         p["verifiedAt"] = cache
             .map(|r| r["verifiedAt"].clone())

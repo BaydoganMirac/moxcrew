@@ -94,7 +94,7 @@ jobs:
               test -x "$output/Patchfleet.app/Contents/MacOS/patchfleet-desktop"
               test -f "$output"/*.dmg
               test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$output/Patchfleet.app/Contents/Info.plist")" = com.patchfleet.desktop
-              test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$output/Patchfleet.app/Contents/Info.plist")" = 0.5.1
+              test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$output/Patchfleet.app/Contents/Info.plist")" = 0.6.0
               /usr/libexec/PlistBuddy -c 'Print NSDocumentsFolderUsageDescription' "$output/Patchfleet.app/Contents/Info.plist"
               codesign --verify --deep --strict "$output/Patchfleet.app"
               ;;

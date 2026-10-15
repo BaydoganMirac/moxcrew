@@ -36,6 +36,8 @@ pub struct Bridge {
     close_requested: Arc<AtomicBool>,
     pub snapshot: Option<Value>,
     memory_page: Option<Value>,
+    decision_page: Option<Value>,
+    decision_detail: Option<Value>,
     pub error: Option<String>,
     pub feedback: Option<Notice>,
     pub picking_folder: bool,
@@ -74,6 +76,53 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 }
 
 impl Bridge {
+    #[cfg(feature = "ui-smoke")]
+    pub fn decision_smoke(&mut self) {
+        let Some(id) = self
+            .snapshot
+            .as_ref()
+            .and_then(|s| s["projectMemory"]["projects"].as_array())
+            .and_then(|projects| projects.first())
+            .map(|p| p["projectId"].clone())
+        else {
+            return;
+        };
+        self.submit(Command::new(
+            "project_decisions_read",
+            serde_json::json!({"projectId":id,"offset":0,"limit":10,"query":"","status":"all"}),
+        ));
+        for _ in 0..400 {
+            self.poll();
+            if !self.busy {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if let Some(decision) = self
+            .decision_page
+            .as_ref()
+            .and_then(|p| p["decisions"].as_array())
+            .and_then(|d| {
+                d.iter()
+                    .find(|v| v["status"] == "accepted")
+                    .or_else(|| d.first())
+            })
+        {
+            let decision_id = decision["decisionId"].clone();
+            self.submit(Command::new(
+                "project_decision_read",
+                serde_json::json!({"projectId":id,"decisionId":decision_id}),
+            ));
+            for _ in 0..400 {
+                self.poll();
+                if !self.busy {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+
     #[cfg(feature = "ui-smoke")]
     pub fn memory_smoke(&mut self) {
         if let Some(project) = self
@@ -169,6 +218,8 @@ impl Bridge {
             close_requested,
             snapshot: None,
             memory_page: None,
+            decision_page: None,
+            decision_detail: None,
             error: None,
             feedback: None,
             picking_folder: false,
@@ -187,12 +238,24 @@ impl Bridge {
                 Message::Outcome(command, result, snapshot) => {
                     match result {
                         Ok(receipt) => {
-                            if command.action == "project_memory_read" {
-                                self.memory_page = Some(receipt.clone());
+                            match command.action {
+                                "project_memory_read" => self.memory_page = Some(receipt.clone()),
+                                "project_decisions_read" => {
+                                    self.decision_page = Some(receipt.clone())
+                                }
+                                "project_decision_read" => {
+                                    self.decision_detail = Some(receipt.clone())
+                                }
+                                _ => (),
                             }
                             self.pending = None;
-                            self.feedback = (command.action != "project_memory_read")
-                                .then(|| Notice::receipt(command.action, &receipt));
+                            self.feedback = (!matches!(
+                                command.action,
+                                "project_memory_read"
+                                    | "project_decisions_read"
+                                    | "project_decision_read"
+                            ))
+                            .then(|| Notice::receipt(command.action, &receipt));
                         }
                         Err(error) => {
                             self.feedback = Some(Notice::error(command.action, &error));
@@ -233,6 +296,22 @@ impl Bridge {
                     self.memory_page = None;
                 }
                 snapshot["memoryPage"] = self.memory_page.clone().unwrap_or(Value::Null);
+                for page in [&mut self.decision_page, &mut self.decision_detail] {
+                    if page.as_ref().is_some_and(|page| {
+                        !snapshot["projectDecisions"]["projects"]
+                            .as_array()
+                            .is_some_and(|projects| {
+                                projects.iter().any(|project| {
+                                    project["projectId"] == page["projectId"]
+                                        && project["revision"] == page["revision"]
+                                })
+                            })
+                    }) {
+                        *page = None;
+                    }
+                }
+                snapshot["decisionPage"] = self.decision_page.clone().unwrap_or(Value::Null);
+                snapshot["decisionDetail"] = self.decision_detail.clone().unwrap_or(Value::Null);
                 self.snapshot = Some(snapshot);
                 self.error = None;
             }
@@ -250,6 +329,18 @@ impl Bridge {
                     self.memory_page = None;
                     if let Some(snapshot) = self.snapshot.as_mut() {
                         snapshot["memoryPage"] = Value::Null;
+                    }
+                }
+                if command.action == "project_decisions_read" {
+                    self.decision_page = None;
+                    if let Some(snapshot) = self.snapshot.as_mut() {
+                        snapshot["decisionPage"] = Value::Null;
+                    }
+                }
+                if command.action == "project_decision_read" {
+                    self.decision_detail = None;
+                    if let Some(snapshot) = self.snapshot.as_mut() {
+                        snapshot["decisionDetail"] = Value::Null;
                     }
                 }
                 self.busy = true;
@@ -479,6 +570,95 @@ mod tests {
         assert!(bridge.snapshot.as_ref().unwrap()["memoryPage"].is_null());
         await_idle(&mut bridge);
         assert_eq!(bridge.snapshot.as_ref().unwrap()["memoryPage"]["total"], 1);
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn decision_pages_are_ephemeral_scoped_and_invalidated_on_manifest_change() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        bridge.submit(Command::new("project_create", json!({"name":"Decisions"})));
+        await_idle(&mut bridge);
+        let project =
+            bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0]["projectId"].clone();
+        bridge.submit(Command::new(
+            "project_decisions_read",
+            json!({"projectId":project}),
+        ));
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["decisionPage"]["total"],
+            0
+        );
+        assert!(bridge.feedback.is_none());
+        bridge.submit(Command::new("project_message", json!({"projectId":project,"expectedProjectRevision":1,"title":"Rule","text":"Integer money"})));
+        await_idle(&mut bridge);
+        let source = bridge.feedback.as_ref().unwrap();
+        assert_eq!(source.code, "PROJECT_MESSAGE_CREATED");
+        bridge.submit(Command::new(
+            "project_memory_read",
+            json!({"projectId":project}),
+        ));
+        await_idle(&mut bridge);
+        let source =
+            bridge.snapshot.as_ref().unwrap()["memoryPage"]["sources"][0]["sourceId"].clone();
+        bridge.submit(Command::new("project_decision_propose", json!({"projectId":project,"expectedProjectRevision":2,
+            "title":"Amounts","context":"Source-backed","decision":"Use integer money","rationale":"Exact totals","consequences":"Convert at boundaries",
+            "sources":[{"sourceId":source,"revision":1}]})));
+        await_idle(&mut bridge);
+        assert!(bridge.snapshot.as_ref().unwrap()["decisionPage"].is_null());
+        bridge.submit(Command::new(
+            "project_decisions_read",
+            json!({"projectId":project,"query":"money"}),
+        ));
+        assert!(bridge.snapshot.as_ref().unwrap()["decisionPage"].is_null());
+        await_idle(&mut bridge);
+        let decision =
+            bridge.snapshot.as_ref().unwrap()["decisionPage"]["decisions"][0]["decisionId"].clone();
+        bridge.submit(Command::new(
+            "project_decision_read",
+            json!({"projectId":project,"decisionId":decision}),
+        ));
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["decisionDetail"]["decision"]["status"],
+            "proposed"
+        );
+        assert!(bridge.feedback.is_none());
+        let retry = Command::new(
+            "project_decision_accept",
+            json!({"projectId":project,"decisionId":decision,"expectedDecisionRevision":1}),
+        );
+        bridge.submit(retry.clone());
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.feedback.as_ref().unwrap().code,
+            "PROJECT_DECISION_ACCEPTED"
+        );
+        for key in ["decisionPage", "decisionDetail"] {
+            assert!(bridge.snapshot.as_ref().unwrap()[key].is_null());
+        }
+        let manifest = bridge.snapshot.as_ref().unwrap()["projectDecisions"].clone();
+        bridge.submit(retry);
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectDecisions"],
+            manifest
+        );
+        bridge.submit(Command::new(
+            "project_decision_read",
+            json!({"projectId":project,"decisionId":decision}),
+        ));
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["decisionDetail"]["decision"]["status"],
+            "accepted"
+        );
+        let mut stale_snapshot = bridge.snapshot.as_ref().unwrap().clone();
+        stale_snapshot["projectDecisions"]["projects"] = json!([]);
+        bridge.apply_snapshot(Ok(stale_snapshot));
+        assert!(bridge.snapshot.as_ref().unwrap()["decisionDetail"].is_null());
         bridge.shutdown();
     }
 }

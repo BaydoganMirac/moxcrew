@@ -97,6 +97,10 @@ impl Patchfleet {
                 console.memory_smoke();
                 bridge.memory_smoke();
             }
+            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("decisions") {
+                console.decision_smoke();
+                bridge.decision_smoke();
+            }
             if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("folder-picker")
             {
                 console.folder_smoke(&directory.join("preview-repository"));
@@ -162,6 +166,45 @@ fn seed_memory_scene(directory: &std::path::Path) {
             let project = &snapshot["projectMemory"]["projects"][0];
             let args = serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"title":title,"text":text});
             host.action("project_message", command::Command::new("project_message", args).payload).await.unwrap();
+        }
+        host.shutdown().await;
+    });
+}
+
+#[cfg(feature = "ui-smoke")]
+fn seed_decision_scene(directory: &std::path::Path) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        let snapshot = host.snapshot().unwrap();
+        let project = &snapshot["projectMemory"]["projects"][0];
+        let sources = host.action("project_memory_read", serde_json::json!({"projectId":project["projectId"]})).await.unwrap();
+        let citations = serde_json::json!([{"sourceId":sources["sources"][0]["sourceId"],"revision":sources["sources"][0]["revision"]}]);
+        let mut records = Vec::new();
+        for (title, decision) in [
+            ("Para tutarlarının saklanması", "Tutarları tam sayı kuruş olarak sakla; para birimi kodunu tutarın yanında tut."),
+            ("Kesin tutarlar ve açık yuvarlama sınırı", "Tutarları tam sayı alt birimlerle sakla. Yuvarlamayı toplam sınırında uygula; vergi kuralını ayrıca belgele."),
+            ("Floating-point amounts", "Use floating-point invoice calculations."),
+            ("Para birimi dönüşüm sınırı", "Döviz kurunu ve kur tarihini dönüşüm kaydında sakla."),
+        ] {
+            let args = serde_json::json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],
+                "title":title,"context":"Fatura hesaplarında tekrar üretilebilir sonuçlar gerekiyor.","decision":decision,
+                "rationale":"Kaynak mesajlar kesin hesap ve açık yuvarlama sınırı istiyor.",
+                "consequences":"Dış sistemlerin tutarları giriş ve çıkış sınırlarında dönüştürülür. Bu kayıt yalnızca yerel test verisidir.","sources":citations});
+            let record = host.action("project_decision_propose", command::Command::new("project_decision_propose", args).payload).await.unwrap();
+            assert_eq!(record["outcome"], "applied");
+            records.push(record);
+        }
+        for (action, args) in [
+            ("project_decision_accept", serde_json::json!({"projectId":project["projectId"],"decisionId":records[0]["decisionId"],"expectedDecisionRevision":1})),
+            ("project_decision_supersede", serde_json::json!({"projectId":project["projectId"],"decisionId":records[0]["decisionId"],"expectedDecisionRevision":2,"replacementDecisionId":records[1]["decisionId"],"expectedReplacementRevision":1})),
+            ("project_decision_reject", serde_json::json!({"projectId":project["projectId"],"decisionId":records[2]["decisionId"],"expectedDecisionRevision":1})),
+        ] {
+            let receipt = host.action(action, command::Command::new(action, args).payload).await.unwrap();
+            assert_eq!(receipt["outcome"], "applied");
         }
         host.shutdown().await;
     });
@@ -337,10 +380,16 @@ fn main() {
         #[cfg(feature = "ui-smoke")]
         if matches!(
             std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
-            Ok("memory" | "projects" | "folder-picker" | "folder-error")
+            Ok("memory" | "decisions" | "projects" | "folder-picker" | "folder-error")
         ) {
             seed_memory_scene(&directory);
-            if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() != Ok("memory") {
+            if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("decisions") {
+                seed_decision_scene(&directory);
+            }
+            if matches!(
+                std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                Ok("projects" | "folder-picker" | "folder-error")
+            ) {
                 let path = directory.join("preview-repository");
                 std::fs::create_dir(&path).unwrap();
                 assert!(std::process::Command::new("git")

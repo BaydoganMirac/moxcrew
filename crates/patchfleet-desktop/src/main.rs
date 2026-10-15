@@ -93,6 +93,21 @@ impl Patchfleet {
         #[cfg(feature = "ui-smoke")]
         let console = {
             let mut console = console;
+            if !observe
+                && std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("account-"))
+            {
+                let waiting =
+                    std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("account-waiting");
+                let origin = waiting.then(|| {
+                    std::env::var("PATCHFLEET_SMOKE_ACCOUNT_URL")
+                        .expect("Disposable account fixture required")
+                });
+                if let Some(origin) = &origin {
+                    assert!(fixture_loopback_url(origin));
+                }
+                console.account_smoke(origin.as_deref());
+                bridge.account_smoke(origin.as_deref());
+            }
             if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("memory") {
                 console.memory_smoke();
                 bridge.memory_smoke();
@@ -281,6 +296,19 @@ fn fixture_loopback_url(value: &str) -> bool {
     })
 }
 
+#[cfg(feature = "ui-smoke")]
+fn seed_account_scene(directory: &std::path::Path) {
+    let url =
+        std::env::var("PATCHFLEET_SMOKE_ACCOUNT_URL").expect("Disposable account fixture required");
+    assert!(fixture_loopback_url(&url));
+    let code = std::env::var("PATCHFLEET_SMOKE_ACCOUNT_PAIR").expect("Disposable pairing required");
+    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        host.action("cloud_pair", command::Command::new("cloud_pair", serde_json::json!({"cloudUrl":url,"displayName":"Native account preview","pairingCode":code})).payload).await.unwrap();
+        host.shutdown().await;
+    });
+}
+
 impl eframe::App for Patchfleet {
     #[cfg(feature = "ui-smoke")]
     fn raw_input_hook(&mut self, _ctx: &egui::Context, input: &mut egui::RawInput) {
@@ -448,6 +476,16 @@ fn main() {
             directory.is_dir() && std::fs::read_dir(&directory).unwrap().next().is_none(),
             "Native smoke requires an empty test directory"
         );
+        #[cfg(feature = "ui-smoke")]
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("account-")) {
+            seed_memory_scene(&directory);
+            if matches!(
+                std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                Ok("account-free" | "account-paid")
+            ) {
+                seed_account_scene(&directory);
+            }
+        }
         #[cfg(feature = "ui-smoke")]
         if matches!(
             std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),

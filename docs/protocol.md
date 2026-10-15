@@ -82,6 +82,13 @@ orphaned credential while re-pairing.
 Pairing does not transfer provider credentials. Re-pairing or revocation
 invalidates the old host credential.
 
+Task0033 adds optional native browser sign-in through the separate
+[Desktop account protocol1](desktop-account-protocol.md). It uses a strict
+temporary loopback authentication callback with state and S256 proof, then issues
+the same protected host credential. This callback cannot receive commands or
+execute work. Existing manual pairing and operational V1/V2 messages retain
+their meaning; account/subscription display never authorizes memory sharing.
+
 ## Version 1 resources
 
 The first implementation exposes these HTTP resources:

@@ -9,6 +9,11 @@ commitments.
 
 ## Now
 
+- Preserve optional desktop account sign-in, account/subscription reads and
+  installation sign-out in [Task0033](plans/0033-desktop-account-sign-in.md).
+  The Cloud origin is configurable until an operator provisions a live service;
+  verified browser provider/TLS configuration remains release evidence.
+
 - Apply the [free Local and subscription Cloud
   boundary](decisions/0029-free-local-and-subscription-cloud.md). Explicit sharing requires
   service authorization.

@@ -1,6 +1,6 @@
 # Native desktop release
 
-The 0.6 source builds a standalone Rust/egui desktop. Installers use
+The 0.9 source builds a standalone Rust/egui desktop. Installers use
 cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or desktop
 build requirements. npm publication is retired. Pushing, publishing installers,
 public signing and Cloud deployment remain explicit owner release actions.
@@ -43,6 +43,13 @@ Access.
 macOS public distribution requires Developer ID signing/notarization; Windows
 publisher signing needs owner credentials. Keep credentials outside source and
 model context.
+
+The optional native account flow requires a compatible Cloud deployment with
+Desktop account protocol1. Configure the real HTTPS origin and
+the provider's fixed browser callback, then verify signed-out browser continuation,
+allow/deny, native return, restart/account refresh and self sign-out on each
+advertised OS. Synthetic local proof does not establish live OAuth/email or TLS.
+Local must remain usable without an account or reachable Cloud.
 
 ## Native rendering proof
 

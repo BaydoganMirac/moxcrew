@@ -9,7 +9,7 @@ commitments.
 
 ## Now
 
-- Complete the owner-approved [studio interface](plans/0036-product-studio-interface.md)
+- Preserve the owner-approved [studio interface](plans/0036-product-studio-interface.md)
   with native TR/EN, adaptive project/team/knowledge screens and the existing
   lightweight runtime.
 

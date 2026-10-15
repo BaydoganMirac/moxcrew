@@ -1,6 +1,6 @@
 # Native desktop release
 
-The 0.9 source builds a standalone Rust/egui desktop. Installers use
+The 0.10 source builds a standalone Rust/egui desktop. Installers use
 cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or desktop
 build requirements. npm publication is retired. Pushing, publishing installers,
 public signing and Cloud deployment remain explicit owner release actions.
@@ -109,3 +109,9 @@ unchanged pre-migration data when rolling back to Node. Never run two writers.
 
 See [installation](install.md), [ADR 0024](decisions/0024-native-rust-desktop-ui.md)
 and [current evidence](state/native-rust-desktop.md).
+
+Native 0.10 writes V6 run-bound memory context facts only when preparing a
+project-bound agent launch. Readers before 0.10 reject those facts. Preserve the
+stopped pre-upgrade backup for rollback. Verify MCP inventory plus actual context
+preflight against an isolated Codex 0.155.1+ without a model turn. Check two
+worktrees, terminal revocation, stale context, and no source/query/token export.

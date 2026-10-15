@@ -1,4 +1,5 @@
 use crate::{
+    agent_memory,
     cloud::Cloud,
     decisions, desktop_login, domain, event, now, project_memory, providers, retrieval,
     shared_memory,
@@ -12,10 +13,14 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, Weak,
     },
 };
 use tokio::sync::Mutex as AsyncMutex;
+
+#[cfg(test)]
+#[path = "host_memory_tests.rs"]
+mod memory_tests;
 
 pub struct Host {
     pub(crate) store: Store,
@@ -27,10 +32,20 @@ pub struct Host {
     cloud_status: Mutex<Value>,
     desktop_preferences: Mutex<Value>,
     desktop_login: Mutex<Option<desktop_login::Login>>,
+    self_ref: Weak<Host>,
+    agent_memory_server: AsyncMutex<Option<agent_memory::Server>>,
+    agent_memory_progress: Mutex<std::collections::BTreeMap<String, AgentMemoryProgress>>,
     memory_download: AsyncMutex<Option<shared_memory::Download>>,
     memory_poll: Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
     shutdown_notify: tokio::sync::Notify,
     pub(crate) closing: AtomicBool,
+}
+struct AgentMemoryProgress {
+    revision: u64,
+    next_offset: u64,
+    complete: bool,
+    active: Weak<AtomicBool>,
+    issue: Option<String>,
 }
 fn second_event(kind: &str, payload: Value) -> Value {
     let mut e = event(kind, payload);
@@ -168,6 +183,12 @@ impl Host {
         }
     }
     pub fn open(data_dir: PathBuf) -> Result<Arc<Self>> {
+        Self::open_with_controller(data_dir, providers::Controller::new())
+    }
+    fn open_with_controller(
+        data_dir: PathBuf,
+        controller: providers::Controller,
+    ) -> Result<Arc<Self>> {
         if !data_dir.is_absolute() {
             return Err(Error("DATA_DIRECTORY_MUST_BE_ABSOLUTE".into()));
         }
@@ -184,12 +205,15 @@ impl Host {
             .as_ref()
             .map(Cloud::public_status)
             .unwrap_or(json!({"paired":false,"error":true,"lastErrorCode":"CLOUD_STATE_INVALID"}));
-        let host = Arc::new(Self {
+        let host = Arc::new_cyclic(|weak| Self {
             store,
             epoch: uuid::Uuid::new_v4().to_string(),
-            controller: providers::Controller::new(),
+            controller,
             desktop_preferences: Mutex::new(crate::desktop_preferences::load(&data_dir)),
             desktop_login: Mutex::new(None),
+            self_ref: weak.clone(),
+            agent_memory_server: AsyncMutex::new(None),
+            agent_memory_progress: Mutex::new(std::collections::BTreeMap::new()),
             memory_download: AsyncMutex::new(None),
             memory_poll: Mutex::new(std::collections::BTreeMap::new()),
             shutdown_notify: tokio::sync::Notify::new(),
@@ -244,6 +268,20 @@ impl Host {
 
     pub fn snapshot(&self) -> Result<Value> {
         let mut bundle = self.store.runtime_projections()?;
+        if let Some(contexts) = bundle["agentMemory"]["contexts"].as_array_mut() {
+            let progress = self
+                .agent_memory_progress
+                .lock()
+                .map_err(|_| Error("AGENT_MEMORY_UNAVAILABLE".into()))?;
+            for context in contexts {
+                let state = context["runId"].as_str().and_then(|run| progress.get(run));
+                context["manifestLoaded"] = json!(state.is_some_and(|p| p.complete
+                    && Some(p.revision) == context["currentDecisionRevision"].as_u64()));
+                context["issue"] = state
+                    .and_then(|p| p.issue.as_deref())
+                    .map_or(Value::Null, |s| json!(s));
+            }
+        }
         if bundle["work"].is_null() {
             bundle["work"] =
                 json!({"schemaVersion":1,"revision":0,"items":[],"runs":[],"receipts":[]});
@@ -1060,14 +1098,299 @@ impl Host {
     pub fn request_shutdown(&self) {
         self.closing.store(true, Ordering::SeqCst);
         self.cancel_login();
+        if let Ok(server) = self.agent_memory_server.try_lock() {
+            if let Some(server) = server.as_ref() {
+                server.shutdown();
+            }
+        }
+        if let Ok(progress) = self.agent_memory_progress.lock() {
+            for state in progress.values() {
+                if let Some(active) = state.active.upgrade() {
+                    active.store(false, Ordering::SeqCst);
+                }
+            }
+        }
         self.shutdown_notify.notify_waiters();
     }
 
     pub async fn shutdown(&self) {
         self.request_shutdown();
+        if let Some(server) = self.agent_memory_server.lock().await.as_ref() {
+            server.shutdown();
+        }
         let _guard = self.operations.lock().await;
         self.controller.shutdown().await;
         let _ = self.persist_signals().await;
+    }
+
+    pub(crate) async fn prepare_agent_memory(
+        &self,
+        work: &Value,
+    ) -> Result<Option<agent_memory::Ticket>> {
+        let work_id = work["workItemId"]
+            .as_str()
+            .ok_or_else(|| Error("AGENT_MEMORY_SCOPE_DENIED".into()))?;
+        let Some(project) = self.store.subject_project("work", work_id)? else {
+            return Ok(None);
+        };
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(Error("HOST_CLOSING".into()));
+        }
+        let run_id = work["runId"]
+            .as_str()
+            .ok_or_else(|| Error("AGENT_MEMORY_SCOPE_DENIED".into()))?;
+        let manifest = self
+            .store
+            .read_decisions(&json!({"projectId":project,"status":"accepted","limit":1}))?;
+        let revision = manifest["revision"]
+            .as_u64()
+            .ok_or_else(|| Error("AGENT_MEMORY_SCOPE_DENIED".into()))?;
+        let context = json!({"runId":run_id,"workItemId":work_id,"ownerEpoch":self.epoch,"projectId":project,"decisionRevision":revision});
+        self.store.transaction(|events| {
+            let prior = events.iter().find(|e| {
+                e["type"] == "agent_memory.context_bound" && e["payload"]["runId"] == run_id
+            });
+            if let Some(prior) = prior {
+                if prior["payload"] != context {
+                    return Err(Error("AGENT_MEMORY_CONTEXT_STALE".into()));
+                }
+                return Ok((vec![], Value::Null));
+            }
+            let mut bound = event("agent_memory.context_bound", context);
+            bound["schemaVersion"] = json!(6);
+            Ok((vec![bound], Value::Null))
+        })?;
+        let active = Arc::new(AtomicBool::new(true));
+        let binding = agent_memory::Binding {
+            project_id: project,
+            work_item_id: work_id.to_owned(),
+            run_id: run_id.to_owned(),
+            owner_epoch: self.epoch.clone(),
+            decision_revision: revision,
+            active: active.clone(),
+        };
+        let mut server = self.agent_memory_server.lock().await;
+        if server.is_none() {
+            *server = Some(
+                agent_memory::Server::start(
+                    self.self_ref.clone(),
+                    self.data_dir.clone(),
+                    std::env::current_exe()?,
+                )
+                .await?,
+            );
+        }
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(Error("HOST_CLOSING".into()));
+        }
+        let ticket = server.as_ref().unwrap().issue(binding)?;
+        let mut progress = self
+            .agent_memory_progress
+            .lock()
+            .map_err(|_| Error("AGENT_MEMORY_UNAVAILABLE".into()))?;
+        progress.retain(|_, p| p.active.upgrade().is_some_and(|a| a.load(Ordering::SeqCst)));
+        progress.insert(
+            run_id.to_owned(),
+            AgentMemoryProgress {
+                revision,
+                next_offset: 0,
+                complete: false,
+                active: Arc::downgrade(&active),
+                issue: None,
+            },
+        );
+        Ok(Some(ticket))
+    }
+
+    pub(crate) fn agent_memory_issue(&self, run_id: &str, code: &str) {
+        if let Ok(mut progress) = self.agent_memory_progress.lock() {
+            if let Some(p) = progress.get_mut(run_id) {
+                p.issue = Some(
+                    if code == "AGENT_MEMORY_UNSUPPORTED" {
+                        code
+                    } else {
+                        "AGENT_MEMORY_UNAVAILABLE"
+                    }
+                    .to_owned(),
+                );
+            }
+        }
+    }
+
+    fn checked_agent_scope(&self, binding: &agent_memory::Binding) -> Result<Value> {
+        let denied = || Error("AGENT_MEMORY_SCOPE_DENIED".into());
+        if self.closing.load(Ordering::SeqCst)
+            || !binding.active.load(Ordering::SeqCst)
+            || binding.owner_epoch != self.epoch
+        {
+            return Err(denied());
+        }
+        let scope = self
+            .store
+            .agent_memory_scope(&binding.work_item_id, &binding.run_id)
+            .map_err(|_| denied())?;
+        let context = &scope["context"];
+        if context["runId"] != binding.run_id
+            || context["workItemId"] != binding.work_item_id
+            || context["ownerEpoch"] != self.epoch
+            || context["projectId"] != binding.project_id
+            || context["decisionRevision"] != binding.decision_revision
+            || scope["binding"] != binding.project_id
+            || scope["manifest"]["revision"].as_u64().is_none()
+            || scope["work"].is_null()
+        {
+            return Err(denied());
+        }
+        let run = &scope["run"];
+        if run.is_null() {
+            if scope["work"]["status"] != "launching" || scope["terminalStart"] == true {
+                return Err(denied());
+            }
+        } else if run["status"] != "running"
+            || run["ownerEpoch"] != self.epoch
+            || run["workItemId"] != binding.work_item_id
+            || scope["work"]["status"] != "running"
+        {
+            return Err(denied());
+        }
+        Ok(scope)
+    }
+
+    pub async fn agent_memory_call(
+        &self,
+        binding: &agent_memory::Binding,
+        tool: &str,
+        arguments: Value,
+    ) -> Result<Value> {
+        let invalid = || Error("AGENT_MEMORY_INVALID_ARGUMENTS".into());
+        let scope = self.checked_agent_scope(binding)?;
+        let fields = arguments.as_object().ok_or_else(invalid)?;
+        let allowed: &[&str] = match tool {
+            "project_context" => &["offset", "limit", "revision"],
+            "memory_search" => &["query", "limit"],
+            "decision_read" => &["decisionId"],
+            _ => return Err(Error("AGENT_MEMORY_UNKNOWN_TOOL".into())),
+        };
+        if fields.keys().any(|key| !allowed.contains(&key.as_str())) {
+            return Err(invalid());
+        }
+        let current = scope["manifest"]["revision"].as_u64().unwrap();
+        let response = if tool == "project_context" {
+            let integer = |key: &str, default: u64, min: u64, max: u64| -> Result<u64> {
+                arguments
+                    .get(key)
+                    .map(|value| {
+                        value
+                            .as_u64()
+                            .filter(|n| (min..=max).contains(n))
+                            .ok_or_else(invalid)
+                    })
+                    .unwrap_or(Ok(default))
+            };
+            let offset = integer("offset", 0, 0, 9_007_199_254_740_991)?;
+            let limit = integer("limit", 20, 1, 20)?;
+            if let Some(revision) = arguments.get("revision") {
+                if revision.as_u64() != Some(current) {
+                    return Err(Error("AGENT_MEMORY_CONTEXT_STALE".into()));
+                }
+            } else if offset != 0 {
+                return Err(invalid());
+            }
+            {
+                let progress = self
+                    .agent_memory_progress
+                    .lock()
+                    .map_err(|_| Error("AGENT_MEMORY_UNAVAILABLE".into()))?;
+                let p = progress
+                    .get(&binding.run_id)
+                    .ok_or_else(|| Error("AGENT_MEMORY_SCOPE_DENIED".into()))?;
+                if offset != 0 && (p.revision != current || p.next_offset != offset || p.complete) {
+                    return Err(Error("AGENT_MEMORY_CONTEXT_STALE".into()));
+                }
+            }
+            let page = self.store.read_decisions(&json!({"projectId":binding.project_id,"status":"accepted","offset":offset,"limit":limit})).map_err(|_| invalid())?;
+            if page["revision"].as_u64() != Some(current) {
+                return Err(Error("AGENT_MEMORY_CONTEXT_STALE".into()));
+            }
+            let decisions:Vec<_> = page["decisions"].as_array().unwrap().iter().map(|d|json!({"decisionId":d["decisionId"],"revision":d["revision"],"title":d["title"]})).collect();
+            let total = page["total"].as_u64().unwrap();
+            if offset > total {
+                return Err(invalid());
+            }
+            let next = offset + decisions.len() as u64;
+            let verified = self.checked_agent_scope(binding)?;
+            if verified["manifest"]["revision"].as_u64() != Some(current) {
+                return Err(Error("AGENT_MEMORY_CONTEXT_STALE".into()));
+            }
+            let mut progress = self
+                .agent_memory_progress
+                .lock()
+                .map_err(|_| Error("AGENT_MEMORY_UNAVAILABLE".into()))?;
+            let p = progress
+                .get_mut(&binding.run_id)
+                .ok_or_else(|| Error("AGENT_MEMORY_SCOPE_DENIED".into()))?;
+            p.revision = current;
+            p.next_offset = next;
+            p.complete = next == total;
+            json!({"schemaVersion":1,"projectId":binding.project_id,"name":scope["name"],"workItemId":binding.work_item_id,"runId":binding.run_id,"decisionRevision":current,"startDecisionRevision":binding.decision_revision,"stale":current!=binding.decision_revision,"offset":offset,"limit":limit,"total":total,"nextOffset":if next<total {json!(next)}else{Value::Null},"decisions":decisions})
+        } else {
+            {
+                let progress = self
+                    .agent_memory_progress
+                    .lock()
+                    .map_err(|_| Error("AGENT_MEMORY_UNAVAILABLE".into()))?;
+                if !progress
+                    .get(&binding.run_id)
+                    .is_some_and(|p| p.complete && p.revision == current)
+                {
+                    return Err(Error("AGENT_MEMORY_CONTEXT_REQUIRED".into()));
+                }
+            }
+            if tool == "memory_search" {
+                let mut input = arguments.clone();
+                input["projectId"] = json!(binding.project_id);
+                self.store.search_decisions(&input).map_err(|_| invalid())?
+            } else {
+                if fields.len() != 1 {
+                    return Err(invalid());
+                }
+                let detail = self.store.read_decision(&json!({"projectId":binding.project_id,"decisionId":arguments["decisionId"]})).map_err(|_| Error("AGENT_MEMORY_DECISION_UNAVAILABLE".into()))?;
+                let d = &detail["decision"];
+                if d["status"] != "accepted" {
+                    return Err(Error("AGENT_MEMORY_DECISION_UNAVAILABLE".into()));
+                }
+                let mut decision = serde_json::Map::new();
+                for key in [
+                    "decisionId",
+                    "revision",
+                    "status",
+                    "title",
+                    "context",
+                    "decision",
+                    "rationale",
+                    "consequences",
+                    "acceptedAt",
+                    "supersedesDecisionId",
+                ] {
+                    decision.insert(key.into(), d[key].clone());
+                }
+                decision.insert(
+                    "sources".into(),
+                    json!(d["sources"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|s| json!({"sourceId":s["sourceId"],"revision":s["revision"]}))
+                        .collect::<Vec<_>>()),
+                );
+                json!({"schemaVersion":1,"projectId":binding.project_id,"decisionRevision":detail["revision"],"decision":decision})
+            }
+        };
+        let after = self.checked_agent_scope(binding)?;
+        if after["manifest"]["revision"].as_u64() != Some(current) {
+            return Err(Error("AGENT_MEMORY_CONTEXT_STALE".into()));
+        }
+        Ok(response)
     }
 
     async fn memory_connection(&self) -> Result<Value> {

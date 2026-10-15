@@ -1,6 +1,6 @@
 # Install and operate Patchfleet Desktop
 
-Status: 0.9.0 native Rust desktop development distribution
+Status: 0.10.0 native Rust desktop development distribution
 
 Updated: 2026-10-15
 
@@ -26,11 +26,12 @@ Run `cargo run --locked -p patchfleet-desktop`. Build a production executable wi
 `cargo build --locked --release -p patchfleet-desktop`, then package it using
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
 
-For a native 0.9 upgrade, close the old application and replace its application
+For a native 0.10 upgrade, close the old application and replace its application
 bundle through the reviewed installer. The bundle identifier and data directory
 remain the same; existing Rust state can be read by the new application. Back up
-the stopped data directory before using shared memory: new V5 facts require
-the 0.7 reader. Rolling back after V5 writes requires that pre-upgrade backup. Uninstalling must not
+the stopped data directory before upgrading. Bound agent launches write V6
+context facts requiring the 0.10 reader; rollback after V6 writes requires
+that unchanged pre-upgrade backup. Uninstalling must not
 delete the canonical data directory.
 
 ### macOS opens an entirely white window
@@ -42,7 +43,7 @@ production application draws correctly when the old process is closed.
 
 1. Quit all running Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.9.0`
+3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.10.0`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut
@@ -67,7 +68,20 @@ record becomes superseded and the new one accepted together. Original text,
 source versions and history remain readable. Keyword/status filters stay within
 the selected project. Local decisions require no account or subscription.
 Cloud semantic retrieval is available through explicit search. Agent context
-tools and automatic extraction remain later work.
+tools are available for owned Codex runs; automatic extraction remains later work.
+
+### Agent access to project memory
+
+Link the task’s registered folder to its project before queuing the task.
+Owned Codex work and team roles receive three read-only memory tools automatically.
+Only current accepted Local ADRs are readable, across all linked worktrees.
+The task card shows its starting/current decision revision and whether the
+current manifest was read. Changed decisions require the agent to refresh
+project_context; drafts are never active. Local needs no account or subscription.
+Memory attachment requires Codex 0.155.1 or later. An unsupported or failed
+connection prevents that bound task from starting; update Codex or queue a retry.
+Historical unbound tasks retain their previous behavior. There is no global MCP
+setup or separate database process. See [agent protocol](agent-memory-protocol.md).
 
 ### Optional Cloud account
 

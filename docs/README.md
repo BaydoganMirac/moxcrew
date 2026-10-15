@@ -33,6 +33,9 @@ drafts, explicit owner acceptance, and local retrieval tools. See
 [ADR 0021](decisions/0021-project-scoped-local-decision-memory.md) for the trust
 contract and [feature state](state/project-memory.md) for implementation status.
 
+[Scoped agent access](agent-memory-protocol.md) connects owned Codex work and
+team roles to current accepted Local ADRs. See [agent state](state/agent-memory.md).
+
 ## Execution records
 
 - [Plans](plans/) describe a bounded implementation slice and its acceptance

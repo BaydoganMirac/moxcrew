@@ -457,6 +457,29 @@ impl eframe::App for Patchfleet {
 fn main() {
     let mut args = std::env::args_os().skip(1);
     if let Some(argument) = args.next() {
+        if argument == "--memory-mcp" {
+            let ticket = args
+                .next()
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute());
+            if ticket.is_none() || args.next().is_some() {
+                eprintln!("AGENT_MEMORY_INVALID_ARGUMENTS");
+                std::process::exit(2);
+            }
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build();
+            let result = runtime.map_err(|_| ()).and_then(|runtime| {
+                runtime
+                    .block_on(patchfleet_core::agent_memory::serve_stdio(&ticket.unwrap()))
+                    .map_err(|_| ())
+            });
+            if result.is_err() {
+                eprintln!("AGENT_MEMORY_TRANSPORT_FAILED");
+                std::process::exit(1);
+            }
+            return;
+        }
         if argument == "--gemini-hook" && args.next().is_none() {
             if patchfleet_core::gemini_hook().is_err() {
                 eprintln!("GEMINI_HOOK_FAILED");

@@ -10,6 +10,18 @@ async fn main() {
 }
 async fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--memory-mcp")) {
+        let mut memory_args = std::env::args_os().skip(2);
+        let ticket = memory_args
+            .next()
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .ok_or_else(|| Error("AGENT_MEMORY_INVALID_ARGUMENTS".into()))?;
+        if memory_args.next().is_some() {
+            return Err(Error("AGENT_MEMORY_INVALID_ARGUMENTS".into()));
+        }
+        return patchfleet_core::agent_memory::serve_stdio(&ticket).await;
+    }
     let mut directory = default_data_directory()?;
     let mut command = args.next().unwrap_or_else(|| "help".into());
     if command == "--data-dir" {

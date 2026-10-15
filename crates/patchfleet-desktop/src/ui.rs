@@ -212,6 +212,7 @@ struct MemoryDraft {
     offset: u64,
     requested: Option<MemoryRequest>,
     refresh_requested: bool,
+    extraction_revision: Option<u64>,
     edit: Option<SourceEdit>,
 }
 struct SourceEdit {
@@ -228,6 +229,12 @@ impl MemoryDraft {
                 project: project.to_owned(),
                 ..Default::default()
             };
+        }
+    }
+    fn observe_extraction_revision(&mut self, revision: u64) {
+        if self.extraction_revision != Some(revision) {
+            self.extraction_revision = Some(revision);
+            self.requested = None;
         }
     }
     fn page_matches(&self, page: &Value, project: &Value) -> bool {
@@ -671,6 +678,7 @@ impl Console {
     #[cfg(feature = "ui-smoke")]
     pub fn memory_smoke(&mut self) {
         self.tab = Tab::Memory;
+        self.extraction.setup_open = true;
     }
 
     #[cfg(feature = "ui-smoke")]
@@ -1418,7 +1426,12 @@ impl Console {
             return;
         };
         self.extraction_controls(ui, snapshot, project, commands);
+        let extraction_revision = revision(&snapshot["projectExtraction"]);
+        self.memory.observe_extraction_revision(extraction_revision);
         let page = &snapshot["memoryPage"];
+        let extraction_page_current = page["extractionRevision"].as_u64()
+            == Some(extraction_revision)
+            || (snapshot["projectExtraction"].is_null() && page["extractionRevision"].is_null());
         ui.horizontal_wrapped(|ui| {
             ui.label(
                 RichText::new(t(ui, "Keyword filter"))
@@ -1493,7 +1506,7 @@ impl Console {
             egui::CollapsingHeader::new(t(ui, "Write a project message")).default_open(project["sourceCount"]==0).show(ui,|ui|constrained(ui,700.0,|ui|card(ui,|ui| {
                 field(ui,"Message title",&mut self.memory.title,160,false);multiline(ui,"Source text",&mut self.memory.body,50_000,4);
                 if submit(ui,"Add message","project_message"){match self.memory.message_payload(project){Ok(payload)=>{commands.push(Command::new("project_message",payload));self.form_error=None;},Err(error)=>self.form_error=Some(error)}}
-                hint(ui,"Sources are stored locally. Enabled drafting sends them to Codex; adding one never accepts an ADR.");
+                hint(ui,"Sources are stored locally. Enabled drafting sends sources and relevant accepted Local decisions to Codex; adding one never accepts an ADR.");
             })));
         }
         ui.add_space(18.0);
@@ -1594,14 +1607,21 @@ impl Console {
                                 ),
                             );
                         });
-                        if extraction_policy(snapshot,&self.memory.project).is_some_and(|(_,enabled)| enabled)
-                            && text(source,"projectId")==self.memory.project
-                            && revision(source)>0
-                            && matches!(text(source,"kind"),"message"|"work_instruction"|"team_goal"|"owner_answer"|"approval_note")
-                        {
-                            let already_queued=extraction_jobs(snapshot,&self.memory.project).iter().any(|job|job["sourceId"]==source["sourceId"]&&job["sourceRevision"]==source["revision"]);
-                            action(ui,commands,"Draft decision from this source","project_extraction_enqueue",!already_queued,||json!({"projectId":self.memory.project,"sourceId":source["sourceId"],"expectedSourceRevision":revision(source)}));
-                            if already_queued {hint(ui,"This source version already has a drafting job. Review its activity above.");}
+                        if let Some((_,enabled))=extraction_policy(snapshot,&self.memory.project) {
+                            if text(source,"projectId")==self.memory.project && revision(source)>0 && matches!(text(source,"kind"),"message"|"work_instruction"|"team_goal"|"owner_answer"|"approval_note") {
+                                let job=match source.get("extractionJob") {
+                                    Some(value)=>(!value.is_null()).then_some(value),
+                                    None=>extraction_jobs(snapshot,&self.memory.project).iter().find(|job|job["projectId"]==source["projectId"]&&job["sourceId"]==source["sourceId"]&&job["sourceRevision"]==source["revision"]),
+                                };
+                                let job_scoped=job.is_none_or(|job|job["projectId"]==source["projectId"]&&job["sourceId"]==source["sourceId"]&&job["sourceRevision"]==source["revision"]);
+                                if !extraction_page_current || !job_scoped {
+                                    hint(ui,"Refresh memory before drafting or retrying this source; its job status changed.");
+                                } else if let Some(job)=job {
+                                    extraction_job_controls(ui,job,&self.memory.project,enabled,commands);
+                                } else if enabled {
+                                    action(ui,commands,"Draft decision from this source","project_extraction_enqueue",true,||json!({"projectId":self.memory.project,"sourceId":source["sourceId"],"expectedSourceRevision":revision(source)}));
+                                }
+                            }
                         }
                         if text(source, "kind") == "message"
                             && text(source, "projectId") == self.memory.project
@@ -1626,10 +1646,15 @@ impl Console {
             hint(ui,"The current source page is unavailable. Use Refresh memory to retry a failed read.");
         }
         if commands.is_empty() {
-            if let Some(command) =
-                self.memory
-                    .next_read(project, page, !ui.is_enabled() || self.hold_automatic_reads)
-            {
+            if let Some(command) = self.memory.next_read(
+                project,
+                if extraction_page_current {
+                    page
+                } else {
+                    &Value::Null
+                },
+                !ui.is_enabled() || self.hold_automatic_reads,
+            ) {
                 commands.push(command);
             }
         }
@@ -1652,7 +1677,13 @@ impl Console {
             ui.add_space(10.0);
             return;
         };
+        #[cfg(feature = "ui-smoke")]
+        let initial_smoke_setup = self.extraction.project.is_empty() && self.extraction.setup_open;
         self.extraction.scope(project_id, policy_revision);
+        #[cfg(feature = "ui-smoke")]
+        if initial_smoke_setup {
+            self.extraction.setup_open = true;
+        }
         if enabled {
             self.extraction.consent = false;
             self.extraction.setup_open = false;
@@ -1672,13 +1703,13 @@ impl Console {
         });
         if !enabled && self.extraction.setup_open {
             card(ui, |ui| {
-                hint(ui,"New or edited project messages, tasks, team goals, answers and notes will be sent to the installed Codex provider. Provider usage may incur costs. Local storage remains free. Generated drafts require your explicit acceptance.");
-                hint(ui,"Enabling applies to future sources only. Older sources are queued individually from their cards.");
+                hint(ui,"New, edited or explicitly selected project sources and relevant accepted Local decisions will be sent to the installed Codex provider. Sources include messages, tasks, team goals, answers and notes. Provider usage may incur costs. Local storage remains free. Generated drafts require your explicit acceptance.");
+                hint(ui,"Only future sources are queued automatically. Older sources require individual queueing; accepted decisions from before enablement may still be included as context.");
                 let response = ui.checkbox(
                     &mut self.extraction.consent,
                     t(
                         ui,
-                        "I allow this project's sources to be sent to Codex for drafting.",
+                        "I allow this project's sources and relevant accepted Local decisions to be sent to Codex for drafting.",
                     ),
                 );
                 #[cfg(test)]
@@ -1708,7 +1739,7 @@ impl Console {
                 }
             });
         }
-        if (enabled || self.extraction.setup_open) && !codex_ready(snapshot) {
+        if self.extraction.setup_open && !codex_ready(snapshot) {
             hint(ui,"Installed Codex is not ready. Sources remain saved; check Providers and retry failed jobs manually.");
         }
         let jobs = extraction_jobs(snapshot, project_id);
@@ -1733,32 +1764,28 @@ impl Console {
                 ui,
                 "Activity shows only the latest 10 jobs; counts include all jobs.",
             );
-            egui::CollapsingHeader::new(t(ui,"Recent drafting activity")).id_salt(("extraction-activity",project_id)).default_open(jobs.iter().any(|job|matches!(text(job,"status"),"failed"|"interrupted"|"cancelled"))).show(ui,|ui| {
-                egui::ScrollArea::vertical().id_salt(("extraction-jobs",project_id)).max_height(190.0).show(ui,|ui| {
-                    for job in jobs.iter().filter(|job|text(job,"projectId")==project_id).take(10) {
-                        ui.push_id(text(job,"jobId"),|ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                status(ui,extraction_status(job));
-                                hint(ui,&localized_format!(ui,"Source revision {0} · {1}/3 attempts used",job["sourceRevision"].as_u64().unwrap_or(0),job["attempt"].as_u64().unwrap_or(0)));
-                                if matches!(text(job,"status"),"failed"|"interrupted"|"cancelled") && text(job,"reasonCode")!="EXTRACTION_SOURCE_CHANGED" {
-                                    action(ui,commands,"Retry drafting","project_extraction_retry",enabled&&job["attempt"].as_u64().is_some_and(|attempt|attempt<3)&&!text(job,"jobId").is_empty(),||json!({"projectId":project_id,"jobId":job["jobId"],"expectedAttempt":job["attempt"]}));
-                                }
-                            });
-                            if text(job,"status")=="completed" {
-                                hint(ui,if array(&job["proposalIds"]).is_empty() {if job["skippedDuplicates"].as_u64().unwrap_or(0)>0 {"Matching decisions already exist. No duplicate draft was saved."} else {"No ADR found in this source."}} else {"Drafts are ready in Decisions. Review and accept them explicitly."});
+            egui::CollapsingHeader::new(t(ui, "Recent drafting activity"))
+                .id_salt(("extraction-activity", project_id))
+                .default_open(jobs.iter().any(|job| {
+                    matches!(text(job, "status"), "failed" | "interrupted" | "cancelled")
+                }))
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt(("extraction-jobs", project_id))
+                        .max_height(190.0)
+                        .show(ui, |ui| {
+                            for job in jobs
+                                .iter()
+                                .filter(|job| text(job, "projectId") == project_id)
+                                .take(10)
+                            {
+                                ui.push_id(text(job, "jobId"), |ui| {
+                                    extraction_job_controls(ui, job, project_id, enabled, commands);
+                                    ui.separator();
+                                });
                             }
-                            if let Some(code)=job["reasonCode"].as_str() {if !code.is_empty(){
-                                let message=t(ui,code);
-                                hint(ui,if message==code {"Drafting failed. Check Providers and review the source before a manual retry."}else{message.as_ref()});
-                            }}
-                            ui.collapsing(t(ui,"Drafting job details"),|ui| {
-                                ui.monospace(text(job,"jobId"));ui.monospace(text(job,"sourceId"));raw_hint(ui,text(job,"extractorVersion"));hint(ui,&format_time(ui,text(job,"updatedAt")));
-                            });
-                            ui.separator();
                         });
-                    }
                 });
-            });
         }
         ui.add_space(14.0);
     }
@@ -1942,6 +1969,9 @@ impl Console {
             return;
         };
         self.extraction_controls(ui, snapshot, project, commands);
+        self.decisions
+            .sources
+            .observe_extraction_revision(revision(&snapshot["projectExtraction"]));
         self.decisions.verify_citation_epoch(project);
         let manifest = decision_manifest(snapshot, &self.decisions.project);
         let page = &snapshot["decisionPage"];
@@ -3937,6 +3967,54 @@ fn extraction_policy(snapshot: &Value, project: &str) -> Option<(u64, bool)> {
 fn extraction_jobs<'a>(snapshot: &'a Value, project: &str) -> &'a [Value] {
     array(&extraction_project(snapshot, project)["recentJobs"])
 }
+fn extraction_job_controls(
+    ui: &mut Ui,
+    job: &Value,
+    project: &str,
+    enabled: bool,
+    commands: &mut Vec<Command>,
+) {
+    ui.horizontal_wrapped(|ui| {
+        status(ui,extraction_status(job));
+        hint(ui,&localized_format!(ui,"Source revision {0} · {1}/3 attempts used",job["sourceRevision"].as_u64().unwrap_or(0),job["attempt"].as_u64().unwrap_or(0)));
+        if matches!(text(job,"status"),"failed"|"interrupted"|"cancelled") && text(job,"reasonCode")!="EXTRACTION_SOURCE_CHANGED" {
+            action(ui,commands,"Retry drafting","project_extraction_retry",enabled&&text(job,"projectId")==project&&job["attempt"].as_u64().is_some_and(|attempt|attempt<3)&&!text(job,"jobId").is_empty(),||json!({"projectId":project,"jobId":job["jobId"],"expectedAttempt":job["attempt"]}));
+        }
+    });
+    if text(job, "status") == "completed" {
+        hint(
+            ui,
+            if array(&job["proposalIds"]).is_empty() {
+                if job["skippedDuplicates"].as_u64().unwrap_or(0) > 0 {
+                    "Matching decisions already exist. No duplicate draft was saved."
+                } else {
+                    "No ADR found in this source."
+                }
+            } else {
+                "Drafts are ready in Decisions. Review and accept them explicitly."
+            },
+        );
+    }
+    if let Some(code) = job["reasonCode"].as_str().filter(|code| {
+        !code.is_empty() && matches!(text(job, "status"), "failed" | "interrupted" | "cancelled")
+    }) {
+        let message = t(ui, code);
+        hint(
+            ui,
+            if message == code {
+                "Drafting failed. Check Providers and review the source before a manual retry."
+            } else {
+                message.as_ref()
+            },
+        );
+    }
+    ui.collapsing(t(ui, "Drafting job details"), |ui| {
+        ui.monospace(text(job, "jobId"));
+        ui.monospace(text(job, "sourceId"));
+        raw_hint(ui, text(job, "extractorVersion"));
+        hint(ui, &format_time(ui, text(job, "updatedAt")));
+    });
+}
 fn extraction_status(job: &Value) -> &'static str {
     if text(job, "reasonCode") == "EXTRACTION_SOURCE_CHANGED" {
         return "Drafting source changed";
@@ -4723,6 +4801,7 @@ mod tests {
     fn extraction_snapshot(enabled: bool) -> Value {
         let mut data = decision_snapshot("proposed");
         data["projectExtraction"] = json!({"schemaVersion":7,"revision":4,"projects":[{"projectId":"project:fixture","policyRevision":2,"enabled":enabled,"counts":{"queued":0,"running":0,"completed":0,"failed":0,"cancelled":0,"interrupted":0},"recentJobs":[]}]});
+        data["memoryPage"]["extractionRevision"] = json!(4);
         data
     }
     fn extraction_console() -> Console {
@@ -4734,7 +4813,212 @@ mod tests {
     fn extraction_job(data: &mut Value, status: &str, attempt: u64, reason: &str) {
         data["projectExtraction"]["projects"][0]["counts"][status] = json!(1);
         data["projectExtraction"]["projects"][0]["recentJobs"] = json!([{"jobId":"extraction:fixture","projectId":"project:fixture","sourceId":"source:fixture","sourceRevision":3,"extractorVersion":"codex-adr-v1","status":status,"attempt":attempt,"reasonCode":reason,"proposalIds":[],"skippedDuplicates":0}]);
+        data["memoryPage"]["sources"][0]["extractionJob"] =
+            data["projectExtraction"]["projects"][0]["recentJobs"][0].clone();
     }
+    #[test]
+    fn older_failed_source_job_is_reachable_beyond_ten_recent_jobs_and_requires_fresh_metadata() {
+        let ctx = egui::Context::default();
+        let mut data = extraction_snapshot(true);
+        extraction_job(&mut data, "failed", 1, "EXTRACTION_PROVIDER_FAILED");
+        let old = data["memoryPage"]["sources"][0]["extractionJob"].clone();
+        data["projectExtraction"]["projects"][0]["recentJobs"]=Value::Array((0..10).map(|index|json!({"jobId":format!("extraction:new-{index}"),"projectId":"project:fixture","sourceId":format!("source:new-{index}"),"sourceRevision":1,"status":"completed","attempt":1,"proposalIds":[],"skippedDuplicates":0,"reasonCode":"EXTRACTION_NO_ADR"})).collect());
+        data["projectExtraction"]["projects"][0]["counts"]["completed"] = json!(10);
+        assert_eq!(
+            data["projectExtraction"]["projects"][0]["recentJobs"]
+                .as_array()
+                .unwrap()
+                .len(),
+            10
+        );
+        assert!(!extraction_jobs(&data, "project:fixture")
+            .iter()
+            .any(|job| job["jobId"] == old["jobId"]));
+        let mut console = extraction_console();
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_extraction_retry",
+            "Retry drafting",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(
+            normalized_decision_command(&commands[0]),
+            json!({"projectId":"project:fixture","jobId":"extraction:fixture","expectedAttempt":1})
+        );
+        assert!(!painted_copy(&ctx, &mut console, &data)
+            .join("\n")
+            .contains("Bu kaynaktan karar taslağı üret"));
+        data["projectExtraction"]["revision"] = json!(5);
+        let commands = render(&ctx, &mut console, &data, false, vec![]).0;
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_memory_read");
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_extraction_retry",
+            "Retry drafting"
+        )
+        .iter()
+        .all(|command| command.action != "project_extraction_retry"));
+        assert!(
+            render(&ctx, &mut console, &data, false, vec![])
+                .0
+                .is_empty(),
+            "unchanged failed page read must not loop"
+        );
+        data["memoryPage"]["extractionRevision"] = json!(5);
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_extraction_retry",
+            "Retry drafting",
+        );
+        assert_eq!(commands[0].payload["jobId"], old["jobId"]);
+        data["memoryPage"]["sources"][0]["extractionJob"]["projectId"] = json!("project:foreign");
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .iter()
+            .all(|command| command.action != "project_extraction_enqueue"
+                && command.action != "project_extraction_retry"));
+    }
+    #[test]
+    fn extraction_only_revision_refresh_is_bounded_and_preserves_failed_owner_recovery() {
+        let ctx = egui::Context::default();
+        let mut data = extraction_snapshot(true);
+        let mut console = extraction_console();
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        data["projectExtraction"]["revision"] = json!(5);
+        data["memoryPage"] = Value::Null;
+        let notice = Notice::error("project_extraction_retry", "HOST_ACTION_FAILED");
+        let mut commands = Vec::new();
+        let output = ctx.run_ui(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 1200.0))),
+                ..Default::default()
+            },
+            |ui| commands = console.show(ui, &data, false, Some(&notice), true),
+        );
+        output.drop_without_applying_deltas();
+        assert!(commands.is_empty());
+        assert!(console.memory.requested.is_none());
+        let commands = render(&ctx, &mut console, &data, false, vec![]).0;
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_memory_read");
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+    }
+    #[test]
+    fn manual_draft_sources_refresh_once_after_extraction_only_page_invalidation() {
+        let ctx = egui::Context::default();
+        let mut data = extraction_snapshot(true);
+        let mut console = Console {
+            tab: Tab::Decisions,
+            ..Default::default()
+        };
+        console.decisions.select("project:fixture");
+        console.decisions.selected = "decision:fixture".into();
+        console.decisions.composer_open = true;
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        data["projectExtraction"]["revision"] = json!(5);
+        data["memoryPage"] = Value::Null;
+        let commands = render(&ctx, &mut console, &data, false, vec![]).0;
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_memory_read");
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+    }
+
+    #[test]
+    fn positive_drafting_states_do_not_paint_failure_or_retry_guidance_in_either_language() {
+        for language in [Language::Tr, Language::En] {
+            for (status, code, proposal_ids, duplicates) in [
+                ("running", "EXTRACTION_RUNNING", json!([]), 0),
+                (
+                    "completed",
+                    "EXTRACTION_COMPLETED",
+                    json!(["decision:generated"]),
+                    0,
+                ),
+                ("completed", "EXTRACTION_NO_ADR", json!([]), 0),
+                ("completed", "EXTRACTION_DUPLICATE", json!([]), 1),
+            ] {
+                let ctx = egui::Context::default();
+                let job = json!({"jobId":"extraction:fixture","projectId":"project:fixture","sourceId":"source:fixture","sourceRevision":1,"status":status,"reasonCode":code,"proposalIds":proposal_ids,"skippedDuplicates":duplicates,"attempt":1});
+                let mut commands = Vec::new();
+                let output = ctx.run_ui(
+                    RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            egui::vec2(800.0, 560.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        ui.data_mut(|d| d.insert_temp(egui::Id::new("console-language"), language));
+                        extraction_job_controls(ui, &job, "project:fixture", true, &mut commands);
+                    },
+                );
+                let copy = output
+                    .shapes
+                    .iter()
+                    .filter_map(|shape| match &shape.shape {
+                        egui::Shape::Text(text) => Some(text.galley.text().to_lowercase()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                output.drop_without_applying_deltas();
+                assert!(
+                    !copy.contains("failed")
+                        && !copy.contains("failure")
+                        && !copy.contains("retry")
+                        && !copy.contains("başarısız")
+                        && !copy.contains("yeniden"),
+                    "{code}: {copy}"
+                );
+                assert!(!copy.contains("extraction_"));
+                assert!(commands.is_empty());
+            }
+        }
+    }
+
+    #[cfg(feature = "ui-smoke")]
+    #[test]
+    fn memory_smoke_opens_initial_disclosure_without_enabling_or_prechecking_consent() {
+        let ctx = egui::Context::default();
+        let mut console = Console::default();
+        console.memory_smoke();
+        let data = extraction_snapshot(false);
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert!(console.extraction.setup_open);
+        assert!(!console.extraction.consent);
+        assert!(ctx
+            .data(|d| d.get_temp::<Rect>(egui::Id::new((
+                "test-action",
+                "extraction-consent",
+                "Allow Codex drafting"
+            ))))
+            .is_some());
+        let data = extraction_snapshot(true);
+        render(&ctx, &mut console, &data, false, vec![]);
+        assert!(!console.extraction.setup_open);
+    }
+
     #[test]
     fn drafting_is_off_by_default_and_a_real_consent_click_is_required_to_enable() {
         let ctx = egui::Context::default();
@@ -4941,16 +5225,11 @@ mod tests {
         )
         .is_empty());
         extraction_job(&mut data, "completed", 1, "");
-        assert!(click(
-            &ctx,
-            &mut console,
-            &data,
-            false,
-            "project_extraction_enqueue",
-            "Draft decision from this source"
-        )
-        .is_empty());
+        assert!(!painted_copy(&ctx, &mut console, &data)
+            .join("\n")
+            .contains("Bu kaynaktan karar taslağı üret"));
         data["projectExtraction"]["projects"][0]["recentJobs"][0]["sourceRevision"] = json!(2);
+        data["memoryPage"]["sources"][0]["extractionJob"] = Value::Null;
         let commands = click(
             &ctx,
             &mut console,
@@ -5010,6 +5289,7 @@ mod tests {
             )
             .is_empty());
             data["projectExtraction"]["projects"][0]["recentJobs"][0]["attempt"] = json!(3);
+            data["memoryPage"]["sources"][0]["extractionJob"]["attempt"] = json!(3);
             assert!(click(
                 &ctx,
                 &mut console,
@@ -5020,6 +5300,7 @@ mod tests {
             )
             .is_empty());
             data["projectExtraction"]["projects"][0]["recentJobs"][0]["attempt"] = json!(1);
+            data["memoryPage"]["sources"][0]["extractionJob"]["attempt"] = json!(1);
             data["projectExtraction"]["projects"][0]["enabled"] = json!(false);
             assert!(click(
                 &ctx,
@@ -5053,6 +5334,8 @@ mod tests {
         assert!(copy.contains("Taslağın kaynağı değişti"));
         assert!(!copy.contains("Taslağı yeniden dene"));
         data["projectExtraction"]["projects"][0]["recentJobs"][0]["reasonCode"] =
+            json!("do not show PRIVATE_STDERR_PATH");
+        data["memoryPage"]["sources"][0]["extractionJob"]["reasonCode"] =
             json!("do not show PRIVATE_STDERR_PATH");
         assert!(!painted_copy(&ctx, &mut console, &data)
             .join("\n")

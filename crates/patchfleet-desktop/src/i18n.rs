@@ -89,14 +89,15 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Select the folder again. Check your account's read, write and traversal permissions in the file manager. A read-only drive must be mounted writable." => "Klasörü yeniden seçin. Dosya yöneticisinde hesabınızın okuma, yazma ve klasöre giriş izinlerini kontrol edin. Salt okunur disk yazılabilir olarak bağlanmalıdır.",
         "Project sources, evidence and optional ADR drafting." => "Proje kaynakları, kanıtlar ve isteğe bağlı ADR taslakları.",
         "Sources are evidence. Only owner-accepted decisions become active." => "Kaynaklar kanıttır. Yalnızca kullanıcının kabul ettiği kararlar geçerli olur.",
-        "Sources are stored locally. Enabled drafting sends them to Codex; adding one never accepts an ADR." => "Kaynaklar yerelde saklanır. Taslak üretimi açıksa Codex’e gönderilir; kaynak eklemek bir ADR’yi kabul etmez.",
+        "Sources are stored locally. Enabled drafting sends sources and relevant accepted Local decisions to Codex; adding one never accepts an ADR." => "Kaynaklar yerelde saklanır. Taslak üretimi açıksa kaynaklar ve ilgili kabul edilmiş yerel kararlar Codex’e gönderilir; kaynak eklemek bir ADR’yi kabul etmez.",
         "Drafting failed. Check Providers and review the source before a manual retry." => "Taslak üretilemedi. Elle yeniden denemeden önce Sağlayıcılar’ı ve kaynağı kontrol edin.",
+        "Refresh memory before drafting or retrying this source; its job status changed." => "Bu kaynakla taslak üretmeden veya yeniden denemeden önce Hafıza’yı yenileyin; iş durumu değişti.",
         "Automatic ADR drafts" => "Otomatik ADR taslakları", "Drafting enabled" => "Taslak üretimi açık", "Drafting off" => "Taslak üretimi kapalı",
         "Set up drafting" => "Taslak üretimini ayarla", "Pause drafting" => "Taslak üretimini durdur", "Enable automatic drafting" => "Otomatik taslak üretimini aç",
         "Drafting settings are unavailable. Refresh this view before changing them." => "Taslak ayarları kullanılamıyor. Değiştirmeden önce bu görünümü yenileyin.",
-        "New or edited project messages, tasks, team goals, answers and notes will be sent to the installed Codex provider. Provider usage may incur costs. Local storage remains free. Generated drafts require your explicit acceptance." => "Yeni veya düzenlenen proje mesajları, işler, takım hedefleri, yanıtlar ve notlar kurulu Codex sağlayıcısına gönderilecek. Sağlayıcı kullanımı ücrete tabi olabilir. Yerel depolama ücretsiz kalır. Üretilen taslaklar açık kabulünüzü gerektirir.",
-        "Enabling applies to future sources only. Older sources are queued individually from their cards." => "Açma işlemi yalnızca sonraki kaynaklar için geçerlidir. Eski kaynaklar kartlarından tek tek kuyruğa alınır.",
-        "I allow this project's sources to be sent to Codex for drafting." => "Bu projenin kaynaklarının taslak üretimi için Codex’e gönderilmesine izin veriyorum.",
+        "New, edited or explicitly selected project sources and relevant accepted Local decisions will be sent to the installed Codex provider. Sources include messages, tasks, team goals, answers and notes. Provider usage may incur costs. Local storage remains free. Generated drafts require your explicit acceptance." => "Yeni, düzenlenen veya açıkça seçilen proje kaynakları ve ilgili kabul edilmiş yerel kararlar kurulu Codex sağlayıcısına gönderilecek. Kaynaklara mesajlar, işler, takım hedefleri, yanıtlar ve notlar dahildir. Sağlayıcı kullanımı ücrete tabi olabilir. Yerel depolama ücretsiz kalır. Üretilen taslaklar açık kabulünüzü gerektirir.",
+        "Only future sources are queued automatically. Older sources require individual queueing; accepted decisions from before enablement may still be included as context." => "Yalnızca sonraki kaynaklar otomatik kuyruğa alınır. Eski kaynaklar tek tek seçilir; açılmadan önce kabul edilmiş kararlar yine de bağlam olarak eklenebilir.",
+        "I allow this project's sources and relevant accepted Local decisions to be sent to Codex for drafting." => "Bu projenin kaynaklarının ve ilgili kabul edilmiş yerel kararlarının taslak üretimi için Codex’e gönderilmesine izin veriyorum.",
         "Installed Codex is not ready. Sources remain saved; check Providers and retry failed jobs manually." => "Kurulu Codex hazır değil. Kaynaklar kayıtlı kalır; Sağlayıcılar’ı kontrol edin ve başarısız işleri elle yeniden deneyin.",
         "{0} queued · {1} running · {2} failed" => "{0} kuyrukta · {1} çalışıyor · {2} başarısız",
         "New sources are drafted automatically. You review every result; nothing is accepted or shared automatically." => "Yeni kaynaklardan otomatik taslak üretilir. Her sonucu siz incelersiniz; hiçbir karar otomatik kabul edilmez veya paylaşılmaz.",
@@ -467,6 +468,10 @@ fn reason(code: &str) -> Option<(&'static str, &'static str)> {
         "WORKSPACE_UNAVAILABLE" => ("The folder could not be checked. Reconnect its drive and select it again.", "Klasör kontrol edilemedi. Disk bağlantısını kontrol edip yeniden seçin."),
         "WORKSPACE_NOT_ALLOWED" => ("The agent's folder is unavailable or no longer meets the workspace requirements. Restore its Git folder and check access before starting again.", "Ajanın klasörü kullanılamıyor veya çalışma alanı koşullarını artık sağlamıyor. Yeniden başlatmadan önce Git klasörünü ve erişim izinlerini kontrol edin."),
         "HOST_BUSY" => ("The local host is still busy. Wait for the current action, then try again.", "Yerel ana makine hâlâ meşgul. Güncel işlemin bitmesini bekleyip yeniden deneyin."),
+        "EXTRACTION_RUNNING" => ("Codex is drafting from this source.","Codex bu kaynaktan taslak üretiyor."),
+        "EXTRACTION_COMPLETED" => ("Drafting completed. Review the saved proposals in Decisions.","Taslak üretimi tamamlandı. Kararlar’da kaydedilen önerileri inceleyin."),
+        "EXTRACTION_NO_ADR" => ("No ADR found in this source.","Bu kaynakta ADR bulunmadı."),
+        "EXTRACTION_DUPLICATE" => ("Matching decisions already exist. No duplicate draft was saved.","Eşleşen kararlar zaten var. Yinelenen taslak kaydedilmedi."),
         "EXTRACTION_CONFIGURED" | "PROJECT_EXTRACTION_CONFIGURED" => ("Drafting policy saved. Only new or edited sources are automatic.","Taslak ayarı kaydedildi. Yalnızca yeni veya düzenlenen kaynaklar otomatiktir."),
         "EXTRACTION_QUEUED" | "EXTRACTION_ENQUEUED" | "PROJECT_EXTRACTION_ENQUEUED" | "EXTRACTION_RETRIED" | "PROJECT_EXTRACTION_RETRIED" => ("Drafting queued. This does not accept a decision.","Taslak işi kuyruğa alındı. Bu işlem bir kararı kabul etmez."),
         "EXTRACTION_CONSENT_REQUIRED" => ("Review the Codex provider disclosure and give explicit consent before enabling drafting.","Taslak üretimini açmadan önce Codex sağlayıcı açıklamasını inceleyip açık izin verin."),
@@ -724,10 +729,30 @@ mod tests {
     }
     #[test]
     fn drafting_copy_discloses_provider_costs_and_never_implies_acceptance() {
-        let disclosure="New or edited project messages, tasks, team goals, answers and notes will be sent to the installed Codex provider. Provider usage may incur costs. Local storage remains free. Generated drafts require your explicit acceptance.";
+        let disclosure="New, edited or explicitly selected project sources and relevant accepted Local decisions will be sent to the installed Codex provider. Sources include messages, tasks, team goals, answers and notes. Provider usage may incur costs. Local storage remains free. Generated drafts require your explicit acceptance.";
         assert!(tr(Language::Tr, disclosure).contains("Codex"));
         assert!(tr(Language::Tr, disclosure).contains("ücrete"));
         assert!(tr(Language::Tr, disclosure).contains("açık kabulünüzü"));
+        assert!(tr(Language::En, disclosure).contains("accepted Local decisions"));
+        assert!(tr(Language::Tr, disclosure).contains("yerel kararlar"));
+        assert!(tr(Language::Tr,"Only future sources are queued automatically. Older sources require individual queueing; accepted decisions from before enablement may still be included as context.").contains("önce kabul edilmiş kararlar"));
+        for code in [
+            "EXTRACTION_RUNNING",
+            "EXTRACTION_COMPLETED",
+            "EXTRACTION_NO_ADR",
+            "EXTRACTION_DUPLICATE",
+        ] {
+            for language in [Language::Tr, Language::En] {
+                let copy = tr(language, code).to_lowercase();
+                assert!(
+                    !copy.contains("failed")
+                        && !copy.contains("başarısız")
+                        && !copy.contains("retry")
+                        && !copy.contains("yeniden")
+                );
+            }
+        }
+
         assert!(tr(Language::En, "EXTRACTION_ENQUEUED").contains("does not accept"));
         assert!(!tr(Language::Tr, "EXTRACTION_INVALID_OUTPUT").contains("EXTRACTION_"));
         assert!(!tr(Language::En, "EXTRACTION_FUTURE_ERROR").contains("EXTRACTION_"));

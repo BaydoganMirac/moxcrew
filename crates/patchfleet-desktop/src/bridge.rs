@@ -1,4 +1,4 @@
-use crate::command::{safe_error, Command, Notice, NoticeKind};
+use crate::command::{account_action, safe_error, Command, Notice, NoticeKind};
 use crate::folder;
 use eframe::egui;
 use patchfleet_core::Host;
@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{runtime::Runtime, sync::mpsc, task::JoinHandle};
 
@@ -40,6 +40,7 @@ enum Message {
     Snapshot(Result<Value, String>),
     Outcome(Command, Result<Value, String>, Result<Value, String>),
     Folder(folder::Target, Option<folder::Selection>),
+    Account(u64, Command, Value, Result<Value, String>),
     Closed,
 }
 
@@ -52,6 +53,20 @@ pub struct Bridge {
     worker: Option<JoinHandle<()>>,
     host: Arc<Mutex<Option<Arc<Host>>>>,
     close_requested: Arc<AtomicBool>,
+    context: egui::Context,
+    account_task: Option<JoinHandle<()>>,
+    account_pending: Option<Command>,
+    account_generation: u64,
+    account_connection: Option<Value>,
+    account_refresh_connection: Option<Value>,
+    account_auth_failure: Option<Value>,
+    cloud_login: Option<Value>,
+    cloud_account: Option<Value>,
+    account_error: Option<Notice>,
+    login_cloud_url: Option<String>,
+    login_open_command: Option<String>,
+    login_next_poll: Option<Instant>,
+    logout_remote_revoked: Option<bool>,
     pub snapshot: Option<Value>,
     memory_page: Option<Value>,
     decision_page: Option<Value>,
@@ -99,6 +114,29 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 }
 
 impl Bridge {
+    #[cfg(feature = "ui-smoke")]
+    pub fn account_smoke(&mut self, cloud_url: Option<&str>) {
+        if let Some(url) = cloud_url {
+            self.submit(Command::new(
+                "cloud_login_begin",
+                serde_json::json!({"cloudUrl":url,"displayName":"Native sign-in preview"}),
+            ));
+        } else if self
+            .snapshot
+            .as_ref()
+            .is_some_and(|s| s["cloud"]["paired"] == true)
+        {
+            self.submit(Command::new("cloud_account_read", serde_json::json!({})));
+        }
+        for _ in 0..800 {
+            self.poll();
+            if self.account_task.is_none() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     #[cfg(feature = "ui-smoke")]
     pub fn search_smoke(&mut self, shared: bool, query: &str) {
         let Some(project) = self.snapshot.as_ref().and_then(|s| {
@@ -241,6 +279,7 @@ impl Bridge {
     }
 
     pub fn new(ctx: egui::Context, directory: PathBuf, observe: bool) -> Self {
+        let account_context = ctx.clone();
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -310,6 +349,20 @@ impl Bridge {
             worker: Some(worker),
             host: host_slot,
             close_requested,
+            context: account_context,
+            account_task: None,
+            account_pending: None,
+            account_generation: 0,
+            account_connection: None,
+            account_refresh_connection: None,
+            account_auth_failure: None,
+            cloud_login: None,
+            cloud_account: None,
+            account_error: None,
+            login_cloud_url: None,
+            login_open_command: None,
+            login_next_poll: None,
+            logout_remote_revoked: None,
             snapshot: None,
             memory_page: None,
             decision_page: None,
@@ -388,17 +441,226 @@ impl Bridge {
                         self.folder_selection = Some((target, selection));
                     }
                 }
+                Message::Account(generation, command, connection, result) => {
+                    self.account_outcome(generation, command, connection, result)
+                }
                 Message::Closed => self.closed = true,
             }
         }
         if self.worker.as_ref().is_some_and(JoinHandle::is_finished) && self.snapshot.is_none() {
             self.busy = false;
         }
+        if !self.closing && self.account_task.is_none() {
+            let connection = self.snapshot.as_ref().map(cloud_identity);
+            if self
+                .cloud_login
+                .as_ref()
+                .is_some_and(|v| v["status"] == "waiting")
+            {
+                let next = self.login_next_poll.unwrap_or_else(Instant::now);
+                if Instant::now() >= next {
+                    self.submit_account(Command::new("cloud_login_poll", serde_json::json!({})));
+                } else {
+                    self.context
+                        .request_repaint_after(next.saturating_duration_since(Instant::now()));
+                }
+            } else if connection.as_ref().is_some_and(|c| c["paired"] == true)
+                && self.account_refresh_connection != connection
+                && self.error.is_none()
+            {
+                self.account_refresh_connection = connection;
+                self.submit_account(Command::new("cloud_account_read", serde_json::json!({})));
+            }
+        }
+    }
+
+    fn account_overlays(&mut self) {
+        if let Some(snapshot) = self.snapshot.as_mut() {
+            snapshot["cloudLogin"] = self.cloud_login.clone().unwrap_or(Value::Null);
+            snapshot["cloudAccount"] = self.cloud_account.clone().unwrap_or(Value::Null);
+            snapshot["cloudAccountUi"] = serde_json::json!({"busy":self.account_task.is_some(),"action":self.account_pending.as_ref().map(|c|c.action),"error":self.account_error.as_ref().map(|n|n.code.as_str()),"errorAction":self.account_error.as_ref().map(|n|n.action),"loginCloudUrl":self.login_cloud_url,"openCommandId":self.login_open_command,"logoutRemoteRevoked":self.logout_remote_revoked});
+        }
+    }
+
+    fn submit_account(&mut self, command: Command) {
+        if self.closing || self.error.is_some() {
+            return;
+        }
+        if self.account_task.is_some() {
+            if !matches!(command.action, "cloud_login_cancel" | "cloud_logout") {
+                return;
+            }
+            self.account_task.take().unwrap().abort();
+        }
+        let Some(host) = self.host.lock().unwrap().as_ref().cloned() else {
+            return;
+        };
+        let Some(connection) = self.snapshot.as_ref().map(cloud_identity) else {
+            return;
+        };
+        self.account_generation += 1;
+        let generation = self.account_generation;
+        if command.action == "cloud_login_begin" {
+            self.cloud_login = None;
+            self.login_cloud_url = command.payload["cloudUrl"].as_str().map(str::to_owned);
+            self.login_open_command = None;
+            self.logout_remote_revoked = None;
+        }
+        if matches!(command.action, "cloud_login_cancel" | "cloud_logout") {
+            self.login_next_poll = None;
+            self.login_open_command = None;
+        }
+        if command.action == "cloud_account_read" {
+            self.cloud_account = None;
+            self.account_refresh_connection = Some(connection.clone());
+        }
+        self.account_error = None;
+        self.account_pending = Some(command.clone());
+        let ctx = self.context.clone();
+        let output = self.output.clone();
+        self.account_task = Some(self.runtime.spawn(async move {
+            let result = host
+                .action(command.action, command.payload.clone())
+                .await
+                .map_err(safe_error);
+            notify(
+                &ctx,
+                &output,
+                Message::Account(generation, command, connection, result),
+            )
+            .await;
+        }));
+        self.account_overlays();
+    }
+
+    fn account_outcome(
+        &mut self,
+        generation: u64,
+        command: Command,
+        connection: Value,
+        result: Result<Value, String>,
+    ) {
+        if self.closing
+            || generation != self.account_generation
+            || self.account_pending.as_ref().is_none_or(|pending| {
+                pending.payload != command.payload || pending.action != command.action
+            })
+        {
+            return;
+        }
+        let snapshot = self
+            .host
+            .lock()
+            .unwrap()
+            .as_ref()
+            .cloned()
+            .and_then(|host| host.snapshot().ok());
+        let Some(snapshot) = snapshot else {
+            self.account_task = None;
+            self.account_pending = None;
+            return;
+        };
+        let current = cloud_identity(&snapshot);
+        let transition = result.as_ref().is_ok_and(|v| {
+            (command.action == "cloud_login_poll"
+                && v["status"] == "connected"
+                && current["paired"] == true)
+                || (command.action == "cloud_logout"
+                    && v["localSignedOut"] == true
+                    && current["paired"] == false)
+        });
+        self.account_task = None;
+        self.account_pending = None;
+        if current != connection && !transition {
+            self.apply_snapshot(Ok(snapshot));
+            return;
+        }
+        self.apply_snapshot(Ok(snapshot));
+        match result {
+            Ok(value) => match command.action {
+                "cloud_login_begin" | "cloud_login_poll" | "cloud_login_cancel" => {
+                    if value["status"] == "waiting" {
+                        if command.action == "cloud_login_begin" {
+                            self.login_open_command =
+                                command.payload["commandId"].as_str().map(str::to_owned);
+                        }
+                        self.login_next_poll = Some(Instant::now() + Duration::from_secs(3));
+                        self.context.request_repaint_after(Duration::from_secs(3));
+                    } else {
+                        self.login_next_poll = None;
+                        self.login_open_command = None;
+                    }
+                    self.cloud_login = Some(value);
+                }
+                "cloud_account_read" => {
+                    if patchfleet_core::desktop_login::validate_account_response(
+                        &value,
+                        &self.snapshot.as_ref().unwrap()["cloud"],
+                    )
+                    .is_ok()
+                    {
+                        self.cloud_account = Some(value);
+                    } else {
+                        self.account_error =
+                            Some(Notice::error(command.action, "DESKTOP_ACCOUNT_INVALID"));
+                    }
+                }
+                "cloud_logout" => {
+                    self.cloud_login = None;
+                    self.cloud_account = None;
+                    self.logout_remote_revoked = value["remoteRevoked"].as_bool();
+                }
+                _ => (),
+            },
+            Err(error) => {
+                self.account_error = Some(Notice::error(command.action, &error));
+                self.cloud_account = None;
+                if command.action.starts_with("cloud_login_") {
+                    self.cloud_login = None;
+                    self.login_next_poll = None;
+                    self.login_open_command = None;
+                }
+            }
+        }
+        self.account_overlays();
     }
 
     fn apply_snapshot(&mut self, snapshot: Result<Value, String>) {
         match snapshot {
             Ok(mut snapshot) => {
+                let connection = cloud_identity(&snapshot);
+                if self
+                    .account_connection
+                    .as_ref()
+                    .is_some_and(|previous| *previous != connection)
+                {
+                    if let Some(task) = self.account_task.take() {
+                        task.abort();
+                    }
+                    self.account_generation += 1;
+                    self.account_pending = None;
+                    self.cloud_account = None;
+                    self.cloud_login = None;
+                    self.account_error = None;
+                    self.login_next_poll = None;
+                    self.login_open_command = None;
+                    self.login_cloud_url = None;
+                    self.logout_remote_revoked = None;
+                    self.account_refresh_connection = None;
+                    self.account_auth_failure = None;
+                }
+                if snapshot["cloud"]["lastErrorCode"] == "CLOUD_AUTH_REJECTED" {
+                    let failure = serde_json::json!({"connection":connection,"at":snapshot["cloud"]["lastAttemptAt"]});
+                    if self.account_auth_failure.as_ref() != Some(&failure) {
+                        self.cloud_account = None;
+                        self.account_error =
+                            Some(Notice::error("cloud_account_read", "DESKTOP_ACCESS_DENIED"));
+                        self.account_auth_failure = Some(failure);
+                    }
+                } else {
+                    self.account_auth_failure = None;
+                }
+                self.account_connection = Some(connection);
                 if self.memory_page.as_ref().is_some_and(|page| {
                     !snapshot["projectMemory"]["projects"]
                         .as_array()
@@ -477,6 +739,7 @@ impl Bridge {
                 }
                 snapshot["sharedSearch"] = self.shared_search.clone().unwrap_or(Value::Null);
                 self.snapshot = Some(snapshot);
+                self.account_overlays();
                 self.error = None;
             }
             Err(error) => self.error = Some(error),
@@ -484,6 +747,10 @@ impl Bridge {
     }
 
     pub fn submit(&mut self, command: Command) {
+        if account_action(command.action) {
+            self.submit_account(command);
+            return;
+        }
         if self.busy || self.closing || self.picking_folder || self.error.is_some() {
             return;
         }
@@ -626,6 +893,17 @@ impl Bridge {
     pub fn begin_close(&mut self) {
         if !self.closing {
             self.closing = true;
+            if let Some(task) = self.account_task.take() {
+                task.abort();
+            }
+            self.account_generation += 1;
+            self.account_pending = None;
+            self.cloud_login = None;
+            self.cloud_account = None;
+            self.login_next_poll = None;
+            self.login_open_command = None;
+            self.login_cloud_url = None;
+            self.account_overlays();
             if let Some(picker) = self.picker.take() {
                 picker.abort();
             }
@@ -730,6 +1008,135 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         panic!("Local bridge did not deliver its outcome");
+    }
+
+    fn await_account(bridge: &mut Bridge) {
+        for _ in 0..800 {
+            bridge.poll();
+            if bridge.account_task.is_none() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("Account lane did not finish");
+    }
+
+    #[test]
+    fn browser_sign_in_waits_in_a_separate_lane_and_never_blocks_local_commands() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        bridge.submit(Command::new("cloud_login_begin",serde_json::json!({"cloudUrl":"https://cloud.example.invalid","displayName":"Local test"})));
+        assert!(!bridge.busy);
+        assert!(bridge.pending.is_none());
+        assert!(bridge.account_task.is_some());
+        bridge.submit(Command::new(
+            "project_create",
+            serde_json::json!({"name":"Local still works"}),
+        ));
+        await_idle(&mut bridge);
+        await_account(&mut bridge);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0]["name"],
+            "Local still works"
+        );
+        let login = bridge.cloud_login.as_ref().unwrap().clone();
+        assert_eq!(login["status"], "waiting");
+        assert!(patchfleet_core::desktop_login::validate_authorization_url(
+            login["authorizationUrl"].as_str().unwrap(),
+            "https://cloud.example.invalid"
+        )
+        .is_ok());
+        let generation = bridge.account_generation;
+        for _ in 0..25 {
+            bridge.poll();
+        }
+        assert_eq!(bridge.account_generation, generation);
+        bridge.login_next_poll = Some(Instant::now() - Duration::from_secs(1));
+        bridge.poll();
+        assert!(bridge.account_task.is_some());
+        assert!(!bridge.busy);
+        bridge.submit(Command::new("cloud_login_cancel", serde_json::json!({})));
+        await_account(&mut bridge);
+        assert_eq!(bridge.cloud_login.as_ref().unwrap()["status"], "cancelled");
+        assert!(bridge.login_next_poll.is_none());
+        let host = bridge.host.lock().unwrap().as_ref().unwrap().clone();
+        assert!(host.snapshot().unwrap().get("cloudLogin").is_none());
+        for entry in std::fs::read_dir(directory.path()).unwrap().flatten() {
+            if entry.file_type().unwrap().is_file() {
+                let bytes = std::fs::read(entry.path()).unwrap();
+                let text = String::from_utf8_lossy(&bytes);
+                assert!(
+                    !text.contains("authorizationUrl")
+                        && !text.contains("codeChallenge")
+                        && !text.contains("confirmationCode")
+                );
+            }
+        }
+        bridge.shutdown();
+        assert!(bridge.cloud_login.is_none());
+    }
+
+    #[test]
+    fn account_failure_and_stale_outcomes_preserve_owner_retry_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        let owner = Command::new(
+            "project_decision_propose",
+            serde_json::json!({"title":"Keep draft"}),
+        );
+        bridge.pending = Some(owner.clone());
+        bridge.feedback = Some(Notice::error(owner.action, "HOST_ACTION_FAILED"));
+        bridge.submit(Command::new("cloud_account_read", serde_json::json!({})));
+        await_account(&mut bridge);
+        assert!(bridge.account_error.is_some());
+        assert_eq!(bridge.pending.as_ref().unwrap().payload, owner.payload);
+        assert_eq!(bridge.feedback.as_ref().unwrap().code, "HOST_ACTION_FAILED");
+        assert!(!bridge.busy);
+        let before = bridge.snapshot.clone();
+        let stale = Command::new(
+            "cloud_login_begin",
+            serde_json::json!({"cloudUrl":"https://other.example.invalid"}),
+        );
+        bridge.output.blocking_send(Message::Account(bridge.account_generation.saturating_sub(1),stale,serde_json::json!({"paired":false}),Ok(serde_json::json!({"status":"waiting","authorizationUrl":"https://evil.invalid"})))).unwrap();
+        bridge.poll();
+        assert_eq!(bridge.snapshot, before);
+        assert_eq!(bridge.pending.as_ref().unwrap().payload, owner.payload);
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn account_overlays_clear_on_connection_change_and_close() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        bridge.cloud_login = Some(serde_json::json!({"status":"waiting"}));
+        bridge.cloud_account = Some(serde_json::json!({"email":"owner@example.invalid"}));
+        bridge.login_next_poll = Some(Instant::now() + Duration::from_secs(3));
+        bridge.login_open_command = Some("cmd:begin".into());
+        bridge.login_cloud_url = Some("https://earlier.example.invalid".into());
+        bridge.logout_remote_revoked = Some(false);
+        let mut snapshot = bridge.snapshot.as_ref().unwrap().clone();
+        snapshot["cloud"] = serde_json::json!({"paired":true,"cloudUrl":"https://cloud.example.invalid","hostId":"host:new","workspaceId":"workspace:new"});
+        bridge.apply_snapshot(Ok(snapshot));
+        assert!(bridge.cloud_account.is_none() && bridge.cloud_login.is_none());
+        assert!(bridge.login_next_poll.is_none() && bridge.login_open_command.is_none());
+        assert!(bridge.login_cloud_url.is_none() && bridge.logout_remote_revoked.is_none());
+        assert!(bridge.snapshot.as_ref().unwrap()["cloudAccount"].is_null());
+        bridge.cloud_account = Some(serde_json::json!({"email":"earlier@example.invalid"}));
+        let mut rejected = bridge.snapshot.as_ref().unwrap().clone();
+        rejected["cloud"]["lastErrorCode"] = serde_json::json!("CLOUD_AUTH_REJECTED");
+        rejected["cloud"]["lastAttemptAt"] = serde_json::json!("2026-10-15T01:00:00.000Z");
+        bridge.apply_snapshot(Ok(rejected));
+        assert!(bridge.cloud_account.is_none());
+        assert_eq!(
+            bridge.account_error.as_ref().unwrap().code,
+            "DESKTOP_ACCESS_DENIED"
+        );
+        bridge.begin_close();
+        assert!(bridge.account_task.is_none());
+        bridge.shutdown();
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Task 0032 Project memory retrieval
 
-Status: Implemented and measured; final independent integration review in progress
+Status: Complete for approved scope; deployment/platform release work remains
 
 Owner approval: 2026-10-15, “Onaylı başla” after the semantic search sequence.
 Implement the next bounded milestone: natural-language TR/EN queries retrieve

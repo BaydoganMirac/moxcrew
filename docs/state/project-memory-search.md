@@ -1,6 +1,6 @@
 # Project memory search
 
-Status: Implemented and measured; final independent integration review in progress
+Status: Complete for approved scope; deployment/platform release work remains
 
 Updated: 2026-10-15
 
@@ -49,7 +49,7 @@ Agents do not automatically consume these results yet.
   also caught a smoke-startup modal reset, fixed with two regression checks.
 - Final Rust all-feature workspace checks:179 passed,2 intentional manual/private
   fixture ignores. The real two-Host fixture was separately run and passed.
-  Legacy reference149 checks, private45 unit checks and7 real PostgreSQL /
+  Legacy reference149 checks, private46 unit checks and7 real PostgreSQL /
   upgrade checks passed. Strict Clippy, formatting and production Cloud build
   passed. A pre-existing test fixture used two clock reads for an exact5-minute
   lifetime; it now uses one instant to avoid a1ms over-limit race.
@@ -74,3 +74,8 @@ No production Cloud deployment/migration, existing-customer billing transition,
 MCP memory tools or automatic ADR extraction is included. New server code and
 model assets require a separately operated compatible Cloud release. Native
 Windows/Linux runtime/signing evidence remains in the platform release matrix.
+
+Final independent integration review accepted the pinned model, bounded offline
+child lifecycle, cross-repository schema/limits and native query scope. Its one
+additional process-startup teardown defect was fixed with an independently run
+no-model regression. No unresolved blocker remains for the approved scope.

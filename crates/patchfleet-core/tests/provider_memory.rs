@@ -34,6 +34,7 @@ fn main(){
    send(&id,&format!("{{\"thread\":{{\"id\":\"owned-{count}\",\"cwd\":{cwd},\"threadSource\":{source},\"ephemeral\":false}}}}"));
   }else if line.contains("\"mcpServerStatus/list\""){
    inventories+=1;
+   if mode.contains("inventory-fatal")&&count==2{thread::sleep(Duration::from_millis(200));println!("SECRET_INVALID_JSON");io::stdout().flush().unwrap();return}
    if mode.contains("inventory-hang"){thread::sleep(Duration::from_secs(10));}
    if mode.contains("waiting")&&inventories==1{send(&id,r#"{"data":[{"name":"patchfleet_memory","runtimeStatus":"starting"}],"nextCursor":null}"#);continue}
    if mode.contains("paged")&&!line.contains("page2"){send(&id,r#"{"data":[],"nextCursor":"page2"}"#);continue}
@@ -44,11 +45,16 @@ fn main(){
    assert!(inventories>0);assert!(line.contains("\"project_context\""));assert!(line.contains("\"limit\":20"));
    let error=mode.contains("call-error");let body=if mode.contains("call-malformed"){r#""invalid""#}else{r#"{"schemaVersion":1,"privateContext":"CONTEXT_BODY_CANARY"}"#};
    send(&id,&format!(r#"{{"isError":{error},"structuredContent":{body},"content":[{{"type":"text","text":"CONTEXT_BODY_CANARY"}}]}}"#));
+   if mode.contains("prepared-notify"){println!("{{\"method\":\"turn/completed\",\"params\":{{\"threadId\":\"owned-1\",\"turn\":{{\"id\":\"idle-turn\",\"status\":\"completed\"}}}}}}");io::stdout().flush().unwrap();}
   }else if line.contains("\"turn/start\""){
    assert!(!line.contains("ticket"));assert!(!line.contains("synthetic-bearer"));
+   if mode.contains("held"){thread::sleep(Duration::from_millis(200));}
    let idthread=token(&line,"threadId");let status=if mode.contains("immediate"){"completed"}else{"inProgress"};
+   if mode.contains("before"){let tid=if mode.contains("foreign"){"foreign-turn"}else{"turn-1"};println!("{{\"method\":\"turn/completed\",\"params\":{{\"threadId\":{idthread},\"turn\":{{\"id\":\"{tid}\",\"status\":\"completed\"}}}}}}");io::stdout().flush().unwrap();}
    send(&id,&format!("{{\"turn\":{{\"id\":\"turn-1\",\"status\":\"{status}\"}}}}"));
-   if mode.contains("notify"){println!("{{\"method\":\"turn/completed\",\"params\":{{\"threadId\":{idthread},\"turn\":{{\"id\":\"turn-1\",\"status\":\"completed\"}}}}}}");io::stdout().flush().unwrap();}
+   if mode.contains("notify")&&!mode.contains("before"){println!("{{\"method\":\"turn/completed\",\"params\":{{\"threadId\":{idthread},\"turn\":{{\"id\":\"turn-1\",\"status\":\"completed\"}}}}}}");io::stdout().flush().unwrap();}
+   if mode=="foreign"{println!("{{\"method\":\"turn/completed\",\"params\":{{\"threadId\":\"foreign-thread\",\"turn\":{{\"id\":\"turn-1\",\"status\":\"completed\"}}}}}}");println!("{{\"method\":\"turn/completed\",\"params\":{{\"threadId\":{idthread},\"turn\":{{\"id\":\"foreign-turn\",\"status\":\"completed\"}}}}}}");io::stdout().flush().unwrap();}
+   if mode=="fatal"{println!("SECRET_INVALID_JSON");io::stdout().flush().unwrap();return}
    if mode.contains("lost"){return}
   }else if line.contains("\"turn/interrupt\""){send(&id,"{}");}
   else{send(&id,"{}");}
@@ -121,6 +127,15 @@ fn requests(program: &Programs) -> Vec<Value> {
         .lines()
         .map(|v| serde_json::from_str(v).unwrap())
         .collect()
+}
+async fn wait_revoked(active: &AtomicBool) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while active.load(Ordering::Acquire) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("reader must revoke without observing or draining provider signals");
 }
 
 #[tokio::test]
@@ -213,7 +228,16 @@ async fn unsupported_or_unverified_memory_fails_closed_and_revokes() {
 #[tokio::test]
 async fn terminal_loss_shutdown_drop_and_cancel_revoke_only_the_owned_binding() {
     let (_dir, w, r) = work();
-    for mode in ["immediate", "notify", "lost", "shutdown", "drop", "cancel"] {
+    for mode in [
+        "immediate",
+        "notify",
+        "notify-before",
+        "lost",
+        "fatal",
+        "shutdown",
+        "drop",
+        "cancel",
+    ] {
         let (_peer, p) = programs(mode);
         let c = Controller::with_programs(p);
         let (binding, active, _) = memory("private-ticket-A");
@@ -241,16 +265,92 @@ async fn terminal_loss_shutdown_drop_and_cancel_revoke_only_the_owned_binding() 
                     .await
                     .unwrap();
             } else if mode != "immediate" {
-                tokio::time::sleep(Duration::from_millis(40)).await;
-                c.drain_signals().await;
+                wait_revoked(&active).await;
             }
             assert!(!active.load(Ordering::Acquire));
-            assert_eq!(other_active.load(Ordering::Acquire), mode != "lost");
+            assert_eq!(
+                other_active.load(Ordering::Acquire),
+                !matches!(mode, "lost" | "fatal")
+            );
+            c.drain_signals().await;
         }
         c.shutdown().await;
         assert!(!active.load(Ordering::Acquire));
         assert!(!other_active.load(Ordering::Acquire));
     }
+}
+
+#[tokio::test]
+async fn foreign_turns_and_idle_prepared_threads_cannot_revoke_or_complete_a_run() {
+    let (_dir, w, r) = work();
+    for mode in ["foreign", "foreign-before", "prepared-notify"] {
+        let (_peer, p) = programs(mode);
+        let c = Controller::with_programs(p);
+        let (binding, active, _) = memory("private-ticket");
+        let session = c.prepare_with_memory(&w, &r, Some(binding)).await.unwrap();
+        if mode != "prepared-notify" {
+            c.start_prepared(&w, &r, &session).await.unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        assert!(active.load(Ordering::Acquire));
+        if mode != "foreign" {
+            assert!(c.drain_signals().await.is_empty());
+            assert!(active.load(Ordering::Acquire));
+        }
+        c.shutdown().await;
+        assert!(!active.load(Ordering::Acquire));
+    }
+}
+
+#[tokio::test]
+async fn fatal_reader_revokes_owned_and_preparing_leases_without_polling_prepare() {
+    let (_peer, p) = programs("inventory-fatal");
+    let c = Controller::with_programs(p.clone());
+    let (_dir, w, r) = work();
+    let (binding, active, _) = memory("private-ticket-A");
+    c.prepare_with_memory(&w, &r, Some(binding)).await.unwrap();
+    let (binding, preparing_active, _) = memory("private-ticket-B");
+    let next = json!({"intentId":"intent:second"});
+    let mut preparing = Box::pin(c.prepare_with_memory(&w, &next, Some(binding)));
+    tokio::select! {
+        biased;
+        sent = tokio::time::timeout(Duration::from_secs(3), async {
+            while !requests(&p).iter().any(|v| v["method"] == "mcpServerStatus/list" && v["params"]["threadId"] == "owned-2") {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }) => sent.expect("second prepare must reach inventory before fixture failure"),
+        result = &mut preparing => panic!("prepare unexpectedly completed before reader proof: {result:?}"),
+    }
+    // Keep the future alive but unpolled: only the reader can revoke either flag now.
+    wait_revoked(&active).await;
+    wait_revoked(&preparing_active).await;
+    drop(preparing);
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn early_terminal_is_bound_and_revoked_before_the_start_future_is_resumed() {
+    let (_peer, p) = programs("notify-before-held");
+    let c = Controller::with_programs(p.clone());
+    let (_dir, w, r) = work();
+    let (binding, active, _) = memory("private-ticket");
+    let session = c.prepare_with_memory(&w, &r, Some(binding)).await.unwrap();
+    let mut starting = Box::pin(c.start_prepared(&w, &r, &session));
+    tokio::select! {
+        biased;
+        sent = tokio::time::timeout(Duration::from_secs(3), async {
+            while !requests(&p).iter().any(|v| v["method"] == "turn/start") {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }) => sent.expect("turn start must reach fixture before its terminal response"),
+        result = &mut starting => panic!("turn unexpectedly finished before reader proof: {result:?}"),
+    }
+    wait_revoked(&active).await;
+    assert_eq!(starting.await.unwrap(), (session, "turn-1".into()));
+    let signals = c.drain_signals().await;
+    assert_eq!(signals.len(), 1);
+    assert_eq!(signals[0]["status"], "completed");
+    c.shutdown().await;
 }
 
 #[tokio::test]

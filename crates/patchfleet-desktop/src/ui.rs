@@ -3217,6 +3217,9 @@ impl Console {
             for task in array(&team["tasks"]) {ui.push_id(text(task,"taskId"),|ui| {
                 let agent=array(&team["agents"]).iter().find(|a|a["agentId"]==task["agentId"]);
                 ui.separator();ui.horizontal_wrapped(|ui|{ui.strong(task_title(ui,task,team,agent));status(ui,text(task,"status"));});
+                if task["status"] == "queued" && array(&snapshot["work"]["receipts"]).iter().rev().find(|r|r["commandType"]=="start_work" && r["workItemId"]==task["workItemId"]).is_some_and(|r|r["outcome"]!="applied") {
+                    hint(ui,"Start failed. Fix the provider connection, then start this task from Work. Automatic retries are paused.");
+                }
                 hint(ui,&localized_format!(ui, "{0} · attempt {1}/{2}",agent.map(|a|catalog_text(ui,&a["pack"],"name")).unwrap_or_else(||t(ui,"Unassigned")),task["attempt"],task["maxAttempts"]));
                 if active&&text(task,"status")=="waiting_question"&&!task["question"].is_null() {
                     let q=&task["question"];let key=format!("{}:{}",text(team,"teamId"),text(q,"questionId"));

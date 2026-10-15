@@ -61,7 +61,7 @@ conversation imports, other-provider execution and hosted deployment are separat
 ## Ownership
 
 - Coordinator: task/ADR/protocol/state, lib.rs/domain.rs/store.rs/host.rs/work.rs,
-  main/CLI entry, host_memory_tests.rs, teams.rs, ui.rs/i18n.rs, Cargo/version/package, integration/native proof and final handoff.
+  main/CLI entry, host_memory_tests.rs, teams.rs/project_memory.rs, ui.rs/i18n.rs, Cargo/version/package, integration/native proof and final handoff.
 - Memory builder: new agent_memory.rs (bounded lease/RPC/stdIO bridge and V6
   context projection helpers), tests/agent_memory.rs only. No Host/provider/store
   edits; call coordinator's Host boundary with the agreed binding type.

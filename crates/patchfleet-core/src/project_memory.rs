@@ -442,6 +442,7 @@ struct State {
     sources: BTreeMap<String, Value>,
     bindings: BTreeMap<(String, String), String>,
     workspaces: HashSet<String>,
+    generated_work: HashSet<String>,
     requests: BTreeMap<String, Value>,
     facts: BTreeMap<String, Value>,
     receipts: BTreeMap<String, Value>,
@@ -772,6 +773,10 @@ impl State {
             "work.enqueued" => {
                 let work = &p["workItem"];
                 let work_id = id(work, "workItemId");
+                if self.generated_work.contains(&work_id) {
+                    // Team-generated pack/task text is not an owner instruction.
+                    return Ok(());
+                }
                 self.automatic(
                     e,
                     ("work", &work_id),
@@ -784,6 +789,15 @@ impl State {
             "team.created" => {
                 let t = &p["team"];
                 let team_id = id(t, "teamId");
+                for task in t["tasks"].as_array().unwrap() {
+                    for attempt in 1..=6 {
+                        self.generated_work.insert(crate::domain::team_work_item_id(
+                            &team_id,
+                            string(&task["taskId"])?,
+                            attempt,
+                        )?);
+                    }
+                }
                 self.automatic(
                     e,
                     ("team", &team_id),

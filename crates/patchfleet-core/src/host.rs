@@ -1,6 +1,6 @@
 use crate::{
     cloud::Cloud,
-    decisions, domain, event, now, project_memory, providers, shared_memory,
+    decisions, domain, event, now, project_memory, providers, retrieval, shared_memory,
     store::Store,
     teams::{catalog, templates},
     work::{array, find, intent, text},
@@ -96,6 +96,7 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
         ],
         "project_decisions_read" => &["projectId", "offset", "limit", "query", "status"],
         "project_decision_read" => &["projectId", "decisionId"],
+        "project_decision_search" | "memory_cloud_search" => &["projectId", "query", "limit"],
         "memory_cloud_create" => &["projectId", "expectedProjectRevision", "name"],
         "memory_cloud_link" => &["projectId", "expectedProjectRevision", "sharedProjectId"],
         "memory_cloud_publish" => &[
@@ -283,6 +284,24 @@ impl Host {
 
     pub async fn action(&self, action: &str, mut payload: Value) -> Result<Value> {
         exact_action(action, &payload)?;
+        // An ephemeral network read must not block Local commands behind its wait.
+        if matches!(action, "project_decision_search" | "memory_cloud_search") {
+            let stopped = self.shutdown_notify.notified();
+            if self.closing.load(Ordering::SeqCst) {
+                return Err(Error("HOST_CLOSING".into()));
+            }
+            if action == "project_decision_search" {
+                return self.store.search_decisions(&payload);
+            }
+            for key in ["commandId", "createdAt", "expiresAt"] {
+                payload.as_object_mut().unwrap().remove(key);
+            }
+            // Include credential-lock admission and the final scope check in the budget.
+            return tokio::select! {
+                _ = stopped => Err(Error("HOST_CLOSING".into())),
+                result = tokio::time::timeout(std::time::Duration::from_secs(3), self.search_shared_memory(&payload)) => result.unwrap_or_else(|_| Err(Error("MEMORY_UNAVAILABLE".into())))
+            };
+        }
         let _guard = self.operations.lock().await;
         if self.closing.load(Ordering::SeqCst) {
             return Err(Error("HOST_CLOSING".into()));
@@ -809,6 +828,52 @@ impl Host {
             .as_ref()
             .map(Cloud::memory_connection)
             .unwrap_or(Value::Null))
+    }
+    async fn search_shared_memory(&self, payload: &Value) -> Result<Value> {
+        let input = retrieval::request(payload)?;
+        let project = input["projectId"].as_str().unwrap();
+        let bound = self.memory_connection().await?;
+        if bound.is_null() {
+            return Err(Error("CLOUD_UNPAIRED".into()));
+        }
+        let scope = self.store.shared_search_scope(project, &bound)?;
+        let shared = scope["mapping"]["sharedProjectId"].as_str().unwrap();
+        let body = json!({"schemaVersion":1,"query":input["query"],"limit":input["limit"]});
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        let mut response = self
+            .memory_http(
+                &bound,
+                reqwest::Method::POST,
+                &["projects", shared, "search"],
+                &[],
+                Some(&body),
+                deadline,
+            )
+            .await?;
+        // Linearize the final binding check with pairing and project mutations.
+        let _guard = self.operations.lock().await;
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(Error("HOST_CLOSING".into()));
+        }
+        if self.memory_connection().await? != bound {
+            return Err(Error("MEMORY_CONNECTION_CHANGED".into()));
+        }
+        if self.store.shared_search_scope(project, &bound)? != scope {
+            return Err(Error("MEMORY_CONFLICT".into()));
+        }
+        retrieval::validate_search_response(
+            &response,
+            &scope["mapping"]["sharedProjectId"],
+            input["limit"].as_u64().unwrap(),
+        )?;
+        if response["manifestRevision"].as_u64() < scope["mapping"]["sharedRevision"].as_u64() {
+            return Err(Error("MEMORY_PROTOCOL_INVALID".into()));
+        }
+        response["reasonCode"] = json!("SHARED_MEMORY_SEARCH_READ");
+        response["projectId"] = input["projectId"].clone();
+        response["revision"] = scope["revision"].clone();
+        response["query"] = input["query"].clone();
+        Ok(response)
     }
     async fn memory_http(
         &self,

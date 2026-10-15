@@ -76,9 +76,11 @@ The Decisions view supports proposed, accepted, rejected and superseded ADRs.
 Only explicit owner acceptance makes a decision authoritative. Accepted text
 and source versions are immutable; replacing a decision preserves its history.
 This free Local feature requires no account, inference or embedding service.
-Next slices evaluate a rebuildable local index, then scoped agent tools and
-automatic source-backed ADR drafts. A planned local vector database indexes
-decision text; scoped tools will expose accepted decisions to project agents. See
+Owned Codex work and team roles now read current accepted Local decisions through
+three scoped read-only MCP tools. Worktree links share one project memory; the
+agent cannot select another project or read raw source bodies. Local keyword
+retrieval stays free; Cloud vector retrieval retains its paid boundary. Automatic
+source-backed ADR drafts and agent Cloud attachment remain later slices. See
 [Task 0022](plans/0022-project-memory-and-decision-service.md). External agent
 conversations require an explicit import; this foundation does not import them.
 Memory does not widen the default Cloud data boundary. The implemented optional

@@ -2,7 +2,7 @@
 
 Your coding agents. One local Rust desktop command center.
 
-Patchfleet 0.9 runs its interface and host in Rust. egui/eframe renders the native
+Patchfleet 0.10 runs its interface and host in Rust. egui/eframe renders the native
 window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.

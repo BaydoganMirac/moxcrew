@@ -834,6 +834,9 @@ pub fn validate_event(v: &Value) -> Result<()> {
     let p = &v["payload"];
     let kind = string(&v["type"])?;
     object(p)?;
+    if v["schemaVersion"] == 6 {
+        return crate::agent_memory::validate_event(v);
+    }
     if v["schemaVersion"] == 5 {
         return crate::shared_memory::validate_event(v);
     }
@@ -2269,5 +2272,9 @@ pub fn project_events(events: &[Value]) -> Result<Value> {
     bundle["projectMemory"] = crate::project_memory::project_validated(events)?;
     bundle["projectDecisions"] = crate::decisions::project_validated(events)?;
     bundle["sharedMemory"] = crate::shared_memory::project_validated(events)?;
+    let memory = crate::agent_memory::project(events)?;
+    if !memory.is_null() {
+        bundle["agentMemory"] = memory;
+    }
     Ok(bundle)
 }

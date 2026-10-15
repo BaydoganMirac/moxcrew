@@ -602,7 +602,74 @@ impl Store {
                 &Value::Null,
             ),
         );
+        if let Some(memory) = state.projected.get("agentMemory") {
+            let mut memory = memory.clone();
+            for context in memory["contexts"].as_array_mut().into_iter().flatten() {
+                let current = state.projected["projectDecisions"]["projects"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|p| p["projectId"] == context["projectId"])
+                    .map(|p| p["revision"].clone())
+                    .unwrap_or(Value::Null);
+                context["currentDecisionRevision"] = current.clone();
+                context["stale"] = serde_json::json!(context["decisionRevision"] != current);
+            }
+            bundle.insert("agentMemory".into(), memory);
+        }
         Ok(Value::Object(bundle))
+    }
+    pub(crate) fn agent_memory_scope(&self, work_id: &str, run_id: &str) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        let lookup = |key: &str, field: &str, value: &str| {
+            state.projected["work"][key]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|row| row[field] == value)
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        let context = state.projected["agentMemory"]["contexts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|c| c["runId"] == run_id)
+            .cloned()
+            .unwrap_or(Value::Null);
+        let project = &context["projectId"];
+        let binding = state.projected["projectMemory"]["bindings"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|b| b["subjectKind"] == "work" && b["subjectId"] == work_id)
+            .map(|b| b["projectId"].clone())
+            .unwrap_or(Value::Null);
+        let manifest = state.projected["projectDecisions"]["projects"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|p| p["projectId"] == *project)
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({"projectId":project,"revision":0}));
+        let name = state.projected["projectMemory"]["projects"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|p| p["projectId"] == *project)
+            .map(|p| p["name"].clone())
+            .unwrap_or(Value::Null);
+        let intent = run_id.strip_prefix("run:").unwrap_or("");
+        let terminal_start = state.events.iter().any(|e| {
+            (e["type"] == "command.receipted" && e["payload"]["receipt"]["intentId"] == intent)
+                || (e["type"] == "run.start_unknown" && e["payload"]["intentId"] == intent)
+        });
+        Ok(
+            serde_json::json!({"context":context,"binding":binding,"manifest":manifest,
+            "name":name,"work":lookup("items","workItemId",work_id),
+            "run":lookup("runs","runId",run_id),"terminalStart":terminal_start}),
+        )
     }
     pub fn read_memory(&self, payload: &Value) -> Result<Value> {
         let state = self.guard()?;

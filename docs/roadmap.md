@@ -23,8 +23,8 @@ commitments.
   Cloud publication in [Task 0031](plans/0031-cloud-memory-publication.md).
   Preserve the measured Cloud retrieval and free Local keyword search in
   [Task0032](plans/0032-project-memory-search.md).
-  Scoped agent access and automatic ADR drafts follow independently verified
-  decision retrieval; owner acceptance remains explicit.
+  Scoped Local agent access is implemented in [Task0034](plans/0034-scoped-agent-memory.md).
+  Automatic ADR drafts follow; owner acceptance remains explicit.
 - Keep the completed Phase 1 observation, Phase 2 local control, and Phase 3
   paired Cloud control loops stable.
 - Stabilize the shipped declarative agent catalog, owner-composed teams,

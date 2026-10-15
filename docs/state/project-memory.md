@@ -202,9 +202,8 @@ and automatic extraction follow working exact decision retrieval.
 
 ## Current limits
 
-[Task0032](project-memory-search.md) now implements optional Cloud vector retrieval and free Local ranked keyword search. MCP memory tools and an automatic ADR extractor are not enabled. Cloud publication code requires compatible service deployment,
-explicit consent and verified subscription. Agent context is not automatically populated
-from accepted ADRs yet. External conversations and historical
+[Task0032](project-memory-search.md) now implements optional Cloud vector retrieval and free Local ranked keyword search. Task0034 now enables scoped read-only Local MCP tools; an automatic ADR extractor is not enabled. Cloud publication code requires compatible service deployment,
+explicit consent and verified subscription. Owned Codex work and team roles now receive current accepted Local ADR context through bounded tools. See [agent state](agent-memory.md). External conversations and historical
 unbound work are not imported. Cloud-created teams do not get implicit bindings;
 owner replies on an already locally bound team retain its historical scope and
 are labeled `owner` rather than claiming a local author. Deletion/retention controls

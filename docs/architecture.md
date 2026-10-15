@@ -159,8 +159,8 @@ and exact records validate. Network work has a three-second aggregate tick budge
 at most four requests per tick, and observes shutdown. No database service or
 new production dependency is added to the desktop. See [ADR 0032](decisions/0032-opt-in-shared-memory-transport.md).
 
-The future vector service belongs to the same native Rust host. Scoped
-MCP tools or local service calls authenticate a run-bound project; agents cannot
+The Local agent reader lives in the same native Rust Host. Scoped
+MCP tools authenticate a run-bound project; agents cannot
 select another project by supplying an ID or access raw database files.
 Automatic extraction proposes records, while the owner accepts decisions.
 Binding decision status is read from canonical facts rather than similarity
@@ -169,9 +169,12 @@ operational Cloud serialization; only explicitly confirmed accepted ADR DTOs
 cross the separate memory publication boundary.
 
 [ADR 0021](decisions/0021-project-scoped-local-decision-memory.md) defines the full
-contract. Vectors, agent tools and automatic extraction remain later slices of
-Task 0022/0029. Task 0031 implements the explicit publication transport; vectors,
-agent access and extraction are not included.
+contract. Task0032 implements measured Cloud vector and Local keyword retrieval.
+[Task0034](plans/0034-scoped-agent-memory.md) implements the Local Codex attachment
+through a lazy loopback reader and an existing-executable stdio bridge, protected
+one-shot bootstrap tickets, revocable RAM leases and strict V6 context facts.
+See [agent protocol](agent-memory-protocol.md). Automatic extraction and Cloud
+agent attachment remain later slices; Task0031 publication stays explicit.
 
 ## Provider adapter boundary
 

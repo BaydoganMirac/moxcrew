@@ -52,6 +52,12 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
     let translated = match text {
+        "Project memory · start {0} · current {1}" => "Proje hafızası · başlangıç {0} · güncel {1}",
+        "Update Codex to 0.155.1 or later to connect project memory." => "Proje hafızasını bağlamak için Codex’i 0.155.1 veya üstüne güncelleyin.",
+        "Project memory could not connect. Queue a retry to reconnect." => "Proje hafızasına bağlanılamadı. Yeniden bağlanmak için işi tekrar kuyruğa alın.",
+        "Current accepted decision list loaded." => "Güncel onaylı karar listesi okundu.",
+        "Decisions changed. The agent must refresh project context before reading decisions." => "Kararlar değişti. Ajan kararları okumadan önce proje bağlamını yenilemeli.",
+        "Project context is bound to this run." => "Bu çalışma proje hafızasına bağlı.",
         "In Finder, open the folder's Get Info > Sharing & Permissions and allow your account to Read & Write. If the drive is read-only, choose a folder on a writable drive." => "Finder’da klasörün Bilgi Ver > Paylaşım ve İzinler bölümünde hesabınıza Okuma ve Yazma izni verin. Disk salt okunursa yazılabilir bir diskte klasör seçin.",
         "This folder is linked to {0}. Choose another folder or unlink it there first." => "Bu klasör {0} projesine bağlı. Başka klasör seçin veya önce o projeden bağlantısını kaldırın.",
         "Your projects, local folders and shared memory." => "Projeleriniz, yerel klasörleriniz ve ortak hafızanız.",

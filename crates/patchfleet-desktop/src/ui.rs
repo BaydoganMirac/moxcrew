@@ -2989,6 +2989,20 @@ impl Console {
                 let workspace = items(&snapshot["workspaces"]).iter().find(|w| w["workingDirectory"]==item["workingDirectory"]);
                 if let Some(workspace)=workspace {raw_hint(ui,text(workspace,"displayName"));} else {hint(ui,"Unregistered worktree");}
                 let run = array(&work["runs"]).iter().rev().find(|r|r["workItemId"]==item["workItemId"]);
+                if let Some(memory) = array(&snapshot["agentMemory"]["contexts"]).iter().rev().find(|r|r["workItemId"]==item["workItemId"]) {
+                    hint(ui,&localized_format!(ui,"Project memory · start {0} · current {1}",memory["decisionRevision"].as_u64().unwrap_or(0),memory["currentDecisionRevision"].as_u64().unwrap_or(0)));
+                    if memory["issue"] == "AGENT_MEMORY_UNSUPPORTED" {
+                        hint(ui,"Update Codex to 0.155.1 or later to connect project memory.");
+                    } else if !memory["issue"].is_null() {
+                        hint(ui,"Project memory could not connect. Queue a retry to reconnect.");
+                    } else if memory["manifestLoaded"] == true {
+                        hint(ui,"Current accepted decision list loaded.");
+                    } else if memory["stale"] == true {
+                        hint(ui,"Decisions changed. The agent must refresh project context before reading decisions.");
+                    } else {
+                        hint(ui,"Project context is bound to this run.");
+                    }
+                }
                 ui.collapsing(t(ui, "Local task details"),|ui| {ui.monospace(text(item,"workingDirectory"));ui.label(text(item,"instruction"));if let Some(run)=run {ui.monospace(localized_format!(ui, "Run {0} · turn {1}",text(run,"runId"),text(run,"providerTurnId")));}});
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
@@ -6194,6 +6208,46 @@ mod tests {
         }
     }
 
+    #[test]
+    fn agent_memory_copy_reports_loaded_stale_and_unsupported_in_both_languages() {
+        for (language, loaded, stale, unsupported) in [
+            (
+                "tr",
+                "Güncel onaylı karar listesi okundu.",
+                "Kararlar değişti.",
+                "Codex’i 0.155.1",
+            ),
+            (
+                "en",
+                "Current accepted decision list loaded.",
+                "Decisions changed.",
+                "Codex to 0.155.1",
+            ),
+        ] {
+            let ctx = egui::Context::default();
+            let mut console = Console {
+                tab: Tab::Work,
+                ..Default::default()
+            };
+            let mut data = snapshot();
+            data["desktopPreferences"] = json!({"language":language});
+            data["agentMemory"] = json!({"contexts":[{"workItemId":"work:fixture","decisionRevision":2,"currentDecisionRevision":3,"stale":true,"manifestLoaded":true,"issue":null}]});
+            for _ in 0..3 {
+                painted_copy(&ctx, &mut console, &data);
+            }
+            assert!(painted_copy(&ctx, &mut console, &data)
+                .join("\n")
+                .contains(loaded));
+            data["agentMemory"]["contexts"][0]["manifestLoaded"] = json!(false);
+            assert!(painted_copy(&ctx, &mut console, &data)
+                .join("\n")
+                .contains(stale));
+            data["agentMemory"]["contexts"][0]["issue"] = json!("AGENT_MEMORY_UNSUPPORTED");
+            assert!(painted_copy(&ctx, &mut console, &data)
+                .join("\n")
+                .contains(unsupported));
+        }
+    }
     fn snapshot() -> Value {
         json!({"appVersion":"0.4.0","hostEpoch":"boot:current",
             "workspaces":{"items":[{"workspaceId":"workspace:fixture","displayName":"Fixture project","workingDirectory":"/tmp/fixture","revision":3}]},

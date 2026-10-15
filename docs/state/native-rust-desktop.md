@@ -283,3 +283,8 @@ passed signature/purpose-key/smoke-marker checks, explicit macOS launch, window
 creation, normal close and writer-lock release. Sampled idle RSS105.9MiB;
 model/runtime dependencies remain absent from desktop. Exact hashes and limits
 are in the search state.
+
+## 0.10 scoped agent memory
+
+[Agent memory state](agent-memory.md) records the Local Codex MCP attachment,
+strict V6 compatibility boundary, two-worktree proof and release evidence.

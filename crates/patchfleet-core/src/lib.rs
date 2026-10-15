@@ -1,3 +1,4 @@
+pub mod agent_memory;
 pub mod cloud;
 pub mod decisions;
 pub mod desktop_login;

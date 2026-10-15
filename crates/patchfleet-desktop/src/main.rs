@@ -243,7 +243,7 @@ impl eframe::App for Patchfleet {
         if self.smoke_capture.is_some() && !self.smoke_capture_requested {
             // Areas need a sizing frame before their contents appear in a GL readback.
             ctx.request_repaint();
-            if ctx.cumulative_frame_nr() >= 3 {
+            if ctx.cumulative_frame_nr() >= 8 {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
                 self.smoke_capture_requested = true;
             }
@@ -313,9 +313,6 @@ impl eframe::App for Patchfleet {
                 self.bridge.feedback.as_ref(),
                 self.bridge.pending.is_some(),
             );
-            if let Some(command) = commands.into_iter().next() {
-                self.bridge.submit(command);
-            }
             if let Some(action) = self.console.notice_action.take() {
                 match action {
                     ui::NoticeAction::Dismiss => self.bridge.dismiss_feedback(),
@@ -323,6 +320,9 @@ impl eframe::App for Patchfleet {
                     #[cfg(target_os="macos")]
                     ui::NoticeAction::Settings => ctx.open_url(egui::OpenUrl::new_tab("x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")),
                 }
+            }
+            if let Some(command) = commands.into_iter().next() {
+                self.bridge.submit(command);
             }
             if let Some(target) = self.console.take_folder_request() {
                 if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {

@@ -1,4 +1,4 @@
-use crate::command::{safe_error, Command, Notice};
+use crate::command::{safe_error, Command, Notice, NoticeKind};
 use crate::folder;
 use eframe::egui;
 use patchfleet_core::Host;
@@ -16,6 +16,13 @@ use tokio::{runtime::Runtime, sync::mpsc, task::JoinHandle};
 enum Request {
     Action(Command),
     Close,
+}
+
+fn memory_read(action: &str) -> bool {
+    matches!(
+        action,
+        "project_memory_read" | "project_decisions_read" | "project_decision_read"
+    )
 }
 
 enum Message {
@@ -321,6 +328,19 @@ impl Bridge {
 
     pub fn submit(&mut self, command: Command) {
         if self.busy || self.closing || self.picking_folder || self.error.is_some() {
+            return;
+        }
+        // Reads cannot replace a failed owner's exact retry identity.
+        if memory_read(command.action)
+            && self
+                .pending
+                .as_ref()
+                .is_some_and(|pending| !memory_read(pending.action))
+            && self
+                .feedback
+                .as_ref()
+                .is_some_and(|notice| notice.kind == NoticeKind::Error && notice.retryable())
+        {
             return;
         }
         match self.requests.try_send(Request::Action(command.clone())) {
@@ -659,6 +679,82 @@ mod tests {
         stale_snapshot["projectDecisions"]["projects"] = json!([]);
         bridge.apply_snapshot(Ok(stale_snapshot));
         assert!(bridge.snapshot.as_ref().unwrap()["decisionDetail"].is_null());
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn durable_mutation_cache_failure_keeps_exact_retry_until_owner_recovery() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        bridge.submit(Command::new("project_create", json!({"name":"Recovery"})));
+        await_idle(&mut bridge);
+        let project =
+            bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0]["projectId"].clone();
+        bridge.submit(Command::new(
+            "project_message",
+            json!({"projectId":project,"expectedProjectRevision":1,
+            "title":"Evidence","text":"Use exact totals."}),
+        ));
+        await_idle(&mut bridge);
+        bridge.submit(Command::new(
+            "project_memory_read",
+            json!({"projectId":project}),
+        ));
+        await_idle(&mut bridge);
+        let source =
+            bridge.snapshot.as_ref().unwrap()["memoryPage"]["sources"][0]["sourceId"].clone();
+        let proposal = Command::new(
+            "project_decision_propose",
+            json!({"projectId":project,"expectedProjectRevision":2,
+            "title":"Amounts","context":"","decision":"Use integer amounts.","rationale":"","consequences":"",
+            "sources":[{"sourceId":source,"revision":1}]}),
+        );
+        let cache = directory.path().join("project-decisions.json");
+        std::fs::remove_file(&cache).unwrap();
+        std::fs::create_dir(&cache).unwrap();
+        bridge.submit(proposal.clone());
+        await_idle(&mut bridge);
+        assert_eq!(bridge.feedback.as_ref().unwrap().kind, NoticeKind::Error);
+        assert!(bridge.feedback.as_ref().unwrap().retryable());
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectDecisions"]["projects"][0]["revision"],
+            1
+        );
+        let failure = bridge.feedback.as_ref().unwrap().code.clone();
+        let events = std::fs::read(directory.path().join("events.jsonl")).unwrap();
+        for action in [
+            "project_memory_read",
+            "project_decisions_read",
+            "project_decision_read",
+        ] {
+            bridge.submit(Command::new(action, json!({"projectId":project})));
+            assert!(!bridge.busy);
+            assert_eq!(bridge.pending.as_ref().unwrap().payload, proposal.payload);
+            assert_eq!(bridge.feedback.as_ref().unwrap().code, failure);
+        }
+        std::fs::remove_dir(cache).unwrap();
+        bridge.submit(bridge.pending.as_ref().unwrap().clone());
+        assert_eq!(bridge.pending.as_ref().unwrap().payload, proposal.payload);
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.feedback.as_ref().unwrap().code,
+            "PROJECT_DECISION_PROPOSED"
+        );
+        assert_eq!(
+            std::fs::read(directory.path().join("events.jsonl")).unwrap(),
+            events
+        );
+        assert!(bridge.pending.is_none());
+        bridge.submit(Command::new(
+            "project_decisions_read",
+            json!({"projectId":project}),
+        ));
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["decisionPage"]["total"],
+            1
+        );
         bridge.shutdown();
     }
 }

@@ -262,7 +262,7 @@ search, free Local ranked keyword retrieval, actual model/backend/native frame
 proofs and remaining operator/platform limits. Model inference runs only on the
 optional Cloud server; the native runtime/dependency set is unchanged.
 
-The0.8 development DMG is6,398,816bytes (6.10MiB). Its feature-off native App
+The 0.8 development DMG is6,398,816bytes (6.10MiB). Its feature-off native App
 passed signature/purpose-key/smoke-marker checks, explicit macOS launch, window
 creation, normal close and writer-lock release. Sampled idle RSS105.9MiB;
 model/runtime dependencies remain absent from desktop. Exact hashes and limits

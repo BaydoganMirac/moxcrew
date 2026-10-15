@@ -1,6 +1,6 @@
 # Project memory search
 
-Status: Implemented and measured; final independent integration review in progress
+Status: Complete for approved scope; deployment/platform release work remains
 
 Updated: 2026-10-15
 
@@ -67,3 +67,8 @@ platform runtime checks remain release work.
 No production Cloud deployment/migration, MCP memory tools or automatic ADR extraction is included. New server code and
 model assets require a separately operated compatible Cloud release. Native
 Windows/Linux runtime/signing evidence remains in the platform release matrix.
+
+Final independent integration review accepted the pinned model, bounded offline
+child lifecycle, cross-repository schema/limits and native query scope. Its one
+additional process-startup teardown defect was fixed with an independently run
+no-model regression. No unresolved blocker remains for the approved scope.

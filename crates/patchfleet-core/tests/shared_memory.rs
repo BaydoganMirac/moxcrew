@@ -817,3 +817,98 @@ fn reader_budget_evicts_history_while_preserving_all_sixty_four_current_heads() 
     assert!(records.len() <= 128);
     shared::validate_reader(&next).unwrap();
 }
+
+#[test]
+fn connection_remapping_at_queue_cap_requires_an_actual_pending_slot_to_replace() {
+    for retire_pending in [false, true] {
+        let (mut events, project, _, decision) = fixture();
+        let old_connection = conn();
+        setup(&mut events, &project, &old_connection);
+        let old_operation = if retire_pending {
+            apply(
+                &mut events,
+                "memory_cloud_publish",
+                &publish(&project, &decision, 0),
+                &old_connection,
+            );
+            let (next, operation) =
+                shared::prepare_delivery(&events, project.as_str().unwrap(), &old_connection)
+                    .unwrap();
+            events.extend(next);
+            Some(operation["operationId"].clone())
+        } else {
+            None
+        };
+        let mut new_connection = old_connection.clone();
+        new_connection["workspaceId"] = json!("workspace:new-account");
+        new_connection["hostId"] = json!("host:new-account");
+        for i in 0..(32 - usize::from(retire_pending)) {
+            let other = memory_apply(
+                &mut events,
+                "project_create",
+                json!({"name":format!("New queue project {i}")}),
+            )["projectId"]
+                .clone();
+            let request = command(
+                json!({"projectId":other,"expectedProjectRevision":1,"name":format!("New queue shared {i}")}),
+            );
+            assert_eq!(
+                apply(
+                    &mut events,
+                    "memory_cloud_create",
+                    &request,
+                    &new_connection
+                )["outcome"],
+                "applied"
+            );
+        }
+        let before = projected(&events);
+        let pending_count = |projection: &Value| {
+            projection["operations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|op| ["queued", "attempted"].contains(&op["state"].as_str().unwrap()))
+                .count()
+        };
+        assert_eq!(pending_count(&before), 32);
+        let revision = local_revision(&events, &project);
+        let request = command(
+            json!({"projectId":project,"expectedProjectRevision":revision,"sharedProjectId":format!("shared:{}",uuid::Uuid::new_v4())}),
+        );
+        let receipt = apply(&mut events, "memory_cloud_link", &request, &new_connection);
+        let after = projected(&events);
+        assert_eq!(pending_count(&after), 32, "retire_pending={retire_pending}");
+        if let Some(old_operation) = old_operation {
+            assert_eq!(receipt["outcome"], "applied");
+            let old = after["operations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|op| op["operation"]["operationId"] == old_operation)
+                .unwrap();
+            assert_eq!(old["state"], "unknown");
+            assert_eq!(old["lastErrorCode"], "MEMORY_CONNECTION_CHANGED");
+            assert_eq!(old["connection"], old_connection);
+            assert_eq!(
+                after["mappings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|m| m["projectId"] == project)
+                    .unwrap()["connection"],
+                new_connection
+            );
+        } else {
+            assert_eq!(receipt["reasonCode"], "MEMORY_QUEUE_FULL");
+            assert_eq!(receipt["outcome"], "rejected");
+            assert_eq!(after, before);
+        }
+        let count = events.len();
+        assert_eq!(
+            apply(&mut events, "memory_cloud_link", &request, &new_connection),
+            receipt
+        );
+        assert_eq!(events.len(), count);
+    }
+}

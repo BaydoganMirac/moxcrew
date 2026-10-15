@@ -858,7 +858,9 @@ impl State {
             }
         }
         if action != ACTIONS[4] {
-            if self.pending(&project).is_some() && !(setup && changed) {
+            let has_pending = self.pending(&project).is_some();
+            let replacing_pending = setup && changed && has_pending;
+            if has_pending && !replacing_pending {
                 return ("rejected", "MEMORY_OPERATION_PENDING");
             }
             if self
@@ -867,7 +869,7 @@ impl State {
                 .filter(|o| ["queued", "attempted"].contains(&o["state"].as_str().unwrap()))
                 .count()
                 >= 32
-                && !(setup && changed)
+                && !replacing_pending
             {
                 return ("rejected", "MEMORY_QUEUE_FULL");
             }

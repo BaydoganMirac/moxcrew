@@ -936,6 +936,14 @@ pub fn project(events: &[Value]) -> Result<Value> {
             {
                 closed.insert(format!("run:{}", p["intentId"].as_str().unwrap_or("")));
             }
+            "command.receipted"
+                if event["schemaVersion"] == 1 && p["receipt"]["commandType"] == "start_work" =>
+            {
+                closed.insert(format!(
+                    "run:{}",
+                    p["receipt"]["intentId"].as_str().unwrap_or("")
+                ));
+            }
             "decision.proposed"
             | "decision.accepted"
             | "decision.rejected"

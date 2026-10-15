@@ -59,6 +59,11 @@ version or add remote memory commands. V1 and capability-negotiated V2 serialize
 remain explicit operational allowlists. The native memory read result is local
 and cannot be supplied as an outbound projection.
 
+Task0031 adds a separate [opt-in memory protocol1](memory-protocol.md) for
+owner-selected accepted ADR publication. Its explicit consent, paid access and
+project roles do not widen any V1/V2 operational payload or authorize automatic
+source upload. V5 local publication facts are not operational Cloud events.
+
 ## Pairing
 
 1. An authenticated Cloud user creates a short-lived, single-use pairing code.

@@ -81,10 +81,16 @@ automatic source-backed ADR drafts. A planned local vector database indexes
 decision text; scoped tools will expose accepted decisions to project agents. See
 [Task 0022](plans/0022-project-memory-and-decision-service.md). External agent
 conversations require an explicit import; this foundation does not import them.
-Memory does not widen the default Cloud data boundary. The proposed subscription
-sharing service requires explicit project opt-in and a new memory contract;
-payment and ordinary pairing alone do not upload local memory. It is not yet
-implemented.
+Memory does not widen the default Cloud data boundary. The implemented optional
+subscription sharing service requires explicit project creation/linkage and
+per-ADR preview and confirmation under [Memory protocol1](memory-protocol.md).
+One paired installation publishes accepted decisions; explicitly linked readers
+in the same personal workspace download immutable exact versions. Downloaded
+copies do not become Local accepted decisions. Payment and ordinary pairing
+alone do not upload memory. Access loss keeps downloaded copies visibly stale;
+sharing off stops further access, without erasing copies already downloaded.
+Service deployment and the broader existing-customer commercial transition
+remain separate release work.
 
 ## V0 promise
 

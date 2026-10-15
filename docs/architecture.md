@@ -139,16 +139,31 @@ reads are ephemeral. Decision manifest revisions are separate from V3 source
 revisions. [ADR 0031](decisions/0031-versioned-local-decision-events.md) defines
 the implemented boundary; Cloud V1/V2 allowlists omit all decision data.
 
+V5 command/request/attempt/acknowledgement facts add explicit Cloud publication
+without changing V4 acceptance. The durable queue binds consent to a specific
+paired URL/workspace/host and a frozen accepted revision. An uncertain delivery
+retries the same operation to recover its server receipt. Memory protocol1 is
+separate from operational V1/V2. Only accepted ADR fields and opaque source
+ID/revision references are published; source bodies and origin events stay local.
+Same-workspace reader grants are explicit. The protected derived read cache is
+bounded to 16 MiB, with complete manifests installed only after consistent pages
+and exact records validate. Network work has a three-second aggregate tick budget,
+at most four requests per tick, and observes shutdown. No database service or
+new production dependency is added to the desktop. See [ADR 0032](decisions/0032-opt-in-shared-memory-transport.md).
+
 The future vector service belongs to the same native Rust host. Scoped
 MCP tools or local service calls authenticate a run-bound project; agents cannot
 select another project by supplying an ID or access raw database files.
 Automatic extraction proposes records, while the owner accepts decisions.
 Binding decision status is read from canonical facts rather than similarity
-score. Memory text, queries, vectors, and tool credentials are local-only.
+score. Local text, queries, vectors and tool credentials stay outside default
+operational Cloud serialization; only explicitly confirmed accepted ADR DTOs
+cross the separate memory publication boundary.
 
 [ADR 0021](decisions/0021-project-scoped-local-decision-memory.md) defines the full
 contract. Vectors, agent tools and automatic extraction remain later slices of
-Task 0022/0029; Cloud publication is separately scoped by the proposed ADR 0030.
+Task 0022/0029. Task 0031 implements the explicit publication transport; vectors,
+agent access and extraction are not included.
 
 ## Provider adapter boundary
 

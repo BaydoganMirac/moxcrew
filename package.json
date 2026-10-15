@@ -1,6 +1,6 @@
 {
   "name": "patchfleet",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Native Rust desktop command center for local coding-agent teams.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/BaydoganMirac/patchfleet#readme",

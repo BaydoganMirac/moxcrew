@@ -101,6 +101,17 @@ impl Patchfleet {
                 console.decision_smoke();
                 bridge.decision_smoke();
             }
+            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("shared-reader")
+            {
+                console.shared_smoke();
+                bridge.shared_smoke();
+            }
+            if !observe
+                && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("shared-publisher")
+            {
+                console.publication_smoke();
+                bridge.decision_smoke();
+            }
             if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("folder-picker")
             {
                 console.folder_smoke(&directory.join("preview-repository"));
@@ -208,6 +219,50 @@ fn seed_decision_scene(directory: &std::path::Path) {
         }
         host.shutdown().await;
     });
+}
+
+#[cfg(feature = "ui-smoke")]
+fn seed_shared_scene(directory: &std::path::Path, publisher: bool) {
+    let url = std::env::var("PATCHFLEET_SMOKE_MEMORY_URL")
+        .expect("Disposable memory fixture URL required");
+    let parsed = fixture_loopback_url(&url);
+    assert!(
+        parsed,
+        "Native memory smoke accepts only a literal loopback fixture"
+    );
+    let code = std::env::var("PATCHFLEET_SMOKE_MEMORY_PAIR").expect("Disposable pairing required");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        let project = host.snapshot().unwrap()["projectMemory"]["projects"][0].clone();
+        host.action("cloud_pair",command::Command::new("cloud_pair",serde_json::json!({"cloudUrl":url,"displayName":"Disposable memory preview","pairingCode":code})).payload).await.unwrap();
+        if publisher {
+            let sources=host.action("project_memory_read",serde_json::json!({"projectId":project["projectId"]})).await.unwrap();
+            let draft=host.action("project_decision_propose",command::Command::new("project_decision_propose",serde_json::json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],
+                "title":"Kesin tutarlar ve açık yuvarlama sınırı","context":"Bu kayıt yalnızca yerel arayüz test verisidir.","decision":"Tutarları tam sayı alt birimlerle sakla; yuvarlamayı toplam sınırında uygula.","rationale":"Tekrar üretilebilir fatura hesapları.","consequences":"Giriş ve çıkış sınırlarında tutar dönüşümü gerekir.",
+                "sources":[{"sourceId":sources["sources"][0]["sourceId"],"revision":sources["sources"][0]["revision"]}]})).payload).await.unwrap();
+            host.action("project_decision_accept",command::Command::new("project_decision_accept",serde_json::json!({"projectId":project["projectId"],"decisionId":draft["decisionId"],"expectedDecisionRevision":1})).payload).await.unwrap();
+            host.action("memory_cloud_create",command::Command::new("memory_cloud_create",serde_json::json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],"name":"Publication preview fixture"})).payload).await.unwrap();
+        } else {
+            let shared=std::env::var("PATCHFLEET_SMOKE_MEMORY_PROJECT").expect("Disposable shared project required");
+            host.action("memory_cloud_link",command::Command::new("memory_cloud_link",serde_json::json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],"sharedProjectId":shared})).payload).await.unwrap();
+        }
+        host.action("memory_cloud_sync",command::Command::new("memory_cloud_sync",serde_json::json!({"projectId":project["projectId"]})).payload).await.unwrap();
+        host.shutdown().await;
+    });
+}
+
+#[cfg(feature = "ui-smoke")]
+fn fixture_loopback_url(value: &str) -> bool {
+    // No production/test endpoint override exists in feature-off builds.
+    value.strip_prefix("http://127.0.0.1:").is_some_and(|port| {
+        !port.is_empty()
+            && port.bytes().all(|b| b.is_ascii_digit())
+            && port.parse::<u16>().is_ok_and(|n| n > 0)
+    })
 }
 
 impl eframe::App for Patchfleet {
@@ -380,11 +435,26 @@ fn main() {
         #[cfg(feature = "ui-smoke")]
         if matches!(
             std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
-            Ok("memory" | "decisions" | "projects" | "folder-picker" | "folder-error")
+            Ok("memory"
+                | "decisions"
+                | "shared-reader"
+                | "shared-publisher"
+                | "projects"
+                | "folder-picker"
+                | "folder-error")
         ) {
             seed_memory_scene(&directory);
             if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("decisions") {
                 seed_decision_scene(&directory);
+            }
+            if matches!(
+                std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                Ok("shared-reader" | "shared-publisher")
+            ) {
+                seed_shared_scene(
+                    &directory,
+                    std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("shared-publisher"),
+                );
             }
             if matches!(
                 std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),

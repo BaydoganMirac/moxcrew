@@ -90,6 +90,13 @@ Native 0.6 additionally reads/writes V4 local decision commands and facts.
 Creating or transitioning an ADR requires a 0.6 reader thereafter; a 0.5
 rollback uses the unchanged pre-upgrade data copy. Merely opening an existing
 valid log does not fabricate an ADR or upload its contents.
+Native 0.7 additionally reads/writes V5 shared-memory queue, attempt and receipt
+facts. Back up the closed data directory before the first shared-memory action;
+rollback to 0.6 after a V5 write uses that unchanged pre-upgrade copy. Verify the
+separate Memory protocol1 service before enabling publication in a deployment.
+The `shared-reader` and `shared-publisher` UI smoke scenes require a disposable
+loopback memory service and fresh fixture pairing codes; the private two-Host
+integration driver supplies these. They never use an installed app or owner data.
 The historical Node 0.2 reader cannot read local V2 audit events: restore its
 unchanged pre-migration data when rolling back to Node. Never run two writers.
 

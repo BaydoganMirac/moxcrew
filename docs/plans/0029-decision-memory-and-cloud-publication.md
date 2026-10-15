@@ -1,12 +1,14 @@
 # Task 0029 Decision memory and subscription Cloud publication
 
-Status: Staged implementation — slice 1 approved in Task 0030
+Status: Slices 1–2 implemented in Tasks 0030/0031; later slices proposed
 
 Owner request: 2026-10-15, turn the selected product model into an implementation
 sequence. The commercial boundary is accepted; this card proposes the remaining
 technical choices and bounded slices, not a deployment or payment change.
 The owner subsequently approved starting the first local slice; its concrete
 contract and evidence are in [Task 0030](0030-local-decision-lifecycle.md).
+The subsequent approved [Task 0031](0031-cloud-memory-publication.md) implements
+slice 2 with complete paginated manifests rather than a delta/change feed.
 
 ## First end-to-end outcome
 
@@ -16,7 +18,7 @@ to that project and reads the identical decision identity, revision, status and
 published manifest. Restart, duplicate delivery and network loss preserve that
 outcome. Local-only projects keep working without an account or subscription.
 
-Use [ADR 0030](../decisions/0030-shared-decision-publication.md)'s proposed
+Use [ADR 0030](../decisions/0030-shared-decision-publication.md)'s
 single-publisher rule. The first release supports one owner's paired devices;
 it adds no organization invitations, billing seats or generic multi-writer merge.
 
@@ -139,5 +141,6 @@ call, production migration, deployment or publication is part of this plan.
 Each slice needs its own concrete approved implementation card, tests, state
 update and reviewable commit. Slices 1-2 form the first end-to-end milestone;
 vectors and automatic extraction follow working exact shared retrieval.
-Slice 1 implementation/evidence is recorded in Task 0030. The remaining slices
-are proposals; writing this sequence does not verify or enable them.
+Slice 1 implementation/evidence is recorded in Task 0030, and slice 2 in Task 0031
+and accepted ADR 0032. Slices 3–6 remain proposals; writing this sequence does not
+verify or enable them.

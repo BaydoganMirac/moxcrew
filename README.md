@@ -2,7 +2,7 @@
 
 Your coding agents. One local Rust desktop command center.
 
-Patchfleet 0.6 runs its interface and host in Rust. egui/eframe renders the native
+Patchfleet 0.7 runs its interface and host in Rust. egui/eframe renders the native
 window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
@@ -21,8 +21,9 @@ CLIs and their own model/account/runtime requirements are installed separately.
 
 Rendering reacts to input and state changes. Owned run signals are checked
 quickly during active work; idle provider probes are limited to once a minute.
-Cloud receives only allowlisted operational data. Work text, source, paths,
-prompts, output and credentials remain local by default.
+Cloud receives only allowlisted operational data by default. Optional paid
+shared memory publishes only explicitly previewed and confirmed accepted ADRs.
+Source bodies, paths, prompts, output and credentials remain local by default.
 
 ## Build and run
 
@@ -55,9 +56,11 @@ build/runtime evidence and remaining signing/platform checks are recorded in
 Read [installation and recovery](docs/install.md), [architecture](docs/architecture.md)
 and [release checks](docs/release.md). [Project Memory](docs/state/project-memory.md)
 supports durable sources, message revisions, sourced ADR lifecycle and scoped
-keyword reads. Vector search, agent memory tools, automatic drafts and explicit
-Cloud publication are later slices. Only owner acceptance makes an ADR active;
-agent context injection is not enabled yet. Local memory remains free.
+keyword reads. The optional subscription Cloud memory service supports explicit
+publication and exact cross-device reads; see the [memory protocol](docs/memory-protocol.md).
+Vector search, agent memory tools and automatic drafts are later slices. Only
+owner acceptance makes an ADR active; agent context injection is not enabled yet.
+Local memory remains free. Cloud service deployment is a separate release step.
 
 ## Product boundaries
 

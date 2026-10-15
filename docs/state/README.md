@@ -16,9 +16,9 @@
 | V0 publishable Local beta | Done | 2026-07-17 | [v0-local-beta.md](v0-local-beta.md) |
 | External beta activation | In progress | 2026-07-17 | [external-beta-activation.md](external-beta-activation.md) |
 | Agent packs and teams | Done | 2026-07-20 | [agent-teams.md](agent-teams.md) |
-| Project/source memory and automatic ADR drafts | Slice A done; later slices planned | 2026-10-14 | [project-memory.md](project-memory.md) |
+| Project/source memory and automatic ADR drafts | Local ADRs and explicit Cloud publication done; vectors/extraction planned | 2026-10-15 | [project-memory.md](project-memory.md) |
 | Rust and Tauri desktop | Superseded interface; core retained | 2026-10-14 | [rust-desktop.md](rust-desktop.md) |
-| Native Rust desktop interface | Implemented; platform release checks pending | 2026-10-14 | [native-rust-desktop.md](native-rust-desktop.md) |
+| Native Rust desktop interface | Implemented; platform release checks pending | 2026-10-15 | [native-rust-desktop.md](native-rust-desktop.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.
@@ -35,7 +35,9 @@ release gates rather than being recorded as completed work.
 The 0.4 native Rust/egui desktop supersedes the 0.3 Tauri interface while retaining
 the Rust core and data directory. Its state file records current native artifacts
 and remaining platform release checks. Version 0.5 adds stable project/source memory
-and Turkish/English display. Decision acceptance/indexing and agent tools follow.
+and Turkish/English display. Version 0.6 adds Local sourced ADR acceptance;
+version 0.7 adds optional explicit paid Cloud publication and exact reader copies.
+Vectors and agent tools follow.
 
 State files are resumable handoffs. Update the relevant file whenever a work
 session changes implementation status, blockers, decisions, or next steps.

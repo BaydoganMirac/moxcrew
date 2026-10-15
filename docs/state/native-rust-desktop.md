@@ -1,6 +1,6 @@
 # Native Rust desktop state
 
-Status: 0.6.0 implemented and independently accepted; platform release checks pending
+Status: 0.7.0 implemented and independently accepted; platform release checks pending
 
 Updated: 2026-10-15
 
@@ -8,7 +8,7 @@ Updated: 2026-10-15
 
 The owner explicitly selected a WebView-free interface, then delegated the
 technology choice with low RAM, responsiveness and lightweight distribution as
-the main criteria. The local 0.5 interface uses egui/eframe 0.36.2 and one Glow
+the main criteria. The native interface uses egui/eframe 0.36.2 and one Glow
 renderer. Rust core, canonical events, existing data directory and Cloud
 protocol remain intact. Tauri, React/Vite assets and their default build paths
 were removed. Node modules remain only legacy behavior references.
@@ -47,6 +47,47 @@ Idle rendering responds to input/state events, with animations disabled.
 Provider probes run at most once a minute or on explicit refresh. Active owned
 signals and scheduling update every five seconds; idle ticks are sparse.
 Unpaired Cloud returns before copying projections and canonical history.
+
+## 0.7 explicit shared decisions
+
+- [Task 0031](../plans/0031-cloud-memory-publication.md) adds optional subscription
+  Cloud publication and exact same-workspace reader copies. The Cloud view
+  explicitly creates/links a shared project; accepted Local ADRs require a
+  preview and checked upload confirmation. Local acceptance remains free and
+  does not publish automatically. Source bodies/origin events remain Local.
+- The preview uses readable translated field labels with original owner text,
+  a bounded scrolling body and separate consent/action controls. Opaque
+  references and exact wire fields are collapsed technical details. Revision,
+  project, role, connection and queue changes reset consent. Read-only downloaded
+  copies have current/historical, offline/stale and verification labels.
+- All 54 native regression tests pass, covering explicit upload clicks and
+  allowlists, scope/revision/connection invalidation, raw owner text, bounded
+  minimum-window controls and original owner-error retry protection.
+- Actual disposable PostgreSQL/HTTP-backed native GL frames show
+  [Turkish exact reader](../screenshots/native-shared-reader-0.7-tr.png),
+  [English minimum reader](../screenshots/native-shared-reader-0.7-en-min.png) and
+  [Turkish publication preview](../screenshots/native-publication-preview-0.7-tr.png).
+  All three were inspected and exited normally. The preview's checkbox remains
+  unchecked; this fixture does not upload that illustrated Local ADR. The
+  reader body is downloaded from the real disposable service. These GL frames
+  alone do not establish production OS presentation.
+- No production dependency, vector engine or background database service was
+  added to the desktop. Memory HTTP work has a three-second aggregate budget,
+  a four-request tick limit and immediate close cancellation. Shared reader
+  cache limits and canonical V5 rollback requirements are recorded in
+  [memory state](project-memory.md) and [installation](../install.md).
+- Final verification passes 158 Rust tests (104 core/54 desktop), 149 legacy
+  tests, strict workspace Clippy and formatting. Independent review accepted
+  core `46e149d`, queue-cap repair `bea89cd`, UI `1d44b55` and the matching
+  separate memory transport after all three concrete findings were repaired.
+- The final feature-off App built from coordinator integration `896c3bd`
+  launched through NSWorkspace with copied disposable reader data and failing
+  provider stubs. Its own bundle/PID and native layer-zero window were verified.
+  Normal close exited and released the writer lock. OS capture returned “could
+  not create image from window”; no final production pixel screenshot is claimed.
+  This eight-second startup sample reached 106.63 MiB RSS and 0.17 seconds
+  cumulative CPU, including startup and a disconnected fixture connection.
+  It does not establish sustained or cross-platform resource use.
 
 ## 0.6 decision evidence
 
@@ -144,18 +185,18 @@ Unpaired Cloud returns before copying projections and canonical history.
 ## Final local package
 
 - `dist/native/Patchfleet.app` contains the production binary, without test-only
-  screenshot/timed-close features. Version is 0.6.0 and the bundle identifier
+  screenshot/timed-close features. Version is 0.7.0 and the bundle identifier
   remains `com.patchfleet.desktop`.
-- `dist/native/Patchfleet_0.6.0_aarch64.dmg` is 6,175,136 bytes (about 5.89 MiB).
-  SHA-256: `dcc1646cb309dee0ab1a835dd40fba6fa73a34b9f28eda9a535178a6424a0c46`.
-- The signed executable is 11,934,192 bytes, SHA-256
-  `aff30d63a7c1fe193be56db6ccb0f88759ed527b6c2eb5134a2614a5c7511c41`.
+- `dist/native/Patchfleet_0.7.0_aarch64.dmg` is 6,358,403 bytes (about 6.06 MiB).
+  SHA-256: `0a070b9c5be12d9c4e0326dd09bfa8142694a9d1ef85ae4265ac446e15449ea9`.
+- The signed executable is 12,348,496 bytes, SHA-256
+  `e905068e20a88cf2ba2260d02c077ef188f1593fadd2d22674c9690ba898409b`.
   Its linked frameworks are native system
   graphics/window libraries; WebKit is absent.
 - DMG integrity, App ad hoc signature, all five folder-access purpose keys and
   bundle version/identifier checks pass. Test-only scene/capture controls are
   absent from the production binary. Production hook ingress was verified in
-  Task 0027; Task 0030 does not change it.
+  Task 0027; Task 0031 does not change it.
 - cargo-packager produced the App. The local DMG was created with hdiutil using
   a distinct versioned volume name to preserve the owner's already-mounted old
   Patchfleet image. No installed application, owner state, branch push, public
@@ -207,7 +248,8 @@ disposable illustrative data. The form images are minimum-window GL captures.
 - Memory still scales with retained canonical history and visible operational
   data. Source memory is implemented with compact metadata/scoped reads, but the
   canonical event cache remains proportional to history. Vector indexing,
-  agent tools, automatic extraction and Cloud publication remain later slices.
+  agent tools and automatic extraction remain later slices. Explicit Cloud
+  publication is implemented in 0.7 and requires compatible service deployment.
 
 See [ADR 0024](../decisions/0024-native-rust-desktop-ui.md),
 [Task 0024](../plans/0024-native-rust-desktop-ui.md), [release](../release.md) and

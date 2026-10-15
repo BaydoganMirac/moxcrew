@@ -1,6 +1,6 @@
 # Project memory feature state
 
-Status: Source foundation and local decision lifecycle implemented and independently accepted
+Status: Local ADR lifecycle and explicit paid Cloud publication independently accepted
 
 Last updated: 2026-10-15
 
@@ -14,11 +14,12 @@ only explicit owner acceptance makes a decision authoritative.
 [ADR 0029](../decisions/0029-free-local-and-subscription-cloud.md) adds the
 owner-selected commercial boundary: Local and its planned memory capabilities
 remain free; optional hosted/shared memory belongs to subscription Cloud.
-Cloud PostgreSQL/pgvector and project opt-in publication are proposed next work,
-not existing memory storage. Pricing, quotas, embedding choice and the new memory
-protocol remain unresolved; ADR 0030 proposes the initial single-publisher rule.
-No default upload boundary or
-runtime entitlement changed.
+Explicit opt-in publication now has a separate Memory protocol1 and private
+PostgreSQL implementation, with the single-publisher rule from ADR 0030/0032.
+Pgvector, pricing, commercial allowances and embedding choice remain later work.
+Only the new memory service requires verified paid entitlement; existing Cloud
+Free/Solo behavior has not undergone the broader commercial transition. No
+default upload boundary changed, and no deployed database was migrated.
 
 ## Recorded
 
@@ -133,21 +134,77 @@ Production NSWorkspace launch, its own window/PID, normal close and writer
 release pass; final OS pixel capture was unavailable. See
 [native state](native-rust-desktop.md) for checksums, captures and release limits.
 
+## Explicit subscription Cloud publication — Task 0031
+
+[Task 0031](../plans/0031-cloud-memory-publication.md) implements approved
+[ADR 0032](../decisions/0032-opt-in-shared-memory-transport.md). V5 canonical
+facts preserve owner queue consent, the frozen outbound DTO, delivery attempts
+and server receipts. The mapping binds URL/workspace/host; a connection change
+cannot silently reuse prior upload consent. Queued is distinct from published.
+An uncertain attempt retries the same operation, including after restart or a
+later Local change, to recover its original acknowledgement. An unattempted
+publication is canceled if its accepted Local revision is no longer current.
+
+The Cloud view explicitly creates a publisher project or links a reader in the
+same personal workspace. The Decisions view previews accepted ADR fields and
+requires a fresh upload checkbox. Source bodies/origin events remain Local;
+only opaque source ID/revision references accompany the selected accepted text.
+Pairing, payment, acceptance and source editing never publish automatically.
+Downloaded Cloud records are read-only copies, separate from Local acceptance.
+The UI identifies current/historical, stale/offline, last verification, pending
+publication, subscription/access errors and changed pairing in Turkish/English.
+
+Downloads validate complete consistent manifests and immutable exact records
+before replacing a project view. The protected derived cache is capped at
+16 MiB, 64 current heads and 128 retained versions per project. Limits are
+technical safeguards, not commercial allowances. Delivery uses existing Rust
+HTTP dependencies, at most four requests and three seconds per tick, with close
+cancellation. No database daemon, vector engine or new production dependency
+was added to the desktop. Replay still scales with canonical history.
+
+The real cross-repository fixture runs two Rust Hosts through HTTP to a fresh
+native PostgreSQL16 cluster. It proves the identical accepted ID/revision/body,
+lost acknowledgement and restart recovery, atomic published replacement,
+sharing-off denial with stale offline copies retained, inactive-subscription
+denial and continued free Local commands. A database-wide source canary proves
+raw evidence was not uploaded. The existing normalized PostgreSQL test passes
+after all four migrations run twice on a fresh legacy seed; no owner database
+or live billing/provider system is involved. See native state for final UI and
+development package evidence.
+
+Final verification passes 158 Rust tests (104 core and 54 desktop), 149 legacy
+tests and 38 private Cloud tests. Two ordinary-suite PostgreSQL cases are
+intentionally skipped there and both pass through separate fresh-database
+runners; the actual two-Rust-Host HTTP/PostgreSQL proof also passes against final
+code. One pre-existing manual large-log probe remains ignored. Workspace
+formatting and strict all-target/all-feature Clippy pass; all 246 original V1
+prefix hashes are preserved. Core delivery is `cab9bc8`, native UI `1d44b55`,
+queue-cap repair `bea89cd`, terminal-rejection recovery `46e149d`, and coordinator
+integration `896c3bd`.
+
+Independent review closed three concrete issues: expired reader-link retries now
+recover their original receipt without granting access; remapping a completed
+old connection cannot exceed 32 pending operations; valid capacity/immutable/
+overflow rejections produce terminal receipts instead of trapping the queue.
+Lost rejection acknowledgements survive restart and permit a new replacement or
+sharing change after recovery. Unknown bare HTTP409 responses remain uncertain;
+no client guesses a terminal result. Semantic rejection feedback remains visible
+without marking a fresh verified cache stale. Review accepted the final core/UI
+and reduced transport contract with no remaining concrete code blocker.
+
 ## Next
 
 The staged [Task 0029](../plans/0029-decision-memory-and-cloud-publication.md)
 turns the free Local/subscription Cloud decision into bounded implementation
-slices. Following local accepted decisions, the next concrete card covers
-explicit Cloud publication and the same exact revision read on a second installation.
-[ADR 0030](../decisions/0030-shared-decision-publication.md) proposes one paired
-publishing host per shared project. These technical choices are proposed, not
-enabled. Cloud vectors, embedded Local retrieval evaluation, scoped agent tools
+slices. Following explicit Cloud publication, Cloud vectors, embedded Local
+retrieval evaluation, scoped agent tools
 and automatic extraction follow working exact decision retrieval.
 
 ## Current limits
 
-No memory database, embedding model, MCP memory tools, automatic ADR extractor
-or Cloud publication is enabled. Agent context is not automatically populated
+No vector database, embedding model, MCP memory tools or automatic ADR extractor
+is enabled. Cloud publication code requires compatible service deployment,
+explicit consent and verified subscription. Agent context is not automatically populated
 from accepted ADRs yet. External conversations and historical
 unbound work are not imported. Cloud-created teams do not get implicit bindings;
 owner replies on an already locally bound team retain its historical scope and

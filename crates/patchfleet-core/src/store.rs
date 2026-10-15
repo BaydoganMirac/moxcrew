@@ -19,6 +19,7 @@ const PROJECTIONS: &[(&str, &str)] = &[
     ("teams", "agent-teams.json"),
     ("projectMemory", "project-memory.json"),
     ("projectDecisions", "project-decisions.json"),
+    ("sharedMemory", "shared-memory.json"),
 ];
 
 pub struct Store {
@@ -32,6 +33,7 @@ pub struct Store {
 struct State {
     events: Vec<Value>,
     projected: Value,
+    reader: Value,
     valid_bytes: u64,
     incomplete_tail: bool,
     fingerprint: Option<Fingerprint>,
@@ -515,6 +517,20 @@ impl Store {
             }
         }
         let projected = project_events(&events)?;
+        let reader_path = directory.join("shared-memory-reader.json");
+        let reader = if checked_metadata(&reader_path, false)?.is_some() {
+            let mut bytes = Vec::new();
+            open_private_reader(&reader_path)?
+                .take((crate::shared_memory::MAX_READER_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)?;
+            serde_json::from_slice::<Value>(&bytes)
+                .ok()
+                .filter(|v| crate::shared_memory::validate_reader(v).is_ok())
+                .unwrap_or_else(crate::shared_memory::empty_reader)
+        } else {
+            crate::shared_memory::empty_reader()
+        };
+        let reader = crate::shared_memory::prune_reader(&reader, &projected["sharedMemory"]);
         let fingerprint = file_fingerprint(&path)?;
         if fingerprint
             .as_ref()
@@ -525,6 +541,7 @@ impl Store {
         Ok(State {
             events,
             projected,
+            reader,
             valid_bytes: valid_bytes as u64,
             incomplete_tail,
             fingerprint,
@@ -577,6 +594,14 @@ impl Store {
             "projectDecisions".into(),
             crate::decisions::metadata(&state.projected["projectDecisions"]),
         );
+        bundle.insert(
+            "sharedMemory".into(),
+            crate::shared_memory::metadata(
+                &state.projected["sharedMemory"],
+                &state.reader,
+                &Value::Null,
+            ),
+        );
         Ok(Value::Object(bundle))
     }
     pub fn read_memory(&self, payload: &Value) -> Result<Value> {
@@ -599,6 +624,67 @@ impl Store {
         let state = self.guard()?;
         self.ensure_unchanged(&state)?;
         crate::decisions::read_detail(&state.projected["projectDecisions"], &read_payload(payload))
+    }
+    pub fn shared_metadata(&self, connection: &Value) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        Ok(crate::shared_memory::metadata(
+            &state.projected["sharedMemory"],
+            &state.reader,
+            connection,
+        ))
+    }
+    pub fn shared_mapping(&self, project: &str) -> Result<Option<Value>> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        Ok(state.projected["sharedMemory"]["mappings"]
+            .as_array()
+            .and_then(|ms| ms.iter().find(|m| m["projectId"] == project))
+            .cloned())
+    }
+    pub fn read_shared_memory(&self, payload: &Value, connection: &Value) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        crate::shared_memory::read_list(
+            &state.projected["sharedMemory"],
+            &state.reader,
+            connection,
+            &read_payload(payload),
+        )
+    }
+    pub fn read_shared_decision(&self, payload: &Value, connection: &Value) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        crate::shared_memory::read_detail(
+            &state.projected["sharedMemory"],
+            &state.reader,
+            connection,
+            &read_payload(payload),
+        )
+    }
+    pub fn commit_shared_cache(
+        &self,
+        project: &str,
+        connection: &Value,
+        manifest: &Value,
+        records: &[Value],
+    ) -> Result<()> {
+        let mut state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        let reader = crate::shared_memory::merge_reader(
+            &state.reader,
+            &state.projected["sharedMemory"],
+            project,
+            connection,
+            manifest,
+            records,
+        )?;
+        atomic_write(
+            &self.directory.join("shared-memory-reader.json"),
+            &serde_json::to_vec(&reader)?,
+        )?;
+        state.reader = reader;
+        Ok(())
     }
     pub fn workspace_project(&self, workspace_id: &str) -> Result<Option<String>> {
         let state = self.guard()?;

@@ -569,6 +569,108 @@ impl Cloud {
             json!({"paired":true,"cloudUrl":c["cloudUrl"],"hostId":c["hostId"],"workspaceId":c["workspaceId"],"lastAttemptAt":c["lastAttemptAt"],"lastSuccessAt":c["lastSuccessAt"],"lastErrorCode":c["lastErrorCode"]})
         }
     }
+    pub(crate) fn memory_connection(&self) -> Value {
+        let c = &self.state["connection"];
+        if c.is_null() {
+            Value::Null
+        } else {
+            json!({"cloudUrl":c["cloudUrl"],"workspaceId":c["workspaceId"],"hostId":c["hostId"]})
+        }
+    }
+    /// Separate opt-in memory transport reuses the protected paired credential.
+    /// The caller supplies path segments, never an arbitrary outbound URL.
+    pub(crate) async fn memory_request(
+        &self,
+        bound: &Value,
+        method: Method,
+        segments: &[&str],
+        query: &[(&str, String)],
+        body: Option<&Value>,
+    ) -> Result<Value> {
+        let c = &self.state["connection"];
+        if bound.is_null() || self.memory_connection() != *bound {
+            return Err("MEMORY_CONNECTION_CHANGED".into());
+        }
+        let mut url = Url::parse(c["cloudUrl"].as_str().ok_or("MEMORY_CONNECTION_CHANGED")?)
+            .map_err(|_| "MEMORY_PROTOCOL_INVALID")?;
+        {
+            let mut path = url
+                .path_segments_mut()
+                .map_err(|_| "MEMORY_PROTOCOL_INVALID")?;
+            path.clear().extend([
+                "api",
+                "memory",
+                "v1",
+                "hosts",
+                c["hostId"].as_str().unwrap(),
+            ]);
+            path.extend(segments);
+        }
+        url.query_pairs_mut()
+            .extend_pairs(query.iter().map(|(k, v)| (*k, v.as_str())));
+        let mut request = self
+            .client
+            .request(method, url)
+            .header("content-type", "application/json")
+            .header("cache-control", "no-store")
+            .bearer_auth(
+                c["credential"]
+                    .as_str()
+                    .ok_or("MEMORY_CONNECTION_CHANGED")?,
+            );
+        if let Some(body) = body {
+            let bytes = serde_json::to_vec(body).map_err(|_| "MEMORY_PROTOCOL_INVALID")?;
+            if bytes.len() > crate::shared_memory::MAX_RESPONSE {
+                return Err("MEMORY_INVALID_PAYLOAD".into());
+            }
+            request = request.header("content-length", bytes.len()).body(bytes);
+        }
+        let mut response = request.send().await.map_err(|_| "MEMORY_UNAVAILABLE")?;
+        let status = response.status();
+        let content = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let no_store = response
+            .headers()
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| {
+                v.split(',')
+                    .any(|x| x.trim().eq_ignore_ascii_case("no-store"))
+            });
+        if !(content.eq_ignore_ascii_case("application/json")
+            || content.eq_ignore_ascii_case("application/json; charset=utf-8"))
+            || !no_store
+        {
+            return Err("MEMORY_PROTOCOL_INVALID".into());
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| "MEMORY_UNAVAILABLE")? {
+            if bytes.len() + chunk.len() > crate::shared_memory::MAX_RESPONSE {
+                return Err("MEMORY_PROTOCOL_INVALID".into());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let value: Value = serde_json::from_slice(&bytes).map_err(|_| "MEMORY_PROTOCOL_INVALID")?;
+        if !status.is_success() {
+            exact(&value, &["error"]).map_err(|_| "MEMORY_PROTOCOL_INVALID")?;
+            let allowed = [
+                "MEMORY_SUBSCRIPTION_REQUIRED",
+                "MEMORY_ACCESS_DENIED",
+                "MEMORY_SHARING_DISABLED",
+                "MEMORY_CONFLICT",
+                "MEMORY_INVALID_PAYLOAD",
+            ];
+            return Err(value["error"]
+                .as_str()
+                .filter(|s| allowed.contains(s))
+                .unwrap_or("MEMORY_REQUEST_REJECTED")
+                .into());
+        }
+        Ok(value)
+    }
     fn persist(&self) -> Result<()> {
         validate_state(&self.state)?;
         crate::store::atomic_write(

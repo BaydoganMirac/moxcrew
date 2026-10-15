@@ -13,6 +13,7 @@ use tempfile::tempdir;
 fn legacy(mut bundle: Value) -> Value {
     bundle.as_object_mut().unwrap().remove("projectMemory");
     bundle.as_object_mut().unwrap().remove("projectDecisions");
+    bundle.as_object_mut().unwrap().remove("sharedMemory");
     bundle
 }
 

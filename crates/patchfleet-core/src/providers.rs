@@ -136,6 +136,115 @@ async fn extraction_stderr(
         extraction_budget(&budget, size, limit)?;
     }
 }
+
+#[cfg(windows)]
+mod extraction_job {
+    use super::{Child, Result};
+    use std::{
+        mem::size_of,
+        os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    };
+    use windows_sys::Win32::{
+        Foundation::{GetLastError, ERROR_NO_MORE_FILES, INVALID_HANDLE_VALUE},
+        System::{
+            Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD,
+                THREADENTRY32,
+            },
+            JobObjects::{
+                AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+                SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            },
+            Threading::{
+                GetProcessIdOfThread, OpenThread, ResumeThread, THREAD_QUERY_LIMITED_INFORMATION,
+                THREAD_SUSPEND_RESUME,
+            },
+        },
+    };
+    pub(super) fn create() -> Result<OwnedHandle> {
+        let raw = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if raw.is_null() {
+            return Err("EXTRACTION_PROVIDER_FAILED".into());
+        }
+        let job = unsafe { OwnedHandle::from_raw_handle(raw) };
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if unsafe {
+            SetInformationJobObject(
+                job.as_raw_handle(),
+                JobObjectExtendedLimitInformation,
+                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        } == 0
+        {
+            return Err("EXTRACTION_PROVIDER_FAILED".into());
+        }
+        Ok(job)
+    }
+    pub(super) fn bind_and_resume(job: &OwnedHandle, child: &Child) -> Result<()> {
+        let pid = child
+            .id()
+            .filter(|v| *v > 1)
+            .ok_or("EXTRACTION_PROVIDER_FAILED")?;
+        let process = child.raw_handle().ok_or("EXTRACTION_PROVIDER_FAILED")?;
+        // The primary thread has not run, so no descendant can escape assignment.
+        if unsafe { AssignProcessToJobObject(job.as_raw_handle(), process) } == 0 {
+            return Err("EXTRACTION_PROVIDER_FAILED".into());
+        }
+        let raw = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+        if raw.is_null() || raw == INVALID_HANDLE_VALUE {
+            return Err("EXTRACTION_PROVIDER_FAILED".into());
+        }
+        let snapshot = unsafe { OwnedHandle::from_raw_handle(raw) };
+        let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+        entry.dwSize = size_of::<THREADENTRY32>() as u32;
+        if unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) } == 0 {
+            return Err("EXTRACTION_PROVIDER_FAILED".into());
+        }
+        let mut primary = None;
+        for _ in 0..65536 {
+            if entry.th32OwnerProcessID == pid && primary.replace(entry.th32ThreadID).is_some() {
+                return Err("EXTRACTION_PROVIDER_FAILED".into());
+            }
+            entry.dwSize = size_of::<THREADENTRY32>() as u32;
+            if unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } == 0 {
+                if unsafe { GetLastError() } != ERROR_NO_MORE_FILES {
+                    return Err("EXTRACTION_PROVIDER_FAILED".into());
+                }
+                let id = primary.ok_or("EXTRACTION_PROVIDER_FAILED")?;
+                let raw = unsafe {
+                    OpenThread(
+                        THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                        0,
+                        id,
+                    )
+                };
+                if raw.is_null() {
+                    return Err("EXTRACTION_PROVIDER_FAILED".into());
+                }
+                let thread = unsafe { OwnedHandle::from_raw_handle(raw) };
+                if unsafe { GetProcessIdOfThread(thread.as_raw_handle()) } != pid
+                    || unsafe { ResumeThread(thread.as_raw_handle()) } != 1
+                {
+                    return Err("EXTRACTION_PROVIDER_FAILED".into());
+                }
+                return Ok(());
+            }
+        }
+        Err("EXTRACTION_PROVIDER_FAILED".into())
+    }
+}
+#[cfg(not(windows))]
+async fn extraction_cleanup(child: &mut Child, tree: Option<u32>) {
+    terminate_tree(child, tree).await;
+}
+#[cfg(windows)]
+async fn extraction_cleanup(child: &mut Child, job: std::os::windows::io::OwnedHandle) {
+    drop(job);
+    reap(child).await;
+}
 async fn extraction_process<T, F>(
     mut command: Command,
     input: &[u8],
@@ -151,6 +260,13 @@ where
         return Err("EXTRACTION_CANCELLED".into());
     }
     command.stderr(Stdio::piped());
+    #[cfg(windows)]
+    let job = extraction_job::create()?;
+    #[cfg(windows)]
+    command.creation_flags(
+        windows_sys::Win32::System::Threading::CREATE_NO_WINDOW
+            | windows_sys::Win32::System::Threading::CREATE_SUSPENDED,
+    );
     let mut child = command.spawn().map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             "EXTRACTION_PROVIDER_UNAVAILABLE"
@@ -158,10 +274,21 @@ where
             "EXTRACTION_PROVIDER_FAILED"
         }
     })?;
+    #[cfg(not(windows))]
+    let tree = child.id(); // A group can outlive its reaped leader.
+    #[cfg(windows)]
+    let tree = {
+        if let Err(error) = extraction_job::bind_and_resume(&job, &child) {
+            drop(job);
+            reap(&mut child).await;
+            return Err(error);
+        }
+        job
+    };
     let (Some(mut stdin), Some(stdout), Some(stderr)) =
         (child.stdin.take(), child.stdout.take(), child.stderr.take())
     else {
-        terminate(&mut child).await;
+        extraction_cleanup(&mut child, tree).await;
         return Err("EXTRACTION_PROVIDER_FAILED".into());
     };
     let budget = Arc::new(AtomicUsize::new(0));
@@ -183,9 +310,7 @@ where
             if status.success() { Ok(output) } else { Err("EXTRACTION_PROVIDER_FAILED".into()) }
         }) => result.unwrap_or_else(|_| Err("EXTRACTION_TIMEOUT".into())),
     };
-    if result.is_err() {
-        terminate(&mut child).await;
-    }
+    extraction_cleanup(&mut child, tree).await;
     result
 }
 
@@ -702,7 +827,10 @@ fn discover_windows(program: &Path) -> Result<PathBuf> {
     Err("PROVIDER_NOT_FOUND".into())
 }
 async fn terminate(child: &mut Child) {
-    if let Some(pid) = child.id() {
+    terminate_tree(child, child.id()).await;
+}
+async fn terminate_tree(child: &mut Child, owned_tree: Option<u32>) {
+    if let Some(pid) = owned_tree.filter(|pid| *pid > 1 && *pid <= i32::MAX as u32) {
         #[cfg(unix)]
         {
             unsafe {
@@ -720,6 +848,9 @@ async fn terminate(child: &mut Child) {
             let _ = timeout(Duration::from_secs(2), task.status()).await;
         }
     }
+    reap(child).await;
+}
+async fn reap(child: &mut Child) {
     let _ = child.kill().await;
     let _ = timeout(Duration::from_secs(2), child.wait()).await;
 }

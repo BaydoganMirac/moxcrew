@@ -21,7 +21,11 @@ enum Request {
 fn memory_read(action: &str) -> bool {
     matches!(
         action,
-        "project_memory_read" | "project_decisions_read" | "project_decision_read"
+        "project_memory_read"
+            | "project_decisions_read"
+            | "project_decision_read"
+            | "memory_cloud_read"
+            | "memory_cloud_decision_read"
     )
 }
 
@@ -45,6 +49,8 @@ pub struct Bridge {
     memory_page: Option<Value>,
     decision_page: Option<Value>,
     decision_detail: Option<Value>,
+    shared_memory_page: Option<Value>,
+    shared_decision_detail: Option<Value>,
     pub error: Option<String>,
     pub feedback: Option<Notice>,
     pub picking_folder: bool,
@@ -120,6 +126,46 @@ impl Bridge {
                 "project_decision_read",
                 serde_json::json!({"projectId":id,"decisionId":decision_id}),
             ));
+            for _ in 0..400 {
+                self.poll();
+                if !self.busy {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+
+    #[cfg(feature = "ui-smoke")]
+    pub fn shared_smoke(&mut self) {
+        let Some(project) = self
+            .snapshot
+            .as_ref()
+            .and_then(|s| s["sharedMemory"]["projects"].as_array())
+            .and_then(|ps| ps.iter().find(|p| p["sharedProjectId"].is_string()))
+            .map(|p| p["projectId"].clone())
+        else {
+            return;
+        };
+        self.submit(Command::new(
+            "memory_cloud_read",
+            serde_json::json!({"projectId":project,"offset":0,"limit":10}),
+        ));
+        for _ in 0..400 {
+            self.poll();
+            if !self.busy {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let first = self
+            .shared_memory_page
+            .as_ref()
+            .and_then(|page| page["decisions"].as_array())
+            .and_then(|rows| rows.first())
+            .cloned();
+        if let Some(first) = first {
+            self.submit(Command::new("memory_cloud_decision_read",serde_json::json!({"projectId":project,"decisionId":first["decisionId"],"revision":first["revision"]})));
             for _ in 0..400 {
                 self.poll();
                 if !self.busy {
@@ -227,6 +273,8 @@ impl Bridge {
             memory_page: None,
             decision_page: None,
             decision_detail: None,
+            shared_memory_page: None,
+            shared_decision_detail: None,
             error: None,
             feedback: None,
             picking_folder: false,
@@ -253,16 +301,17 @@ impl Bridge {
                                 "project_decision_read" => {
                                     self.decision_detail = Some(receipt.clone())
                                 }
+                                "memory_cloud_read" => {
+                                    self.shared_memory_page = Some(receipt.clone())
+                                }
+                                "memory_cloud_decision_read" => {
+                                    self.shared_decision_detail = Some(receipt.clone())
+                                }
                                 _ => (),
                             }
                             self.pending = None;
-                            self.feedback = (!matches!(
-                                command.action,
-                                "project_memory_read"
-                                    | "project_decisions_read"
-                                    | "project_decision_read"
-                            ))
-                            .then(|| Notice::receipt(command.action, &receipt));
+                            self.feedback = (!memory_read(command.action))
+                                .then(|| Notice::receipt(command.action, &receipt));
                         }
                         Err(error) => {
                             self.feedback = Some(Notice::error(command.action, &error));
@@ -319,6 +368,28 @@ impl Bridge {
                 }
                 snapshot["decisionPage"] = self.decision_page.clone().unwrap_or(Value::Null);
                 snapshot["decisionDetail"] = self.decision_detail.clone().unwrap_or(Value::Null);
+                for page in [
+                    &mut self.shared_memory_page,
+                    &mut self.shared_decision_detail,
+                ] {
+                    if page.as_ref().is_some_and(|page| {
+                        page["revision"] != snapshot["sharedMemory"]["revision"]
+                            || !snapshot["sharedMemory"]["projects"].as_array().is_some_and(
+                                |projects| {
+                                    projects.iter().any(|project| {
+                                        project["projectId"] == page["projectId"]
+                                            && project["sharedProjectId"] == page["sharedProjectId"]
+                                    })
+                                },
+                            )
+                    }) {
+                        *page = None;
+                    }
+                }
+                snapshot["sharedMemoryPage"] =
+                    self.shared_memory_page.clone().unwrap_or(Value::Null);
+                snapshot["sharedDecisionDetail"] =
+                    self.shared_decision_detail.clone().unwrap_or(Value::Null);
                 self.snapshot = Some(snapshot);
                 self.error = None;
             }
@@ -345,6 +416,28 @@ impl Bridge {
         }
         match self.requests.try_send(Request::Action(command.clone())) {
             Ok(()) => {
+                if matches!(
+                    command.action,
+                    "memory_cloud_read" | "memory_cloud_decision_read"
+                ) {
+                    for page in [
+                        &mut self.shared_memory_page,
+                        &mut self.shared_decision_detail,
+                    ] {
+                        if page
+                            .as_ref()
+                            .is_some_and(|page| page["projectId"] != command.payload["projectId"])
+                        {
+                            *page = None;
+                        }
+                    }
+                    if let Some(snapshot) = self.snapshot.as_mut() {
+                        snapshot["sharedMemoryPage"] =
+                            self.shared_memory_page.clone().unwrap_or(Value::Null);
+                        snapshot["sharedDecisionDetail"] =
+                            self.shared_decision_detail.clone().unwrap_or(Value::Null);
+                    }
+                }
                 if command.action == "project_memory_read" {
                     self.memory_page = None;
                     if let Some(snapshot) = self.snapshot.as_mut() {
@@ -361,6 +454,18 @@ impl Bridge {
                     self.decision_detail = None;
                     if let Some(snapshot) = self.snapshot.as_mut() {
                         snapshot["decisionDetail"] = Value::Null;
+                    }
+                }
+                if command.action == "memory_cloud_read" {
+                    self.shared_memory_page = None;
+                    if let Some(snapshot) = self.snapshot.as_mut() {
+                        snapshot["sharedMemoryPage"] = Value::Null;
+                    }
+                }
+                if command.action == "memory_cloud_decision_read" {
+                    self.shared_decision_detail = None;
+                    if let Some(snapshot) = self.snapshot.as_mut() {
+                        snapshot["sharedDecisionDetail"] = Value::Null;
                     }
                 }
                 self.busy = true;
@@ -683,6 +788,103 @@ mod tests {
     }
 
     #[test]
+    fn shared_read_outcome_is_atomic_scoped_and_invalidated_by_global_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        let mut snapshot = bridge.snapshot.as_ref().unwrap().clone();
+        snapshot["sharedMemory"] = json!({"schemaVersion":5,"revision":12,"projects":[{"projectId":"project:one","sharedProjectId":"shared:one"}]});
+        let page = json!({"reasonCode":"SHARED_MEMORY_READ","projectId":"project:one","sharedProjectId":"shared:one","revision":12,"offset":0,"limit":10,"total":1,"decisions":[{"decisionId":"decision:one","revision":2}]});
+        let detail = json!({"reasonCode":"SHARED_DECISION_READ","projectId":"project:one","sharedProjectId":"shared:one","revision":12,"decision":{"decisionId":"decision:one","revision":2,"decision":"Downloaded owner text"}});
+        for (action, receipt) in [
+            ("memory_cloud_read", page.clone()),
+            ("memory_cloud_decision_read", detail.clone()),
+        ] {
+            bridge.busy = true;
+            bridge.pending = Some(Command::new(action, json!({"projectId":"project:one"})));
+            bridge
+                .output
+                .blocking_send(Message::Outcome(
+                    bridge.pending.clone().unwrap(),
+                    Ok(receipt),
+                    Ok(snapshot.clone()),
+                ))
+                .unwrap();
+            bridge.poll();
+            assert!(!bridge.busy);
+            assert!(bridge.pending.is_none());
+            assert!(bridge.feedback.is_none());
+        }
+        assert_eq!(bridge.snapshot.as_ref().unwrap()["sharedMemoryPage"], page);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["sharedDecisionDetail"],
+            detail
+        );
+        let mut changed = snapshot.clone();
+        changed["sharedMemory"]["revision"] = json!(13);
+        bridge.apply_snapshot(Ok(changed));
+        assert!(bridge.shared_memory_page.is_none());
+        assert!(bridge.shared_decision_detail.is_none());
+        for (project, shared) in [
+            ("project:foreign", "shared:one"),
+            ("project:one", "shared:foreign"),
+        ] {
+            bridge.shared_memory_page = Some(page.clone());
+            bridge.shared_decision_detail = Some(detail.clone());
+            let mut foreign = snapshot.clone();
+            foreign["sharedMemory"]["projects"][0]["projectId"] = json!(project);
+            foreign["sharedMemory"]["projects"][0]["sharedProjectId"] = json!(shared);
+            bridge.apply_snapshot(Ok(foreign));
+            assert!(bridge.snapshot.as_ref().unwrap()["sharedMemoryPage"].is_null());
+            assert!(bridge.snapshot.as_ref().unwrap()["sharedDecisionDetail"].is_null());
+        }
+        bridge.shared_memory_page = Some(page);
+        bridge.shared_decision_detail = Some(detail);
+        bridge.apply_snapshot(Ok(snapshot));
+        bridge.submit(Command::new(
+            "memory_cloud_read",
+            json!({"projectId":"project:other"}),
+        ));
+        assert!(bridge.snapshot.as_ref().unwrap()["sharedMemoryPage"].is_null());
+        assert!(bridge.snapshot.as_ref().unwrap()["sharedDecisionDetail"].is_null());
+        await_idle(&mut bridge);
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn unpaired_shared_list_reads_are_local_and_errors_keep_explicit_read_retry() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        bridge.submit(Command::new("project_create", json!({"name":"Local only"})));
+        await_idle(&mut bridge);
+        let project =
+            bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0]["projectId"].clone();
+        bridge.submit(Command::new(
+            "memory_cloud_read",
+            json!({"projectId":project,"offset":0,"limit":10}),
+        ));
+        await_idle(&mut bridge);
+        let page = &bridge.snapshot.as_ref().unwrap()["sharedMemoryPage"];
+        assert_eq!(page["reasonCode"], "SHARED_MEMORY_READ");
+        assert_eq!(page["total"], 0);
+        assert!(page["sharedProjectId"].is_null());
+        assert!(bridge.feedback.is_none());
+        assert_eq!(bridge.snapshot.as_ref().unwrap()["cloud"]["paired"], false);
+        let read = Command::new(
+            "memory_cloud_decision_read",
+            json!({"projectId":project,"decisionId":format!("decision:{}",uuid::Uuid::new_v4()),"revision":1}),
+        );
+        bridge.submit(read.clone());
+        await_idle(&mut bridge);
+        assert_eq!(bridge.feedback.as_ref().unwrap().kind, NoticeKind::Error);
+        assert_eq!(bridge.feedback.as_ref().unwrap().code, "MEMORY_NOT_CACHED");
+        assert_eq!(bridge.pending.as_ref().unwrap().payload, read.payload);
+        assert!(bridge.snapshot.as_ref().unwrap()["sharedDecisionDetail"].is_null());
+        bridge.shutdown();
+    }
+
+    #[test]
     fn durable_mutation_cache_failure_keeps_exact_retry_until_owner_recovery() {
         let directory = tempfile::tempdir().unwrap();
         let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
@@ -727,6 +929,8 @@ mod tests {
             "project_memory_read",
             "project_decisions_read",
             "project_decision_read",
+            "memory_cloud_read",
+            "memory_cloud_decision_read",
         ] {
             bridge.submit(Command::new(action, json!({"projectId":project})));
             assert!(!bridge.busy);

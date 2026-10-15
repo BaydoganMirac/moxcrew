@@ -244,6 +244,46 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Retry opening the host" => "Ana makineyi yeniden açmayı dene", "Opening Patchfleet" => "Patchfleet açılıyor", "Loading the local Rust host…" => "Yerel ana makine yükleniyor…",
         "The local host is not ready for another action." => "Yerel ana makine yeni bir işlem için hazır değil.",
         "Retry or dismiss the failed action before refreshing." => "Yenilemeden önce başarısız işlemi yeniden deneyin veya bildirimi kapatın.",
+        "Shared decision memory" => "Paylaşılan karar hafızası",
+        "Optional Cloud publication is separate from private Local decisions. Cloud verifies subscription and access on every request." => "İsteğe bağlı bulut yayını, özel yerel kararlardan ayrıdır. Bulut her istekte aboneliği ve erişimi doğrular.",
+        "This decision stays private. Pair Cloud to configure optional sharing." => "Bu karar özel kalır. İsteğe bağlı paylaşımı ayarlamak için Bulut’u eşleştirin.",
+        "This installation is a reader. Local decisions remain private." => "Bu kurulum okuyucudur. Yerel kararlar özel kalır.",
+        "Create a shared project before publishing this accepted decision." => "Kabul edilmiş bu kararı yayınlamadan önce paylaşılan proje oluşturun.",
+        "Configure shared memory" => "Paylaşılan hafızayı ayarla", "Preview Cloud publication" => "Bulut yayınını önizle",
+        "Accepted proof is unavailable. Refresh the local decision before publishing." => "Kabul kanıtı kullanılamıyor. Yayınlamadan önce yerel kararı yenileyin.",
+        "Publication preview" => "Yayın önizlemesi",
+        "Accepted {0}" => "Kabul zamanı {0}",
+        "{0} source references · source text stays local" => "{0} kaynak referansı · kaynak metni yerelde kalır",
+        "Technical publication details" => "Teknik yayın ayrıntıları", "Exact upload fields" => "Yüklenecek alanların tamamı",
+
+        "Only these accepted decision fields and opaque source references leave this device. Source text and origin records stay local." => "Bu cihazdan yalnızca bu kabul edilmiş karar alanları ve kaynak kimlik/revizyon referansları çıkar. Kaynak metinleri ve köken kayıtları yerelde kalır.",
+        "I approve uploading exactly the fields shown above." => "Yukarıda gösterilen alanların aynen yüklenmesini onaylıyorum.",
+        "Queue explicit publication" => "Onaylı yayını kuyruğa al",
+        "Queued locally, not confirmed by Cloud. Sync retries the existing operation." => "Yerelde kuyruğa alındı; Bulut henüz doğrulamadı. Eşitleme mevcut işlemi yeniden dener.",
+        "Sharing is disabled. Enable it in Cloud before publishing." => "Paylaşım kapalı. Yayınlamadan önce Bulut bölümünden açın.",
+        "Local and published revisions differ. Nothing is republished automatically." => "Yerel ve yayınlanan revizyonlar farklı. Hiçbir şey otomatik yeniden yayınlanmaz.",
+        "Shared revision {0}" => "Paylaşılan revizyon {0}", "Last verified {0}" => "Son doğrulama {0}", "Published {0}" => "Yayın zamanı {0}",
+        "Cloud is disconnected. Private decisions and downloaded copies remain local." => "Bulut bağlantısı yok. Özel kararlar ve indirilen kopyalar yerelde kalır.",
+        "Offline cache · verification is not current." => "Çevrimdışı önbellek · doğrulama güncel değil.",
+        "Cached data may be stale. Sync to verify current shared context." => "Önbellekteki veri eski olabilir. Güncel paylaşılan bağlamı doğrulamak için eşitleyin.",
+        "Shared memory could not be updated. Local decisions remain available." => "Paylaşılan hafıza güncellenemedi. Yerel kararlar kullanılabilir.",
+        "The paired connection changed. Old publication consent will not transfer. Create or link a shared project explicitly." => "Eşleştirilmiş bağlantı değişti. Eski yayın onayı aktarılmaz. Açıkça paylaşılan proje oluşturun veya bağlayın.",
+        "Create a shared project" => "Paylaşılan proje oluştur", "Shared project name" => "Paylaşılan proje adı", "Queue shared project creation" => "Paylaşılan proje oluşturmayı kuyruğa al",
+        "Link this installation as a reader" => "Bu kurulumu okuyucu olarak bağla", "Shared project ID" => "Paylaşılan proje kimliği", "Queue reader link" => "Okuyucu bağlantısını kuyruğa al",
+        "Use a shared project ID from the same Cloud workspace. This does not grant publisher rights." => "Aynı Bulut çalışma alanındaki bir paylaşılan proje kimliğini kullanın. Bu işlem yayıncı yetkisi vermez.",
+        "Shared project identity" => "Paylaşılan proje kimliği", "Sync shared memory" => "Paylaşılan hafızayı eşitle", "Disable sharing" => "Paylaşımı kapat", "Enable sharing" => "Paylaşımı aç",
+        "Sharing is disabled. New Cloud access is blocked; downloaded copies are not erased." => "Paylaşım kapalı. Yeni Bulut erişimi engellenir; indirilmiş kopyalar silinmez.",
+        "Published copies are read only here. They do not accept or replace private Local decisions." => "Yayınlanmış kopyalar burada salt okunurdur. Özel yerel kararları kabul etmez veya değiştirmez.",
+        "Refresh downloaded copies" => "İndirilen kopyaları yenile", "Previous shared records" => "Önceki paylaşılan kayıtlar", "Next shared records" => "Sonraki paylaşılan kayıtlar",
+        "Read published copy" => "Yayınlanmış kopyayı oku", "No published heads are cached for this project." => "Bu proje için güncel yayın kaydı önbellekte yok.",
+        "Downloaded manifest unavailable. Refresh retries a failed cached read." => "İndirilen liste kullanılamıyor. Yenileme başarısız önbellek okumasını yeniden dener.",
+        "Open an exact downloaded revision" => "İndirilen belirli bir revizyonu aç", "Decision ID" => "Karar kimliği", "Revision" => "Revizyon", "Read exact downloaded revision" => "İndirilen tam revizyonu oku",
+        "Current shared head" => "Güncel paylaşılan sürüm", "Historical shared version" => "Geçmiş paylaşılan sürüm",
+        "Historical version · do not treat this as current shared context." => "Geçmiş sürüm · bunu güncel paylaşılan bağlam olarak kullanmayın.",
+        "Published identity and references" => "Yayın kimliği ve referansları", "Exact downloaded revision unavailable. Refresh retries the cached read." => "İndirilen tam revizyon kullanılamıyor. Yenileme önbellek okumasını yeniden dener.",
+        "Publisher installation" => "Yayıncı kurulum", "Reader installation" => "Okuyucu kurulum", "Not linked" => "Bağlı değil", "Queued locally" => "Yerel kuyrukta",
+        "Delivery pending" => "İletim bekliyor", "Shared project ready" => "Paylaşılan proje hazır", "Cloud verification failed" => "Bulut doğrulaması başarısız", "Connection changed" => "Bağlantı değişti", "Private Local project" => "Özel yerel proje",
+        "Operational status is separate from optional memory publication. Task instructions, paths and transcripts stay local." => "Çalışma durumu, isteğe bağlı hafıza yayınından ayrıdır. İş talimatları, yollar ve konuşmalar yerelde kalır.",
         "Language preference could not be read. Select a language to replace it." => "Dil tercihi okunamadı. Yeniden kaydetmek için bir dil seçin.",
         "available" => "hazır", "completed" => "tamamlandı", "applied" => "uygulandı", "failed" => "başarısız", "rejected" => "reddedildi", "timed_out" => "süre doldu",
         "queued" => "kuyrukta", "running" => "çalışıyor", "launching" => "başlatılıyor", "cancelling" => "iptal ediliyor", "cancelled" => "iptal edildi", "interrupted" => "kesildi",
@@ -347,6 +387,27 @@ fn reason(code: &str) -> Option<(&'static str, &'static str)> {
         "ACTION_RECORDED" => ("Action recorded.", "İşlem kaydedildi."),
         "OBSERVED" => ("Providers refreshed.", "Sağlayıcılar yenilendi."),
         "PROJECT_CREATED" => ("Project created.", "Proje oluşturuldu."),
+        "MEMORY_OPERATION_QUEUED" | "MEMORY_SYNC_QUEUED" => ("Shared-memory operation queued locally; Cloud confirmation is pending.","Paylaşılan hafıza işlemi yerel kuyruğa alındı; Bulut onayı bekleniyor."),
+        "MEMORY_PROJECT_CREATED" => ("Shared project creation confirmed by Cloud.","Paylaşılan proje oluşturma Bulut tarafından doğrulandı."),
+        "MEMORY_READER_LINKED" => ("Reader link confirmed by Cloud.","Okuyucu bağlantısı Bulut tarafından doğrulandı."),
+        "MEMORY_PUBLISHED" => ("Cloud confirmed publication of this exact revision.","Bulut bu tam revizyonun yayınını doğruladı."),
+        "MEMORY_SHARING_UPDATED" => ("Cloud confirmed the sharing setting.","Bulut paylaşım ayarını doğruladı."),
+        "MEMORY_SUBSCRIPTION_REQUIRED" => ("Cloud memory requires an active subscription. Local decisions remain free.","Bulut hafızası aktif abonelik gerektirir. Yerel kararlar ücretsiz kalır."),
+        "MEMORY_ACCESS_DENIED" => ("Cloud denied access to this shared project. Check the paired account and role.","Bulut bu paylaşılan projeye erişimi reddetti. Eşleştirilmiş hesabı ve rolü kontrol edin."),
+        "MEMORY_SHARING_DISABLED" => ("Sharing is disabled. Existing downloaded copies remain local.","Paylaşım kapalı. İndirilmiş kopyalar yerelde kalır."),
+        "MEMORY_CONFLICT" | "MEMORY_STALE_REVISION" => ("The shared revision changed. Sync and review before retrying publication.","Paylaşılan revizyon değişti. Yeniden yayınlamadan önce eşitleyip inceleyin."),
+        "MEMORY_CONNECTION_CHANGED" => ("The paired connection changed. Old publication consent cannot transfer.","Eşleştirilmiş bağlantı değişti. Eski yayın onayı aktarılamaz."),
+        "MEMORY_CONSENT_REQUIRED" => ("Review the exact publication preview and explicitly approve the upload.","Tam yayın önizlemesini inceleyin ve yüklemeyi açıkça onaylayın."),
+        "MEMORY_PUBLISHER_REQUIRED" => ("Only the assigned publisher can upload or change sharing.","Yalnızca atanmış yayıncı yükleme yapabilir veya paylaşımı değiştirebilir."),
+        "MEMORY_NOT_LINKED" => ("Create or link a shared project first.","Önce paylaşılan proje oluşturun veya bağlayın."),
+        "MEMORY_ALREADY_LINKED" => ("This project is already linked.","Bu proje zaten bağlı."),
+        "MEMORY_OPERATION_PENDING" | "MEMORY_LINK_PENDING" => ("An operation is already pending. Sync its existing identity.","Bir işlem zaten bekliyor. Mevcut kimliğiyle eşitleyin."),
+        "MEMORY_OPERATION_EXPIRED" => ("The queued operation expired. Review the current state before submitting again.","Kuyruktaki işlemin süresi doldu. Yeniden göndermeden önce güncel durumu inceleyin."),
+        "MEMORY_PROTOCOL_INVALID" | "MEMORY_INVALID_PAYLOAD" => ("Cloud memory returned incompatible data. Nothing was accepted from that response.","Bulut hafızası uyumsuz veri döndürdü. Bu yanıttan hiçbir şey kabul edilmedi."),
+        "MEMORY_UNAVAILABLE" | "MEMORY_SYNC_INTERRUPTED" => ("Shared memory is offline. Local decisions and downloaded copies remain available; sync retries the same operation.","Paylaşılan hafıza çevrimdışı. Yerel kararlar ve indirilmiş kopyalar kullanılabilir; eşitleme aynı işlemi yeniden dener."),
+        "MEMORY_CACHE_INVALID" | "MEMORY_CACHE_INCOMPLETE" | "MEMORY_CACHE_TOO_LARGE" => ("The downloaded memory cache could not be verified. Sync to rebuild it; local decisions remain available.","İndirilmiş hafıza önbelleği doğrulanamadı. Yeniden oluşturmak için eşitleyin; yerel kararlar kullanılabilir."),
+        "MEMORY_QUEUE_FULL" => ("The local publication queue is full. Complete pending operations first.","Yerel yayın kuyruğu dolu. Önce bekleyen işlemleri tamamlayın."),
+        "MEMORY_NOT_CACHED" | "MEMORY_RECORD_NOT_CACHED" | "MEMORY_CACHE_UNAVAILABLE" => ("This exact published revision is not downloaded. Sync when Cloud is available.","Yayınlanan bu tam revizyon indirilmemiş. Bulut kullanılabilir olduğunda eşitleyin."),
         "PROJECT_MESSAGE_CREATED" => ("Project message added.", "Proje mesajı eklendi."),
         "PROJECT_SOURCE_EDITED" => ("Project message updated.", "Proje mesajı güncellendi."),
         "PROJECT_DECISION_PROPOSED" => ("Decision draft saved.","Karar taslağı kaydedildi."),
@@ -520,6 +581,10 @@ fn reason(code: &str) -> Option<(&'static str, &'static str)> {
             "Check the form values and try again.",
             "Formdaki değerleri kontrol edip yeniden deneyin.",
         ),
+        _ if code.starts_with("MEMORY_") => (
+            "Shared memory could not complete this action. Private local decisions remain available.",
+            "Paylaşılan hafıza bu işlemi tamamlayamadı. Özel yerel kararlar kullanılabilir.",
+        ),
         _ => return None,
     })
 }
@@ -542,6 +607,21 @@ mod tests {
         assert_eq!(tr(Language::Tr, "PROJECT CREATED"), "Proje oluşturuldu.");
         assert_eq!(tr(Language::En, "PROJECT_CREATED"), "Project created.");
     }
+    #[test]
+    fn memory_notices_distinguish_local_queue_from_confirmation_without_raw_errors() {
+        assert!(tr(Language::En, "MEMORY_OPERATION_QUEUED").contains("queued locally"));
+        assert!(tr(Language::En, "MEMORY_PUBLISHED").contains("Cloud confirmed"));
+        assert!(tr(Language::Tr, "MEMORY_NOT_CACHED").contains("indirilmemiş"));
+        for language in [Language::Tr, Language::En] {
+            assert!(!tr(language, "MEMORY_RECEIPT_MISMATCH").contains("MEMORY_"));
+            assert!(!tr(language, "MEMORY_FUTURE_FAILURE").contains("MEMORY_"));
+        }
+        assert_eq!(
+            tr(Language::Tr, "Original decision text"),
+            "Original decision text"
+        );
+    }
+
     #[test]
     fn formatting_does_not_translate_or_reinterpret_inserted_owner_text() {
         assert_eq!(

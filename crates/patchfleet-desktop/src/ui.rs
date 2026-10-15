@@ -316,6 +316,94 @@ struct Citation {
     revision: u64,
     title: String,
 }
+
+#[derive(Default)]
+struct SharedPanel {
+    project: String,
+    name: String,
+    link_id: String,
+    offset: u64,
+    selected: String,
+    selected_revision: u64,
+    exact_id: String,
+    exact_revision: u64,
+    page_requested: Option<(String, u64, u64)>,
+    detail_requested: Option<(String, u64, String, u64)>,
+    refresh_page: bool,
+    refresh_detail: bool,
+    preview_open: bool,
+    consent_scope: Option<Value>,
+    consent: bool,
+}
+impl SharedPanel {
+    fn select(&mut self, project: &str) {
+        if self.project != project {
+            *self = Self {
+                project: project.into(),
+                exact_revision: 1,
+                ..Default::default()
+            };
+        }
+    }
+    fn page_matches(&self, page: &Value, metadata: &Value, global: u64) -> bool {
+        text(page, "reasonCode") == "SHARED_MEMORY_READ"
+            && text(page, "projectId") == self.project
+            && revision(page) == global
+            && page["sharedProjectId"] == metadata["sharedProjectId"]
+            && page["offset"].as_u64() == Some(self.offset)
+            && page["limit"].as_u64() == Some(10)
+    }
+    fn detail_matches(&self, detail: &Value, metadata: &Value, global: u64) -> bool {
+        text(detail, "reasonCode") == "SHARED_DECISION_READ"
+            && text(detail, "projectId") == self.project
+            && revision(detail) == global
+            && detail["sharedProjectId"] == metadata["sharedProjectId"]
+            && text(&detail["decision"], "decisionId") == self.selected
+            && revision(&detail["decision"]) == self.selected_revision
+    }
+    fn next_read(
+        &mut self,
+        page: &Value,
+        detail: &Value,
+        metadata: &Value,
+        global: u64,
+        blocked: bool,
+    ) -> Option<Command> {
+        if blocked || self.project.is_empty() || !metadata["sharedProjectId"].is_string() {
+            return None;
+        }
+        let key = (self.project.clone(), global, self.offset);
+        if (self.refresh_page || !self.page_matches(page, metadata, global))
+            && (self.refresh_page || self.page_requested.as_ref() != Some(&key))
+        {
+            self.refresh_page = false;
+            self.page_requested = Some(key);
+            return Some(Command::new(
+                "memory_cloud_read",
+                json!({"projectId":self.project,"offset":self.offset,"limit":10}),
+            ));
+        }
+        let key = (
+            self.project.clone(),
+            global,
+            self.selected.clone(),
+            self.selected_revision,
+        );
+        if !self.selected.is_empty()
+            && self.selected_revision > 0
+            && (self.refresh_detail || !self.detail_matches(detail, metadata, global))
+            && (self.refresh_detail || self.detail_requested.as_ref() != Some(&key))
+        {
+            self.refresh_detail = false;
+            self.detail_requested = Some(key);
+            return Some(Command::new(
+                "memory_cloud_decision_read",
+                json!({"projectId":self.project,"decisionId":self.selected,"revision":self.selected_revision}),
+            ));
+        }
+        None
+    }
+}
 impl DecisionPanel {
     fn finish_proposal(&mut self, snapshot: &Value, notice: Option<&Notice>, busy: bool) {
         if !busy
@@ -473,6 +561,9 @@ pub struct Console {
     link_choices: HashMap<String, String>,
     memory: MemoryDraft,
     decisions: DecisionPanel,
+    shared: SharedPanel,
+    #[cfg(feature = "ui-smoke")]
+    shared_smoke_focus: bool,
     project_name: String,
     project_path: String,
     project_path_problem: Option<String>,
@@ -511,6 +602,18 @@ impl Console {
     #[cfg(feature = "ui-smoke")]
     pub fn decision_smoke(&mut self) {
         self.tab = Tab::Decisions;
+    }
+
+    #[cfg(feature = "ui-smoke")]
+    pub fn shared_smoke(&mut self) {
+        self.tab = Tab::Cloud;
+        self.shared_smoke_focus = true;
+    }
+
+    #[cfg(feature = "ui-smoke")]
+    pub fn publication_smoke(&mut self) {
+        self.tab = Tab::Decisions;
+        self.shared.preview_open = true;
     }
 
     #[cfg(feature = "ui-smoke")]
@@ -583,7 +686,11 @@ impl Console {
                 n.kind == NoticeKind::Error
                     && !matches!(
                         n.action,
-                        "project_memory_read" | "project_decisions_read" | "project_decision_read"
+                        "project_memory_read"
+                            | "project_decisions_read"
+                            | "project_decision_read"
+                            | "memory_cloud_read"
+                            | "memory_cloud_decision_read"
                     )
             });
         self.decisions.finish_proposal(snapshot, notice, busy);
@@ -725,7 +832,9 @@ impl Console {
                     ui.colored_label(RED, t(ui, error));
                     ui.add_space(8.0);
                 }
-                if self.hold_automatic_reads && matches!(self.tab, Tab::Memory | Tab::Decisions) {
+                if self.hold_automatic_reads
+                    && matches!(self.tab, Tab::Memory | Tab::Decisions | Tab::Cloud)
+                {
                     hint(ui, "Retry or dismiss the failed action before refreshing.");
                     ui.add_space(8.0);
                 }
@@ -1481,10 +1590,10 @@ impl Console {
         if ui.available_width() >= 850.0 {
             ui.columns(2, |columns| {
                 self.decision_list(&mut columns[0], page, manifest);
-                self.decision_detail(&mut columns[1], detail, page, manifest, commands);
+                self.decision_detail(&mut columns[1], detail, page, manifest, snapshot, commands);
             });
         } else {
-            self.decision_detail(ui, detail, page, manifest, commands);
+            self.decision_detail(ui, detail, page, manifest, snapshot, commands);
             ui.add_space(16.0);
             self.decision_list(ui, page, manifest);
         }
@@ -1815,6 +1924,7 @@ impl Console {
         detail: &Value,
         page: &Value,
         manifest: u64,
+        snapshot: &Value,
         commands: &mut Vec<Command>,
     ) {
         if self.decisions.selected.is_empty() {
@@ -1853,6 +1963,9 @@ impl Console {
                 );
             });
             ui.add_space(12.0);
+            if text(decision, "status") == "accepted" {
+                self.publication_controls(ui, snapshot, detail, commands);
+            }
             match text(decision, "status") {
                 "proposed" => {
                     hint(
@@ -2024,6 +2137,480 @@ impl Console {
                 }
             });
         });
+    }
+
+    fn publication_controls(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        detail: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let decision = &detail["decision"];
+        let project = text(decision, "projectId");
+        let metadata = shared_project(snapshot, project);
+        let cloud = &snapshot["cloud"];
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
+        if cloud["paired"] != true || cloud["error"] == true {
+            self.shared.consent = false;
+            hint(
+                ui,
+                "This decision stays private. Pair Cloud to configure optional sharing.",
+            );
+            return;
+        }
+        if text(metadata, "role") != "publisher" || text(metadata, "state") == "connection_changed"
+        {
+            self.shared.consent = false;
+            hint(
+                ui,
+                if text(metadata, "role") == "reader" {
+                    "This installation is a reader. Local decisions remain private."
+                } else {
+                    "Create a shared project before publishing this accepted decision."
+                },
+            );
+            if control(ui, "Configure shared memory", true).clicked() {
+                self.shared.select(project);
+                self.tab = Tab::Cloud;
+            }
+            return;
+        }
+        if control(ui, "Preview Cloud publication", true).clicked() {
+            self.shared.preview_open = !self.shared.preview_open;
+        }
+        if !self.shared.preview_open {
+            return;
+        }
+        let Some(preview) = publication_preview(detail) else {
+            self.shared.consent = false;
+            hint(
+                ui,
+                "Accepted proof is unavailable. Refresh the local decision before publishing.",
+            );
+            return;
+        };
+        let scope = json!({"projectId":project,"decisionId":decision["decisionId"],"revision":decision["revision"],"sharedProjectId":metadata["sharedProjectId"],"sharedRevision":metadata["sharedRevision"],"role":metadata["role"],"enabled":metadata["enabled"],"state":metadata["state"],"pendingOperation":metadata["pendingOperation"],"cloudUrl":cloud["cloudUrl"],"workspaceId":cloud["workspaceId"],"hostId":cloud["hostId"]});
+        if self.shared.consent_scope.as_ref() != Some(&scope) {
+            self.shared.consent = false;
+            self.shared.consent_scope = Some(scope);
+        }
+        ui.add_space(8.0);
+        section_title(ui,"Publication preview","Only these accepted decision fields and opaque source references leave this device. Source text and origin records stay local.");
+        egui::ScrollArea::vertical()
+            .id_salt("publication-preview-body")
+            .max_height(220.0)
+            .show(ui, |ui| {
+                for (key, label) in [
+                    ("title", "Decision title"),
+                    ("decision", "Decision statement"),
+                    ("context", "Context"),
+                    ("rationale", "Rationale"),
+                    ("consequences", "Consequences"),
+                ] {
+                    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
+                    ui.label(if text(&preview, key).is_empty() {
+                        "—"
+                    } else {
+                        text(&preview, key)
+                    });
+                    ui.add_space(6.0);
+                }
+                hint(
+                    ui,
+                    &localized_format!(
+                        ui,
+                        "Accepted {0}",
+                        format_time(ui, text(&preview, "acceptedAt"))
+                    ),
+                );
+                hint(
+                    ui,
+                    &localized_format!(
+                        ui,
+                        "{0} source references · source text stays local",
+                        array(&preview["sources"]).len()
+                    ),
+                );
+                ui.collapsing(t(ui, "Technical publication details"), |ui| {
+                    ui.label(t(ui, "Exact upload fields"));
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(serde_json::to_string_pretty(&preview).unwrap())
+                                .monospace()
+                                .size(11.0),
+                        )
+                        .wrap(),
+                    );
+                });
+            });
+        let consent = ui.checkbox(
+            &mut self.shared.consent,
+            t(ui, "I approve uploading exactly the fields shown above."),
+        );
+        #[cfg(test)]
+        ui.data_mut(|d| {
+            d.insert_temp(
+                egui::Id::new(("test-action", "publication-consent", "Approve upload")),
+                consent.rect,
+            )
+        });
+        let _ = consent;
+        let before = commands.len();
+        action(
+            ui,
+            commands,
+            "Queue explicit publication",
+            "memory_cloud_publish",
+            self.shared.consent && shared_publisher_ready(metadata, cloud),
+            || json!({"projectId":project,"decisionId":decision["decisionId"],"expectedDecisionRevision":decision["revision"],"expectedSharedRevision":metadata["sharedRevision"],"consent":true}),
+        );
+        if commands.len() > before {
+            self.shared.consent = false;
+        }
+        if !metadata["pendingOperation"].is_null() {
+            hint(
+                ui,
+                "Queued locally, not confirmed by Cloud. Sync retries the existing operation.",
+            );
+        }
+        if metadata["enabled"] != true {
+            hint(
+                ui,
+                "Sharing is disabled. Enable it in Cloud before publishing.",
+            );
+        }
+        if metadata["diverged"] == true {
+            hint(
+                ui,
+                "Local and published revisions differ. Nothing is republished automatically.",
+            );
+        }
+        ui.add_space(12.0);
+    }
+
+    fn shared_memory(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        ui.add_space(20.0);
+        section_title(ui,"Shared decision memory","Optional Cloud publication is separate from private Local decisions. Cloud verifies subscription and access on every request.");
+        ui.add_space(12.0);
+        let projects = array(&snapshot["projectMemory"]["projects"]);
+        if projects.is_empty() {
+            hint(ui, "Create a project first");
+            return;
+        }
+        if self.shared.project.is_empty() && projects.len() == 1 {
+            self.shared.select(text(&projects[0], "projectId"));
+        }
+        let previous = self.shared.project.clone();
+        choose(
+            ui,
+            "shared-project",
+            "Project",
+            &mut self.shared.project,
+            projects,
+            ("projectId", "name"),
+            true,
+        );
+        if self.shared.project != previous {
+            let selected = self.shared.project.clone();
+            self.shared.project = previous;
+            self.shared.select(&selected);
+        }
+        let Some(project) = projects
+            .iter()
+            .find(|p| text(p, "projectId") == self.shared.project)
+        else {
+            return;
+        };
+        let metadata = shared_project(snapshot, &self.shared.project);
+        let cloud = &snapshot["cloud"];
+        let connected = cloud["paired"] == true && cloud["error"] != true;
+        let remap = text(metadata, "state") == "connection_changed";
+        card(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                status(ui, shared_role_label(text(metadata, "role")));
+                status(ui, shared_state_label(text(metadata, "state")));
+                hint(
+                    ui,
+                    &localized_format!(
+                        ui,
+                        "Shared revision {0}",
+                        metadata["sharedRevision"].as_u64().unwrap_or(0)
+                    ),
+                );
+            });
+            if !connected {
+                hint(
+                    ui,
+                    "Cloud is disconnected. Private decisions and downloaded copies remain local.",
+                );
+            }
+            if metadata["offline"] == true {
+                ui.colored_label(RED, t(ui, "Offline cache · verification is not current."));
+            } else if metadata["stale"] == true {
+                hint(
+                    ui,
+                    "Cached data may be stale. Sync to verify current shared context.",
+                );
+            }
+            hint(
+                ui,
+                &localized_format!(
+                    ui,
+                    "Last verified {0}",
+                    format_time(ui, text(metadata, "verifiedAt"))
+                ),
+            );
+            if metadata["diverged"] == true {
+                hint(
+                    ui,
+                    "Local and published revisions differ. Nothing is republished automatically.",
+                );
+            }
+            if let Some(code) = metadata["lastErrorCode"].as_str() {
+                let message = t(ui, code);
+                hint(
+                    ui,
+                    if message == code {
+                        "Shared memory could not be updated. Local decisions remain available."
+                    } else {
+                        message.as_ref()
+                    },
+                );
+            }
+            if !metadata["pendingOperation"].is_null() {
+                hint(
+                    ui,
+                    "Queued locally, not confirmed by Cloud. Sync retries the existing operation.",
+                );
+            }
+            if remap {
+                hint(ui,"The paired connection changed. Old publication consent will not transfer. Create or link a shared project explicitly.");
+            }
+            let unlinked = !metadata["sharedProjectId"].is_string() || remap;
+            if unlinked {
+                let create = egui::CollapsingHeader::new(t(ui,"Create a shared project")).id_salt("shared-create").show(ui,|ui| {
+                    field(ui,"Shared project name",&mut self.shared.name,80,false);
+                    action(ui,commands,"Queue shared project creation","memory_cloud_create",connected&&revision(project)>0&&(remap||metadata["pendingOperation"].is_null())&&decision_text(&self.shared.name,80,true),||json!({"projectId":self.shared.project,"expectedProjectRevision":revision(project),"name":self.shared.name.trim()}));
+                });
+                let link = egui::CollapsingHeader::new(t(ui,"Link this installation as a reader")).id_salt("shared-link").show(ui,|ui| {
+                    field(ui,"Shared project ID",&mut self.shared.link_id,80,false);
+                    action(ui,commands,"Queue reader link","memory_cloud_link",connected&&revision(project)>0&&(remap||metadata["pendingOperation"].is_null())&&opaque_id(self.shared.link_id.trim(),"shared"),||json!({"projectId":self.shared.project,"expectedProjectRevision":revision(project),"sharedProjectId":self.shared.link_id.trim()}));
+                    hint(ui,"Use a shared project ID from the same Cloud workspace. This does not grant publisher rights.");
+                });
+                #[cfg(test)]
+                ui.data_mut(|d| {
+                    d.insert_temp(
+                        egui::Id::new(("test-action", "shared-header", "Create")),
+                        create.header_response.rect,
+                    );
+                    d.insert_temp(
+                        egui::Id::new(("test-action", "shared-header", "Link")),
+                        link.header_response.rect,
+                    );
+                });
+                let _ = (create, link);
+            } else {
+                ui.collapsing(t(ui, "Shared project identity"), |ui| {
+                    ui.monospace(text(metadata, "sharedProjectId"));
+                });
+                ui.horizontal_wrapped(|ui| {
+                    action(ui,commands,"Sync shared memory","memory_cloud_sync",connected,||json!({"projectId":self.shared.project}));
+                    if text(metadata,"role")=="publisher" {
+                        let enabled=metadata["enabled"]==true;
+                        action(ui,commands,if enabled {"Disable sharing"}else{"Enable sharing"},"memory_cloud_sharing",connected&&metadata["pendingOperation"].is_null(),||json!({"projectId":self.shared.project,"expectedSharedRevision":metadata["sharedRevision"],"enabled":!enabled}));
+                    }
+                });
+                if metadata["enabled"] == false {
+                    hint(ui,"Sharing is disabled. New Cloud access is blocked; downloaded copies are not erased.");
+                }
+            }
+        });
+        if !metadata["sharedProjectId"].is_string() {
+            return;
+        }
+        ui.add_space(14.0);
+        hint(ui,"Published copies are read only here. They do not accept or replace private Local decisions.");
+        let global = revision(&snapshot["sharedMemory"]);
+        let page = &snapshot["sharedMemoryPage"];
+        let detail = &snapshot["sharedDecisionDetail"];
+        if self.shared.selected.is_empty() {
+            if text(detail, "reasonCode") == "SHARED_DECISION_READ"
+                && text(detail, "projectId") == self.shared.project
+                && revision(detail) == global
+                && detail["sharedProjectId"] == metadata["sharedProjectId"]
+            {
+                self.shared.selected = text(&detail["decision"], "decisionId").into();
+                self.shared.selected_revision = revision(&detail["decision"]);
+            } else if self.shared.page_matches(page, metadata, global) {
+                if let Some(first) = array(&page["decisions"]).first() {
+                    self.shared.selected = text(first, "decisionId").into();
+                    self.shared.selected_revision = revision(first);
+                }
+            }
+        }
+        ui.horizontal_wrapped(|ui| {
+            if control(ui, "Refresh downloaded copies", !self.hold_automatic_reads).clicked() {
+                self.shared.refresh_page = true;
+                self.shared.refresh_detail = true;
+            }
+            if self.shared.page_matches(page, metadata, global) {
+                if control(
+                    ui,
+                    "Previous shared records",
+                    !self.hold_automatic_reads && self.shared.offset > 0,
+                )
+                .clicked()
+                {
+                    self.shared.offset = self.shared.offset.saturating_sub(10);
+                }
+                if control(
+                    ui,
+                    "Next shared records",
+                    !self.hold_automatic_reads
+                        && self.shared.offset.saturating_add(10)
+                            < page["total"].as_u64().unwrap_or(0),
+                )
+                .clicked()
+                {
+                    self.shared.offset = self.shared.offset.saturating_add(10);
+                }
+            }
+        });
+        if self.shared.page_matches(page, metadata, global) {
+            for record in array(&page["decisions"]).iter().take(10) {
+                ui.push_id(text(record, "decisionId"), |ui| {
+                    card(ui, |ui| {
+                        ui.label(RichText::new(text(record, "title")).strong().color(TEXT));
+                        hint(ui, &localized_format!(ui, "Revision {0}", revision(record)));
+                        if control(ui, "Read published copy", !self.hold_automatic_reads).clicked()
+                        {
+                            self.shared.selected = text(record, "decisionId").into();
+                            self.shared.selected_revision = revision(record);
+                        }
+                    })
+                });
+                ui.add_space(8.0);
+            }
+            if page["total"] == 0 {
+                hint(ui, "No published heads are cached for this project.");
+            }
+        } else {
+            hint(
+                ui,
+                "Downloaded manifest unavailable. Refresh retries a failed cached read.",
+            );
+        }
+        ui.collapsing(t(ui, "Open an exact downloaded revision"), |ui| {
+            field(ui, "Decision ID", &mut self.shared.exact_id, 80, false);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(t(ui, "Revision"));
+                ui.add(
+                    egui::DragValue::new(&mut self.shared.exact_revision)
+                        .range(1..=9_007_199_254_740_991u64),
+                );
+            });
+            if control(
+                ui,
+                "Read exact downloaded revision",
+                !self.hold_automatic_reads
+                    && opaque_id(self.shared.exact_id.trim(), "decision")
+                    && self.shared.exact_revision > 0,
+            )
+            .clicked()
+            {
+                self.shared.selected = self.shared.exact_id.trim().into();
+                self.shared.selected_revision = self.shared.exact_revision;
+                self.shared.refresh_detail = true;
+            }
+        });
+        if self.shared.detail_matches(detail, metadata, global) {
+            ui.add_space(12.0);
+            #[cfg(feature = "ui-smoke")]
+            if self.shared_smoke_focus {
+                ui.scroll_to_cursor(Some(egui::Align::TOP));
+                self.shared_smoke_focus = false;
+            }
+            card(ui, |ui| {
+                status(
+                    ui,
+                    if detail["current"] == true {
+                        "Current shared head"
+                    } else {
+                        "Historical shared version"
+                    },
+                );
+                if detail["current"] != true {
+                    hint(
+                        ui,
+                        "Historical version · do not treat this as current shared context.",
+                    );
+                }
+                if detail["offline"] == true
+                    || detail["stale"] == true
+                    || metadata["offline"] == true
+                    || metadata["stale"] == true
+                {
+                    hint(
+                        ui,
+                        "Cached data may be stale. Sync to verify current shared context.",
+                    );
+                }
+                let record = &detail["decision"];
+                ui.label(
+                    RichText::new(text(record, "title"))
+                        .size(16.0)
+                        .strong()
+                        .color(TEXT),
+                );
+                for (key, label) in [
+                    ("decision", "Decision statement"),
+                    ("context", "Context"),
+                    ("rationale", "Rationale"),
+                    ("consequences", "Consequences"),
+                ] {
+                    if !text(record, key).is_empty() {
+                        ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
+                        ui.label(text(record, key));
+                        ui.add_space(6.0);
+                    }
+                }
+                hint(ui, &localized_format!(ui, "Revision {0}", revision(record)));
+                hint(
+                    ui,
+                    &localized_format!(
+                        ui,
+                        "Published {0}",
+                        format_time(ui, text(detail, "publishedAt"))
+                    ),
+                );
+                ui.collapsing(t(ui, "Published identity and references"), |ui| {
+                    ui.monospace(text(record, "decisionId"));
+                    for source in array(&record["sources"]) {
+                        ui.monospace(text(source, "sourceId"));
+                        hint(ui, &localized_format!(ui, "Revision {0}", revision(source)));
+                    }
+                });
+            });
+        } else if !self.shared.selected.is_empty() {
+            hint(
+                ui,
+                "Exact downloaded revision unavailable. Refresh retries the cached read.",
+            );
+        }
+        if commands.is_empty() {
+            if let Some(read) = self.shared.next_read(
+                page,
+                detail,
+                metadata,
+                global,
+                !ui.is_enabled() || self.hold_automatic_reads,
+            ) {
+                commands.push(read);
+            }
+        }
     }
 
     fn work_panel(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -2520,7 +3107,7 @@ impl Console {
                     },
                 );
             });
-            hint(ui,"Only allowlisted operational status leaves this machine. Instructions, paths and transcripts stay local.");
+            hint(ui,"Operational status is separate from optional memory publication. Task instructions, paths and transcripts stay local.");
             ui.add_space(16.0);
             if cloud["error"] == true {
                 ui.colored_label(
@@ -2581,11 +3168,83 @@ impl Console {
                 }
             }
         });
+        self.shared_memory(ui, snapshot, commands);
     }
 }
 
 fn array(value: &Value) -> &[Value] {
     value.as_array().map(Vec::as_slice).unwrap_or(&[])
+}
+fn shared_project<'a>(snapshot: &'a Value, project: &str) -> &'a Value {
+    const EMPTY: Value = Value::Null;
+    array(&snapshot["sharedMemory"]["projects"])
+        .iter()
+        .find(|p| text(p, "projectId") == project)
+        .unwrap_or(&EMPTY)
+}
+fn shared_publisher_ready(metadata: &Value, cloud: &Value) -> bool {
+    cloud["paired"] == true
+        && cloud["error"] != true
+        && text(metadata, "role") == "publisher"
+        && metadata["sharedProjectId"].is_string()
+        && metadata["enabled"] == true
+        && metadata["pendingOperation"].is_null()
+        && text(metadata, "state") != "connection_changed"
+}
+fn shared_role_label(role: &str) -> &str {
+    match role {
+        "publisher" => "Publisher installation",
+        "reader" => "Reader installation",
+        _ => "Not linked",
+    }
+}
+fn shared_state_label(state: &str) -> &str {
+    match state {
+        "queued" => "Queued locally",
+        "pending" => "Delivery pending",
+        "ready" => "Shared project ready",
+        "error" => "Cloud verification failed",
+        "connection_changed" => "Connection changed",
+        _ => "Private Local project",
+    }
+}
+fn opaque_id(value: &str, prefix: &str) -> bool {
+    value
+        .strip_prefix(&format!("{prefix}:"))
+        .and_then(|suffix| {
+            uuid::Uuid::parse_str(suffix).ok().map(|id| {
+                id.to_string() == suffix
+                    && id.get_variant() == uuid::Variant::RFC4122
+                    && (1..=8).contains(&id.get_version_num())
+            })
+        })
+        .unwrap_or(false)
+}
+fn publication_preview(detail: &Value) -> Option<Value> {
+    let decision = &detail["decision"];
+    if text(decision, "status") != "accepted"
+        || revision(decision) == 0
+        || text(decision, "title").is_empty()
+        || text(decision, "decision").is_empty()
+    {
+        return None;
+    }
+    let accepted_at = array(&detail["history"])
+        .iter()
+        .find(|entry| text(entry, "status") == "accepted" && revision(entry) == revision(decision))
+        .and_then(|entry| entry["at"].as_str())?;
+    chrono::DateTime::parse_from_rfc3339(accepted_at).ok()?;
+    let sources = array(&decision["sources"]);
+    if !(1..=8).contains(&sources.len())
+        || sources
+            .iter()
+            .any(|s| text(s, "sourceId").is_empty() || revision(s) == 0)
+    {
+        return None;
+    }
+    Some(
+        json!({"decisionId":decision["decisionId"],"revision":decision["revision"],"status":"accepted","title":decision["title"],"context":decision["context"],"decision":decision["decision"],"rationale":decision["rationale"],"consequences":decision["consequences"],"acceptedAt":accepted_at,"sources":sources.iter().map(|s|json!({"sourceId":s["sourceId"],"revision":s["revision"]})).collect::<Vec<_>>(),"supersedesDecisionId":decision["supersedesDecisionId"]}),
+    )
 }
 fn decision_manifest(snapshot: &Value, project: &str) -> u64 {
     array(&snapshot["projectDecisions"]["projects"])
@@ -3002,7 +3661,11 @@ fn action(
     );
     #[cfg(test)]
     ui.data_mut(|data| {
-        data.insert_temp(egui::Id::new(("test-action", name, label)), response.rect)
+        data.insert_temp(egui::Id::new(("test-action", name, label)), response.rect);
+        data.insert_temp(
+            egui::Id::new(("test-action-state", name, label)),
+            (response.enabled(), response.rect, ui.clip_rect()),
+        );
     });
     if response.clicked() && commands.is_empty() {
         commands.push(Command::new(name, payload()));
@@ -3215,6 +3878,513 @@ fn draw_icon(painter: &egui::Painter, rect: egui::Rect, tab: Tab, color: Color32
 mod tests {
     use super::*;
     use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
+
+    fn normalized_decision_command(command: &Command) -> Value {
+        let mut payload = command.payload.clone();
+        for key in ["commandId", "createdAt", "expiresAt"] {
+            payload.as_object_mut().unwrap().remove(key);
+        }
+        payload
+    }
+    const SHARED_ID: &str = "shared:60c029a4-bc68-44c8-87c9-08d0c2688e9b";
+    fn shared_snapshot(role: &str) -> Value {
+        let mut data = decision_snapshot("accepted");
+        data["cloud"] = json!({"paired":true,"cloudUrl":"https://cloud.example.invalid","hostId":"host:current","workspaceId":"workspace:current"});
+        data["decisionDetail"]["history"].as_array_mut().unwrap().push(json!({"status":"accepted","revision":2,"actorId":"local-owner","at":"2026-10-15T01:00:00.000Z"}));
+        let mut mapping = json!({"projectId":"project:fixture","sharedProjectId":SHARED_ID,"role":role,"enabled":true,"sharedRevision":4,"state":"ready","pendingOperation":null,"verifiedAt":"2026-10-15T01:01:00.000Z","lastErrorCode":null,"stale":false,"offline":false,"diverged":false});
+        data["sharedMemory"] = json!({"schemaVersion":5,"revision":8,"projects":[mapping.clone()]});
+        mapping["reasonCode"] = json!("SHARED_MEMORY_READ");
+        mapping["revision"] = json!(8);
+        mapping["offset"] = json!(0);
+        mapping["limit"] = json!(10);
+        mapping["total"] = json!(1);
+        mapping["decisions"] = json!([{"decisionId":"decision:published","revision":3,"title":"Original published title","publishedAt":"2026-10-15T01:01:00.000Z"}]);
+        data["sharedMemoryPage"] = mapping;
+        let mut published = publication_preview(&data["decisionDetail"]).unwrap();
+        published["decisionId"] = json!("decision:published");
+        published["revision"] = json!(3);
+        published["title"] = json!("Original published title");
+        published["decision"] = json!("Published owner text stays original.");
+        data["sharedDecisionDetail"] = json!({"schemaVersion":1,"reasonCode":"SHARED_DECISION_READ","projectId":"project:fixture","revision":8,"sharedProjectId":SHARED_ID,"manifestRevision":4,"current":true,"publishedAt":"2026-10-15T01:01:00.000Z","verifiedAt":"2026-10-15T01:01:00.000Z","stale":false,"offline":false,"decision":published});
+        data
+    }
+    fn publication_console() -> Console {
+        let mut console = Console {
+            tab: Tab::Decisions,
+            ..Default::default()
+        };
+        console.decisions.select("project:fixture");
+        console.decisions.selected = "decision:fixture".into();
+        console.shared.preview_open = true;
+        console
+    }
+
+    #[test]
+    fn publication_preview_is_an_allowlist_with_exact_acceptance_proof() {
+        let mut data = shared_snapshot("publisher");
+        let detail = &mut data["decisionDetail"];
+        detail["decision"]["privatePath"] = json!("FORBIDDEN_PATH");
+        detail["decision"]["actorId"] = json!("FORBIDDEN_ACTOR");
+        detail["decision"]["sources"][0]["origin"] = json!({"eventId":"FORBIDDEN_ORIGIN"});
+        detail["decision"]["sources"][0]["text"] = json!("FORBIDDEN_SOURCE_BODY");
+        detail["sources"][0]["text"] = json!("FORBIDDEN_FROZEN_BODY");
+        let preview = publication_preview(detail).unwrap();
+        assert_eq!(preview.as_object().unwrap().len(), 11);
+        assert_eq!(preview["acceptedAt"], "2026-10-15T01:00:00.000Z");
+        assert_eq!(
+            preview["sources"],
+            json!([{"sourceId":"source:fixture","revision":3}])
+        );
+        assert!(!preview.to_string().contains("FORBIDDEN"));
+        detail["history"][1]["revision"] = json!(1);
+        assert!(publication_preview(detail).is_none());
+        detail["history"][1]["revision"] = json!(2);
+        detail["decision"]["status"] = json!("superseded");
+        assert!(publication_preview(detail).is_none());
+    }
+
+    #[test]
+    fn publication_requires_a_real_consent_click_and_queues_only_current_ids() {
+        let ctx = egui::Context::default();
+        let data = shared_snapshot("publisher");
+        let mut console = publication_console();
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_publish",
+            "Queue explicit publication"
+        )
+        .is_empty());
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "publication-consent",
+            "Approve upload"
+        )
+        .is_empty());
+        assert!(console.shared.consent);
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_publish",
+            "Queue explicit publication",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "memory_cloud_publish");
+        let payload = normalized_decision_command(&commands[0]);
+        assert_eq!(
+            payload,
+            json!({"projectId":"project:fixture","decisionId":"decision:fixture","expectedDecisionRevision":2,"expectedSharedRevision":4,"consent":true})
+        );
+        assert!(!console.shared.consent);
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+    }
+
+    #[test]
+    fn long_publication_preview_keeps_consent_and_action_outside_its_scroll_body() {
+        for language in [Language::Tr, Language::En] {
+            let ctx = egui::Context::default();
+            let mut data = shared_snapshot("publisher");
+            data["decisionDetail"]["decision"]["decision"] =
+                json!("Long owner content. ".repeat(900));
+            let mut console = publication_console();
+            let mut commands = Vec::new();
+            let screen = Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 560.0));
+            let output = ctx.run_ui(
+                RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| {
+                    ui.data_mut(|d| d.insert_temp(egui::Id::new("console-language"), language));
+                    console.publication_controls(ui, &data, &data["decisionDetail"], &mut commands);
+                },
+            );
+            output.drop_without_applying_deltas();
+            let consent = ctx.data(|d| {
+                d.get_temp::<Rect>(egui::Id::new((
+                    "test-action",
+                    "publication-consent",
+                    "Approve upload",
+                )))
+                .unwrap()
+            });
+            let (_, button, clip) = ctx.data(|d| {
+                d.get_temp::<(bool, Rect, Rect)>(egui::Id::new((
+                    "test-action-state",
+                    "memory_cloud_publish",
+                    "Queue explicit publication",
+                )))
+                .unwrap()
+            });
+            assert!(screen.contains_rect(consent));
+            assert!(screen.contains_rect(button));
+            assert!(clip.contains_rect(button));
+            assert!(button.min.y >= consent.max.y);
+            assert!(commands.is_empty());
+        }
+    }
+
+    #[test]
+    fn publication_consent_does_not_survive_scope_revision_or_connection_changes() {
+        for change in [
+            "sharedRevision",
+            "decisionRevision",
+            "host",
+            "reader",
+            "pending",
+            "disabled",
+            "offline",
+        ] {
+            let ctx = egui::Context::default();
+            let mut data = shared_snapshot("publisher");
+            let mut console = publication_console();
+            render(&ctx, &mut console, &data, false, vec![]);
+            click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "publication-consent",
+                "Approve upload",
+            );
+            assert!(console.shared.consent);
+            match change {
+                "sharedRevision" => {
+                    data["sharedMemory"]["projects"][0]["sharedRevision"] = json!(5)
+                }
+                "decisionRevision" => {
+                    data["decisionDetail"]["decision"]["revision"] = json!(3);
+                    data["decisionDetail"]["history"][1]["revision"] = json!(3);
+                }
+                "host" => data["cloud"]["hostId"] = json!("host:changed"),
+                "reader" => data["sharedMemory"]["projects"][0]["role"] = json!("reader"),
+                "pending" => {
+                    data["sharedMemory"]["projects"][0]["pendingOperation"] =
+                        json!({"operationId":"memory-op:existing"})
+                }
+                "disabled" => data["sharedMemory"]["projects"][0]["enabled"] = json!(false),
+                _ => data["cloud"]["paired"] = json!(false),
+            }
+            assert!(render(&ctx, &mut console, &data, false, vec![])
+                .0
+                .is_empty());
+            assert!(!console.shared.consent, "consent must reset on {change}");
+        }
+        let ctx = egui::Context::default();
+        let data = shared_snapshot("publisher");
+        let mut console = publication_console();
+        render(&ctx, &mut console, &data, false, vec![]);
+        click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "publication-consent",
+            "Approve upload",
+        );
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            true,
+            "memory_cloud_publish",
+            "Queue explicit publication"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn shared_reader_is_scoped_read_only_and_marks_historical_offline_data() {
+        for lang in ["tr", "en"] {
+            let ctx = egui::Context::default();
+            let mut data = shared_snapshot("reader");
+            data["desktopPreferences"] = json!({"language":lang});
+            data["sharedMemory"]["projects"][0]["offline"] = json!(true);
+            data["sharedDecisionDetail"]["current"] = json!(false);
+            let mut console = Console {
+                tab: Tab::Cloud,
+                ..Default::default()
+            };
+            console.shared.select("project:fixture");
+            let commands = render(&ctx, &mut console, &data, false, vec![]).0;
+            assert!(commands.is_empty());
+            let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+            assert!(copy.contains(if lang == "tr" {
+                "Çevrimdışı önbellek"
+            } else {
+                "Offline cache"
+            }));
+            assert!(copy.contains("Original published title"));
+            assert!(copy.contains(if lang == "tr" {
+                "Geçmiş paylaşılan sürüm"
+            } else {
+                "Historical shared version"
+            }));
+            assert!(copy.contains("Published owner text stays original."));
+            assert!(!copy.contains(if lang == "tr" {
+                "Paylaşımı kapat"
+            } else {
+                "Disable sharing"
+            }));
+            data["sharedDecisionDetail"]["projectId"] = json!("project:foreign");
+            let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+            assert!(!copy.contains("Published owner text stays original."));
+            data["sharedDecisionDetail"]["projectId"] = json!("project:fixture");
+            data["sharedDecisionDetail"]["sharedProjectId"] = json!("shared:foreign");
+            assert!(!painted_copy(&ctx, &mut console, &data)
+                .join("\n")
+                .contains("Published owner text stays original."));
+        }
+    }
+
+    #[test]
+    fn cached_shared_reads_are_bounded_and_failed_reads_need_explicit_refresh() {
+        let data = shared_snapshot("reader");
+        let metadata = shared_project(&data, "project:fixture");
+        let mut panel = SharedPanel::default();
+        panel.select("project:fixture");
+        assert!(panel
+            .next_read(&Value::Null, &Value::Null, metadata, 8, true)
+            .is_none());
+        assert!(panel.page_requested.is_none());
+        let read = panel
+            .next_read(&Value::Null, &Value::Null, metadata, 8, false)
+            .unwrap();
+        assert_eq!(read.action, "memory_cloud_read");
+        assert_eq!(read.payload["limit"], 10);
+        assert_eq!(read.payload["offset"], 0);
+        assert!(panel
+            .next_read(&Value::Null, &Value::Null, metadata, 8, false)
+            .is_none());
+        panel.refresh_page = true;
+        assert!(panel
+            .next_read(&Value::Null, &Value::Null, metadata, 8, true)
+            .is_none());
+        assert!(panel.refresh_page);
+        assert!(panel
+            .next_read(&Value::Null, &Value::Null, metadata, 8, false)
+            .is_some());
+        panel.selected = "decision:published".into();
+        panel.selected_revision = 3;
+        let exact = panel
+            .next_read(&data["sharedMemoryPage"], &Value::Null, metadata, 8, false)
+            .unwrap();
+        assert_eq!(exact.action, "memory_cloud_decision_read");
+        assert_eq!(exact.payload["revision"], 3);
+        assert!(panel
+            .next_read(&data["sharedMemoryPage"], &Value::Null, metadata, 8, false)
+            .is_none());
+        assert!(panel
+            .next_read(
+                &data["sharedMemoryPage"],
+                &data["sharedDecisionDetail"],
+                metadata,
+                9,
+                false
+            )
+            .is_some());
+    }
+
+    #[test]
+    fn failed_owner_mutation_blocks_shared_read_controls_without_consuming_keys() {
+        let ctx = egui::Context::default();
+        let mut data = shared_snapshot("reader");
+        data["sharedMemoryPage"] = Value::Null;
+        data["sharedDecisionDetail"] = Value::Null;
+        let mut console = Console {
+            tab: Tab::Cloud,
+            ..Default::default()
+        };
+        console.shared.select("project:fixture");
+        let notice = Notice::error("memory_cloud_publish", "HOST_ACTION_FAILED");
+        let mut commands = vec![];
+        let output = ctx.run_ui(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 1200.0))),
+                ..Default::default()
+            },
+            |ui| commands = console.show(ui, &data, false, Some(&notice), true),
+        );
+        output.drop_without_applying_deltas();
+        assert!(commands.is_empty());
+        assert!(console.shared.page_requested.is_none());
+        assert!(console.shared.detail_requested.is_none());
+        assert!(console.hold_automatic_reads);
+        let commands = render(&ctx, &mut console, &data, false, vec![]).0;
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "memory_cloud_read");
+    }
+
+    #[test]
+    fn shared_setup_and_publisher_controls_keep_roles_and_expected_revisions() {
+        let ctx = egui::Context::default();
+        let mut data = shared_snapshot("publisher");
+        let mut console = Console {
+            tab: Tab::Cloud,
+            ..Default::default()
+        };
+        console.shared.select("project:fixture");
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_sharing",
+            "Disable sharing",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(
+            normalized_decision_command(&commands[0]),
+            json!({"projectId":"project:fixture","expectedSharedRevision":4,"enabled":false})
+        );
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_sync",
+            "Sync shared memory",
+        );
+        assert_eq!(commands[0].payload["projectId"], "project:fixture");
+        data["sharedMemory"]["projects"][0]["sharedProjectId"] = Value::Null;
+        data["sharedMemory"]["projects"][0]["role"] = Value::Null;
+        data["sharedMemory"]["projects"][0]["state"] = json!("unlinked");
+        console.shared.name = "  Shared Billing  ".into();
+        console.shared.link_id = SHARED_ID.into();
+        click(&ctx, &mut console, &data, false, "shared-header", "Create");
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_create",
+            "Queue shared project creation",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(
+            normalized_decision_command(&commands[0]),
+            json!({"projectId":"project:fixture","expectedProjectRevision":9,"name":"Shared Billing"})
+        );
+        click(&ctx, &mut console, &data, false, "shared-header", "Link");
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_link",
+            "Queue reader link",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(
+            normalized_decision_command(&commands[0]),
+            json!({"projectId":"project:fixture","expectedProjectRevision":9,"sharedProjectId":SHARED_ID})
+        );
+        data["sharedMemory"]["projects"][0]["pendingOperation"] =
+            json!({"operationId":"memory-op:queued"});
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_create",
+            "Queue shared project creation"
+        )
+        .is_empty());
+        data["sharedMemory"]["projects"][0]["pendingOperation"] = Value::Null;
+        console.shared.link_id = "shared:../invalid".into();
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_link",
+            "Queue reader link"
+        )
+        .is_empty());
+        console.shared.link_id = SHARED_ID.into();
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            true,
+            "memory_cloud_link",
+            "Queue reader link"
+        )
+        .is_empty());
+        data["cloud"]["paired"] = json!(false);
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_link",
+            "Queue reader link"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn shared_control_rows_fit_the_minimum_window_and_ids_are_validated() {
+        assert!(opaque_id(SHARED_ID, "shared"));
+        for bad in [
+            "shared:../other",
+            "shared:60C029A4-BC68-44C8-87C9-08D0C2688E9B",
+            "decision:60c029a4-bc68-44c8-87c9-08d0c2688e9b",
+            "shared:",
+        ] {
+            assert!(!opaque_id(bad, "shared"));
+        }
+        for lang in ["tr", "en"] {
+            let ctx = egui::Context::default();
+            let mut data = shared_snapshot("publisher");
+            data["desktopPreferences"] = json!({"language":lang});
+            let mut console = Console {
+                tab: Tab::Cloud,
+                ..Default::default()
+            };
+            let screen = Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 560.0));
+            let output = ctx.run_ui(
+                RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| {
+                    console.show(ui, &data, false, None, false);
+                },
+            );
+            output.drop_without_applying_deltas();
+            for (action, label) in [
+                ("memory_cloud_sync", "Sync shared memory"),
+                ("memory_cloud_sharing", "Disable sharing"),
+            ] {
+                let (_, rect, clip) = ctx.data(|d| {
+                    d.get_temp::<(bool, Rect, Rect)>(egui::Id::new((
+                        "test-action-state",
+                        action,
+                        label,
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    rect.min.x >= clip.min.x && rect.max.x <= clip.max.x,
+                    "{lang}: {label} cannot overflow horizontally: {rect:?} vs {clip:?}"
+                );
+                assert!(rect.max.x <= screen.max.x);
+            }
+        }
+    }
 
     fn decision_snapshot(status: &str) -> Value {
         let mut data = memory_snapshot();
@@ -3783,6 +4953,8 @@ mod tests {
         busy: bool,
         events: Vec<Event>,
     ) -> (Vec<Command>, usize) {
+        // Match the production no-animation theme before exercising disclosure clicks.
+        ctx.global_style_mut(|style| style.animation_time = 0.0);
         let mut commands = vec![];
         let input = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 1200.0))),

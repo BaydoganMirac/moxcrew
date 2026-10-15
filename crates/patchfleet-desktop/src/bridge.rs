@@ -386,7 +386,7 @@ impl Bridge {
     pub fn poll(&mut self) {
         while let Ok(message) = self.messages.try_recv() {
             match message {
-                Message::Snapshot(snapshot) => self.apply_snapshot(snapshot),
+                Message::Snapshot(snapshot) => self.apply_delivered_snapshot(snapshot),
                 Message::Outcome(command, result, snapshot) => {
                     let preserve_owner = memory_read(command.action)
                         && self
@@ -431,7 +431,7 @@ impl Bridge {
                             self.pending = Some(command);
                         }
                     }
-                    self.apply_snapshot(snapshot);
+                    self.apply_delivered_snapshot(snapshot);
                     self.busy = false;
                 }
                 Message::Folder(target, selection) => {
@@ -623,6 +623,29 @@ impl Bridge {
             }
         }
         self.account_overlays();
+    }
+
+    fn apply_delivered_snapshot(&mut self, delivered: Result<Value, String>) {
+        if delivered.as_ref().is_ok_and(|delivered| {
+            self.snapshot
+                .as_ref()
+                .is_none_or(|current| cloud_identity(current) == cloud_identity(delivered))
+        }) {
+            self.apply_snapshot(delivered);
+            return;
+        }
+        let host = self.host.lock().unwrap().as_ref().cloned();
+        let snapshot = match (delivered, host) {
+            (Ok(delivered), Some(host)) => match host.snapshot().map_err(safe_error) {
+                Ok(current) if cloud_identity(&current) != cloud_identity(&delivered) => {
+                    Ok(current)
+                }
+                Ok(_) => Ok(delivered),
+                Err(error) => Err(error),
+            },
+            (delivered, _) => delivered,
+        };
+        self.apply_snapshot(snapshot);
     }
 
     fn apply_snapshot(&mut self, snapshot: Result<Value, String>) {
@@ -1019,6 +1042,218 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         panic!("Account lane did not finish");
+    }
+
+    #[test]
+    fn retained_normal_snapshots_and_owner_outcomes_cannot_revert_account_transitions() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        let host = bridge.host.lock().unwrap().as_ref().unwrap().clone();
+        let listener = bridge
+            .runtime
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let account_seen = Arc::new(AtomicBool::new(false));
+        let account_release = Arc::new(tokio::sync::Notify::new());
+        let seen = account_seen.clone();
+        let release = account_release.clone();
+        let server=bridge.runtime.spawn(async move {
+            loop {
+                let (mut socket,_)=listener.accept().await.unwrap();
+                let seen=seen.clone();
+                let release=release.clone();
+                tokio::spawn(async move {
+                    let mut bytes=Vec::new();
+                    let mut chunk=[0;4096];
+                    let (start,head)=loop {
+                        let n=socket.read(&mut chunk).await.unwrap();
+                        if n==0 { return; }
+                        bytes.extend_from_slice(&chunk[..n]);
+                        if let Some(i)=bytes.windows(4).position(|w|w==b"\r\n\r\n") { break (i+4,String::from_utf8(bytes[..i].to_vec()).unwrap()); }
+                    };
+                    let length=head.lines().find_map(|line|line.to_ascii_lowercase().strip_prefix("content-length:").and_then(|n|n.trim().parse::<usize>().ok())).unwrap_or(0);
+                    while bytes.len()<start+length {
+                        let n=socket.read(&mut chunk).await.unwrap();
+                        if n==0 { return; }
+                        bytes.extend_from_slice(&chunk[..n]);
+                    }
+                    let path=head.lines().next().unwrap().split_whitespace().nth(1).unwrap();
+                    let response=if path=="/api/desktop/v1/token" {
+                        let body:Value=serde_json::from_slice(&bytes[start..start+length]).unwrap();
+                        assert_eq!(body["schemaVersion"],1);
+                        assert_eq!(body["code"],"A".repeat(43));
+                        json!({"schemaVersion":1,"hostId":"host:bridge-race","workspaceId":"workspace:bridge-race","credential":"BRIDGE_RACE_CREDENTIAL","protocolVersion":2})
+                    } else if path.ends_with("/account") {
+                        let released=release.notified();
+                        seen.store(true,Ordering::SeqCst);
+                        released.await;
+                        json!({"schemaVersion":1,"hostId":"host:bridge-race","workspaceId":"workspace:bridge-race","accountId":"10000000-0000-4000-8000-000000000001","email":"owner@bridge.test","subscription":{"status":"active","memoryAccess":true,"periodEndsAt":null,"checkedAt":patchfleet_core::now()}})
+                    } else if path.ends_with("/logout") {
+                        assert_eq!(serde_json::from_slice::<Value>(&bytes[start..start+length]).unwrap(),json!({"schemaVersion":1}));
+                        json!({"schemaVersion":1,"revoked":true})
+                    } else { panic!("unexpected fixture endpoint"); };
+                    let body=serde_json::to_vec(&response).unwrap();
+                    let head=format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len());
+                    if socket.write_all(head.as_bytes()).await.is_ok() { let _=socket.write_all(&body).await; }
+                });
+            }
+        });
+        let owner = Command::new("project_create", json!({"name":"Before sign-in"}));
+        let receipt = bridge
+            .runtime
+            .block_on(host.action(owner.action, owner.payload.clone()))
+            .unwrap();
+        let signed_out = host.snapshot().unwrap();
+        bridge.pending = Some(owner.clone());
+        bridge.busy = true;
+        bridge.submit(Command::new(
+            "cloud_login_begin",
+            json!({"cloudUrl":origin,"displayName":"Bridge race fixture"}),
+        ));
+        await_account(&mut bridge);
+        let authorization = bridge.cloud_login.as_ref().unwrap()["authorizationUrl"]
+            .as_str()
+            .unwrap();
+        let fields: std::collections::BTreeMap<_, _> = authorization
+            .split_once('?')
+            .unwrap()
+            .1
+            .split('&')
+            .map(|field| field.split_once('=').unwrap())
+            .collect();
+        let encoded = fields["redirectUri"].as_bytes();
+        let mut decoded = Vec::new();
+        let mut i = 0;
+        while i < encoded.len() {
+            if encoded[i] == b'%' {
+                decoded.push(
+                    u8::from_str_radix(std::str::from_utf8(&encoded[i + 1..i + 3]).unwrap(), 16)
+                        .unwrap(),
+                );
+                i += 3;
+            } else {
+                decoded.push(encoded[i]);
+                i += 1;
+            }
+        }
+        let redirect = String::from_utf8(decoded).unwrap();
+        let (authority, path) = redirect
+            .strip_prefix("http://")
+            .unwrap()
+            .split_once('/')
+            .unwrap();
+        bridge.runtime.block_on(async {
+            let mut socket = tokio::net::TcpStream::connect(authority).await.unwrap();
+            socket
+                .write_all(
+                    format!(
+                        "GET /{path}?state={}&code={} HTTP/1.1\r\nHost: {authority}\r\n\r\n",
+                        fields["state"],
+                        "A".repeat(43)
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            let mut response = Vec::new();
+            socket.read_to_end(&mut response).await.unwrap();
+            assert!(response.starts_with(b"HTTP/1.1 200"));
+        });
+        bridge.login_next_poll = Some(Instant::now());
+        for _ in 0..800 {
+            bridge.poll();
+            if account_seen.load(Ordering::SeqCst) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(account_seen.load(Ordering::SeqCst));
+        assert_eq!(bridge.cloud_login.as_ref().unwrap()["status"], "connected");
+        let connected_generation = bridge.account_generation;
+        bridge
+            .output
+            .blocking_send(Message::Snapshot(Ok(signed_out.clone())))
+            .unwrap();
+        bridge.poll();
+        assert_eq!(bridge.snapshot.as_ref().unwrap()["cloud"]["paired"], true);
+        assert_eq!(bridge.account_generation, connected_generation);
+        assert!(bridge.account_task.is_some());
+        bridge
+            .output
+            .blocking_send(Message::Outcome(owner.clone(), Ok(receipt), Ok(signed_out)))
+            .unwrap();
+        bridge.poll();
+        assert_eq!(bridge.feedback.as_ref().unwrap().code, "PROJECT_CREATED");
+        assert!(bridge.pending.is_none() && !bridge.busy);
+        assert_eq!(bridge.snapshot.as_ref().unwrap()["cloud"]["paired"], true);
+        assert_eq!(bridge.account_generation, connected_generation);
+        assert!(bridge.account_task.is_some());
+        account_release.notify_one();
+        await_account(&mut bridge);
+        assert_eq!(
+            bridge.cloud_account.as_ref().unwrap()["email"],
+            "owner@bridge.test"
+        );
+        let owner = Command::new("project_create", json!({"name":"Before sign-out"}));
+        let receipt = bridge
+            .runtime
+            .block_on(host.action(owner.action, owner.payload.clone()))
+            .unwrap();
+        let signed_in = host.snapshot().unwrap();
+        bridge.pending = Some(owner.clone());
+        bridge.busy = true;
+        bridge.submit(Command::new("cloud_logout", json!({})));
+        await_account(&mut bridge);
+        assert_eq!(bridge.snapshot.as_ref().unwrap()["cloud"]["paired"], false);
+        assert_eq!(bridge.logout_remote_revoked, Some(true));
+        let signed_out_generation = bridge.account_generation;
+        bridge
+            .output
+            .blocking_send(Message::Snapshot(Ok(signed_in.clone())))
+            .unwrap();
+        bridge.poll();
+        assert_eq!(bridge.snapshot.as_ref().unwrap()["cloud"]["paired"], false);
+        assert_eq!(bridge.account_generation, signed_out_generation);
+        bridge
+            .output
+            .blocking_send(Message::Outcome(owner, Ok(receipt), Ok(signed_in.clone())))
+            .unwrap();
+        bridge.poll();
+        assert_eq!(bridge.feedback.as_ref().unwrap().code, "PROJECT_CREATED");
+        assert!(bridge.pending.is_none() && !bridge.busy);
+        assert_eq!(bridge.snapshot.as_ref().unwrap()["cloud"]["paired"], false);
+        assert_eq!(bridge.logout_remote_revoked, Some(true));
+        assert_eq!(bridge.account_generation, signed_out_generation);
+        assert!(bridge.cloud_account.is_none() && bridge.account_task.is_none());
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        let invalid = Command::new("project_create", json!({"name":""}));
+        let failure = bridge
+            .runtime
+            .block_on(host.action(invalid.action, invalid.payload.clone()))
+            .map_err(safe_error);
+        let error = failure.as_ref().unwrap_err().clone();
+        bridge.pending = Some(invalid.clone());
+        bridge.busy = true;
+        bridge
+            .output
+            .blocking_send(Message::Outcome(invalid.clone(), failure, Ok(signed_in)))
+            .unwrap();
+        bridge.poll();
+        assert_eq!(bridge.pending.as_ref().unwrap().payload, invalid.payload);
+        assert_eq!(bridge.feedback.as_ref().unwrap().code, error);
+        assert_eq!(bridge.snapshot.as_ref().unwrap()["cloud"]["paired"], false);
+        assert_eq!(bridge.account_generation, signed_out_generation);
+        server.abort();
+        bridge.shutdown();
     }
 
     #[test]

@@ -84,9 +84,14 @@ runtime entitlement changed.
 
 ## Next
 
-Verify decision proposal/acceptance, embedded
-database packaging and accepted-decision retrieval before
-adding real agent tools and automatic extraction.
+The proposed [Task 0029](../plans/0029-decision-memory-and-cloud-publication.md)
+turns the free Local/subscription Cloud decision into bounded implementation
+slices. Its first milestone is local accepted decisions followed by explicit
+Cloud publication and the same exact revision read on a second installation.
+[ADR 0030](../decisions/0030-shared-decision-publication.md) proposes one paired
+publishing host per shared project. These technical choices are proposed, not
+enabled. Cloud vectors, embedded Local retrieval evaluation, scoped agent tools
+and automatic extraction follow working exact decision retrieval.
 
 ## Current limits
 

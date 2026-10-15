@@ -33,3 +33,4 @@ supersedes the old one.
 | [0026](0026-native-desktop-language-preferences.md) | Accepted | Turkish/English native copy with protected owner language preference; source content stays original |
 | [0028](0028-native-folder-consent-and-feedback.md) | Accepted | Native folder selection and actionable access feedback |
 | [0029](0029-free-local-and-subscription-cloud.md) | Accepted product boundary | Free Local and optional subscription Cloud; runtime transition remains separate |
+| [0030](0030-shared-decision-publication.md) | Proposed | One publishing host per shared project; owner-accepted local facts and Cloud published revisions |

@@ -11,6 +11,13 @@ Runtime contract: [ADR 0023](../decisions/0023-rust-tauri-desktop-runtime.md)
 This plan defines the requested outcome and separately verifiable slices.
 Runtime implementation and package selection are not recorded as completed.
 
+Implementation follow-up, 2026-10-15: [Task 0029](0029-decision-memory-and-cloud-publication.md)
+proposes the next bounded cards under the accepted free Local/subscription Cloud
+product boundary. It adds an opt-in Cloud publication track after Local decision
+lifecycle. Cloud PostgreSQL/pgvector, shared authority and transport are proposed
+work; the existing V1/V2 data boundary is unchanged. This original local-memory
+plan remains the free Local outcome, not an implemented or mandatory Cloud path.
+
 ## User outcome
 
 The owner opens a project, starts individual agents or teams, and gives project

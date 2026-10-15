@@ -605,6 +605,8 @@ pub struct Console {
     shared_smoke_focus: bool,
     #[cfg(feature = "ui-smoke")]
     search_smoke_query: Option<(bool, String)>,
+    #[cfg(feature = "ui-smoke")]
+    suppress_account_browser: bool,
     project_name: String,
     project_path: String,
     project_path_problem: Option<String>,
@@ -620,6 +622,9 @@ pub struct Console {
     cloud_url: String,
     host_name: String,
     pairing_code: String,
+    account_advanced: bool,
+    account_form_error: Option<&'static str>,
+    opened_login_command: Option<String>,
     notes: HashMap<String, String>,
     answers: HashMap<String, String>,
     form_error: Option<&'static str>,
@@ -635,6 +640,14 @@ pub enum NoticeAction {
 }
 
 impl Console {
+    #[cfg(feature = "ui-smoke")]
+    pub fn account_smoke(&mut self, cloud_url: Option<&str>) {
+        self.tab = Tab::Cloud;
+        if let Some(url) = cloud_url {
+            self.cloud_url = url.into();
+        }
+        self.suppress_account_browser = true;
+    }
     #[cfg(feature = "ui-smoke")]
     pub fn memory_smoke(&mut self) {
         self.tab = Tab::Memory;
@@ -745,6 +758,7 @@ impl Console {
         notice: Option<&Notice>,
         can_retry: bool,
     ) -> Vec<Command> {
+        self.open_login_browser(ui.ctx(), snapshot);
         if let Some(project) = &self.registration_project {
             if let Some(workspace) = items(&snapshot["workspaces"])
                 .iter()
@@ -810,10 +824,16 @@ impl Console {
                 ui.add_space(26.0);
                 ui.label(RichText::new(t(ui, "WORKSPACE")).size(10.0).color(MUTED));
                 ui.add_space(8.0);
+                let account_footer =
+                    if verified_account(snapshot).is_some_and(|a| a["email"].is_string()) {
+                        70.0
+                    } else {
+                        54.0
+                    };
                 let footer_height = if snapshot["desktopPreferences"]["error"] == true {
-                    220.0
+                    220.0 + account_footer
                 } else {
-                    138.0
+                    138.0 + account_footer
                 };
                 let nav_height = (ui.available_height() - footer_height).max(32.0);
                 egui::ScrollArea::vertical()
@@ -860,6 +880,29 @@ impl Console {
                         ui.separator();
                         ui.add_space(9.0);
                         language_selector(ui, snapshot, busy, &mut commands);
+                        ui.add_space(8.0);
+                        ui.separator();
+                        if control(
+                            ui,
+                            if snapshot["cloud"]["paired"] == true {
+                                "Your account"
+                            } else {
+                                "Sign in · optional"
+                            },
+                            true,
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Cloud;
+                        }
+                        if let Some(account) = verified_account(snapshot) {
+                            if let Some(email) = account["email"].as_str() {
+                                ui.add(
+                                    egui::Label::new(RichText::new(email).size(10.0).color(MUTED))
+                                        .truncate(),
+                                );
+                            }
+                        }
                     },
                 );
             });
@@ -3346,22 +3389,43 @@ impl Console {
         }
     }
 
-    fn cloud(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+    fn open_login_browser(&mut self, ctx: &egui::Context, snapshot: &Value) {
+        #[cfg(feature = "ui-smoke")]
+        if self.suppress_account_browser {
+            return;
+        }
+        let login = &snapshot["cloudLogin"];
+        let command = snapshot["cloudAccountUi"]["openCommandId"].as_str();
+        if login["status"] == "waiting"
+            && command.is_some()
+            && command != self.opened_login_command.as_deref()
+            && valid_login_url(snapshot)
+        {
+            self.opened_login_command = command.map(str::to_owned);
+            ctx.open_url(egui::OpenUrl::new_tab(text(login, "authorizationUrl")));
+        }
+    }
+
+    fn account_panel(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let cloud = &snapshot["cloud"];
+        let login = &snapshot["cloudLogin"];
+        let account_ui = &snapshot["cloudAccountUi"];
+        let account_busy = account_ui["busy"] == true;
+        let waiting = login["status"] == "waiting";
         card(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.heading(t(ui, "Patchfleet Cloud"));
                 status(
                     ui,
                     if cloud["paired"] == true {
-                        "Paired"
+                        "Connected"
                     } else {
-                        "Local only"
+                        "Free · Local"
                     },
                 );
             });
-            hint(ui,"Operational status is separate from optional memory publication. Task instructions, paths and transcripts stay local.");
-            ui.add_space(16.0);
+            hint(ui,"Local is free and works without an account. Sign in for optional subscription Cloud services.");
+            ui.add_space(12.0);
             if cloud["error"] == true {
                 ui.colored_label(
                     RED,
@@ -3377,56 +3441,271 @@ impl Console {
                 );
                 return;
             }
-            if cloud["paired"] == true {
-                ui.label(text(cloud, "cloudUrl"));
-                ui.monospace(localized_format!(ui, "Host {0}", text(cloud, "hostId")));
+            if let Some(error) = account_ui["error"].as_str() {
+                ui.colored_label(RED, t(ui, error));
+                hint(ui,"Account status could not be verified. Local work and downloaded decisions remain available.");
+            }
+            if let Some(error) = self.account_form_error {
+                ui.colored_label(RED, t(ui, error));
+            }
+            if account_ui["logoutRemoteRevoked"] == false {
+                hint(ui,"Signed out on this device. Cloud could not confirm revocation; sign out this installation from Cloud when online.");
+            } else if account_ui["logoutRemoteRevoked"] == true {
+                hint(
+                    ui,
+                    "Signed out. Local projects, providers and downloaded decisions are kept.",
+                );
+            }
+            if waiting {
+                status(ui, "Waiting for browser approval");
+                hint(
+                    ui,
+                    "Compare this code in the browser before approving this installation.",
+                );
+                ui.label(
+                    RichText::new(text(login, "confirmationCode"))
+                        .monospace()
+                        .size(22.0)
+                        .strong()
+                        .color(MINT),
+                );
                 hint(
                     ui,
                     &localized_format!(
                         ui,
-                        "Last successful sync: {0}",
-                        format_time(ui, text(cloud, "lastSuccessAt"))
+                        "Sign-in expires {0}",
+                        format_time(ui, text(login, "expiresAt"))
                     ),
                 );
-                if let Some(code) = cloud["lastErrorCode"].as_str() {
-                    ui.colored_label(RED, t(ui, cloud_error(code)));
-                    ui.monospace(code);
+                let valid = valid_login_url(snapshot);
+                if !valid {
+                    ui.colored_label(
+                        RED,
+                        t(
+                            ui,
+                            "The browser address was rejected. Cancel and start sign-in again.",
+                        ),
+                    );
                 }
-                ui.horizontal(|ui| {
-                    action(ui, commands, "Sync now", "cloud_sync", true, || json!({}));
+                ui.horizontal_wrapped(|ui| {
+                    if control(ui, "Open browser", valid).clicked() {
+                        ui.ctx()
+                            .open_url(egui::OpenUrl::new_tab(text(login, "authorizationUrl")));
+                    }
+                    if control(ui, "Copy sign-in link", valid).clicked() {
+                        ui.ctx()
+                            .copy_text(text(login, "authorizationUrl").to_owned());
+                    }
                     action(
                         ui,
                         commands,
-                        "Disconnect Cloud",
-                        "cloud_unpair",
+                        "Cancel sign-in",
+                        "cloud_login_cancel",
                         true,
                         || json!({}),
                     );
                 });
-            } else {
-                field(ui, "Cloud URL", &mut self.cloud_url, 2048, false);
-                field(ui, "Host name", &mut self.host_name, 80, false);
-                field(ui, "Pairing code", &mut self.pairing_code, 256, true);
-                if submit(ui, "Pair this host", "cloud_pair") {
-                    if required(&self.cloud_url, 2048, "").is_err()
-                        || required(&self.host_name, 80, "").is_err()
-                        || required(&self.pairing_code, 256, "").is_err()
-                    {
-                        self.form_error = Some("Enter a Cloud URL, host name and pairing code.");
+                hint(ui,"The browser keeps your login session. Patchfleet receives only this installation's connection credential.");
+            } else if cloud["paired"] == true {
+                if let Some(account) = verified_account(snapshot) {
+                    if let Some(email) = account["email"].as_str() {
+                        ui.label(RichText::new(email).strong().color(TEXT));
                     } else {
-                        commands.push(Command::new("cloud_pair",json!({"cloudUrl":self.cloud_url.trim(),"displayName":self.host_name.trim(),"pairingCode":self.pairing_code.trim()})));
-                        self.pairing_code.clear();
-                        self.form_error = None;
+                        ui.label(t(ui, "Verified account"));
+                    }
+                    ui.horizontal_wrapped(|ui| {
+                        status(
+                            ui,
+                            subscription_label(text(&account["subscription"], "status")),
+                        );
+                        hint(
+                            ui,
+                            if account["subscription"]["memoryAccess"] == true {
+                                "Subscription memory access available"
+                            } else {
+                                "Cloud memory needs an eligible subscription"
+                            },
+                        );
+                    });
+                    hint(
+                        ui,
+                        &localized_format!(
+                            ui,
+                            "Account checked {0}",
+                            format_time(ui, text(&account["subscription"], "checkedAt"))
+                        ),
+                    );
+                } else {
+                    status(
+                        ui,
+                        if account_busy {
+                            "Checking account…"
+                        } else {
+                            "Account not verified"
+                        },
+                    );
+                    hint(ui,"A connection is not proof of an active subscription. Refresh to verify account access.");
+                }
+                ui.horizontal_wrapped(|ui| {
+                    action(
+                        ui,
+                        commands,
+                        "Refresh account",
+                        "cloud_account_read",
+                        !account_busy,
+                        || json!({}),
+                    );
+                    if control(ui, "Subscription and billing", true).clicked() {
+                        if let Ok(origin) = patchfleet_core::desktop_login::validate_cloud_origin(
+                            text(cloud, "cloudUrl"),
+                        ) {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(format!(
+                                "{}/#plan-title",
+                                origin.trim_end_matches('/')
+                            )));
+                        }
+                    }
+                    action(ui, commands, "Sign out", "cloud_logout", true, || json!({}));
+                });
+                if account_ui["error"].as_str().is_some_and(|code| {
+                    matches!(code, "DESKTOP_ACCESS_DENIED" | "CLOUD_AUTH_REJECTED")
+                }) {
+                    hint(
+                        ui,
+                        "Sign out, then sign in again to reconnect this installation.",
+                    );
+                }
+            } else {
+                match text(login, "status") {
+                    "denied" => hint(ui, "Sign-in was denied in the browser. You can try again."),
+                    "expired" => hint(ui, "Sign-in expired. Start again when you are ready."),
+                    "cancelled" => hint(ui, "Sign-in cancelled. Local work is ready."),
+                    _ => (),
+                }
+                if control(
+                    ui,
+                    if account_busy {
+                        "Starting sign-in…"
+                    } else {
+                        "Sign in to Cloud"
+                    },
+                    !account_busy,
+                )
+                .clicked()
+                {
+                    if let Ok(origin) =
+                        patchfleet_core::desktop_login::validate_cloud_origin(self.cloud_url.trim())
+                    {
+                        let name = if self.host_name.trim().is_empty() {
+                            "Patchfleet desktop"
+                        } else {
+                            self.host_name.trim()
+                        };
+                        if required(name, 80, "").is_ok() {
+                            self.account_form_error = None;
+                            commands.push(Command::new(
+                                "cloud_login_begin",
+                                json!({"cloudUrl":origin,"displayName":name}),
+                            ));
+                        } else {
+                            self.account_advanced = true;
+                            self.account_form_error =
+                                Some("Choose a host name of up to 80 characters.");
+                        }
+                    } else {
+                        self.account_advanced = true;
+                        self.account_form_error = Some(
+                            "Set your Cloud address in connection settings before signing in.",
+                        );
+                    }
+                }
+            }
+            ui.add_space(8.0);
+            if control(
+                ui,
+                "Advanced connection settings",
+                !waiting && !account_busy,
+            )
+            .clicked()
+            {
+                self.account_advanced = !self.account_advanced;
+            }
+            if self.account_advanced {
+                ui.separator();
+                if cloud["paired"] == true {
+                    ui.label(text(cloud, "cloudUrl"));
+                    ui.monospace(localized_format!(ui, "Host {0}", text(cloud, "hostId")));
+                    hint(
+                        ui,
+                        &localized_format!(
+                            ui,
+                            "Last successful sync: {0}",
+                            format_time(ui, text(cloud, "lastSuccessAt"))
+                        ),
+                    );
+                    if let Some(code) = cloud["lastErrorCode"].as_str() {
+                        ui.colored_label(RED, t(ui, cloud_error(code)));
+                    }
+                    ui.horizontal_wrapped(|ui| {
+                        action(ui, commands, "Sync now", "cloud_sync", true, || json!({}));
+                    });
+                } else {
+                    field(ui, "Cloud URL", &mut self.cloud_url, 2048, false);
+                    field(ui, "Host name", &mut self.host_name, 80, false);
+                    hint(
+                        ui,
+                        "Manual pairing is available for an existing Cloud pairing code.",
+                    );
+                    field(ui, "Pairing code", &mut self.pairing_code, 256, true);
+                    if submit(ui, "Pair this host", "cloud_pair") {
+                        if required(&self.cloud_url, 2048, "").is_err()
+                            || required(&self.host_name, 80, "").is_err()
+                            || required(&self.pairing_code, 256, "").is_err()
+                        {
+                            self.form_error =
+                                Some("Enter a Cloud URL, host name and pairing code.");
+                        } else {
+                            commands.push(Command::new("cloud_pair",json!({"cloudUrl":self.cloud_url.trim(),"displayName":self.host_name.trim(),"pairingCode":self.pairing_code.trim()})));
+                            self.pairing_code.clear();
+                            self.form_error = None;
+                        }
                     }
                 }
             }
         });
+    }
+
+    fn cloud(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        self.account_panel(ui, snapshot, commands);
         self.shared_memory(ui, snapshot, commands);
     }
 }
 
 fn array(value: &Value) -> &[Value] {
     value.as_array().map(Vec::as_slice).unwrap_or(&[])
+}
+fn verified_account(snapshot: &Value) -> Option<&Value> {
+    let account = &snapshot["cloudAccount"];
+    patchfleet_core::desktop_login::validate_account_response(account, &snapshot["cloud"])
+        .is_ok()
+        .then_some(account)
+}
+fn valid_login_url(snapshot: &Value) -> bool {
+    patchfleet_core::desktop_login::validate_authorization_url(
+        text(&snapshot["cloudLogin"], "authorizationUrl"),
+        text(&snapshot["cloudAccountUi"], "loginCloudUrl"),
+    )
+    .is_ok()
+}
+fn subscription_label(status: &str) -> &str {
+    match status {
+        "active" => "Subscription active",
+        "trialing" => "Subscription trial",
+        "past_due" => "Payment needs attention",
+        "paused" => "Subscription paused",
+        "canceled" => "Subscription canceled",
+        _ => "No active subscription",
+    }
 }
 fn shared_project<'a>(snapshot: &'a Value, project: &str) -> &'a Value {
     const EMPTY: Value = Value::Null;
@@ -4140,6 +4419,309 @@ mod tests {
         payload
     }
     const SHARED_ID: &str = "shared:60c029a4-bc68-44c8-87c9-08d0c2688e9b";
+    fn account_snapshot(waiting: bool) -> Value {
+        let mut data = snapshot();
+        data["cloudAccountUi"] = json!({"busy":false,"error":null,"logoutRemoteRevoked":null});
+        if waiting {
+            let url=format!("https://cloud.example.invalid/desktop/authorize?schemaVersion=1&installationId=install%3Atest&displayName=Native%20test&appVersion=0.8.0&protocolVersion=2&osFamily=darwin&redirectUri=http%3A%2F%2F127.0.0.1%3A49152%2Fauth%2Fcallback&state={}&codeChallenge={}","a".repeat(64),"A".repeat(43));
+            data["cloudLogin"] = json!({"schemaVersion":1,"status":"waiting","authorizationUrl":url,"expiresAt":"2026-10-15T23:59:00.000Z","confirmationCode":"AAAA-AAAA"});
+            data["cloudAccountUi"]["loginCloudUrl"] = json!("https://cloud.example.invalid");
+            data["cloudAccountUi"]["openCommandId"] = json!("cmd:begin-one");
+        } else {
+            data["cloud"] = json!({"paired":true,"cloudUrl":"https://cloud.example.invalid","hostId":"host:fixture","workspaceId":"workspace:fixture"});
+            data["cloudAccount"] = json!({"schemaVersion":1,"hostId":"host:fixture","workspaceId":"workspace:fixture","accountId":"33333333-3333-4333-8333-333333333333","email":"Projects@example.invalid","subscription":{"status":"active","memoryAccess":true,"periodEndsAt":"2026-11-15T01:00:00.000Z","checkedAt":"2026-10-15T01:00:00.000Z"}});
+        }
+        data
+    }
+    fn account_output(
+        ctx: &egui::Context,
+        console: &mut Console,
+        data: &Value,
+        events: Vec<Event>,
+    ) -> (Vec<Command>, Vec<egui::OutputCommand>) {
+        let mut commands = vec![];
+        let output = ctx.run_ui(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 560.0))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                commands = console.show(ui, data, false, None, false);
+            },
+        );
+        let browser = output.platform_output.commands.clone();
+        output.drop_without_applying_deltas();
+        (commands, browser)
+    }
+    fn account_click(
+        ctx: &egui::Context,
+        console: &mut Console,
+        data: &Value,
+        action: &str,
+        label: &str,
+    ) -> (Vec<Command>, Vec<egui::OutputCommand>) {
+        account_output(ctx, console, data, vec![]);
+        let rect: Rect = ctx.data(|d| {
+            d.get_temp(egui::Id::new(("test-action", action, label)))
+                .unwrap()
+        });
+        account_output(
+            ctx,
+            console,
+            data,
+            vec![
+                Event::PointerMoved(rect.center()),
+                Event::PointerButton {
+                    pos: rect.center(),
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+                Event::PointerButton {
+                    pos: rect.center(),
+                    button: PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Modifiers::NONE,
+                },
+            ],
+        )
+    }
+
+    #[test]
+    fn account_sign_in_is_explicit_configurable_and_never_triggered_by_typing() {
+        let ctx = egui::Context::default();
+        let data = snapshot();
+        let mut console = Console {
+            tab: Tab::Cloud,
+            ..Default::default()
+        };
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Sign in to Cloud"
+        )
+        .is_empty());
+        assert!(console.account_advanced);
+        assert!(console.account_form_error.is_some());
+        console.cloud_url = "https://cloud.example.invalid".into();
+        console.host_name = "  Work laptop  ".into();
+        assert!(render(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            vec![Event::Text("typing only".into())]
+        )
+        .0
+        .is_empty());
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Sign in to Cloud",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "cloud_login_begin");
+        assert_eq!(
+            normalized_decision_command(&commands[0]),
+            json!({"cloudUrl":"https://cloud.example.invalid","displayName":"Work laptop"})
+        );
+        assert!(commands
+            .iter()
+            .all(|c| !c.action.starts_with("memory_cloud_")));
+    }
+
+    #[test]
+    fn browser_opens_once_per_explicit_begin_and_rejects_foreign_urls() {
+        let ctx = egui::Context::default();
+        let mut data = account_snapshot(true);
+        let mut console = Console {
+            tab: Tab::Cloud,
+            ..Default::default()
+        };
+        let (_, output) = account_output(&ctx, &mut console, &data, vec![]);
+        let urls: Vec<_> = output
+            .iter()
+            .filter_map(|o| {
+                if let egui::OutputCommand::OpenUrl(url) = o {
+                    Some(url)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(urls.len(), 1);
+        assert!(urls[0].new_tab);
+        assert_eq!(urls[0].url, data["cloudLogin"]["authorizationUrl"]);
+        for _ in 0..4 {
+            assert!(account_output(&ctx, &mut console, &data, vec![])
+                .1
+                .is_empty());
+        }
+        data["cloudAccountUi"]["busy"] = json!(true);
+        assert!(account_output(&ctx, &mut console, &data, vec![])
+            .1
+            .is_empty());
+        data["cloudAccountUi"]["busy"] = json!(false);
+        let (commands, output) =
+            account_click(&ctx, &mut console, &data, "memory_control", "Open browser");
+        assert!(commands.is_empty());
+        assert!(output
+            .iter()
+            .any(|o| matches!(o, egui::OutputCommand::OpenUrl(_))));
+        let (_, output) = account_click(
+            &ctx,
+            &mut console,
+            &data,
+            "memory_control",
+            "Copy sign-in link",
+        );
+        assert!(output
+            .iter()
+            .any(|o| matches!(o, egui::OutputCommand::CopyText(_))));
+        let commands = account_click(
+            &ctx,
+            &mut console,
+            &data,
+            "cloud_login_cancel",
+            "Cancel sign-in",
+        )
+        .0;
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "cloud_login_cancel");
+        data["cloudAccountUi"]["openCommandId"] = json!("cmd:begin-two");
+        data["cloudLogin"]["authorizationUrl"] =
+            json!("https://evil.example.invalid/desktop/authorize");
+        assert!(account_output(&ctx, &mut console, &data, vec![])
+            .1
+            .is_empty());
+        assert!(
+            account_click(&ctx, &mut console, &data, "memory_control", "Open browser")
+                .1
+                .is_empty()
+        );
+        data["cloudLogin"]["authorizationUrl"] = json!("file:///private/synthetic");
+        assert!(account_output(&ctx, &mut console, &data, vec![])
+            .1
+            .is_empty());
+    }
+
+    #[test]
+    fn verified_account_and_billing_link_are_scoped_and_owner_text_stays_original() {
+        for language in ["tr", "en"] {
+            let ctx = egui::Context::default();
+            let mut data = account_snapshot(false);
+            data["desktopPreferences"] = json!({"language":language});
+            let mut console = Console {
+                tab: Tab::Cloud,
+                ..Default::default()
+            };
+            let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+            assert!(copy.contains("Projects@example.invalid"));
+            assert!(copy.contains(if language == "tr" {
+                "Abonelik etkin"
+            } else {
+                "Subscription active"
+            }));
+            let commands = account_click(
+                &ctx,
+                &mut console,
+                &data,
+                "cloud_account_read",
+                "Refresh account",
+            )
+            .0;
+            assert_eq!(commands[0].action, "cloud_account_read");
+            let (_, output) = account_click(
+                &ctx,
+                &mut console,
+                &data,
+                "memory_control",
+                "Subscription and billing",
+            );
+            assert!(output.iter().any(|o|matches!(o,egui::OutputCommand::OpenUrl(url) if url.url=="https://cloud.example.invalid/#plan-title" && url.new_tab)));
+            let commands = account_click(&ctx, &mut console, &data, "cloud_logout", "Sign out").0;
+            assert_eq!(commands[0].action, "cloud_logout");
+            data["cloudAccount"]["hostId"] = json!("host:foreign");
+            assert!(!painted_copy(&ctx, &mut console, &data)
+                .join("\n")
+                .contains("Projects@example.invalid"));
+            data["cloudAccount"]["hostId"] = json!("host:fixture");
+            data["cloudAccount"]["workspaceId"] = json!("workspace:foreign");
+            assert!(!painted_copy(&ctx, &mut console, &data)
+                .join("\n")
+                .contains("Projects@example.invalid"));
+        }
+    }
+
+    #[test]
+    fn account_states_are_localized_truthful_and_fit_the_minimum_window() {
+        for language in ["tr", "en"] {
+            for waiting in [false, true] {
+                let ctx = egui::Context::default();
+                let mut data = account_snapshot(waiting);
+                data["desktopPreferences"] = json!({"language":language});
+                let mut console = Console {
+                    tab: Tab::Cloud,
+                    ..Default::default()
+                };
+                account_output(&ctx, &mut console, &data, vec![]);
+                for (action, label) in if waiting {
+                    vec![
+                        ("cloud_login_cancel", "Cancel sign-in"),
+                        ("memory_control", "Open browser"),
+                    ]
+                } else {
+                    vec![
+                        ("cloud_logout", "Sign out"),
+                        ("cloud_account_read", "Refresh account"),
+                    ]
+                } {
+                    let rect: Rect = ctx.data(|d| {
+                        d.get_temp(egui::Id::new(("test-action", action, label)))
+                            .unwrap()
+                    });
+                    assert!(
+                        rect.min.x >= 0.0
+                            && rect.max.x <= 800.0
+                            && rect.min.y >= 0.0
+                            && rect.max.y <= 560.0,
+                        "{language} {label}: {rect:?}"
+                    );
+                }
+            }
+            let ctx = egui::Context::default();
+            let mut data = snapshot();
+            data["desktopPreferences"] = json!({"language":language});
+            data["cloudAccountUi"] = json!({"logoutRemoteRevoked":false});
+            let mut console = Console {
+                tab: Tab::Cloud,
+                ..Default::default()
+            };
+            let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+            assert!(copy.contains(if language == "tr" {
+                "Bu cihazdaki oturum kapatıldı"
+            } else {
+                "Signed out on this device"
+            }));
+            for state in ["denied", "expired", "cancelled"] {
+                data["cloudLogin"] = json!({"schemaVersion":1,"status":state});
+                assert!(!account_output(&ctx, &mut console, &data, vec![])
+                    .1
+                    .iter()
+                    .any(|o| matches!(o, egui::OutputCommand::OpenUrl(_))));
+            }
+        }
+    }
     fn search_snapshot(shared: bool) -> Value {
         let mut data = shared_snapshot("reader");
         let result = json!({"schemaVersion":1,"reasonCode":if shared {"SHARED_MEMORY_SEARCH_READ"} else {"DECISION_SEARCH_READ"},"projectId":"project:fixture","revision":if shared {8} else {decision_manifest(&data,"project:fixture")},"query":"Why Rust?","mode":"keyword","limit":5,"matches":[{"decisionId":if shared {"decision:published"} else {"decision:fixture"},"revision":if shared {3} else {2},"title":"SEARCH_OWNER_CANARY Projects","score":2.0}]});
@@ -6065,7 +6647,14 @@ mod tests {
         let mut snapshot = snapshot();
         let pair_id = egui::Id::new(("test-action", "cloud_pair", "Pair this host"));
         let valid_ctx = egui::Context::default();
-        render(&valid_ctx, &mut console, &snapshot, false, vec![]);
+        click(
+            &valid_ctx,
+            &mut console,
+            &snapshot,
+            false,
+            "memory_control",
+            "Advanced connection settings",
+        );
         assert!(valid_ctx.data(|d| d.get_temp::<Rect>(pair_id)).is_some());
 
         snapshot["cloud"] = json!({"paired":false,"error":true});

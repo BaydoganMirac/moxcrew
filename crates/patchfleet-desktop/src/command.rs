@@ -6,6 +6,17 @@ pub struct Command {
     pub payload: Value,
 }
 
+pub fn account_action(action: &str) -> bool {
+    matches!(
+        action,
+        "cloud_login_begin"
+            | "cloud_login_poll"
+            | "cloud_login_cancel"
+            | "cloud_account_read"
+            | "cloud_logout"
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoticeKind {
     Success,

@@ -625,6 +625,11 @@ impl Store {
         self.ensure_unchanged(&state)?;
         crate::decisions::read_detail(&state.projected["projectDecisions"], &read_payload(payload))
     }
+    pub fn search_decisions(&self, payload: &Value) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        crate::retrieval::search_local(&state.projected["projectDecisions"], &read_payload(payload))
+    }
     pub fn shared_metadata(&self, connection: &Value) -> Result<Value> {
         let state = self.guard()?;
         self.ensure_unchanged(&state)?;
@@ -641,6 +646,32 @@ impl Store {
             .as_array()
             .and_then(|ms| ms.iter().find(|m| m["projectId"] == project))
             .cloned())
+    }
+    pub(crate) fn shared_search_scope(&self, project: &str, connection: &Value) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        let projected = &state.projected["sharedMemory"];
+        if !projected["projects"]
+            .as_array()
+            .is_some_and(|ps| ps.iter().any(|p| p["projectId"] == project))
+        {
+            return Err(Error("PROJECT_NOT_FOUND".into()));
+        }
+        let mapping = projected["mappings"]
+            .as_array()
+            .and_then(|ms| ms.iter().find(|m| m["projectId"] == project))
+            .ok_or_else(|| Error("MEMORY_PROJECT_NOT_LINKED".into()))?;
+        if mapping["connection"] != *connection {
+            return Err(Error("MEMORY_CONNECTION_CHANGED".into()));
+        }
+        if mapping["sharedProjectId"].as_str().is_none() || mapping["role"].is_null() {
+            return Err(Error("MEMORY_PROJECT_NOT_LINKED".into()));
+        }
+        if mapping["enabled"] != true {
+            return Err(Error("MEMORY_SHARING_DISABLED".into()));
+        }
+        let metadata = crate::shared_memory::metadata(projected, &state.reader, connection);
+        Ok(serde_json::json!({"revision":metadata["revision"],"mapping":mapping}))
     }
     pub fn read_shared_memory(&self, payload: &Value, connection: &Value) -> Result<Value> {
         let state = self.guard()?;

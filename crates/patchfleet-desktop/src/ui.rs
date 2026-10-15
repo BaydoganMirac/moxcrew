@@ -2640,13 +2640,15 @@ impl Console {
                     "Cloud is disconnected. Private decisions and downloaded copies remain local.",
                 );
             }
-            if metadata["offline"] == true {
-                ui.colored_label(RED, t(ui, "Offline cache · verification is not current."));
-            } else if metadata["stale"] == true {
-                hint(
-                    ui,
-                    "Cached data may be stale. Sync to verify current shared context.",
-                );
+            if metadata["sharedProjectId"].is_string() && text(metadata, "state") != "unlinked" {
+                if metadata["offline"] == true {
+                    ui.colored_label(RED, t(ui, "Offline cache · verification is not current."));
+                } else if metadata["stale"] == true {
+                    hint(
+                        ui,
+                        "Cached data may be stale. Sync to verify current shared context.",
+                    );
+                }
             }
             hint(
                 ui,
@@ -5357,6 +5359,50 @@ mod tests {
             assert!(!painted_copy(&ctx, &mut console, &data)
                 .join("\n")
                 .contains("Published owner text stays original."));
+        }
+    }
+
+    #[test]
+    fn unlinked_local_projects_do_not_claim_an_offline_or_stale_cloud_cache() {
+        for language in ["tr", "en"] {
+            for offline in [true, false] {
+                let ctx = egui::Context::default();
+                let mut data = shared_snapshot("reader");
+                data["desktopPreferences"] = json!({"language":language});
+                let metadata = &mut data["sharedMemory"]["projects"][0];
+                metadata["sharedProjectId"] = Value::Null;
+                metadata["role"] = Value::Null;
+                metadata["state"] = json!("unlinked");
+                metadata["offline"] = json!(offline);
+                metadata["stale"] = json!(true);
+                data["sharedMemoryPage"] = Value::Null;
+                data["sharedDecisionDetail"] = Value::Null;
+                let mut console = Console {
+                    tab: Tab::Cloud,
+                    ..Default::default()
+                };
+                let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+                assert!(copy.contains(if language == "tr" {
+                    "Özel yerel proje"
+                } else {
+                    "Private Local project"
+                }));
+                assert!(copy.contains(if language == "tr" {
+                    "Bağlı değil"
+                } else {
+                    "Not linked"
+                }));
+                assert!(!copy.contains(if language == "tr" {
+                    "Çevrimdışı önbellek"
+                } else {
+                    "Offline cache"
+                }));
+                assert!(!copy.contains(if language == "tr" {
+                    "Önbellekteki veri eski olabilir"
+                } else {
+                    "Cached data may be stale"
+                }));
+            }
         }
     }
 

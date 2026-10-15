@@ -1,6 +1,6 @@
 # Project memory feature state
 
-Status: Slice A complete; decision/index/agent/extraction slices remain planned
+Status: Source foundation and local decision lifecycle implemented and independently accepted
 
 Last updated: 2026-10-15
 
@@ -15,8 +15,9 @@ only explicit owner acceptance makes a decision authoritative.
 owner-selected commercial boundary: Local and its planned memory capabilities
 remain free; optional hosted/shared memory belongs to subscription Cloud.
 Cloud PostgreSQL/pgvector and project opt-in publication are proposed next work,
-not existing memory storage. Pricing, quotas, sync authority, embedding choice
-and the new memory protocol remain unresolved. No default upload boundary or
+not existing memory storage. Pricing, quotas, embedding choice and the new memory
+protocol remain unresolved; ADR 0030 proposes the initial single-publisher rule.
+No default upload boundary or
 runtime entitlement changed.
 
 ## Recorded
@@ -55,7 +56,7 @@ runtime entitlement changed.
 - Cloud sync uses an event cursor rather than copying source-bearing canonical
   history. Its existing field allowlists omit all memory text, identities and queries.
 
-## Verified evidence
+## Source foundation evidence
 
 - An actual Host integration flow persists all five source kinds, retries owner
   commands without duplicates, relinks a worktree to a second project, verifies
@@ -82,12 +83,62 @@ runtime entitlement changed.
   Host source records. Version 0.5 development App/DMG, signature, identifier and
   image integrity are verified; no installed app or owner data was modified.
 
+## Local decision lifecycle — Task 0030
+
+[Task 0030](../plans/0030-local-decision-lifecycle.md) was approved by the owner
+after Task 0029's implementation sequence. [ADR 0031](../decisions/0031-versioned-local-decision-events.md)
+implements V4 owner commands/facts/receipts with immutable proposed ADR bodies,
+explicit acceptance/rejection and atomic supersession. A new proposed replacement
+becomes accepted in the same fact that supersedes its accepted predecessor.
+Decision manifests have independent per-project revisions; V3 source revisions
+and all original V1/V2 meanings remain intact.
+
+Proposals cite one to eight current source ID/revisions and frozen origin.
+Acceptance rechecks freshness. A later source edit does not change accepted
+text or original evidence. The protected `project-decisions.json` projection
+stores each cited source version once and rebuilds from canonical history.
+List reads return bounded summaries; exact reads return immutable content,
+original sources and lifecycle history. Queries/reads create no events.
+Ordinary Host snapshots clone counts/revisions only, and Cloud V1/V2 allowlists
+exclude all decision content and identities. Replay and protected caches still
+scale with retained history; no index, model or background database was added.
+
+Core commit `9ab17bb` adds 14 focused decision checks: all four mutation crash
+prefixes, durable exact retries/expiry/clock changes, stale source rejection,
+historical evidence, interleaved receipt recovery, project isolation and forged
+facts/atomic replacement denial. Two real Host checks additionally prove
+restart, unchanged Cloud canaries and maximum multilingual ADR intake. All 81
+core tests pass (one existing manual large-log probe ignored); all 246 original
+V1 prefix hashes and 149 legacy tests pass. Native commit `6aa36d7` adds a
+Turkish/English Decisions tab with project/status/keyword filters, source
+selection, immutable detail/history and explicit lifecycle actions. All 42
+desktop tests pass, including stale/busy/foreign-page denial, exact read retries,
+applied-only draft reset, untranslated evidence and minimum-window navigation.
+123 Rust tests pass overall, with strict workspace Clippy and formatting.
+
+Independent review found two recovery UI hazards. `f4bc387` keeps newly edited
+draft fields/citations when an old exact proposal retry succeeds, and holds
+read scheduling/controls without consuming request keys while a mutation error
+needs owner recovery. `5b88067`/`d652bf9` prioritize the recovery action and
+protect the Bridge's original pending identity/feedback from reads. A real
+derived-cache write failure test proves the durable proposal can be retried
+without any new canonical bytes; editor/epoch tests preserve later owner edits.
+Independent review accepted both fixes through `d652bf9`; no concrete code
+blocker remains. The development package was rebuilt and reverified afterward.
+
+Real native TR/EN/minimum-window captures use disposable Host ADRs in all four
+states. The feature-off 0.6.0 App/DMG has verified bundle version/identifier,
+ad hoc signature, purpose keys, no smoke controls and valid image integrity.
+Production NSWorkspace launch, its own window/PID, normal close and writer
+release pass; final OS pixel capture was unavailable. See
+[native state](native-rust-desktop.md) for checksums, captures and release limits.
+
 ## Next
 
-The proposed [Task 0029](../plans/0029-decision-memory-and-cloud-publication.md)
+The staged [Task 0029](../plans/0029-decision-memory-and-cloud-publication.md)
 turns the free Local/subscription Cloud decision into bounded implementation
-slices. Its first milestone is local accepted decisions followed by explicit
-Cloud publication and the same exact revision read on a second installation.
+slices. Following local accepted decisions, the next concrete card covers
+explicit Cloud publication and the same exact revision read on a second installation.
 [ADR 0030](../decisions/0030-shared-decision-publication.md) proposes one paired
 publishing host per shared project. These technical choices are proposed, not
 enabled. Cloud vectors, embedded Local retrieval evaluation, scoped agent tools
@@ -95,8 +146,9 @@ and automatic extraction follow working exact decision retrieval.
 
 ## Current limits
 
-No memory database, embedding model, accepted-decision lifecycle, MCP memory tools
-or automatic ADR extractor is enabled. External conversations and historical
+No memory database, embedding model, MCP memory tools, automatic ADR extractor
+or Cloud publication is enabled. Agent context is not automatically populated
+from accepted ADRs yet. External conversations and historical
 unbound work are not imported. Cloud-created teams do not get implicit bindings;
 owner replies on an already locally bound team retain its historical scope and
 are labeled `owner` rather than claiming a local author. Deletion/retention controls

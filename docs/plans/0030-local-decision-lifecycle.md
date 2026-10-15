@@ -1,6 +1,6 @@
 # Task 0030 Local sourced decisions
 
-Status: Approved implementation in progress
+Status: Implemented — independent acceptance review accepted
 
 Owner approval: 2026-10-15, “Onaylı başla!” following Task 0029's first code
 slice: native Decisions view and durable local ADR lifecycle. Local remains
@@ -72,7 +72,8 @@ selection and is invalidated by V3 revision. Reads/queries produce no events.
 
 - Core builder: new `crates/patchfleet-core/src/decisions.rs`, `lib.rs`, necessary
   V4 validation/projection integration in `domain.rs`/`store.rs`, focused
-  `tests/decisions.rs`. Do not edit Host, desktop, other shared contracts or
+  `tests/decisions.rs`, plus the narrowly granted `tests/persistence.rs` legacy
+  projection helper. Do not edit Host, desktop, other shared contracts or
   existing tests without coordination. No dependency/framework additions.
 - Console builder: desktop `src/ui.rs` and `src/i18n.rs` only. Dedicated
   Turkish/English Decisions view with project/filter/list/detail, readable
@@ -94,3 +95,37 @@ No owner data, installed app, provider settings/transcripts, private Cloud,
 production database, payment provider, deployment or publication is modified.
 Workers commit only their owned files locally and report checks/risks. Root
 updates feature state and reviews the final staged file set.
+
+## Integration evidence
+
+- Core `9ab17bb`, Host/Bridge `95ab7c9` and native UI `6aa36d7` implement the
+  agreed boundaries without new dependencies or private Cloud changes.
+- 81 core and 42 desktop tests pass, including all four lifecycle prefix
+  recovery paths, immutable edited-source evidence, stale/foreign denial,
+  atomic replacement, exact retries, expiry/clock corrections, maximum CJK
+  intake, localized owner clicks and non-overlapping minimum navigation.
+  One existing manual large-log probe is ignored. All 149 legacy tests and
+  246 V1 prefix hashes pass; fmt and strict workspace Clippy pass.
+- Independent core/Host/Bridge review accepted `9ab17bb`/`95ab7c9`. Native review accepted
+  `6aa36d7` and the recovery fixes through `d652bf9`; no production data/provider was used.
+- Review recovery fixes `f4bc387`/`5b88067`/`d652bf9` prevent replayed old
+  successes from clearing new draft edits and keep pending owner command/error
+  state ahead of automatic reads. An actual projection-cache failure regression
+  proves exact retry without new canonical bytes; UI tests cover edit/citation
+  preservation, no consumed read keys and localized recovery controls.
+- Actual TR/EN native renders and normal close pass with disposable ADR data.
+  The production 0.6.0 App/DMG passes ad hoc signature, version, five folder
+  purpose keys, absence of test hooks/browser runtime and image integrity.
+  NSWorkspace returns the actual test bundle/PID/window; normal close releases
+  the writer. Final production OS pixels remain unavailable, explicitly distinct
+  from the inspected GL captures. See [native state](../state/native-rust-desktop.md)
+  for artifacts, checksums, resource sample and platform limits.
+- Local is free and offline. Cloud publication, pgvector/embedded retrieval,
+  MCP, automatic extraction and commercial entitlement cutover remain separate
+  Task 0029 slices. No installed application or owner data was changed.
+
+Final independent review accepted the code through `d652bf9` and the corrected
+state/install/release declarations. No concrete blocker remains. The reviewer
+read the artifact evidence; the coordinator ran the package checks. Native
+Windows/Linux execution, public signing and final production OS pixel capture
+remain explicitly unverified rather than implied by the configured CI matrix.

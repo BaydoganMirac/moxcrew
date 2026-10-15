@@ -4,7 +4,8 @@ Status: Accepted product and trust contract
 
 Date: 2026-10-14
 
-Implementation: Planned
+Implementation: Project/source foundation and local ADR lifecycle implemented;
+vector indexing, scoped agent tools and automatic extraction remain planned.
 
 ## Context
 
@@ -51,7 +52,8 @@ and embeddings as a rebuildable projection. It does not become a second
 independent authority for acceptance. ADR Markdown exports are optional local
 artifacts and do not automatically modify repository AGENTS.md or ADR files.
 
-Expose a local memory service within the existing Node/Next.js deployable.
+Expose a local memory service within the canonical deployable (now the native
+Rust Host under superseding ADRs 0023/0024).
 Agents access scoped tools through MCP or the same validated service boundary;
 they do not open database files or execute arbitrary SQL. The server derives
 project scope from the authenticated run binding, not a model-supplied filter.

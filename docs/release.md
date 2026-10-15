@@ -1,6 +1,6 @@
 # Native desktop release
 
-The 0.5 source builds a standalone Rust/egui desktop. Installers use
+The 0.6 source builds a standalone Rust/egui desktop. Installers use
 cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or desktop
 build requirements. npm publication is retired. Pushing, publishing installers,
 public signing and Cloud deployment remain explicit owner release actions.
@@ -50,6 +50,8 @@ Test-only `ui-smoke` builds support eframe's screenshot capture and timed normal
 close in an explicitly empty test directory. Set `PATCHFLEET_NATIVE_SMOKE=1` to
 prevent provider probing. These controls are absent from production builds.
 The UI tests also paint all tabs without a display and exercise action payloads.
+The `decisions` scene creates real disposable source/ADR events with proposed,
+accepted, rejected and superseded states and opens an exact decision read.
 The `projects`, `folder-picker` and `folder-error` test scenes create an isolated
 Git fixture. The error scene removes write permission only from that fixture;
 restore its mode during test cleanup. `PATCHFLEET_SMOKE_MIN_WINDOW=1` checks the
@@ -84,6 +86,10 @@ Native 0.4 keeps the 0.3 Rust data layout; no migration is required between them
 Native 0.5 reads that existing state and adds V3 project/source facts only when
 new owner memory commands or bound work occur. The 0.3/0.4 readers cannot read
 V3 events; rollback restores the stopped, unchanged pre-upgrade backup.
+Native 0.6 additionally reads/writes V4 local decision commands and facts.
+Creating or transitioning an ADR requires a 0.6 reader thereafter; a 0.5
+rollback uses the unchanged pre-upgrade data copy. Merely opening an existing
+valid log does not fabricate an ADR or upload its contents.
 The historical Node 0.2 reader cannot read local V2 audit events: restore its
 unchanged pre-migration data when rolling back to Node. Never run two writers.
 

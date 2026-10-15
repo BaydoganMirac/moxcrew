@@ -129,7 +129,17 @@ default Cloud serialization. Directly entered messages support append-only edits
 captured task/team facts remain immutable evidence. These records are context,
 not accepted architecture decisions. ADR 0025 defines this implemented foundation.
 
-The future decision/vector service belongs to the same native Rust host. Scoped
+V4 decision commands/facts/receipts implement proposed, accepted, rejected and
+superseded ADRs in the same writer. Acceptance validates current source versions;
+the original cited source text remains readable after source edits. An explicit
+replacement command accepts the draft and supersedes the predecessor atomically.
+`project-decisions.json` is protected and rebuildable, and ordinary snapshots
+contain counts/revisions only. Bounded scoped keyword/list and exact detail
+reads are ephemeral. Decision manifest revisions are separate from V3 source
+revisions. [ADR 0031](decisions/0031-versioned-local-decision-events.md) defines
+the implemented boundary; Cloud V1/V2 allowlists omit all decision data.
+
+The future vector service belongs to the same native Rust host. Scoped
 MCP tools or local service calls authenticate a run-bound project; agents cannot
 select another project by supplying an ID or access raw database files.
 Automatic extraction proposes records, while the owner accepts decisions.
@@ -137,8 +147,8 @@ Binding decision status is read from canonical facts rather than similarity
 score. Memory text, queries, vectors, and tool credentials are local-only.
 
 [ADR 0021](decisions/0021-project-scoped-local-decision-memory.md) defines the full
-contract. Vectors, decision acceptance, agent tools and automatic extraction
-remain later slices of Task 0022.
+contract. Vectors, agent tools and automatic extraction remain later slices of
+Task 0022/0029; Cloud publication is separately scoped by the proposed ADR 0030.
 
 ## Provider adapter boundary
 

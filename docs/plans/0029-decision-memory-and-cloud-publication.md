@@ -1,10 +1,12 @@
 # Task 0029 Decision memory and subscription Cloud publication
 
-Status: Proposed implementation plan — runtime not started
+Status: Staged implementation — slice 1 approved in Task 0030
 
 Owner request: 2026-10-15, turn the selected product model into an implementation
 sequence. The commercial boundary is accepted; this card proposes the remaining
 technical choices and bounded slices, not a deployment or payment change.
+The owner subsequently approved starting the first local slice; its concrete
+contract and evidence are in [Task 0030](0030-local-decision-lifecycle.md).
 
 ## First end-to-end outcome
 
@@ -34,8 +36,8 @@ Reuse the current log/projection first; local SQL/vector packaging is not a
 prerequisite for this slice. Local semantic retrieval remains a later free
 capability with its own embedded-engine/model measurements.
 
-Ownership for the bounded card: core builder owns `project_memory.rs`, necessary
-`domain.rs`/`store.rs` validation and focused memory tests; console builder owns
+Ownership for the bounded card: core builder owns the new `decisions.rs`, necessary
+`domain.rs`/`store.rs` validation and focused decision tests; console builder owns
 `ui.rs`/`i18n.rs`; coordinator owns Host/bridge integration, shared contracts and
 docs. Assign exact file boundaries before concurrent work. Reviewer starts on
 a stable implementation commit.
@@ -137,5 +139,5 @@ call, production migration, deployment or publication is part of this plan.
 Each slice needs its own concrete approved implementation card, tests, state
 update and reviewable commit. Slices 1-2 form the first end-to-end milestone;
 vectors and automatic extraction follow working exact shared retrieval.
-Current tests prove the existing product only; no new slice is claimed as
-implemented or verified by writing this plan.
+Slice 1 implementation/evidence is recorded in Task 0030. The remaining slices
+are proposals; writing this sequence does not verify or enable them.

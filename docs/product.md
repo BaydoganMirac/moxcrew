@@ -70,13 +70,15 @@ Owners explicitly link registered workspaces, enter project messages, and inspec
 locally captured task instructions, team goals, owner answers and approval notes.
 Message edits retain revision history; changing a worktree link does not move old
 sources into another project. Keyword filtering and bounded native pages keep
-reads scoped. Sources remain context until the later decision lifecycle exists.
+reads scoped. Sources remain context; owners create sourced ADR drafts separately.
 
-The planned next slices add accepted decisions and a rebuildable local index,
-then scoped agent tools and automatic source-backed ADR drafts. Only explicit owner
-acceptance makes a decision authoritative. A local vector database stores
-searchable decision text and metadata, and scoped agent tools expose the same
-accepted decisions to the project's agents. See
+The Decisions view supports proposed, accepted, rejected and superseded ADRs.
+Only explicit owner acceptance makes a decision authoritative. Accepted text
+and source versions are immutable; replacing a decision preserves its history.
+This free Local feature requires no account, inference or embedding service.
+Next slices evaluate a rebuildable local index, then scoped agent tools and
+automatic source-backed ADR drafts. A planned local vector database indexes
+decision text; scoped tools will expose accepted decisions to project agents. See
 [Task 0022](plans/0022-project-memory-and-decision-service.md). External agent
 conversations require an explicit import; this foundation does not import them.
 Memory does not widen the default Cloud data boundary. The proposed subscription

@@ -1,6 +1,6 @@
 # Native Rust desktop state
 
-Status: 0.5.1 implemented and independently accepted; platform release checks pending
+Status: 0.6.0 implemented and independently accepted; platform release checks pending
 
 Updated: 2026-10-15
 
@@ -36,7 +36,7 @@ technical codes; folder recovery starts a new selection instead of retrying an
 old path. Confirmation footers stay outside the scroll body and paths truncate
 with a complete tooltip. See [ADR 0028](../decisions/0028-native-folder-consent-and-feedback.md).
 
-Seven native sections cover stable projects, source memory, work, teams, packs,
+Eight native sections cover stable projects, source memory, decisions, work, teams, packs,
 providers and Cloud. Turkish/English controls switch through the owner Host and
 persist in protected display configuration; owner source and custom text stay raw.
 Forms preserve revisions, validate limits, mask pairing codes and restrict
@@ -48,7 +48,46 @@ Provider probes run at most once a minute or on explicit refresh. Active owned
 signals and scheduling update every five seconds; idle ticks are sparse.
 Unpaired Cloud returns before copying projections and canonical history.
 
-## Current evidence
+## 0.6 decision evidence
+
+- [Task 0030](../plans/0030-local-decision-lifecycle.md) adds source-backed,
+  immutable ADR drafts, explicit accept/reject and atomic replacement, exact
+  original source evidence and history. No Cloud/account/model is required.
+- 123 Rust tests pass: 81 core and 42 desktop checks, with one pre-existing
+  manual large-log probe ignored. All 149 legacy tests and 246 original V1
+  prefix hashes pass. Workspace formatting and strict all-target/all-feature
+  Clippy pass. Core/Host/Bridge review accepted `9ab17bb`/`95ab7c9`; native UI
+  implementation is `6aa36d7`.
+- UI tests exercise current source citations, owner transition payloads,
+  project/decision/source revision guards, failed-read retry, original owner
+  text, successful draft reset and rejected draft preservation. Bounded Bridge
+  pages are ephemeral and invalidated when their project manifest changes.
+- Review fixes `f4bc387`, `5b88067` and `d652bf9` preserve later draft edits on
+  original-command retry, and prevent automatic reads replacing an owner error
+  or its exact pending command. Regression tests use an actual derived-cache
+  write failure after durable append, plus UI edit/citation/epoch changes.
+  Independent final code review accepted both fixes through `d652bf9` with no
+  remaining concrete blocker. Package verification below was run again against
+  the rebuilt feature-off App after those fixes.
+- Real macOS GL captures show [Turkish](../screenshots/native-decisions-0.6-tr.png),
+  [minimum Turkish](../screenshots/native-decisions-0.6-tr-min.png) and
+  [minimum English](../screenshots/native-decisions-0.6-en-min.png) using four
+  real Host-created illustrative ADRs in all lifecycle states. The eighth
+  navigation row initially overlapped the language footer at 800×560; a bounded
+  navigation scroll region and TR/EN clip assertions fix that collision.
+  All scenes exit normally and use disposable sources only. Images are GL
+  readbacks after sizing, not production OS presentation captures.
+- The feature-off production App launched through NSWorkspace as a separate
+  instance using copied disposable ADR data and failing provider stubs. Its own
+  bundle path/PID and native layer-zero window were verified. Normal termination
+  exited and released the writer lock. OS pixel capture again returned “could
+  not create image from window”; no final production screenshot is claimed.
+- This eight-second production sample used 106.02 MiB RSS and 0.14 seconds
+  cumulative CPU including startup. It is not a sustained workload or
+  cross-platform performance promise. No dependency, vector engine or background
+  database service was added. Canonical cache/replay remains history-dependent.
+
+## Earlier 0.5.1 evidence
 
 - Rust workspace: 96 tests pass, including 31 native command/bridge/UI/localization
   tests. One manual large-log timing probe remains outside the ordinary suite.
@@ -105,18 +144,18 @@ Unpaired Cloud returns before copying projections and canonical history.
 ## Final local package
 
 - `dist/native/Patchfleet.app` contains the production binary, without test-only
-  screenshot/timed-close features. Version is 0.5.1 and the bundle identifier
+  screenshot/timed-close features. Version is 0.6.0 and the bundle identifier
   remains `com.patchfleet.desktop`.
-- `dist/native/Patchfleet_0.5.1_aarch64.dmg` is 6,056,199 bytes (about 5.78 MiB).
-  SHA-256: `ca89f61955f5c2b41952479bfbf18c7ab192f134802c733a60bc22975f5a372b`.
-- The signed executable is 11,670,480 bytes, SHA-256
-  `3929d77901674e7f4df5c5d4e576315b26ade8585903c5dbd099dde163c0cb40`.
+- `dist/native/Patchfleet_0.6.0_aarch64.dmg` is 6,175,136 bytes (about 5.89 MiB).
+  SHA-256: `dcc1646cb309dee0ab1a835dd40fba6fa73a34b9f28eda9a535178a6424a0c46`.
+- The signed executable is 11,934,192 bytes, SHA-256
+  `aff30d63a7c1fe193be56db6ccb0f88759ed527b6c2eb5134a2614a5c7511c41`.
   Its linked frameworks are native system
   graphics/window libraries; WebKit is absent.
 - DMG integrity, App ad hoc signature, all five folder-access purpose keys and
   bundle version/identifier checks pass. Test-only scene/capture controls are
   absent from the production binary. Production hook ingress was verified in
-  Task 0027; Task 0028 does not change it.
+  Task 0027; Task 0030 does not change it.
 - cargo-packager produced the App. The local DMG was created with hdiutil using
   a distinct versioned volume name to preserve the owner's already-mounted old
   Patchfleet image. No installed application, owner state, branch push, public
@@ -144,7 +183,7 @@ onboarding. The actual final native frame is preserved in
 [English](../screenshots/native-memory-0.5-en.png) native frames show disposable
 project memory entered through the actual Host. Fixture text explicitly identifies
 its illustrative purpose; provider status is not fabricated as real work.
-Current 0.5.1 [project setup](../screenshots/native-projects-0.5.1-tr.png),
+Earlier 0.5.1 [project setup](../screenshots/native-projects-0.5.1-tr.png),
 [Turkish access form](../screenshots/native-folder-access-0.5.1-tr.png) and
 [English access form](../screenshots/native-folder-access-0.5.1-en.png) use only
 disposable illustrative data. The form images are minimum-window GL captures.
@@ -167,8 +206,8 @@ disposable illustrative data. The form images are minimum-window GL captures.
   AppKit/WinUI widgets. Accessibility support is enabled.
 - Memory still scales with retained canonical history and visible operational
   data. Source memory is implemented with compact metadata/scoped reads, but the
-  canonical event cache remains proportional to history. Decision lifecycle,
-  vector indexing, agent tools and automatic extraction remain later slices.
+  canonical event cache remains proportional to history. Vector indexing,
+  agent tools, automatic extraction and Cloud publication remain later slices.
 
 See [ADR 0024](../decisions/0024-native-rust-desktop-ui.md),
 [Task 0024](../plans/0024-native-rust-desktop-ui.md), [release](../release.md) and

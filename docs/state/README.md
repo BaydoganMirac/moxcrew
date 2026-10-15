@@ -19,6 +19,7 @@
 | Project/source memory and automatic ADR drafts | Local ADRs, explicit Cloud publication and measured retrieval done; agent tools/extraction next | 2026-10-15 | [project-memory.md](project-memory.md) |
 | Rust and Tauri desktop | Superseded interface; core retained | 2026-10-14 | [rust-desktop.md](rust-desktop.md) |
 | Native Rust desktop interface | Implemented; platform release checks pending | 2026-10-15 | [native-rust-desktop.md](native-rust-desktop.md) |
+| Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.
@@ -37,7 +38,8 @@ the Rust core and data directory. Its state file records current native artifact
 and remaining platform release checks. Version 0.5 adds stable project/source memory
 and Turkish/English display. Version 0.6 adds Local sourced ADR acceptance;
 version 0.7 adds optional explicit paid Cloud publication and exact reader copies.
-Vectors and agent tools follow.
+Version0.8 adds measured Cloud vector retrieval and free Local keyword search;
+version0.9 adds optional native account sign-in. Agent tools/extraction follow.
 
 State files are resumable handoffs. Update the relevant file whenever a work
 session changes implementation status, blockers, decisions, or next steps.

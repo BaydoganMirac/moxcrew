@@ -4,7 +4,7 @@ default-members = ["crates/patchfleet-core"]
 resolver = "2"
 
 [workspace.package]
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 license = "Apache-2.0"
 
@@ -20,6 +20,7 @@ regex = "1"
 libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sha2 = "0.10"
+base64 = "=0.22.1"
 tempfile = "3"
 
 [profile.release]

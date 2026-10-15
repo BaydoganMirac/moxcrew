@@ -37,3 +37,4 @@ supersedes the old one.
 | [0031](0031-versioned-local-decision-events.md) | Accepted | Version4 sourced Local decision lifecycle |
 | [0032](0032-opt-in-shared-memory-transport.md) | Accepted | Explicit accepted-only publication and exact shared reads |
 | [0033](0033-versioned-project-memory-retrieval.md) | Accepted | Ephemeral project search, measured Cloud vectors and free Local keyword retrieval |
+| [0034](0034-native-browser-account-sign-in.md) | Accepted | Optional native account sign-in through external browser, strict loopback/S256 and existing installation credential |

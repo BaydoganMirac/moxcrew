@@ -2,7 +2,7 @@
 
 Your coding agents. One local Rust desktop command center.
 
-Patchfleet 0.7 runs its interface and host in Rust. egui/eframe renders the native
+Patchfleet 0.9 runs its interface and host in Rust. egui/eframe renders the native
 window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
@@ -10,6 +10,11 @@ without Cloud. Accessibility support is enabled.
 The native interface supports Turkish and English. Change the language in the
 sidebar; the owner Host saves it locally for the next launch. Source messages,
 work instructions, code and custom user content retain their original language.
+
+Cloud sign-in is optional. Configure the Cloud server address, then use the
+system browser to sign in and approve this installation. Account and subscription
+status appear in the desktop; sign-out keeps Local projects and downloaded ADRs.
+Local remains free and works without an account. See [account state](docs/state/desktop-account.md).
 
 Create stable projects, link multiple Git worktrees, keep project messages and
 owner task/team sources in local Project Memory. Create sourced ADR drafts in

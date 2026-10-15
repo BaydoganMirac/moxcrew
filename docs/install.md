@@ -1,6 +1,6 @@
 # Install and operate Patchfleet Desktop
 
-Status: 0.8.0 native Rust desktop development distribution
+Status: 0.9.0 native Rust desktop development distribution
 
 Updated: 2026-10-15
 
@@ -26,7 +26,7 @@ Run `cargo run --locked -p patchfleet-desktop`. Build a production executable wi
 `cargo build --locked --release -p patchfleet-desktop`, then package it using
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
 
-For a native 0.8 upgrade, close the old application and replace its application
+For a native 0.9 upgrade, close the old application and replace its application
 bundle through the reviewed installer. The bundle identifier and data directory
 remain the same; existing Rust state can be read by the new application. Back up
 the stopped data directory before using shared memory: new V5 facts require
@@ -42,7 +42,7 @@ production application draws correctly when the old process is closed.
 
 1. Quit all running Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.8.0`
+3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.9.0`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut
@@ -66,7 +66,27 @@ replacement on the accepted decision. Confirm the replacement action: the old
 record becomes superseded and the new one accepted together. Original text,
 source versions and history remain readable. Keyword/status filters stay within
 the selected project. Local decisions require no account or subscription.
-Vector retrieval, agent context tools and automatic extraction remain later work.
+Cloud semantic retrieval is available through explicit search. Agent context
+tools and automatic extraction remain later work.
+
+### Optional Cloud account
+
+Open **Sign in · optional** in the sidebar or the Cloud section. In connection
+settings, enter the root HTTPS origin of your compatible Cloud service and a
+name for this installation. There is no assumed live default address yet.
+Choose **Sign in to Cloud**, complete the existing browser login, compare the
+displayed code and approve the installation. Keep Patchfleet open while waiting;
+you can reopen/copy the browser link or cancel. No password is entered in the
+native application. Local operation continues while sign-in is pending.
+
+The account card shows the verified account and fresh subscription state, with
+explicit refresh and a same-service billing link. An account without an eligible
+subscription still signs in; Cloud memory enforces its own paid access. Signing
+in does not publish Local ADRs or create/link a shared project automatically.
+**Sign out** clears this installation's local credential and attempts remote
+revocation. If offline, the notice explains that remote revocation was not
+confirmed. Local projects and downloaded decisions remain. See
+[account state](state/desktop-account.md) for verification and release limits.
 
 ### Optional shared decisions
 

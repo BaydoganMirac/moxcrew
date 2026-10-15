@@ -1,6 +1,6 @@
 # Native Rust desktop state
 
-Status: 0.8.0 implemented and independently accepted; platform release checks pending
+Status: 0.9.0 implemented and independently accepted; platform release checks pending
 
 Updated: 2026-10-15
 
@@ -47,6 +47,22 @@ Idle rendering responds to input/state events, with animations disabled.
 Provider probes run at most once a minute or on explicit refresh. Active owned
 signals and scheduling update every five seconds; idle ticks are sparse.
 Unpaired Cloud returns before copying projections and canonical history.
+
+## 0.9 optional account
+
+[Task0033](../plans/0033-desktop-account-sign-in.md) adds native TR/EN account
+sign-in through the system browser, strict loopback/S256 approval, fresh account
+and subscription state, cancellation and installation sign-out. The Cloud server
+origin is configurable until a live service exists. Local still requires no
+account. The existing protected Cloud credential schema remains unchanged;
+provider browser sessions and account overlays are not durable Local facts.
+
+The account lane keeps Local owner work responsive and preserves its original
+receipts/retries. Independent review's stale-snapshot race is fixed and covered
+by a real callback/HTTP regression. Final202 Rust tests,149 legacy checks,
+strict workspace Clippy and formatting pass. Five actual native account frames
+were inspected. The feature-off App/DMG, normal OS launch/close, short resource
+sample and release limits are recorded in [account state](desktop-account.md).
 
 ## 0.7 explicit shared decisions
 

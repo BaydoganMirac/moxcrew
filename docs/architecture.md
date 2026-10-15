@@ -74,6 +74,14 @@ command identities across retries, and keeps provider/network work off the
 render thread. The core still validates every action. One OS writer lock owns
 the data directory. Normal close awaits shutdown of owned provider processes.
 
+Optional account sign-in uses the system browser and a short-lived loopback
+authentication listener bound only to127.0.0.1. The callback accepts a matching
+state/code response, never commands. S256 proof protects the token exchange;
+browser provider sessions stay outside the application. The listener and pending
+secrets are cancelled on close. Only the existing protected paired credential
+is persisted; account/billing UI state remains ephemeral. See
+[ADR0034](decisions/0034-native-browser-account-sign-in.md).
+
 The UI reacts to events rather than redrawing continuously. Active work polls
 owned signals and scheduling every five seconds, while external provider probes
 run at most once a minute or on explicit refresh. Idle status checks are sparse;

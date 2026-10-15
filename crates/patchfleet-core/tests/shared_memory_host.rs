@@ -86,7 +86,10 @@ async fn server() -> Server {
                 s.requests.fetch_add(1, Ordering::SeqCst);
                 let mode = s.mode.load(Ordering::SeqCst);
                 let mut status = 200;
-                let response = if mode == 4 {
+                let response = if mode == 10 {
+                    status = 409;
+                    json!({"error":"MEMORY_CONFLICT"})
+                } else if mode == 4 {
                     status = 403;
                     json!({"error":"MEMORY_ACCESS_DENIED"})
                 } else if path.ends_with("/operations") {
@@ -114,21 +117,26 @@ async fn server() -> Server {
                         } else {
                             p["sharedProjectId"].clone()
                         };
-                        let reason = match p["type"].as_str().unwrap() {
-                            "create_project" => "MEMORY_PROJECT_CREATED",
-                            "link_reader" => "MEMORY_READER_LINKED",
-                            "publish" => {
-                                let revision = s.revision.fetch_add(1, Ordering::SeqCst) + 1;
-                                s.records.lock().unwrap().push(json!({"schemaVersion":1,"sharedProjectId":shared,"manifestRevision":revision,"current":true,"publishedAt":patchfleet_core::now(),"decision":p["decision"]}));
-                                "MEMORY_PUBLISHED"
+                        let rejection = [8, 9].contains(&mode) && p["type"] == "publish";
+                        let reason = if rejection {
+                            "MEMORY_CAPACITY_EXCEEDED"
+                        } else {
+                            match p["type"].as_str().unwrap() {
+                                "create_project" => "MEMORY_PROJECT_CREATED",
+                                "link_reader" => "MEMORY_READER_LINKED",
+                                "publish" => {
+                                    let revision = s.revision.fetch_add(1, Ordering::SeqCst) + 1;
+                                    s.records.lock().unwrap().push(json!({"schemaVersion":1,"sharedProjectId":shared,"manifestRevision":revision,"current":true,"publishedAt":patchfleet_core::now(),"decision":p["decision"]}));
+                                    "MEMORY_PUBLISHED"
+                                }
+                                _ => "MEMORY_SHARING_UPDATED",
                             }
-                            _ => "MEMORY_SHARING_UPDATED",
                         };
-                        let r = json!({"schemaVersion":1,"operationId":body["operationId"],"operationType":p["type"],"requestHash":shared::request_hash(&body).unwrap(),"outcome":"applied","reasonCode":reason,"sharedProjectId":shared,"revision":s.revision.load(Ordering::SeqCst),"role":"publisher","enabled":true,"completedAt":patchfleet_core::now()});
+                        let r = json!({"schemaVersion":1,"operationId":body["operationId"],"operationType":p["type"],"requestHash":shared::request_hash(&body).unwrap(),"outcome":if rejection {"rejected"}else{"applied"},"reasonCode":reason,"sharedProjectId":shared,"revision":s.revision.load(Ordering::SeqCst),"role":"publisher","enabled":true,"completedAt":patchfleet_core::now()});
                         receipts.insert(key, r.clone());
                         r
                     };
-                    if mode == 1 {
+                    if mode == 1 || mode == 9 {
                         s.mode.store(0, Ordering::SeqCst);
                         return;
                     }
@@ -448,5 +456,115 @@ async fn disconnected_old_mapping_does_not_starve_background_sync_of_current_con
     assert_eq!(server.state.manifests.load(Ordering::SeqCst), before + 1);
     assert_eq!(metadata(&host, &current)["stale"], false);
     assert_eq!(metadata(&host, &old)["state"], "connection_changed");
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn lost_capacity_rejection_ack_recovers_durably_and_new_owner_actions_remain_available() {
+    for next_action in ["sharing", "replacement"] {
+        let server = server().await;
+        let (dir, host, project, decision) = fixture(&server).await;
+        let request = command(
+            json!({"projectId":project,"decisionId":decision,"expectedDecisionRevision":2,"expectedSharedRevision":0,"consent":true}),
+        );
+        let queued = host
+            .action("memory_cloud_publish", request.clone())
+            .await
+            .unwrap();
+        server.state.mode.store(9, Ordering::SeqCst);
+        sync(&host, &project).await;
+        assert_eq!(
+            metadata(&host, &project)["pendingOperation"]["state"],
+            "attempted"
+        );
+        host.shutdown().await;
+        drop(host);
+        let host = Host::open(dir.path().into()).unwrap();
+        sync(&host, &project).await;
+        let meta = metadata(&host, &project);
+        assert!(meta["pendingOperation"].is_null());
+        assert_eq!(meta["sharedRevision"], 0);
+        assert_eq!(meta["lastErrorCode"], "MEMORY_CAPACITY_EXCEEDED");
+        assert_eq!(meta["stale"], false);
+        let operations = server.state.operations.lock().unwrap().clone();
+        assert_eq!(operations[1], operations[2]);
+        let server_receipt = server
+            .state
+            .receipts
+            .lock()
+            .unwrap()
+            .get(operations[1]["operationId"].as_str().unwrap())
+            .unwrap()
+            .clone();
+        let log: Vec<Value> = std::fs::read_to_string(dir.path().join("events.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert!(log
+            .iter()
+            .any(|e| e["type"] == "shared_memory.operation.receipted"
+                && e["payload"]["receipt"] == server_receipt));
+        let before = server.state.requests.load(Ordering::SeqCst);
+        assert_eq!(
+            host.action("memory_cloud_publish", request).await.unwrap(),
+            queued
+        );
+        assert_eq!(server.state.requests.load(Ordering::SeqCst), before);
+        sync(&host, &project).await;
+        assert_eq!(
+            metadata(&host, &project)["lastErrorCode"],
+            "MEMORY_CAPACITY_EXCEEDED"
+        );
+        let receipt = if next_action == "sharing" {
+            host.action(
+                "memory_cloud_sharing",
+                command(json!({"projectId":project,"expectedSharedRevision":0,"enabled":false})),
+            )
+            .await
+            .unwrap()
+        } else {
+            let old = host
+                .action(
+                    "project_decision_read",
+                    json!({"projectId":project,"decisionId":decision}),
+                )
+                .await
+                .unwrap();
+            let source = old["decision"]["sources"][0]["sourceId"].clone();
+            let replacement = host.action("project_decision_propose", command(json!({"projectId":project,"expectedProjectRevision":2,"title":"Replacement after capacity rejection","decision":"Explicit replacement","sources":[{"sourceId":source,"revision":1}]}))).await.unwrap()["decisionId"].clone();
+            host.action("project_decision_supersede", command(json!({"projectId":project,"decisionId":decision,"expectedDecisionRevision":2,"replacementDecisionId":replacement,"expectedReplacementRevision":1}))).await.unwrap();
+            host.action("memory_cloud_publish", command(json!({"projectId":project,"decisionId":replacement,"expectedDecisionRevision":2,"expectedSharedRevision":0,"consent":true}))).await.unwrap()
+        };
+        assert_eq!(receipt["outcome"], "applied");
+        assert!(metadata(&host, &project)["pendingOperation"].is_object());
+        host.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn bare_http_conflict_does_not_infer_a_terminal_operation_receipt() {
+    let server = server().await;
+    let (dir, host, project, decision) = fixture(&server).await;
+    publish(&host, &project, &decision).await;
+    server.state.mode.store(10, Ordering::SeqCst);
+    sync(&host, &project).await;
+    assert_eq!(
+        metadata(&host, &project)["pendingOperation"]["state"],
+        "attempted"
+    );
+    assert_eq!(
+        metadata(&host, &project)["lastErrorCode"],
+        "MEMORY_CONFLICT"
+    );
+    let log: Vec<Value> = std::fs::read_to_string(dir.path().join("events.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(!log
+        .iter()
+        .any(|e| e["type"] == "shared_memory.operation.receipted"
+            && e["payload"]["receipt"]["operationType"] == "publish"));
     host.shutdown().await;
 }

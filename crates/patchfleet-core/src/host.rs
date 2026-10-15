@@ -845,7 +845,9 @@ impl Host {
         let Some(mapping) = self.store.shared_mapping(project)? else {
             return Ok(());
         };
-        if mapping["connection"] == *bound && mapping["lastErrorCode"] != code {
+        if mapping["connection"] == *bound
+            && (mapping["lastErrorCode"] != code || mapping["lastErrorTerminal"] == true)
+        {
             self.store
                 .append(vec![shared_memory::failure(project, bound, code)])?;
         }
@@ -952,7 +954,7 @@ impl Host {
                 if self.closing.load(Ordering::SeqCst) { return Err(Error("HOST_CLOSING".into())); }
                 if staged.complete() {
                     self.store.commit_shared_cache(&project,&bound,&staged.manifest(),&staged.records)?;
-                    if mapping["sharedRevision"] != staged.manifest()["revision"] || !mapping["lastErrorCode"].is_null() {
+                    if mapping["sharedRevision"] != staged.manifest()["revision"] || (!mapping["lastErrorCode"].is_null() && mapping["lastErrorTerminal"] != true) {
                         self.store.append(vec![shared_memory::observed(&project,&bound,&staged.shared,&staged.manifest()["revision"])])?;
                     }
                     *download = None;

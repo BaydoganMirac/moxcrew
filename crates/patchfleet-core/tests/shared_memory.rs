@@ -643,8 +643,9 @@ fn unchanged_sharing_is_valid_and_rejected_setup_can_be_explicitly_retried() {
     let (next, op) = shared::prepare_delivery(&fresh, project.as_str().unwrap(), &c).unwrap();
     fresh.extend(next);
     let mut r = fake_receipt(&op, 0, "publisher", true);
-    r["outcome"] = json!("rejected");
-    r["reasonCode"] = json!("MEMORY_STALE_REVISION");
+    r["outcome"] = json!("expired");
+    r["reasonCode"] = json!("MEMORY_OPERATION_EXPIRED");
+    r["completedAt"] = op["expiresAt"].clone();
     r["sharedProjectId"] = Value::Null;
     r["role"] = Value::Null;
     r["enabled"] = Value::Null;
@@ -911,4 +912,114 @@ fn connection_remapping_at_queue_cap_requires_an_actual_pending_slot_to_replace(
         );
         assert_eq!(events.len(), count);
     }
+}
+
+#[test]
+fn matched_semantic_publish_rejections_end_delivery_and_allow_new_owner_operations() {
+    for reason in [
+        "MEMORY_CAPACITY_EXCEEDED",
+        "MEMORY_CONFLICT",
+        "MEMORY_STALE_REVISION",
+    ] {
+        let (mut events, project, source, decision) = fixture();
+        let c = conn();
+        setup(&mut events, &project, &c);
+        let request = publish(&project, &decision, 0);
+        let queued = apply(&mut events, "memory_cloud_publish", &request, &c);
+        let (next, operation) =
+            shared::prepare_delivery(&events, project.as_str().unwrap(), &c).unwrap();
+        events.extend(next);
+        let revision = u64::from(reason == "MEMORY_STALE_REVISION");
+        let mut receipt = fake_receipt(&operation, revision, "publisher", true);
+        receipt["outcome"] = json!("rejected");
+        receipt["reasonCode"] = json!(reason);
+        events.push(shared::acknowledge(project.as_str().unwrap(), &operation, &receipt).unwrap());
+        let after = projected(&events);
+        assert!(after["projects"][0]["pendingOperation"].is_null());
+        assert_eq!(after["projects"][0]["lastErrorCode"], reason);
+        assert_eq!(after["mappings"][0]["sharedRevision"], revision);
+        let count = events.len();
+        assert_eq!(
+            apply(&mut events, "memory_cloud_publish", &request, &c),
+            queued
+        );
+        assert_eq!(events.len(), count);
+        let shared_id = after["mappings"][0]["sharedProjectId"].clone();
+        events.push(shared::observed(
+            project.as_str().unwrap(),
+            &c,
+            &shared_id,
+            &json!(revision),
+        ));
+        apply(
+            &mut events,
+            "memory_cloud_sync",
+            &command(json!({"projectId":project})),
+            &c,
+        );
+        assert_eq!(projected(&events)["projects"][0]["lastErrorCode"], reason);
+        let mut replacement_events = events.clone();
+        let replacement = supersede(&mut replacement_events, &project, &source, &decision);
+        assert_eq!(
+            apply(
+                &mut replacement_events,
+                "memory_cloud_publish",
+                &publish(&project, &replacement, revision),
+                &c
+            )["outcome"],
+            "applied"
+        );
+        let sharing =
+            command(json!({"projectId":project,"expectedSharedRevision":revision,"enabled":false}));
+        assert_eq!(
+            apply(&mut events, "memory_cloud_sharing", &sharing, &c)["outcome"],
+            "applied"
+        );
+        assert!(projected(&events)["projects"][0]["lastErrorCode"].is_null());
+    }
+}
+
+#[test]
+fn rejected_receipts_match_reason_operation_scope_hash_and_server_revision() {
+    let (mut events, project, _, decision) = fixture();
+    let c = conn();
+    setup(&mut events, &project, &c);
+    apply(
+        &mut events,
+        "memory_cloud_publish",
+        &publish(&project, &decision, 0),
+        &c,
+    );
+    let (_, operation) = shared::prepare_delivery(&events, project.as_str().unwrap(), &c).unwrap();
+    let mut receipt = fake_receipt(&operation, 0, "publisher", true);
+    receipt["outcome"] = json!("rejected");
+    receipt["reasonCode"] = json!("MEMORY_CAPACITY_EXCEEDED");
+    shared::validate_receipt(&receipt, &operation).unwrap();
+    for mutation in 0..7 {
+        let mut bad = receipt.clone();
+        match mutation {
+            0 => bad["reasonCode"] = json!("MEMORY_PUBLISHED"),
+            1 => bad["reasonCode"] = json!("MEMORY_UNKNOWN_REJECTION"),
+            2 => bad["requestHash"] = json!("0".repeat(64)),
+            3 => bad["role"] = json!("reader"),
+            4 => bad["sharedProjectId"] = json!(format!("shared:{}", uuid::Uuid::new_v4())),
+            5 => bad["revision"] = json!(1),
+            _ => bad["enabled"] = json!(false),
+        }
+        assert!(
+            shared::validate_receipt(&bad, &operation).is_err(),
+            "mutation={mutation}"
+        );
+    }
+    let mut sharing = operation.clone();
+    sharing["payload"] = json!({"type":"sharing","sharedProjectId":operation["payload"]["sharedProjectId"],"expectedRevision":9_007_199_254_740_991u64,"enabled":true});
+    let mut overflow = fake_receipt(&sharing, 9_007_199_254_740_991, "publisher", false);
+    overflow["outcome"] = json!("rejected");
+    overflow["reasonCode"] = json!("MEMORY_CONFLICT");
+    shared::validate_receipt(&overflow, &sharing).unwrap();
+    overflow["reasonCode"] = json!("MEMORY_CAPACITY_EXCEEDED");
+    assert!(shared::validate_receipt(&overflow, &sharing).is_err());
+    overflow["reasonCode"] = json!("MEMORY_CONFLICT");
+    overflow["enabled"] = json!(true);
+    assert!(shared::validate_receipt(&overflow, &sharing).is_err());
 }

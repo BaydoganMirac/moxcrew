@@ -667,6 +667,30 @@ impl Console {
     }
 
     #[cfg(feature = "ui-smoke")]
+    fn initialize_search_smoke(&mut self, shared: bool) {
+        let project = if shared {
+            &self.shared.project
+        } else {
+            &self.decisions.project
+        };
+        if project.is_empty()
+            || !self
+                .search_smoke_query
+                .as_ref()
+                .is_some_and(|(scope, _)| *scope == shared)
+        {
+            return;
+        }
+        let (_, query) = self.search_smoke_query.take().unwrap();
+        if shared {
+            self.shared.search.input = query;
+            self.shared.search_open = true;
+        } else {
+            self.decisions.search.input = query;
+        }
+    }
+
+    #[cfg(feature = "ui-smoke")]
     pub fn folder_smoke(&mut self, path: &std::path::Path) {
         self.project_path = path.to_string_lossy().into_owned();
         self.folder_request = Some(folder::Target::Registration);
@@ -1543,6 +1567,8 @@ impl Console {
         shared: bool,
         commands: &mut Vec<Command>,
     ) {
+        #[cfg(feature = "ui-smoke")]
+        self.initialize_search_smoke(shared);
         let project = if shared {
             &self.shared.project
         } else {
@@ -1567,20 +1593,6 @@ impl Console {
                     && metadata["enabled"] == true
                     && metadata["sharedProjectId"].is_string()
                     && text(metadata, "state") != "connection_changed"));
-        #[cfg(feature = "ui-smoke")]
-        if self
-            .search_smoke_query
-            .as_ref()
-            .is_some_and(|(scope, _)| *scope == shared)
-        {
-            let (_, query) = self.search_smoke_query.take().unwrap();
-            if shared {
-                self.shared.search.input = query;
-                self.shared.search_open = true;
-            } else {
-                self.decisions.search.input = query;
-            }
-        }
         let search = if shared {
             &mut self.shared.search
         } else {
@@ -2560,6 +2572,8 @@ impl Console {
         else {
             return;
         };
+        #[cfg(feature = "ui-smoke")]
+        self.initialize_search_smoke(true);
         let metadata = shared_project(snapshot, &self.shared.project);
         let cloud = &snapshot["cloud"];
         let connected = cloud["paired"] == true && cloud["error"] != true;
@@ -4448,6 +4462,59 @@ mod tests {
         assert!(!console.shared.search_open);
         let commands = render(&ctx, &mut console, &data, false, vec![]).0;
         assert_eq!(commands[0].action, "memory_cloud_read");
+    }
+
+    #[test]
+    fn production_find_action_opens_the_search_modal_after_initial_project_selection() {
+        let ctx = egui::Context::default();
+        let data = shared_snapshot("reader");
+        let mut console = Console {
+            tab: Tab::Cloud,
+            ..Default::default()
+        };
+        render(&ctx, &mut console, &data, false, vec![]);
+        assert_eq!(console.shared.project, "project:fixture");
+        assert!(!console.shared.search_open);
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Find a published decision",
+        );
+        assert!(commands.is_empty());
+        assert!(console.shared.search_open);
+        for _ in 0..3 {
+            painted_copy(&ctx, &mut console, &data);
+        }
+        let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+        assert!(copy.contains("Sorgu yalnızca Bulutta ara düğmesiyle"));
+        assert!(copy.contains("Aramayı kapat"));
+        assert!(console.shared.search.input.is_empty());
+    }
+
+    #[cfg(feature = "ui-smoke")]
+    #[test]
+    fn cloud_search_smoke_startup_initializes_only_after_the_real_project_is_selected() {
+        let ctx = egui::Context::default();
+        let data = search_snapshot(true);
+        let mut console = Console::default();
+        console.search_smoke(true, "Why Rust?");
+        assert!(console.shared.project.is_empty());
+        let commands = render(&ctx, &mut console, &data, false, vec![]).0;
+        assert!(commands.is_empty());
+        assert_eq!(console.shared.project, "project:fixture");
+        assert_eq!(console.shared.search.input, "Why Rust?");
+        assert!(console.shared.search_open);
+        assert!(console.search_smoke_query.is_none());
+        for _ in 0..3 {
+            painted_copy(&ctx, &mut console, &data);
+        }
+        let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+        assert!(copy.contains("Why Rust?"));
+        assert!(copy.contains("SEARCH_OWNER_CANARY Projects"));
+        assert!(copy.contains("Yedek anahtar sözcük araması"));
     }
     fn shared_snapshot(role: &str) -> Value {
         let mut data = decision_snapshot("accepted");

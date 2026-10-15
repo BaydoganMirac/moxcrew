@@ -48,6 +48,10 @@ fn main(){
  let mut input=String::new();io::stdin().read_to_string(&mut input).unwrap();assert!(input.contains("SOURCE_BODY_CANARY"));
  fs::write(exe.with_extension("started"),"argv-and-stdin-verified").unwrap();
  if mode=="hang"{hang(&exe);return}
+ if mode=="success-helper"{
+  let child=Command::new(&exe).arg("--child").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+  fs::write(exe.with_extension("child"),child.id().to_string()).unwrap();
+ }
  if mode=="exit"{eprintln!("SECRET_PROVIDER_ERROR");std::process::exit(17)}
  if mode=="failed"{println!("{}",r#"{"type":"turn.failed","error":{"message":"SECRET_PROVIDER_ERROR"}}"#);flush();return}
  if mode=="malformed"{println!("SECRET_NOT_JSON");flush();return}
@@ -286,6 +290,51 @@ async fn wait_reaped(path: &Path) {
     .await
     .expect("cancelled native process tree must be killed and reaped");
 }
+#[cfg(windows)]
+async fn wait_reaped(path: &Path) {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::{
+        Foundation::{GetLastError, ERROR_INVALID_PARAMETER, WAIT_OBJECT_0, WAIT_TIMEOUT},
+        System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE},
+    };
+    let pid: u32 = std::fs::read_to_string(path).unwrap().parse().unwrap();
+    let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
+    if raw.is_null() {
+        assert_eq!(unsafe { GetLastError() }, ERROR_INVALID_PARAMETER);
+        return;
+    }
+    let process = unsafe { OwnedHandle::from_raw_handle(raw) };
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            match unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } {
+                WAIT_OBJECT_0 => break,
+                WAIT_TIMEOUT => tokio::time::sleep(Duration::from_millis(5)).await,
+                other => panic!("cannot observe the owned fixture process: {other}"),
+            }
+        }
+    })
+    .await
+    .expect("native process tree must be killed after every extraction outcome");
+}
+
+#[tokio::test]
+async fn successful_parent_exit_cannot_leave_a_helper_running() {
+    let (_fixture, p) = programs("success-helper");
+    let c = Controller::with_programs(p.clone());
+    let scratch = tempfile::tempdir().unwrap();
+    let value = c
+        .extract_decisions(
+            scratch.path(),
+            PROMPT,
+            &schema(),
+            Arc::new(AtomicBool::new(true)),
+        )
+        .await
+        .unwrap();
+    assert!(value.is_object());
+    assert!(p.codex.with_extension("child").exists());
+    wait_reaped(&p.codex.with_extension("child")).await;
+}
 
 #[tokio::test]
 async fn cancellation_and_aborted_callers_reap_the_tree_without_locking_owned_work() {
@@ -317,11 +366,8 @@ async fn cancellation_and_aborted_callers_reap_the_tree_without_locking_owned_wo
         active.store(false, Ordering::Release);
         assert_eq!(task.await.unwrap().unwrap_err(), "EXTRACTION_CANCELLED");
         assert!(cancelled.elapsed() < Duration::from_secs(1));
-        #[cfg(unix)]
-        {
-            wait_reaped(&p.codex.with_extension("pid")).await;
-            wait_reaped(&p.codex.with_extension("child")).await;
-        }
+        wait_reaped(&p.codex.with_extension("pid")).await;
+        wait_reaped(&p.codex.with_extension("child")).await;
         c.shutdown().await;
     }
     let (_fixture, p) = programs("hang");
@@ -336,10 +382,7 @@ async fn cancellation_and_aborted_callers_reap_the_tree_without_locking_owned_wo
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
     assert!(!active.load(Ordering::Acquire));
-    #[cfg(unix)]
-    {
-        wait_reaped(&p.codex.with_extension("pid")).await;
-        wait_reaped(&p.codex.with_extension("child")).await;
-    }
+    wait_reaped(&p.codex.with_extension("pid")).await;
+    wait_reaped(&p.codex.with_extension("child")).await;
     c.shutdown().await;
 }

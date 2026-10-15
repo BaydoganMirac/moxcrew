@@ -577,6 +577,91 @@ impl Cloud {
             json!({"cloudUrl":c["cloudUrl"],"workspaceId":c["workspaceId"],"hostId":c["hostId"]})
         }
     }
+    pub(crate) fn desktop_token_request(
+        &self,
+        origin: &str,
+        body: &Value,
+    ) -> Result<reqwest::RequestBuilder> {
+        let origin = crate::desktop_login::validate_cloud_origin(origin).map_err(|e| e.0)?;
+        if body["installationId"] != self.installation_id() {
+            return Err("DESKTOP_CONNECTION_CHANGED".into());
+        }
+        let bytes=serde_json::to_vec(&json!({"schemaVersion":1,"code":body["code"],"verifier":body["verifier"],"installationId":self.installation_id()})).map_err(|_|"DESKTOP_PROTOCOL_INVALID")?;
+        Ok(self
+            .client
+            .post(format!("{origin}/api/desktop/v1/token"))
+            .header("content-type", "application/json")
+            .header("cache-control", "no-store")
+            .header("content-length", bytes.len())
+            .body(bytes))
+    }
+    pub(crate) fn desktop_account_request(
+        &self,
+        logout: bool,
+    ) -> Result<(Value, reqwest::RequestBuilder)> {
+        let bound = self.memory_connection();
+        if bound.is_null() {
+            return Err("DESKTOP_NOT_SIGNED_IN".into());
+        }
+        let origin = crate::desktop_login::validate_cloud_origin(
+            bound["cloudUrl"]
+                .as_str()
+                .ok_or("DESKTOP_PROTOCOL_INVALID")?,
+        )
+        .map_err(|e| e.0)?;
+        let mut url = Url::parse(&origin).map_err(|_| "DESKTOP_PROTOCOL_INVALID")?;
+        url.path_segments_mut()
+            .map_err(|_| "DESKTOP_PROTOCOL_INVALID")?
+            .clear()
+            .extend([
+                "api",
+                "desktop",
+                "v1",
+                "hosts",
+                bound["hostId"].as_str().ok_or("DESKTOP_PROTOCOL_INVALID")?,
+                if logout { "logout" } else { "account" },
+            ]);
+        let request = self
+            .client
+            .request(if logout { Method::POST } else { Method::GET }, url)
+            .header("cache-control", "no-store")
+            .header("content-type", "application/json")
+            .bearer_auth(
+                self.state["connection"]["credential"]
+                    .as_str()
+                    .ok_or("DESKTOP_PROTOCOL_INVALID")?,
+            );
+        Ok((
+            bound,
+            if logout {
+                request
+                    .body("{\"schemaVersion\":1}")
+                    .header("content-length", 19)
+            } else {
+                request
+            },
+        ))
+    }
+    pub(crate) fn adopt_desktop_pairing(
+        &mut self,
+        origin: &str,
+        response: &Value,
+    ) -> Result<Value> {
+        if !self.state["connection"].is_null() {
+            return Err("DESKTOP_CONNECTION_CHANGED".into());
+        }
+        if response["protocolVersion"].as_u64() != Some(2) {
+            return Err("DESKTOP_PROTOCOL_INVALID".into());
+        }
+        let origin = crate::desktop_login::validate_cloud_origin(origin).map_err(|e| e.0)?;
+        self.adopt_pairing(&origin, response).map_err(|code| {
+            if code.starts_with("CLOUD_STATE_") {
+                "DESKTOP_STATE_FAILED".into()
+            } else {
+                "DESKTOP_PROTOCOL_INVALID".into()
+            }
+        })
+    }
     /// Separate opt-in memory transport reuses the protected paired credential.
     /// The caller supplies path segments, never an arbitrary outbound URL.
     pub(crate) async fn memory_request(
@@ -783,8 +868,11 @@ impl Cloud {
                 Err(e) => return Err(e.code),
             }
         };
+        self.adopt_pairing(&url, &response)
+    }
+    fn adopt_pairing(&mut self, url: &str, response: &Value) -> Result<Value> {
         exact(
-            &response,
+            response,
             &[
                 "schemaVersion",
                 "hostId",
@@ -800,8 +888,12 @@ impl Cloud {
         opaque(&response["hostId"])?;
         opaque(&response["workspaceId"])?;
         opaque(&response["credential"])?;
+        let prior = self.state.clone();
         self.state["connection"] = json!({"cloudUrl":url,"hostId":response["hostId"],"workspaceId":response["workspaceId"],"credential":response["credential"],"protocolVersion":response["protocolVersion"],"cursor":0,"projectionRevisionOffset":0,"lastAttemptAt":null,"lastSuccessAt":null,"lastErrorCode":null});
-        self.persist()?;
+        if let Err(error) = self.persist() {
+            self.state = prior;
+            return Err(error);
+        }
         Ok(self.public_status())
     }
     pub async fn begin_sync(&mut self, bundle: &Value) -> Result<SyncBatch> {

@@ -1,5 +1,6 @@
 pub mod cloud;
 pub mod decisions;
+pub mod desktop_login;
 mod desktop_preferences;
 pub mod domain;
 mod host;

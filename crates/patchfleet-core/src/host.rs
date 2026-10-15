@@ -1,6 +1,7 @@
 use crate::{
     cloud::Cloud,
-    decisions, domain, event, now, project_memory, providers, retrieval, shared_memory,
+    decisions, desktop_login, domain, event, now, project_memory, providers, retrieval,
+    shared_memory,
     store::Store,
     teams::{catalog, templates},
     work::{array, find, intent, text},
@@ -25,6 +26,7 @@ pub struct Host {
     cloud: AsyncMutex<Option<Cloud>>,
     cloud_status: Mutex<Value>,
     desktop_preferences: Mutex<Value>,
+    desktop_login: Mutex<Option<desktop_login::Login>>,
     memory_download: AsyncMutex<Option<shared_memory::Download>>,
     memory_poll: Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
     shutdown_notify: tokio::sync::Notify,
@@ -58,7 +60,9 @@ fn public_connection(status: &Value) -> Value {
 }
 fn exact_action(action: &str, p: &Value) -> Result<()> {
     let allowed: &[&str] = match action {
-        "observe" | "cloud_unpair" | "cloud_sync" => &[],
+        "observe" | "cloud_unpair" | "cloud_sync" | "cloud_login_poll" | "cloud_login_cancel"
+        | "cloud_account_read" | "cloud_logout" => &[],
+        "cloud_login_begin" => &["cloudUrl", "displayName"],
         "workspace_register" => &["workingDirectory", "displayName"],
         "workspace_remove" => &["workspaceId", "expectedWorkspaceRevision"],
         "project_create" => &["name"],
@@ -185,6 +189,7 @@ impl Host {
             epoch: uuid::Uuid::new_v4().to_string(),
             controller: providers::Controller::new(),
             desktop_preferences: Mutex::new(crate::desktop_preferences::load(&data_dir)),
+            desktop_login: Mutex::new(None),
             memory_download: AsyncMutex::new(None),
             memory_poll: Mutex::new(std::collections::BTreeMap::new()),
             shutdown_notify: tokio::sync::Notify::new(),
@@ -283,7 +288,33 @@ impl Host {
     }
 
     pub async fn action(&self, action: &str, mut payload: Value) -> Result<Value> {
-        exact_action(action, &payload)?;
+        let account_action = matches!(
+            action,
+            "cloud_login_begin"
+                | "cloud_login_poll"
+                | "cloud_login_cancel"
+                | "cloud_account_read"
+                | "cloud_logout"
+        );
+        exact_action(action, &payload).map_err(|e| {
+            if account_action {
+                Error("DESKTOP_INVALID_PAYLOAD".into())
+            } else {
+                e
+            }
+        })?;
+        if account_action {
+            return match action {
+                "cloud_login_begin" => self.desktop_await(self.login_begin(&payload)).await,
+                "cloud_login_poll" => self.login_poll().await,
+                "cloud_login_cancel" => {
+                    self.cancel_login();
+                    Ok(json!({"schemaVersion":1,"status":"cancelled"}))
+                }
+                "cloud_account_read" => self.desktop_await(self.account_read()).await,
+                _ => self.account_logout().await,
+            };
+        }
         // An ephemeral network read must not block Local commands behind its wait.
         if matches!(action, "project_decision_search" | "memory_cloud_search") {
             let stopped = self.shutdown_notify.notified();
@@ -477,8 +508,8 @@ impl Host {
                 self.advance_team(&p["teamId"]).await
             },
             "team_answer"=>{self.team_event("team.question.answered",json!({"teamId":p["teamId"],"questionId":p["questionId"],"answer":text(p,"answer")?.trim()}))?;self.advance_team(&p["teamId"]).await},
-            "cloud_pair"=>{let mut state=self.cloud.lock().await;let c=state.as_mut().ok_or_else(||Error("CLOUD_RECOVERY_REQUIRED".into()))?;let result=c.pair(&json!({"cloudUrl":p["cloudUrl"],"displayName":p["displayName"],"pairingCode":p["pairingCode"]})).await.map_err(Error);self.cache_cloud(c)?;result},
-            "cloud_unpair"=>{let mut state=self.cloud.lock().await;let c=state.as_mut().ok_or_else(||Error("CLOUD_RECOVERY_REQUIRED".into()))?;let result=c.unpair().map_err(Error);self.cache_cloud(c)?;result},
+            "cloud_pair"=>{self.cancel_login();let mut state=self.cloud.lock().await;let c=state.as_mut().ok_or_else(||Error("CLOUD_RECOVERY_REQUIRED".into()))?;let result=c.pair(&json!({"cloudUrl":p["cloudUrl"],"displayName":p["displayName"],"pairingCode":p["pairingCode"]})).await.map_err(Error);self.cache_cloud(c)?;result},
+            "cloud_unpair"=>{self.cancel_login();let mut state=self.cloud.lock().await;let c=state.as_mut().ok_or_else(||Error("CLOUD_RECOVERY_REQUIRED".into()))?;let result=c.unpair().map_err(Error);self.cache_cloud(c)?;result},
             "cloud_sync"=>Box::pin(self.sync_cloud()).await,
             _=>Err(Error("UNKNOWN_ACTION".into()))
         }
@@ -490,6 +521,222 @@ impl Host {
             .lock()
             .map_err(|_| Error("HOST_STATE_UNAVAILABLE".into()))? = cloud.public_status();
         Ok(())
+    }
+    fn cancel_login(&self) {
+        if let Ok(mut login) = self.desktop_login.lock() {
+            if let Some(login) = login.as_mut() {
+                login.cancel();
+            }
+        }
+    }
+    async fn desktop_await(
+        &self,
+        work: impl std::future::Future<Output = Result<Value>>,
+    ) -> Result<Value> {
+        let stopped = self.shutdown_notify.notified();
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(Error("DESKTOP_CLOSING".into()));
+        }
+        tokio::select! {
+            _=stopped=>Err(Error("DESKTOP_CLOSING".into())),
+            result=tokio::time::timeout(std::time::Duration::from_secs(3),work)=>result.unwrap_or_else(|_|Err(Error("DESKTOP_UNAVAILABLE".into())))
+        }
+    }
+    async fn login_begin(&self, payload: &Value) -> Result<Value> {
+        let command = payload
+            .get("commandId")
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| Error("DESKTOP_INVALID_COMMAND".into()))
+            })
+            .transpose()?
+            .unwrap_or_else(|| format!("cmd:{}", uuid::Uuid::new_v4()));
+        command
+            .strip_prefix("cmd:")
+            .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            .filter(|id| {
+                format!("cmd:{id}") == command
+                    && id.get_variant() == uuid::Variant::RFC4122
+                    && (1..=8).contains(&id.get_version_num())
+            })
+            .ok_or_else(|| Error("DESKTOP_INVALID_COMMAND".into()))?;
+        let input = json!({"cloudUrl":payload["cloudUrl"],"displayName":payload["displayName"]});
+        let _guard = self.operations.lock().await;
+        {
+            let login = self
+                .desktop_login
+                .lock()
+                .map_err(|_| Error("DESKTOP_STATE_FAILED".into()))?;
+            if let Some(login) = login.as_ref() {
+                if login.matches(&command, &input)? {
+                    return login.status();
+                }
+            }
+        }
+        let (installation, bound) = {
+            let cloud = self.cloud.lock().await;
+            let cloud = cloud
+                .as_ref()
+                .ok_or_else(|| Error("DESKTOP_STATE_FAILED".into()))?;
+            (
+                cloud.installation_id().to_string(),
+                cloud.memory_connection(),
+            )
+        };
+        if !bound.is_null() {
+            return Err(Error("DESKTOP_ALREADY_SIGNED_IN".into()));
+        }
+        self.cancel_login();
+        let login = desktop_login::Login::begin(command, input, installation, bound).await?;
+        let result = login.status()?;
+        let mut current = self
+            .desktop_login
+            .lock()
+            .map_err(|_| Error("DESKTOP_STATE_FAILED".into()))?;
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(Error("DESKTOP_CLOSING".into()));
+        }
+        *current = Some(login);
+        Ok(result)
+    }
+    async fn login_poll(&self) -> Result<Value> {
+        let exchange = {
+            let mut flow = self
+                .desktop_login
+                .lock()
+                .map_err(|_| Error("DESKTOP_STATE_FAILED".into()))?;
+            let Some(flow) = flow.as_mut() else {
+                return Ok(json!({"schemaVersion":1,"status":"cancelled"}));
+            };
+            let exchange = flow.exchange()?;
+            if exchange.is_none() {
+                return flow.status();
+            }
+            exchange.unwrap()
+        };
+        let result = self
+            .desktop_await(async {
+                let request = {
+                    let cloud = self.cloud.lock().await;
+                    cloud
+                        .as_ref()
+                        .ok_or_else(|| Error("DESKTOP_STATE_FAILED".into()))?
+                        .desktop_token_request(&exchange.origin, &exchange.body)
+                        .map_err(Error)?
+                };
+                let response = desktop_login::response(request).await?;
+                let _guard = self.operations.lock().await;
+                let mut cloud = self.cloud.lock().await;
+                let cloud = cloud
+                    .as_mut()
+                    .ok_or_else(|| Error("DESKTOP_STATE_FAILED".into()))?;
+                if self.closing.load(Ordering::SeqCst) {
+                    return Err(Error("DESKTOP_CLOSING".into()));
+                }
+                if cloud.memory_connection() != exchange.bound
+                    || cloud.installation_id() != exchange.installation
+                {
+                    return Err(Error("DESKTOP_CONNECTION_CHANGED".into()));
+                }
+                let mut flow = self
+                    .desktop_login
+                    .lock()
+                    .map_err(|_| Error("DESKTOP_STATE_FAILED".into()))?;
+                let flow = flow
+                    .as_mut()
+                    .filter(|flow| flow.is_exchange(&exchange.generation))
+                    .ok_or_else(|| Error("DESKTOP_LOGIN_CANCELLED".into()))?;
+                cloud
+                    .adopt_desktop_pairing(&exchange.origin, &response)
+                    .map_err(Error)?;
+                self.cache_cloud(cloud)
+                    .map_err(|_| Error("DESKTOP_STATE_FAILED".into()))?;
+                flow.finish(Ok(()));
+                flow.status()
+            })
+            .await;
+        if let Err(error) = &result {
+            if let Ok(mut flow) = self.desktop_login.lock() {
+                if let Some(flow) = flow
+                    .as_mut()
+                    .filter(|flow| flow.is_exchange(&exchange.generation))
+                {
+                    flow.finish(Err(error.0.clone()));
+                }
+            }
+        }
+        result
+    }
+    async fn account_read(&self) -> Result<Value> {
+        let (bound, request) = {
+            let cloud = self.cloud.lock().await;
+            cloud
+                .as_ref()
+                .ok_or_else(|| Error("DESKTOP_STATE_FAILED".into()))?
+                .desktop_account_request(false)
+                .map_err(Error)?
+        };
+        let response = desktop_login::response(request).await?;
+        let _guard = self.operations.lock().await;
+        let cloud = self.cloud.lock().await;
+        let cloud = cloud
+            .as_ref()
+            .ok_or_else(|| Error("DESKTOP_STATE_FAILED".into()))?;
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(Error("DESKTOP_CLOSING".into()));
+        }
+        if cloud.memory_connection() != bound {
+            return Err(Error("DESKTOP_CONNECTION_CHANGED".into()));
+        }
+        desktop_login::validate_account_response(&response, &cloud.public_status())?;
+        Ok(response)
+    }
+    async fn account_logout(&self) -> Result<Value> {
+        self.cancel_login();
+        let bound = public_connection(
+            &*self
+                .cloud_status
+                .lock()
+                .map_err(|_| Error("DESKTOP_STATE_FAILED".into()))?,
+        );
+        let remote = self
+            .desktop_await(async {
+                let (scope, request) = {
+                    let cloud = self.cloud.lock().await;
+                    cloud
+                        .as_ref()
+                        .ok_or_else(|| Error("DESKTOP_STATE_FAILED".into()))?
+                        .desktop_account_request(true)
+                        .map_err(Error)?
+                };
+                if scope != bound {
+                    return Err(Error("DESKTOP_CONNECTION_CHANGED".into()));
+                }
+                let response = desktop_login::response(request).await?;
+                if response != json!({"schemaVersion":1,"revoked":true}) {
+                    return Err(Error("DESKTOP_PROTOCOL_INVALID".into()));
+                }
+                Ok(response)
+            })
+            .await
+            .is_ok();
+        let _guard = self.operations.lock().await;
+        let mut cloud = self.cloud.lock().await;
+        let cloud = cloud
+            .as_mut()
+            .ok_or_else(|| Error("DESKTOP_STATE_FAILED".into()))?;
+        let current = cloud.memory_connection();
+        if !current.is_null() && current != bound {
+            return Err(Error("DESKTOP_CONNECTION_CHANGED".into()));
+        }
+        cloud
+            .unpair()
+            .map_err(|_| Error("DESKTOP_STATE_FAILED".into()))?;
+        self.cache_cloud(cloud)
+            .map_err(|_| Error("DESKTOP_STATE_FAILED".into()))?;
+        Ok(json!({"schemaVersion":1,"localSignedOut":true,"remoteRevoked":remote}))
     }
 
     async fn workspace_action(&self, action: &str, p: &Value) -> Result<Value> {
@@ -812,6 +1059,7 @@ impl Host {
     }
     pub fn request_shutdown(&self) {
         self.closing.store(true, Ordering::SeqCst);
+        self.cancel_login();
         self.shutdown_notify.notify_waiters();
     }
 

@@ -7,17 +7,18 @@ use std::os::unix::process::CommandExt;
 use std::os::windows::process::CommandExt;
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     path::{Path, PathBuf},
     process::Stdio,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex as StdMutex, MutexGuard,
     },
     time::Duration,
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, Command},
+    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command},
     sync::{mpsc, Mutex},
     task::JoinHandle,
     time::timeout,
@@ -26,6 +27,366 @@ use tokio::{
 type Result<T> = std::result::Result<T, String>;
 const LIMIT: usize = 256 * 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(60);
+const EXTRACTION_OUTPUT: usize = 1024 * 1024;
+const EXTRACTION_JSON: usize = 128 * 1024;
+const EXTRACTION_ARGS: &[&str] = &[
+    "exec",
+    "--json",
+    "--strict-config",
+    "--output-schema",
+    "schema.json",
+    "--sandbox",
+    "read-only",
+    "--ephemeral",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "--ignore-rules",
+    "--cd",
+    ".",
+    "--color",
+    "never",
+    "-c",
+    "approval_policy=never",
+    "-c",
+    "web_search=disabled",
+    "-c",
+    "mcp_servers={}",
+    "-c",
+    "project_doc_max_bytes=0",
+    "--enable",
+    "skip_host_skill_discovery",
+    "--disable",
+    "shell_snapshot",
+    "--disable",
+    "shell_tool",
+    "--disable",
+    "unified_exec",
+    "--disable",
+    "apps",
+    "--disable",
+    "plugins",
+    "--disable",
+    "hooks",
+    "--disable",
+    "multi_agent",
+    "--disable",
+    "multi_agent_v2",
+    "--disable",
+    "memories",
+    "--disable",
+    "view_image",
+    "--disable",
+    "browser_use",
+    "--disable",
+    "computer_use",
+    "--disable",
+    "image_generation",
+    "--disable",
+    "skill_search",
+    "--disable",
+    "workspace_dependencies",
+    "--disable",
+    "code_mode_host",
+    "--disable",
+    "code_mode",
+    "--disable",
+    "goals",
+    "--disable",
+    "sleep_tool",
+    "--disable",
+    "tool_suggest",
+    "-",
+];
+
+struct ExtractionCancellation(Option<Arc<AtomicBool>>);
+impl Drop for ExtractionCancellation {
+    fn drop(&mut self) {
+        if let Some(active) = &self.0 {
+            active.store(false, Ordering::Release);
+        }
+    }
+}
+async fn extraction_cancelled(active: &AtomicBool) {
+    while active.load(Ordering::Acquire) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+fn extraction_budget(budget: &AtomicUsize, size: usize, limit: usize) -> Result<()> {
+    if budget.fetch_add(size, Ordering::Relaxed) + size > limit {
+        Err("EXTRACTION_INVALID_OUTPUT".into())
+    } else {
+        Ok(())
+    }
+}
+async fn extraction_stderr(
+    mut stderr: ChildStderr,
+    budget: Arc<AtomicUsize>,
+    limit: usize,
+) -> Result<()> {
+    let mut bytes = [0; 8192];
+    loop {
+        let size = stderr
+            .read(&mut bytes)
+            .await
+            .map_err(|_| "EXTRACTION_PROVIDER_FAILED")?;
+        if size == 0 {
+            return Ok(());
+        }
+        extraction_budget(&budget, size, limit)?;
+    }
+}
+async fn extraction_process<T, F>(
+    mut command: Command,
+    input: &[u8],
+    active: &AtomicBool,
+    bound: Duration,
+    limit: usize,
+    read: impl FnOnce(ChildStdout, Arc<AtomicUsize>) -> F,
+) -> Result<T>
+where
+    F: Future<Output = Result<T>>,
+{
+    if !active.load(Ordering::Acquire) {
+        return Err("EXTRACTION_CANCELLED".into());
+    }
+    command.stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            "EXTRACTION_PROVIDER_UNAVAILABLE"
+        } else {
+            "EXTRACTION_PROVIDER_FAILED"
+        }
+    })?;
+    let (Some(mut stdin), Some(stdout), Some(stderr)) =
+        (child.stdin.take(), child.stdout.take(), child.stderr.take())
+    else {
+        terminate(&mut child).await;
+        return Err("EXTRACTION_PROVIDER_FAILED".into());
+    };
+    let budget = Arc::new(AtomicUsize::new(0));
+    let result = tokio::select! {
+        biased;
+        _ = extraction_cancelled(active) => Err("EXTRACTION_CANCELLED".into()),
+        result = timeout(bound, async {
+            let (_, output, _) = tokio::try_join!(
+                async move {
+                    stdin.write_all(input).await.map_err(|_| "EXTRACTION_PROVIDER_FAILED".to_owned())?;
+                    stdin.shutdown().await.map_err(|_| "EXTRACTION_PROVIDER_FAILED".to_owned())?;
+                    drop(stdin);
+                    Ok(())
+                },
+                read(stdout, budget.clone()),
+                extraction_stderr(stderr, budget, limit),
+            )?;
+            let status = child.wait().await.map_err(|_| "EXTRACTION_PROVIDER_FAILED")?;
+            if status.success() { Ok(output) } else { Err("EXTRACTION_PROVIDER_FAILED".into()) }
+        }) => result.unwrap_or_else(|_| Err("EXTRACTION_TIMEOUT".into())),
+    };
+    if result.is_err() {
+        terminate(&mut child).await;
+    }
+    result
+}
+
+#[derive(Default)]
+struct ExtractionTranscript {
+    message: Option<String>,
+    completed: bool,
+}
+impl ExtractionTranscript {
+    fn event(&mut self, event: Value) -> Result<()> {
+        if !event.is_object() || self.completed {
+            return Err("EXTRACTION_INVALID_OUTPUT".into());
+        }
+        match event["type"].as_str() {
+            Some("thread.started") if !event["thread_id"].as_str().is_some_and(opaque) => {
+                Err("EXTRACTION_INVALID_OUTPUT".into())
+            }
+            Some("thread.started" | "turn.started") => Ok(()),
+            Some("item.started" | "item.updated" | "item.completed") => {
+                let item = &event["item"];
+                if !item["id"].as_str().is_some_and(opaque) {
+                    return Err("EXTRACTION_INVALID_OUTPUT".into());
+                }
+                if item.get("text").is_some_and(|text| !text.is_string()) {
+                    return Err("EXTRACTION_INVALID_OUTPUT".into());
+                }
+                match item["type"].as_str() {
+                    Some("reasoning") => Ok(()),
+                    Some("agent_message") => {
+                        if event["type"] == "item.completed" {
+                            let text = item["text"]
+                                .as_str()
+                                .filter(|v| v.len() <= EXTRACTION_JSON)
+                                .ok_or("EXTRACTION_INVALID_OUTPUT")?;
+                            self.message = Some(text.into());
+                        }
+                        Ok(())
+                    }
+                    _ => Err("EXTRACTION_INVALID_OUTPUT".into()),
+                }
+            }
+            Some("turn.completed") => {
+                self.completed = true;
+                Ok(())
+            }
+            Some("turn.failed" | "error") => Err("EXTRACTION_PROVIDER_FAILED".into()),
+            _ => Err("EXTRACTION_INVALID_OUTPUT".into()),
+        }
+    }
+    fn finish(self) -> Result<Value> {
+        if !self.completed {
+            return Err("EXTRACTION_INVALID_OUTPUT".into());
+        }
+        let value: Value =
+            serde_json::from_str(self.message.as_deref().ok_or("EXTRACTION_INVALID_OUTPUT")?)
+                .map_err(|_| "EXTRACTION_INVALID_OUTPUT")?;
+        if !value.is_object()
+            || serde_json::to_vec(&value)
+                .map_err(|_| "EXTRACTION_INVALID_OUTPUT")?
+                .len()
+                > EXTRACTION_JSON
+        {
+            return Err("EXTRACTION_INVALID_OUTPUT".into());
+        }
+        Ok(value)
+    }
+}
+async fn extraction_transcript(
+    stdout: ChildStdout,
+    budget: Arc<AtomicUsize>,
+) -> Result<ExtractionTranscript> {
+    let mut reader = BufReader::new(stdout);
+    let mut transcript = ExtractionTranscript::default();
+    loop {
+        let mut line = Vec::new();
+        loop {
+            let bytes = reader
+                .fill_buf()
+                .await
+                .map_err(|_| "EXTRACTION_PROVIDER_FAILED")?;
+            if bytes.is_empty() {
+                if !line.is_empty() {
+                    return Err("EXTRACTION_INVALID_OUTPUT".into());
+                }
+                return Ok(transcript);
+            }
+            let size = bytes
+                .iter()
+                .position(|v| *v == b'\n')
+                .map_or(bytes.len(), |v| v + 1);
+            extraction_budget(&budget, size, EXTRACTION_OUTPUT)?;
+            if line.len() + size > LIMIT {
+                return Err("EXTRACTION_INVALID_OUTPUT".into());
+            }
+            line.extend_from_slice(&bytes[..size]);
+            reader.consume(size);
+            if line.last() == Some(&b'\n') {
+                break;
+            }
+        }
+        transcript
+            .event(serde_json::from_slice(&line).map_err(|_| "EXTRACTION_INVALID_OUTPUT")?)?;
+    }
+}
+
+async fn extract_decisions_worker(
+    programs: Programs,
+    scratch: PathBuf,
+    prompt: String,
+    schema: Value,
+    active: Arc<AtomicBool>,
+    bound: Duration,
+) -> Result<Value> {
+    let deadline = tokio::time::Instant::now() + bound;
+    if prompt.is_empty()
+        || prompt.len() > LIMIT
+        || !schema.is_object()
+        || !scratch.is_absolute()
+        || !std::fs::symlink_metadata(&scratch).is_ok_and(|v| v.is_dir())
+    {
+        return Err("EXTRACTION_INVALID_INPUT".into());
+    }
+    let bytes = serde_json::to_vec(&schema).map_err(|_| "EXTRACTION_INVALID_INPUT")?;
+    if bytes.len() > EXTRACTION_JSON {
+        return Err("EXTRACTION_INVALID_INPUT".into());
+    }
+    crate::store::private_directory(&scratch).map_err(|_| "EXTRACTION_INVALID_INPUT")?;
+    let scratch = std::fs::canonicalize(scratch).map_err(|_| "EXTRACTION_INVALID_INPUT")?;
+    let mut probe =
+        command(&programs.codex, &["--version"]).map_err(|_| "EXTRACTION_PROVIDER_UNAVAILABLE")?;
+    probe.current_dir(&scratch);
+    let version = extraction_process(
+        probe,
+        &[],
+        &active,
+        programs.timeout.min(bound),
+        1024,
+        |mut stdout, budget| async move {
+            let mut bytes = Vec::new();
+            let mut chunk = [0; 1024];
+            loop {
+                let size = stdout
+                    .read(&mut chunk)
+                    .await
+                    .map_err(|_| "EXTRACTION_PROVIDER_FAILED")?;
+                if size == 0 {
+                    break;
+                }
+                extraction_budget(&budget, size, 1024)?;
+                bytes.extend_from_slice(&chunk[..size]);
+            }
+            String::from_utf8(bytes).map_err(|_| "EXTRACTION_PROVIDER_UNSUPPORTED".into())
+        },
+    )
+    .await?;
+    version
+        .trim()
+        .strip_prefix("codex-cli ")
+        .filter(|v| semver(v) && at_least(v, [0, 155, 1], true))
+        .ok_or("EXTRACTION_PROVIDER_UNSUPPORTED")?;
+    if !active.load(Ordering::Acquire) {
+        return Err("EXTRACTION_CANCELLED".into());
+    }
+    crate::store::atomic_write(&scratch.join("schema.json"), &bytes)
+        .map_err(|_| "EXTRACTION_INVALID_INPUT")?;
+    let mut process =
+        command(&programs.codex, EXTRACTION_ARGS).map_err(|_| "EXTRACTION_PROVIDER_UNAVAILABLE")?;
+    process.current_dir(scratch);
+    let remaining = deadline
+        .checked_duration_since(tokio::time::Instant::now())
+        .ok_or("EXTRACTION_TIMEOUT")?;
+    extraction_process(
+        process,
+        prompt.as_bytes(),
+        &active,
+        remaining,
+        EXTRACTION_OUTPUT,
+        extraction_transcript,
+    )
+    .await?
+    .finish()
+}
+
+#[cfg(all(test, unix))]
+#[tokio::test]
+async fn extraction_process_deadline_is_bounded_and_reaped() {
+    let active = AtomicBool::new(true);
+    let started = std::time::Instant::now();
+    let result = extraction_process(
+        command(Path::new("/bin/sleep"), &["10"]).unwrap(),
+        &[],
+        &active,
+        Duration::from_millis(20),
+        EXTRACTION_OUTPUT,
+        extraction_transcript,
+    )
+    .await;
+    assert_eq!(result.err().as_deref(), Some("EXTRACTION_TIMEOUT"));
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(EXTRACTION_TIMEOUT, Duration::from_secs(60));
+}
 
 /// Ephemeral, owner-created MCP configuration. Dropping any binding revokes its lease.
 pub struct MemoryConfig {
@@ -286,7 +647,7 @@ fn command(program: &Path, args: &[&str]) -> Result<Command> {
             if p.chars().any(|c| "\"%!?^&|<>()\r\n\0".contains(c))
                 || args.iter().any(|a| {
                     a.chars()
-                        .any(|c| !c.is_ascii_alphanumeric() && !"-_.".contains(c))
+                        .any(|c| !c.is_ascii_alphanumeric() && !"-_.={}".contains(c))
                 })
             {
                 return Err("PROVIDER_COMMAND_INVALID".into());
@@ -995,6 +1356,34 @@ impl Controller {
             server: Mutex::new(None),
             lost: Mutex::new(vec![]),
         }
+    }
+    /// Source text goes only to stdin; this independent worker never locks owned work sessions.
+    pub async fn extract_decisions(
+        &self,
+        scratch: &Path,
+        prompt: &str,
+        schema: &Value,
+        active: Arc<AtomicBool>,
+    ) -> Result<Value> {
+        let mut cancellation = ExtractionCancellation(Some(active.clone()));
+        let result = async {
+            if prompt.is_empty() || prompt.len() > LIMIT {
+                return Err("EXTRACTION_INVALID_INPUT".into());
+            }
+            tokio::spawn(extract_decisions_worker(
+                self.programs.clone(),
+                scratch.to_owned(),
+                prompt.to_owned(),
+                schema.clone(),
+                active,
+                EXTRACTION_TIMEOUT,
+            ))
+            .await
+            .map_err(|_| "EXTRACTION_PROVIDER_FAILED".to_owned())?
+        }
+        .await;
+        cancellation.0 = None;
+        result
     }
     async fn discard(&self, guard: &mut Option<AppServer>) {
         if let Some(s) = guard.as_mut() {

@@ -466,7 +466,7 @@ fn main() {
                 eprintln!("AGENT_MEMORY_INVALID_ARGUMENTS");
                 std::process::exit(2);
             }
-            let runtime = tokio::runtime::Builder::new_multi_thread()
+            let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build();
             let result = runtime.map_err(|_| ()).and_then(|runtime| {

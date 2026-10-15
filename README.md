@@ -58,7 +58,7 @@ and [release checks](docs/release.md). [Project Memory](docs/state/project-memor
 supports durable sources, message revisions, sourced ADR lifecycle and scoped
 keyword reads. The optional subscription Cloud memory service supports explicit
 publication and exact cross-device reads; see the [memory protocol](docs/memory-protocol.md).
-Vector search, agent memory tools and automatic drafts are later slices. Only
+Explicit Cloud semantic search and free Local ranked keyword retrieval are implemented; see [search state](docs/state/project-memory-search.md). Agent memory tools and automatic drafts remain later slices. Only
 owner acceptance makes an ADR active; agent context injection is not enabled yet.
 Local memory remains free. Cloud service deployment is a separate release step.
 

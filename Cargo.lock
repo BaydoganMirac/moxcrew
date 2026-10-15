@@ -2428,7 +2428,7 @@ dependencies = [
 
 [[package]]
 name = "patchfleet-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "chrono",
  "fs2",
@@ -2447,7 +2447,7 @@ dependencies = [
 
 [[package]]
 name = "patchfleet-desktop"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "chrono",
  "eframe",

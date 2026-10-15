@@ -1,6 +1,6 @@
 # Install and operate Patchfleet Desktop
 
-Status: 0.7.0 native Rust desktop development distribution
+Status: 0.8.0 native Rust desktop development distribution
 
 Updated: 2026-10-15
 
@@ -26,7 +26,7 @@ Run `cargo run --locked -p patchfleet-desktop`. Build a production executable wi
 `cargo build --locked --release -p patchfleet-desktop`, then package it using
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
 
-For a native 0.7 upgrade, close the old application and replace its application
+For a native 0.8 upgrade, close the old application and replace its application
 bundle through the reviewed installer. The bundle identifier and data directory
 remain the same; existing Rust state can be read by the new application. Back up
 the stopped data directory before using shared memory: new V5 facts require
@@ -42,7 +42,7 @@ production application draws correctly when the old process is closed.
 
 1. Quit all running Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.7.0`
+3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.8.0`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut
@@ -131,8 +131,7 @@ provider transcripts. Select a project to read its bounded source page, filter b
 keyword, enter a message or revise a directly entered message. Captured task/team
 sources preserve their original text and project. Unlinking/unregistering a worktree
 does not erase history. Source records alone are context; authoritative ADRs
-are managed in Decisions. Semantic/vector search, agent memory tools and
-automatic extraction remain unavailable.
+are managed in Decisions. Use the accepted-decision search for free Local keyword results. In Cloud, Find a published decision opens an explicit search with query-upload disclosure, semantic/fallback status and an exact downloaded-copy action. Compatible subscription Cloud service deployment is required for remote search. Agent memory tools and automatic extraction remain unavailable.
 
 Choose Türkçe or English in the sidebar. Turkish is the default; the selected
 interface language is saved locally in protected `desktop-preferences.json`.

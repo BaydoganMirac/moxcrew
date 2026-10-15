@@ -202,8 +202,7 @@ and automatic extraction follow working exact decision retrieval.
 
 ## Current limits
 
-No vector database, embedding model, MCP memory tools or automatic ADR extractor
-is enabled. Cloud publication code requires compatible service deployment,
+[Task0032](project-memory-search.md) now implements optional Cloud vector retrieval and free Local ranked keyword search. MCP memory tools and an automatic ADR extractor are not enabled. Cloud publication code requires compatible service deployment,
 explicit consent and verified subscription. Agent context is not automatically populated
 from accepted ADRs yet. External conversations and historical
 unbound work are not imported. Cloud-created teams do not get implicit bindings;

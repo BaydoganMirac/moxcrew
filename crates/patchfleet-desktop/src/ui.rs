@@ -2994,7 +2994,7 @@ impl Console {
                     if memory["issue"] == "AGENT_MEMORY_UNSUPPORTED" {
                         hint(ui,"Update Codex to 0.155.1 or later to connect project memory.");
                     } else if !memory["issue"].is_null() {
-                        hint(ui,"Project memory could not connect. Queue a retry to reconnect.");
+                        hint(ui,"Project memory could not connect. Fix the connection and start this task again.");
                     } else if memory["manifestLoaded"] == true {
                         hint(ui,"Current accepted decision list loaded.");
                     } else if memory["stale"] == true {

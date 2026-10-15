@@ -1,6 +1,6 @@
 # Native Rust desktop state
 
-Status: 0.9.0 implemented and independently accepted; platform release checks pending
+Status: 0.10.0 implemented and independently accepted; platform release checks pending
 
 Updated: 2026-10-15
 
@@ -263,8 +263,8 @@ disposable illustrative data. The form images are minimum-window GL captures.
   AppKit/WinUI widgets. Accessibility support is enabled.
 - Memory still scales with retained canonical history and visible operational
   data. Source memory is implemented with compact metadata/scoped reads, but the
-  canonical event cache remains proportional to history. Vector indexing,
-  agent tools and automatic extraction remain later slices. Explicit Cloud
+  canonical event cache remains proportional to history. Cloud vector retrieval and Local agent tools are implemented;
+  automatic extraction remains a later slice. Explicit Cloud
   publication is implemented in 0.7 and requires compatible service deployment.
 
 See [ADR 0024](../decisions/0024-native-rust-desktop-ui.md),
@@ -288,3 +288,8 @@ are in the search state.
 
 [Agent memory state](agent-memory.md) records the Local Codex MCP attachment,
 strict V6 compatibility boundary, two-worktree proof and release evidence.
+
+Version 0.10 passes 224 Rust and 149 legacy checks, real Codex MCP preflight,
+feature-off packaging and explicit native launch. The final DMG is 6.35 MiB;
+idle UI RSS sampled at 106.3 MiB and static stdio reader RSS at 10.2 MiB.
+See agent state for exact artifacts, review repairs, hashes and limits.

@@ -19,7 +19,7 @@
 | Project/source memory and automatic ADR drafts | Local ADRs, Cloud publication, retrieval and Local agent tools done; extraction next | 2026-10-15 | [project-memory.md](project-memory.md) |
 | Rust and Tauri desktop | Superseded interface; core retained | 2026-10-14 | [rust-desktop.md](rust-desktop.md) |
 | Native Rust desktop interface | Implemented; platform release checks pending | 2026-10-15 | [native-rust-desktop.md](native-rust-desktop.md) |
-| Scoped agent memory | Implemented; final review/package checks in progress | 2026-10-15 | [agent-memory.md](agent-memory.md) |
+| Scoped agent memory | Complete; independent review and macOS development package verified | 2026-10-15 | [agent-memory.md](agent-memory.md) |
 | Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

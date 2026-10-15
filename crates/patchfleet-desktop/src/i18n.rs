@@ -55,7 +55,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Start failed. Fix the provider connection, then start this task from Work. Automatic retries are paused." => "Başlatılamadı. Sağlayıcı bağlantısını düzeltip işi İşler bölümünden başlatın. Otomatik denemeler durduruldu.",
         "Project memory · start {0} · current {1}" => "Proje hafızası · başlangıç {0} · güncel {1}",
         "Update Codex to 0.155.1 or later to connect project memory." => "Proje hafızasını bağlamak için Codex’i 0.155.1 veya üstüne güncelleyin.",
-        "Project memory could not connect. Queue a retry to reconnect." => "Proje hafızasına bağlanılamadı. Yeniden bağlanmak için işi tekrar kuyruğa alın.",
+        "Project memory could not connect. Fix the connection and start this task again." => "Proje hafızasına bağlanılamadı. Bağlantıyı düzeltip bu işi yeniden başlatın.",
         "Current accepted decision list loaded." => "Güncel onaylı karar listesi okundu.",
         "Decisions changed. The agent must refresh project context before reading decisions." => "Kararlar değişti. Ajan kararları okumadan önce proje bağlamını yenilemeli.",
         "Project context is bound to this run." => "Bu çalışma proje hafızasına bağlı.",

@@ -79,7 +79,9 @@ The task card shows its starting/current decision revision and whether the
 current manifest was read. Changed decisions require the agent to refresh
 project_context; drafts are never active. Local needs no account or subscription.
 Memory attachment requires Codex 0.155.1 or later. An unsupported or failed
-connection prevents that bound task from starting; update Codex or queue a retry.
+connection prevents that bound task from starting; fix the connection and start
+the still-queued task again. Failed team starts pause automatic dispatch; retry
+that task explicitly from Work.
 Historical unbound tasks retain their previous behavior. There is no global MCP
 setup or separate database process. See [agent protocol](agent-memory-protocol.md).
 

@@ -1,6 +1,6 @@
 use crate::{
     cloud::Cloud,
-    decisions, domain, event, now, project_memory, providers,
+    decisions, domain, event, now, project_memory, providers, shared_memory,
     store::Store,
     teams::{catalog, templates},
     work::{array, find, intent, text},
@@ -25,6 +25,9 @@ pub struct Host {
     cloud: AsyncMutex<Option<Cloud>>,
     cloud_status: Mutex<Value>,
     desktop_preferences: Mutex<Value>,
+    memory_download: AsyncMutex<Option<shared_memory::Download>>,
+    memory_poll: Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
+    shutdown_notify: tokio::sync::Notify,
     pub(crate) closing: AtomicBool,
 }
 fn second_event(kind: &str, payload: Value) -> Value {
@@ -45,6 +48,13 @@ fn public_templates() -> Vec<Value> {
             t
         })
         .collect()
+}
+fn public_connection(status: &Value) -> Value {
+    if status["paired"] == true {
+        json!({"cloudUrl":status["cloudUrl"],"workspaceId":status["workspaceId"],"hostId":status["hostId"]})
+    } else {
+        Value::Null
+    }
 }
 fn exact_action(action: &str, p: &Value) -> Result<()> {
     let allowed: &[&str] = match action {
@@ -86,6 +96,19 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
         ],
         "project_decisions_read" => &["projectId", "offset", "limit", "query", "status"],
         "project_decision_read" => &["projectId", "decisionId"],
+        "memory_cloud_create" => &["projectId", "expectedProjectRevision", "name"],
+        "memory_cloud_link" => &["projectId", "expectedProjectRevision", "sharedProjectId"],
+        "memory_cloud_publish" => &[
+            "projectId",
+            "decisionId",
+            "expectedDecisionRevision",
+            "expectedSharedRevision",
+            "consent",
+        ],
+        "memory_cloud_sharing" => &["projectId", "expectedSharedRevision", "enabled"],
+        "memory_cloud_sync" => &["projectId"],
+        "memory_cloud_read" => &["projectId", "offset", "limit"],
+        "memory_cloud_decision_read" => &["projectId", "decisionId", "revision"],
         "desktop_language" => &["language"],
         "work_enqueue" => &["title", "instruction", "workspaceId", "workingDirectory"],
         "work_start" | "work_retry" | "work_remove" => &["workItemId", "expectedItemRevision"],
@@ -161,6 +184,9 @@ impl Host {
             epoch: uuid::Uuid::new_v4().to_string(),
             controller: providers::Controller::new(),
             desktop_preferences: Mutex::new(crate::desktop_preferences::load(&data_dir)),
+            memory_download: AsyncMutex::new(None),
+            memory_poll: Mutex::new(std::collections::BTreeMap::new()),
+            shutdown_notify: tokio::sync::Notify::new(),
             data_dir,
             operations: AsyncMutex::new(()),
             cloud: AsyncMutex::new(cloud),
@@ -171,6 +197,8 @@ impl Host {
             .transaction(|events| Ok((project_memory::recover(events)?, Value::Null)))?;
         host.store
             .transaction(|events| Ok((decisions::recover(events)?, Value::Null)))?;
+        host.store
+            .transaction(|events| Ok((shared_memory::recover(events)?, Value::Null)))?;
         let events = host.store.read_events()?;
         let workspace_receipts: std::collections::HashSet<_> = events
             .iter()
@@ -240,6 +268,9 @@ impl Host {
             .lock()
             .map_err(|_| Error("HOST_STATE_UNAVAILABLE".into()))?
             .clone();
+        bundle["sharedMemory"] = self
+            .store
+            .shared_metadata(&public_connection(&bundle["cloud"]))?;
         bundle["appVersion"] = json!(env!("CARGO_PKG_VERSION"));
         bundle["hostEpoch"] = json!(self.epoch);
         bundle["desktopPreferences"] = self
@@ -258,6 +289,28 @@ impl Host {
         }
         if action == "project_memory_read" {
             return self.store.read_memory(&payload);
+        }
+        if action == "memory_cloud_read" {
+            return self
+                .store
+                .read_shared_memory(&payload, &self.memory_connection().await?);
+        }
+        if action == "memory_cloud_decision_read" {
+            return self
+                .store
+                .read_shared_decision(&payload, &self.memory_connection().await?);
+        }
+        if action.starts_with("memory_cloud_") {
+            let connection = self.memory_connection().await?;
+            let receipt = self.store.transaction(|events| {
+                shared_memory::apply(events, action, &payload, &connection)
+            })?;
+            if action == "memory_cloud_sync" && receipt["outcome"] == "applied" {
+                let _ = self
+                    .sync_shared_memory(payload["projectId"].as_str(), true)
+                    .await;
+            }
+            return Ok(receipt);
         }
         if action == "project_decisions_read" {
             return self.store.read_decisions(&payload);
@@ -735,10 +788,12 @@ impl Host {
         }
         self.advance_all().await?;
         let _ = self.sync_cloud().await;
+        let _ = self.sync_shared_memory(None, false).await;
         Ok(())
     }
     pub fn request_shutdown(&self) {
         self.closing.store(true, Ordering::SeqCst);
+        self.shutdown_notify.notify_waiters();
     }
 
     pub async fn shutdown(&self) {
@@ -746,6 +801,202 @@ impl Host {
         let _guard = self.operations.lock().await;
         self.controller.shutdown().await;
         let _ = self.persist_signals().await;
+    }
+
+    async fn memory_connection(&self) -> Result<Value> {
+        let cloud = self.cloud.lock().await;
+        Ok(cloud
+            .as_ref()
+            .map(Cloud::memory_connection)
+            .unwrap_or(Value::Null))
+    }
+    async fn memory_http(
+        &self,
+        bound: &Value,
+        method: reqwest::Method,
+        segments: &[&str],
+        query: &[(&str, String)],
+        body: Option<&Value>,
+        deadline: tokio::time::Instant,
+    ) -> Result<Value> {
+        let stopped = self.shutdown_notify.notified();
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(Error("HOST_CLOSING".into()));
+        }
+        tokio::select! {
+            _ = stopped => Err(Error("HOST_CLOSING".into())),
+            result = tokio::time::timeout_at(deadline, async {
+                let cloud = self.cloud.lock().await;
+                let cloud = cloud.as_ref().ok_or_else(||Error("CLOUD_RECOVERY_REQUIRED".into()))?;
+                cloud.memory_request(bound, method, segments, query, body).await.map_err(Error)
+            }) => result.unwrap_or_else(|_| Err(Error("MEMORY_UNAVAILABLE".into())))
+        }
+    }
+    fn shared_failure(&self, project: &str, bound: &Value, code: &str) -> Result<()> {
+        let code = if (2..=64).contains(&code.len())
+            && code
+                .bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+        {
+            code
+        } else {
+            "MEMORY_LOCAL_STATE_FAILED"
+        };
+        let Some(mapping) = self.store.shared_mapping(project)? else {
+            return Ok(());
+        };
+        if mapping["connection"] == *bound && mapping["lastErrorCode"] != code {
+            self.store
+                .append(vec![shared_memory::failure(project, bound, code)])?;
+        }
+        Ok(())
+    }
+    async fn sync_shared_memory(&self, selected: Option<&str>, force: bool) -> Result<Value> {
+        if self.closing.load(Ordering::SeqCst) {
+            return Ok(json!({"kind":"closing"}));
+        }
+        let bound = self.memory_connection().await?;
+        if bound.is_null() {
+            return Ok(json!({"kind":"unpaired"}));
+        }
+        let metadata = self.store.shared_metadata(&bound)?;
+        let mut download = self.memory_download.lock().await;
+        let project = if let Some(project) = selected {
+            Some(project.to_string())
+        } else if let Some(download) = download.as_ref() {
+            Some(download.project.clone())
+        } else {
+            let polls = self
+                .memory_poll
+                .lock()
+                .map_err(|_| Error("HOST_STATE_UNAVAILABLE".into()))?;
+            metadata["projects"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|p| !p["sharedProjectId"].is_null())
+                .filter(|p| p["state"] != "connection_changed")
+                .filter(|p| {
+                    polls
+                        .get(p["projectId"].as_str().unwrap())
+                        .is_none_or(|at| at.elapsed().as_secs() >= 30)
+                        || p["pendingOperation"]["state"] == "queued"
+                })
+                .min_by_key(|p| {
+                    (
+                        p["pendingOperation"].is_null(),
+                        polls.get(p["projectId"].as_str().unwrap()).copied(),
+                    )
+                })
+                .and_then(|p| p["projectId"].as_str())
+                .map(str::to_owned)
+        };
+        let Some(project) = project else {
+            return Ok(json!({"kind":"idle"}));
+        };
+        let Some(mut mapping) = self.store.shared_mapping(&project)? else {
+            return Ok(json!({"kind":"unlinked"}));
+        };
+        if mapping["connection"] != bound {
+            self.shared_failure(
+                &project,
+                &mapping["connection"],
+                "MEMORY_CONNECTION_CHANGED",
+            )?;
+            *download = None;
+            return Err(Error("MEMORY_CONNECTION_CHANGED".into()));
+        }
+        {
+            let mut polls = self
+                .memory_poll
+                .lock()
+                .map_err(|_| Error("HOST_STATE_UNAVAILABLE".into()))?;
+            if !force
+                && download.is_none()
+                && polls
+                    .get(&project)
+                    .is_some_and(|at| at.elapsed().as_secs() < 30)
+                && metadata["projects"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|p| p["projectId"] == project)
+                    .is_none_or(|p| p["pendingOperation"]["state"] != "queued")
+            {
+                return Ok(json!({"kind":"throttled"}));
+            }
+            polls.insert(project.clone(), std::time::Instant::now());
+        }
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        let mut requests = 0;
+        let result = async {
+            let pending = metadata["projects"].as_array().into_iter().flatten().find(|p|p["projectId"]==project).is_some_and(|p|!p["pendingOperation"].is_null());
+            if pending {
+                let operation = self.store.transaction(|events| shared_memory::prepare_delivery(events,&project,&bound))?;
+                if !operation.is_null() {
+                    requests += 1;
+                    let receipt = self.memory_http(&bound,reqwest::Method::POST,&["operations"],&[],Some(&operation),deadline).await?;
+                    self.store.append(vec![shared_memory::acknowledge(&project,&operation,&receipt)?])?;
+                }
+                mapping = self.store.shared_mapping(&project)?.unwrap();
+            }
+            if mapping["role"].is_null() || mapping["enabled"] != true {
+                *download = None;
+                return Ok(json!({"kind":"queued","projectId":project}));
+            }
+            if download.as_ref().is_none_or(|d|d.project!=project||d.connection!=bound||d.shared!=mapping["sharedProjectId"]) {
+                *download = Some(shared_memory::Download::new(&project,&bound,&mapping["sharedProjectId"]));
+            }
+            let staged = download.as_mut().unwrap();
+            loop {
+                if self.closing.load(Ordering::SeqCst) { return Err(Error("HOST_CLOSING".into())); }
+                if staged.complete() {
+                    self.store.commit_shared_cache(&project,&bound,&staged.manifest(),&staged.records)?;
+                    if mapping["sharedRevision"] != staged.manifest()["revision"] || !mapping["lastErrorCode"].is_null() {
+                        self.store.append(vec![shared_memory::observed(&project,&bound,&staged.shared,&staged.manifest()["revision"])])?;
+                    }
+                    *download = None;
+                    return Ok(json!({"kind":"synced","projectId":project}));
+                }
+                if requests>=4 || tokio::time::Instant::now()>=deadline { return Ok(json!({"kind":"partial","projectId":project})); }
+                if staged.needs_page() {
+                    let shared=staged.shared.as_str().unwrap();
+                    let mut query=vec![("offset",staged.heads.len().to_string()),("limit","20".into())];
+                    if let Some(revision)=staged.revision { query.push(("expectedRevision",revision.to_string())); }
+                    requests+=1;
+                    let page=self.memory_http(&bound,reqwest::Method::GET,&["projects",shared,"manifest"],&query,None,deadline).await?;
+                    staged.page(page)?;
+                    // A validated page establishes the server revision even
+                    // while bodies are staged. Keep the old complete cache
+                    // visibly stale until the whole new manifest is ready.
+                    let revision = json!(staged.revision.unwrap());
+                    if mapping["sharedRevision"] != revision {
+                        self.store.append(vec![shared_memory::observed(
+                            &project, &bound, &staged.shared, &revision,
+                        )])?;
+                        mapping = self.store.shared_mapping(&project)?.unwrap();
+                    }
+                } else {
+                    let head=staged.head().unwrap().clone();
+                    let cached=self.store.read_shared_decision(&json!({"projectId":project,"decisionId":head["decisionId"],"revision":head["revision"]}),&bound).ok();
+                    if let Some(mut record)=cached.filter(|r|r["decision"]["title"]==head["title"]&&r["publishedAt"]==head["publishedAt"]) {
+                        for key in ["reasonCode","projectId","revision","verifiedAt","stale","offline"] { record.as_object_mut().unwrap().remove(key); }
+                        record["manifestRevision"]=json!(staged.revision.unwrap());record["current"]=json!(true);staged.record(record)?;
+                    } else {
+                        requests+=1;
+                        let record=self.memory_http(&bound,reqwest::Method::GET,&["projects",staged.shared.as_str().unwrap(),"decisions",head["decisionId"].as_str().unwrap()],&[("revision",head["revision"].to_string())],None,deadline).await?;
+                        staged.record(record)?;
+                    }
+                }
+            }
+        }.await;
+        if let Err(error) = &result {
+            *download = None;
+            if error.0 != "HOST_CLOSING" {
+                self.shared_failure(&project, &bound, &error.0)?;
+            }
+        }
+        result
     }
 
     async fn sync_cloud(&self) -> Result<Value> {

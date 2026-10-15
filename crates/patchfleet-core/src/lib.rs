@@ -5,6 +5,7 @@ pub mod domain;
 mod host;
 pub mod project_memory;
 pub mod providers;
+pub mod shared_memory;
 pub mod store;
 mod teams;
 mod work;

@@ -1,6 +1,6 @@
 # Task0034 Scoped agent memory
 
-Status: Approved implementation in progress
+Status: Complete; independently reviewed and locally verified
 
 Owner approval:2026-10-15, “Yap! Onaylı go seriden çıkar”, for the proposed
 project-bound read-only MCP tools and two-worktree verification.
@@ -83,3 +83,9 @@ handshake/tool call in isolated temporary provider state without an inference
 turn or credential reads. Run affected checks, independent review and feature-off
 native package checks. Real model adherence and other native OS runs are stated
 separately from the proven transport.
+
+## Handoff
+
+[Agent memory state](../state/agent-memory.md) records the final checks, review
+repairs, real Codex/no-inference proof and native development artifact hashes.
+Automatic source-backed ADR drafting is the next independent implementation slice.

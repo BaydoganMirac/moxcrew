@@ -4,6 +4,7 @@ pub mod decisions;
 pub mod desktop_login;
 mod desktop_preferences;
 pub mod domain;
+pub mod extraction;
 mod host;
 pub mod project_memory;
 pub mod providers;

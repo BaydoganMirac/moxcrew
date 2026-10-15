@@ -36,6 +36,9 @@ contract and [feature state](state/project-memory.md) for implementation status.
 [Scoped agent access](agent-memory-protocol.md) connects owned Codex work and
 team roles to current accepted Local ADRs. See [agent state](state/agent-memory.md).
 
+[Automatic drafts](extraction-protocol.md) add project consent, source-version jobs and
+attributed proposals through the installed Codex provider. See [draft state](state/automatic-drafts.md).
+
 ## Execution records
 
 - [Plans](plans/) describe a bounded implementation slice and its acceptance

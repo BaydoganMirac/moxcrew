@@ -828,6 +828,9 @@ fn validate_observation_event(kind: &str, p: &Value) -> Result<()> {
 }
 
 pub fn validate_event(v: &Value) -> Result<()> {
+    if v["schemaVersion"] == 7 {
+        return crate::extraction::validate_event(v);
+    }
     exact(v, &["id", "schemaVersion", "type", "recordedAt", "payload"])?;
     matches(&v["id"], &format!("(?i)^{UUID_PATTERN}$"))?;
     iso(&v["recordedAt"])?;
@@ -2272,6 +2275,10 @@ pub fn project_events(events: &[Value]) -> Result<Value> {
     bundle["projectMemory"] = crate::project_memory::project_validated(events)?;
     bundle["projectDecisions"] = crate::decisions::project_validated(events)?;
     bundle["sharedMemory"] = crate::shared_memory::project_validated(events)?;
+    let extraction = crate::extraction::project_validated(events)?;
+    if !extraction.is_null() {
+        bundle["projectExtraction"] = extraction;
+    }
     let memory = crate::agent_memory::project(events)?;
     if !memory.is_null() {
         bundle["agentMemory"] = memory;

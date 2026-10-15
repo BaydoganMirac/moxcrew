@@ -1,6 +1,6 @@
 # Install and operate Patchfleet Desktop
 
-Status: 0.10.0 native Rust desktop development distribution
+Status: 0.11.0 native Rust desktop development distribution
 
 Updated: 2026-10-15
 
@@ -26,12 +26,13 @@ Run `cargo run --locked -p patchfleet-desktop`. Build a production executable wi
 `cargo build --locked --release -p patchfleet-desktop`, then package it using
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
 
-For a native 0.10 upgrade, close the old application and replace its application
+For a native 0.11 upgrade, close the old application and replace its application
 bundle through the reviewed installer. The bundle identifier and data directory
 remain the same; existing Rust state can be read by the new application. Back up
 the stopped data directory before upgrading. Bound agent launches write V6
 context facts requiring the 0.10 reader; rollback after V6 writes requires
-that unchanged pre-upgrade backup. Uninstalling must not
+that unchanged pre-upgrade backup. Extraction commands add V7 facts requiring
+a 0.11 reader; older readers need the stopped pre-upgrade backup. Uninstalling must not
 delete the canonical data directory.
 
 ### macOS opens an entirely white window
@@ -43,7 +44,7 @@ production application draws correctly when the old process is closed.
 
 1. Quit all running Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.10.0`
+3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.11.0`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut
@@ -68,7 +69,25 @@ record becomes superseded and the new one accepted together. Original text,
 source versions and history remain readable. Keyword/status filters stay within
 the selected project. Local decisions require no account or subscription.
 Cloud semantic retrieval is available through explicit search. Agent context
-tools are available for owned Codex runs; automatic extraction remains later work.
+tools are available for owned Codex runs; optional automatic drafts are described below.
+
+### Optional automatic drafts
+
+In Memory, select a project and read the **Automatic drafts** disclosure.
+Check consent and enable it to send subsequent owner sources to the installed
+Codex provider together with relevant accepted project decisions, including
+older ADRs. The future-only rule applies to source queueing. This can use the provider account's quota; Local storage does
+not mean offline model inference. Codex0.155.1+ is required; no API-key field,
+Cloud account or Patchfleet subscription is needed.
+
+Old sources are not automatically sent. Open a selected source and deliberately
+queue its current version. Activity shows counts and only the latest10 queued
+jobs; an older job remains accessible on its current source card. Failed/interrupted/cancelled jobs require manual retry, up to three
+attempts. Disabling or editing the source cancels stale work. A question may
+produce no ADR; exact existing text is skipped. In Decisions, inspect the
+Codex-generated label, exact evidence and any potential relation before
+accepting/rejecting through the existing controls. A draft never becomes an
+agent rule automatically. See [extraction protocol](extraction-protocol.md).
 
 ### Agent access to project memory
 
@@ -167,7 +186,7 @@ provider transcripts. Select a project to read its bounded source page, filter b
 keyword, enter a message or revise a directly entered message. Captured task/team
 sources preserve their original text and project. Unlinking/unregistering a worktree
 does not erase history. Source records alone are context; authoritative ADRs
-are managed in Decisions. Use the accepted-decision search for free Local keyword results. In Cloud, Find a published decision opens an explicit search with query-upload disclosure, semantic/fallback status and an exact downloaded-copy action. Compatible subscription Cloud service deployment is required for remote search. Agent memory tools and automatic extraction remain unavailable.
+are managed in Decisions. Use the accepted-decision search for free Local keyword results. In Cloud, Find a published decision opens an explicit search with query-upload disclosure, semantic/fallback status and an exact downloaded-copy action. Compatible subscription Cloud service deployment is required for remote search. Scoped Local agent tools and optional automatic drafts are available.
 
 Choose Türkçe or English in the sidebar. Turkish is the default; the selected
 interface language is saved locally in protected `desktop-preferences.json`.

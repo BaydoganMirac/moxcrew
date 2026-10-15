@@ -108,11 +108,19 @@ impl Patchfleet {
                 console.account_smoke(origin.as_deref());
                 bridge.account_smoke(origin.as_deref());
             }
-            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("memory") {
+            if !observe
+                && std::env::var("PATCHFLEET_SMOKE_SCENE")
+                    .as_deref()
+                    .is_ok_and(|s| matches!(s, "memory" | "extraction-memory"))
+            {
                 console.memory_smoke();
                 bridge.memory_smoke();
             }
-            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("decisions") {
+            if !observe
+                && std::env::var("PATCHFLEET_SMOKE_SCENE")
+                    .as_deref()
+                    .is_ok_and(|s| matches!(s, "decisions" | "extraction-decisions"))
+            {
                 console.decision_smoke();
                 bridge.decision_smoke();
             }
@@ -211,6 +219,41 @@ fn seed_memory_scene(directory: &std::path::Path) {
         }
         host.shutdown().await;
     });
+}
+
+#[cfg(feature = "ui-smoke")]
+fn seed_extraction_scene(directory: &std::path::Path) {
+    // A deterministic provider result goes through canonical V7/V4 APIs. No model is run.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (project, source) = runtime.block_on(async {
+        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        let snapshot = host.snapshot().unwrap();
+        let project = snapshot["projectMemory"]["projects"][0]["projectId"].clone();
+        let enabled = host.action("project_extraction_configure", command::Command::new("project_extraction_configure", serde_json::json!({"projectId":project,"expectedPolicyRevision":0,"enabled":true,"consent":true})).payload).await.unwrap();
+        assert_eq!(enabled["outcome"], "applied");
+        let revision = host.snapshot().unwrap()["projectMemory"]["projects"][0]["revision"].clone();
+        let source = host.action("project_message", command::Command::new("project_message", serde_json::json!({"projectId":project,"expectedProjectRevision":revision,"title":"Kesin para hesapları","text":"Para tutarlarını tam sayı kuruş olarak sakla. Para birimi kodunu tutarın yanında tut. Bu veri yalnızca yerel arayüz kontrolü içindir."})).payload).await.unwrap()["sourceId"].clone();
+        host.shutdown().await;
+        (project, source)
+    });
+    let store = patchfleet_core::store::Store::open(directory.to_owned()).unwrap();
+    let events = store.read_events().unwrap();
+    let projection = patchfleet_core::extraction::project_validated(&events).unwrap();
+    let job = projection["jobs"][0]["jobId"].as_str().unwrap();
+    store
+        .transaction(|events| patchfleet_core::extraction::start(events, job, "native-preview"))
+        .unwrap();
+    let result = serde_json::json!({"proposals":[{"title":"Para tutarlarının saklanması","context":"Fatura ve ödeme hesapları.","decision":"Tutarları tam sayı kuruş olarak sakla ve para birimi kodunu yanında tut.","rationale":"","consequences":"","evidence":[{"sourceId":source,"revision":1,"excerpt":"Para tutarlarını tam sayı kuruş olarak sakla. Para birimi kodunu tutarın yanında tut."}],"relation":"new","relatedDecisionIds":[]}]});
+    let finished = store
+        .transaction(|events| {
+            patchfleet_core::extraction::finish(events, job, 1, "native-preview", Ok(result))
+        })
+        .unwrap();
+    assert_eq!(finished["job"]["projectId"], project);
+    assert_eq!(finished["job"]["status"], "completed");
 }
 
 #[cfg(feature = "ui-smoke")]
@@ -513,6 +556,8 @@ fn main() {
         if matches!(
             std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
             Ok("memory"
+                | "extraction-memory"
+                | "extraction-decisions"
                 | "decisions"
                 | "local-search"
                 | "cloud-search"
@@ -523,6 +568,9 @@ fn main() {
                 | "folder-error")
         ) {
             seed_memory_scene(&directory);
+            if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("extraction-")) {
+                seed_extraction_scene(&directory);
+            }
             if matches!(
                 std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
                 Ok("decisions" | "local-search")

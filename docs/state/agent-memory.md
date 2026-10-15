@@ -52,7 +52,7 @@ environment. No model turn, credential read or owner provider setting change.
 
 ## Remaining
 
-Automatic ADR drafting and Cloud agent attachment are separate slices. Real
+Automatic ADR drafting is now implemented in [Task0035](automatic-drafts.md); Cloud agent attachment remains a separate slice. Real
 model compliance is not established by a transport preflight. Claude/Gemini
 execution, Windows/Linux native runs, public signing/notarization and deployment
 remain unverified. Native 0.10 is required after a V6 bound-launch fact is written;

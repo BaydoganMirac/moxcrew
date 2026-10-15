@@ -1,7 +1,7 @@
 use crate::{
     agent_memory,
     cloud::Cloud,
-    decisions, desktop_login, domain, event, now, project_memory, providers, retrieval,
+    decisions, desktop_login, domain, event, extraction, now, project_memory, providers, retrieval,
     shared_memory,
     store::Store,
     teams::{catalog, templates},
@@ -22,6 +22,12 @@ use tokio::sync::Mutex as AsyncMutex;
 #[path = "host_memory_tests.rs"]
 mod memory_tests;
 
+#[path = "host_extraction.rs"]
+mod extraction_runtime;
+#[cfg(test)]
+#[path = "host_extraction_tests.rs"]
+mod extraction_tests;
+
 pub struct Host {
     pub(crate) store: Store,
     pub(crate) epoch: String,
@@ -35,6 +41,7 @@ pub struct Host {
     self_ref: Weak<Host>,
     agent_memory_server: AsyncMutex<Option<agent_memory::Server>>,
     agent_memory_progress: Mutex<std::collections::BTreeMap<String, AgentMemoryProgress>>,
+    extraction_runtime: Mutex<extraction_runtime::Runtime>,
     memory_download: AsyncMutex<Option<shared_memory::Download>>,
     memory_poll: Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
     shutdown_notify: tokio::sync::Notify,
@@ -93,6 +100,11 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
             "expectedSourceRevision",
         ],
         "project_memory_read" => &["projectId", "offset", "limit", "query"],
+        "project_extraction_configure" => {
+            &["projectId", "expectedPolicyRevision", "enabled", "consent"]
+        }
+        "project_extraction_enqueue" => &["projectId", "sourceId", "expectedSourceRevision"],
+        "project_extraction_retry" => &["projectId", "jobId", "expectedAttempt"],
         "project_decision_propose" => &[
             "projectId",
             "expectedProjectRevision",
@@ -214,6 +226,7 @@ impl Host {
             self_ref: weak.clone(),
             agent_memory_server: AsyncMutex::new(None),
             agent_memory_progress: Mutex::new(std::collections::BTreeMap::new()),
+            extraction_runtime: Mutex::new(extraction_runtime::Runtime::default()),
             memory_download: AsyncMutex::new(None),
             memory_poll: Mutex::new(std::collections::BTreeMap::new()),
             shutdown_notify: tokio::sync::Notify::new(),
@@ -227,6 +240,15 @@ impl Host {
             .transaction(|events| Ok((project_memory::recover(events)?, Value::Null)))?;
         host.store
             .transaction(|events| Ok((decisions::recover(events)?, Value::Null)))?;
+        host.store.transaction(|events| {
+            let recovered = if events.iter().any(|event| event["schemaVersion"] == 7) {
+                extraction::recover(events)?
+            } else {
+                Vec::new()
+            };
+            Ok((recovered, Value::Null))
+        })?;
+        host.clean_extraction_scratch();
         host.store
             .transaction(|events| Ok((shared_memory::recover(events)?, Value::Null)))?;
         let events = host.store.read_events()?;
@@ -268,6 +290,7 @@ impl Host {
 
     pub fn snapshot(&self) -> Result<Value> {
         let mut bundle = self.store.runtime_projections()?;
+        self.extraction_overlay(&mut bundle);
         if let Some(contexts) = bundle["agentMemory"]["contexts"].as_array_mut() {
             let progress = self
                 .agent_memory_progress
@@ -325,7 +348,31 @@ impl Host {
         Ok(bundle)
     }
 
-    pub async fn action(&self, action: &str, mut payload: Value) -> Result<Value> {
+    pub async fn action(&self, action: &str, payload: Value) -> Result<Value> {
+        let result = self.action_inner(action, payload).await;
+        if result.is_ok()
+            && (action.starts_with("project_extraction_")
+                || matches!(
+                    action,
+                    "project_message"
+                        | "project_source_edit"
+                        | "work_enqueue"
+                        | "work_retry"
+                        | "team_create"
+                        | "team_answer"
+                        | "team_approve"
+                ))
+        {
+            let _guard = self.operations.lock().await;
+            if !self.closing.load(Ordering::SeqCst) {
+                // Source acknowledgement stays truthful even if its optional job cannot queue.
+                let _ = self.pump_extraction(false).await;
+            }
+        }
+        result
+    }
+
+    async fn action_inner(&self, action: &str, mut payload: Value) -> Result<Value> {
         let account_action = matches!(
             action,
             "cloud_login_begin"
@@ -405,6 +452,11 @@ impl Host {
         }
         if action == "project_decision_read" {
             return self.store.read_decision(&payload);
+        }
+        if action.starts_with("project_extraction_") {
+            return self
+                .store
+                .transaction(|events| extraction::apply(events, action, &payload));
         }
         if action.starts_with("project_decision_") {
             return self
@@ -1091,6 +1143,7 @@ impl Host {
             return Ok(());
         }
         self.advance_all().await?;
+        self.pump_extraction(true).await?;
         let _ = self.sync_cloud().await;
         let _ = self.sync_shared_memory(None, false).await;
         Ok(())
@@ -1098,6 +1151,7 @@ impl Host {
     pub fn request_shutdown(&self) {
         self.closing.store(true, Ordering::SeqCst);
         self.cancel_login();
+        self.cancel_extraction();
         if let Ok(server) = self.agent_memory_server.try_lock() {
             if let Some(server) = server.as_ref() {
                 server.shutdown();
@@ -1119,6 +1173,7 @@ impl Host {
             server.shutdown();
         }
         let _guard = self.operations.lock().await;
+        self.shutdown_extraction().await;
         self.controller.shutdown().await;
         let _ = self.persist_signals().await;
     }

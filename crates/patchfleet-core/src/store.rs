@@ -617,7 +617,31 @@ impl Store {
             }
             bundle.insert("agentMemory".into(), memory);
         }
+        if let Some(extraction) = state.projected.get("projectExtraction") {
+            bundle.insert(
+                "projectExtraction".into(),
+                crate::extraction::metadata(extraction),
+            );
+        }
         Ok(Value::Object(bundle))
+    }
+    pub(crate) fn extraction_runtime_state(&self, active_job: Option<&str>) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        let projection = &state.projected["projectExtraction"];
+        let meta = crate::extraction::metadata(projection);
+        let jobs = projection["jobs"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let active = active_job.and_then(|id| jobs.iter().find(|j| j["jobId"] == id));
+        Ok(
+            serde_json::json!({"sourceRevision":state.projected["projectMemory"]["revision"].as_u64().unwrap_or(0),
+            "revision":projection["revision"].as_u64().unwrap_or(0),
+            "enabled":meta["projects"].as_array().into_iter().flatten().any(|p|p["enabled"]==true),
+            "nextJobId":jobs.iter().find(|j|j["status"]=="queued").map(|j|j["jobId"].clone()),
+            "active":active.map(|j|serde_json::json!({"status":j["status"],"attempt":j["attempt"],"ownerEpoch":j["ownerEpoch"]}))}),
+        )
     }
     pub(crate) fn agent_memory_scope(&self, work_id: &str, run_id: &str) -> Result<Value> {
         let state = self.guard()?;
@@ -680,7 +704,42 @@ impl Store {
                 fields.remove(key);
             }
         }
-        crate::project_memory::read(&state.projected["projectMemory"], &input)
+        let mut page = crate::project_memory::read(&state.projected["projectMemory"], &input)?;
+        let extraction = &state.projected["projectExtraction"];
+        page["extractionRevision"] =
+            serde_json::json!(extraction["revision"].as_u64().unwrap_or(0));
+        for source in page["sources"].as_array_mut().into_iter().flatten() {
+            let job = extraction["jobs"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|job| {
+                    job["projectId"] == source["projectId"]
+                        && job["sourceId"] == source["sourceId"]
+                        && job["sourceRevision"] == source["revision"]
+                        && job["extractorVersion"] == crate::extraction::VERSION
+                });
+            source["extractionJob"] = job
+                .map(|job| {
+                    let row: serde_json::Map<String, Value> = [
+                        "jobId",
+                        "projectId",
+                        "sourceId",
+                        "sourceRevision",
+                        "status",
+                        "attempt",
+                        "reasonCode",
+                        "proposalIds",
+                        "skippedDuplicates",
+                    ]
+                    .into_iter()
+                    .map(|key| (key.into(), job[key].clone()))
+                    .collect();
+                    Value::Object(row)
+                })
+                .unwrap_or(Value::Null);
+        }
+        Ok(page)
     }
     pub fn read_decisions(&self, payload: &Value) -> Result<Value> {
         let state = self.guard()?;
@@ -690,7 +749,22 @@ impl Store {
     pub fn read_decision(&self, payload: &Value) -> Result<Value> {
         let state = self.guard()?;
         self.ensure_unchanged(&state)?;
-        crate::decisions::read_detail(&state.projected["projectDecisions"], &read_payload(payload))
+        let mut detail = crate::decisions::read_detail(
+            &state.projected["projectDecisions"],
+            &read_payload(payload),
+        )?;
+        if let Some(mut provenance) = crate::extraction::provenance(
+            &state.projected["projectExtraction"],
+            detail["decision"]["decisionId"].as_str().unwrap(),
+        ) {
+            if let Some(generator) = provenance["generator"].as_object().cloned() {
+                for (key, value) in generator {
+                    provenance[key] = value;
+                }
+            }
+            detail["decision"]["extraction"] = provenance;
+        }
+        Ok(detail)
     }
     pub fn search_decisions(&self, payload: &Value) -> Result<Value> {
         let state = self.guard()?;

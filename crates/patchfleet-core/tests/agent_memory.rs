@@ -193,6 +193,51 @@ fn terminal_start_receipt_closes_context_admission_without_erasing_a_prior_conte
     );
 }
 #[test]
+fn repeated_work_contexts_follow_canonical_order_even_when_the_newer_run_sorts_first() {
+    let mut events = history();
+    events.push(context(0));
+    events.push(event(
+        1,
+        "command.receipted",
+        json!({"receipt":{"schemaVersion":1,"intentId":INTENT,"idempotencyKey":INTENT,
+            "commandType":"start_work","outcome":"failed","reasonCode":"PROVIDER_CONTROL_FAILED",
+            "completedAt":"2026-10-15T12:00:00.000Z","workProjectionRevision":0,"workItemId":WORK}}),
+    ));
+    let next_intent = "cmd:10000000-0000-4000-8000-000000000001";
+    events.push(event(
+        1,
+        "command.requested",
+        json!({"intent":{"intentId":next_intent,"type":"start_work","payload":{"workItemId":WORK,"expectedItemRevision":1}}}),
+    ));
+    events.push(event(
+        1,
+        "run.launching",
+        json!({"intentId":next_intent,"workItemId":WORK,"expectedItemRevision":1,"ownerEpoch":EPOCH}),
+    ));
+    let mut newer = context(0);
+    newer["payload"]["runId"] = json!(format!("run:{next_intent}"));
+    assert!(
+        newer["payload"]["runId"].as_str().unwrap()
+            < context(0)["payload"]["runId"].as_str().unwrap()
+    );
+    events.push(newer.clone());
+    let projection = memory::project(&events).unwrap();
+    assert_eq!(
+        projection["contexts"],
+        json!([context(0)["payload"], newer["payload"]])
+    );
+    assert_eq!(
+        projection["contexts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|c| c["workItemId"] == WORK)
+            .unwrap()["runId"],
+        newer["payload"]["runId"]
+    );
+}
+#[test]
 fn tool_arguments_are_bounded_read_only_and_never_select_scope() {
     for (tool, args) in [
         ("project_context", json!({})),

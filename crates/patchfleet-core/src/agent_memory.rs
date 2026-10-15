@@ -891,7 +891,8 @@ pub fn project(events: &[Value]) -> Result<Value> {
     let mut projects = HashSet::new();
     let mut bindings = BTreeMap::new();
     let mut revisions = BTreeMap::<String, u64>::new();
-    let mut contexts = BTreeMap::new();
+    let mut contexts = Vec::new();
+    let mut context_runs = HashSet::new();
     for event in events {
         let p = &event["payload"];
         match event["type"].as_str().unwrap_or("") {
@@ -982,10 +983,11 @@ pub fn project(events: &[Value]) -> Result<Value> {
                     && projects.contains(scope)
                     && revisions.get(scope).copied().unwrap_or(0)
                         == p["decisionRevision"].as_u64().unwrap()
-                    && !contexts.contains_key(run),
+                    && !context_runs.contains(run),
             )?;
-            contexts.insert(run.to_string(), p.clone());
+            context_runs.insert(run.to_string());
+            contexts.push(p.clone());
         }
     }
-    Ok(json!({"schemaVersion":6,"contexts":contexts.into_values().collect::<Vec<_>>()}))
+    Ok(json!({"schemaVersion":6,"contexts":contexts}))
 }

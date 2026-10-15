@@ -169,7 +169,7 @@ async fn fixture(server: &Server) -> (tempfile::TempDir, Arc<Host>, Value, Value
     host.action("memory_cloud_sync", command(json!({"projectId":project})))
         .await
         .unwrap();
-    *server.response.lock().unwrap() = json!({"schemaVersion":1,"sharedProjectId":server.shared.lock().unwrap().clone(),"manifestRevision":1,"mode":"semantic","model":{"id":retrieval::MODEL_ID,"revision":retrieval::MODEL_REVISION,"dimensions":384,"normalization":"l2","dtype":"q8","pooling":"mean","chunkVersion":1},"index":{"state":"ready","indexed":1,"total":1},"matches":[{"decisionId":decision,"revision":2,"title":"Rust bellek","score":0.87}]});
+    *server.response.lock().unwrap() = json!({"schemaVersion":1,"sharedProjectId":server.shared.lock().unwrap().clone(),"manifestRevision":1,"mode":"semantic","model":{"id":retrieval::MODEL_ID,"revision":retrieval::MODEL_REVISION,"dimensions":768,"normalization":"l2","dtype":"q8","pooling":"mean","chunkVersion":1},"index":{"state":"ready","indexed":1,"total":1},"matches":[{"decisionId":decision,"revision":2,"title":"Rust bellek","score":0.87}]});
     (dir, host, project, decision)
 }
 fn files(dir: &std::path::Path) -> BTreeMap<String, Vec<u8>> {

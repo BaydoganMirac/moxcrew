@@ -101,6 +101,22 @@ impl Patchfleet {
                 console.decision_smoke();
                 bridge.decision_smoke();
             }
+            if !observe
+                && matches!(
+                    std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                    Ok("local-search" | "cloud-search")
+                )
+            {
+                let shared =
+                    std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("cloud-search");
+                let query = if shared {
+                    "How do we avoid invoice rounding errors?"
+                } else {
+                    "tam sayı"
+                };
+                console.search_smoke(shared, query);
+                bridge.search_smoke(shared, query);
+            }
             if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("shared-reader")
             {
                 console.shared_smoke();
@@ -437,6 +453,8 @@ fn main() {
             std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
             Ok("memory"
                 | "decisions"
+                | "local-search"
+                | "cloud-search"
                 | "shared-reader"
                 | "shared-publisher"
                 | "projects"
@@ -444,12 +462,15 @@ fn main() {
                 | "folder-error")
         ) {
             seed_memory_scene(&directory);
-            if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("decisions") {
+            if matches!(
+                std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                Ok("decisions" | "local-search")
+            ) {
                 seed_decision_scene(&directory);
             }
             if matches!(
                 std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
-                Ok("shared-reader" | "shared-publisher")
+                Ok("shared-reader" | "shared-publisher" | "cloud-search")
             ) {
                 seed_shared_scene(
                     &directory,

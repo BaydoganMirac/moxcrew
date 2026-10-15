@@ -34,3 +34,6 @@ supersedes the old one.
 | [0028](0028-native-folder-consent-and-feedback.md) | Accepted | Native folder selection and actionable access feedback |
 | [0029](0029-free-local-and-subscription-cloud.md) | Accepted product boundary | Free Local and optional subscription Cloud; runtime transition remains separate |
 | [0030](0030-shared-decision-publication.md) | Proposed | One publishing host per shared project; owner-accepted local facts and Cloud published revisions |
+| [0031](0031-versioned-local-decision-events.md) | Accepted | Version4 sourced Local decision lifecycle |
+| [0032](0032-opt-in-shared-memory-transport.md) | Accepted | Explicit accepted-only publication and exact shared reads |
+| [0033](0033-versioned-project-memory-retrieval.md) | Accepted | Ephemeral project search, measured Cloud vectors and free Local keyword retrieval |

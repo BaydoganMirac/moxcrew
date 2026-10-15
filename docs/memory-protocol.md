@@ -80,6 +80,57 @@ Missing/out-of-scope projects deny access uniformly.
 
 ## Reads
 
+### Explicit search — Task0032
+
+POST `/api/memory/v1/hosts/{hostId}/projects/{sharedProjectId}/search` is a
+non-durable read. Exact body: `{schemaVersion:1,query,limit}`; query is trimmed,
+nonempty, at most400 UTF16 units, printable text with newline/tab allowed;
+limit1–10, default5 when omitted. No unknown fields, vectors or model selection
+are accepted from the host. Use the existing bounded JSON/auth/no-store boundary.
+Queries are not logged, echoed by Cloud, written as operations or sent to a
+hosted model API. An explicit owner Cloud search is the query upload consent.
+
+Response is exactly `{schemaVersion:1,sharedProjectId,manifestRevision,mode,
+model,index,matches}`. mode is semantic or keyword. model is null for keyword,
+otherwise exactly `{id,revision,dimensions,normalization,dtype,pooling,chunkVersion}`.
+The Task0032 selected model is Xenova/paraphrase-multilingual-mpnet-base-v2 at immutable revision
+e5d116277351513fd260955ece953ecddde7046e, dimensions768, normalization l2,
+dtype q8, pooling mean, chunkVersion1. Model selection is verified through the
+actual bilingual fixture. ChunkVersion1 uses no query/passage prefixes and
+112-token windows with24-token overlap; all text is covered, with no silent
+truncation. Inputs over126 model tokens or documents over1024 chunks fail their
+derived encoding and use explicit keyword fallback. Model files/runtime belong
+to the Cloud server and are not desktop dependencies.
+No other model space is mixed into this response.
+index is exactly `{state,indexed,total}`: state ready/pending/failed/unavailable;
+counts describe current heads for the active model,0–64 and indexed<=total.
+matches has at most limit unique `{decisionId,revision,title,score}` rows,
+sorted by descending score then decisionId. Scores are finite numbers;
+semantic scores are cosine similarity in[-1,1], keyword scores are nonnegative
+and are not comparable with semantic scores. No source bodies/snippets appear.
+
+Both access checks and final retrieval resolve the current paired host,
+workspace, paid entitlement, project grant and enabled sharing. Rank only
+current heads, never obsolete versions even if their vectors remain. Incomplete
+index/model failure yields keyword mode with an honest index state over all
+currently authorized heads. Full semantic mode requires all current heads
+indexed in the selected model space. Exact read/publication is independent.
+
+The local Host adds `reasonCode:SHARED_MEMORY_SEARCH_READ`, local projectId,
+global sharedMemory revision and the original query to its ephemeral result.
+`memory_cloud_search {projectId,query,limit?}` sends only the explicit query to
+the mapped shared project; changed pairing fails closed. No query event, cache
+file, ordinary snapshot field or operational sync payload is added.
+`project_decision_search {projectId,query,limit?}` reads current Local accepted
+decisions only and returns `{schemaVersion:1,reasonCode:DECISION_SEARCH_READ,
+projectId,revision,query,limit,mode:"keyword",matches}`. revision is that
+project's decision manifest revision. This free fallback is explicitly lexical.
+Bridge overlays are `sharedSearch` and `decisionSearch`, invalidated by project,
+query, manifest/metadata revision or paired connection changes. They retain
+original owner-error/pending-command recovery safeguards like other memory reads.
+
+### Manifest
+
 GET `/api/memory/v1/hosts/{hostId}/projects/{sharedProjectId}/manifest?offset=0&limit=20`
 returns exactly `{schemaVersion:1,sharedProjectId,revision,enabled:true,offset,
 limit,total,decisions:[{decisionId,revision,title,publishedAt}]}`.
@@ -103,5 +154,5 @@ payment alone never creates a project/grant/publication. Revocation/off/expiry
 blocks new Cloud access; Local and already downloaded data remain available.
 
 No delta feed, organization invitations, multiple publishing writers, publisher
-transfer, deletion policy, vector indexing, inference or agent tools is enabled
+transfer, deletion policy or agent tools is enabled
 by this protocol. Periodic bounded manifest polling supplies recovery.

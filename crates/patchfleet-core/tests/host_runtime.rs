@@ -3,8 +3,9 @@ use serde_json::{json, Value};
 use std::process::Command;
 
 fn command() -> Value {
-    json!({"commandId":format!("cmd:{}",uuid::Uuid::new_v4()),"createdAt":now(),
-        "expiresAt":(chrono::Utc::now()+chrono::Duration::minutes(5)).to_rfc3339_opts(chrono::SecondsFormat::Millis,true)})
+    let created = chrono::Utc::now();
+    json!({"commandId":format!("cmd:{}",uuid::Uuid::new_v4()),"createdAt":created.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),
+        "expiresAt":(created+chrono::Duration::minutes(5)).to_rfc3339_opts(chrono::SecondsFormat::Millis,true)})
 }
 fn git_workspace(path: &std::path::Path) {
     std::fs::create_dir_all(path).unwrap();

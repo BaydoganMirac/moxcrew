@@ -16,7 +16,7 @@
 | V0 publishable Local beta | Done | 2026-07-17 | [v0-local-beta.md](v0-local-beta.md) |
 | External beta activation | In progress | 2026-07-17 | [external-beta-activation.md](external-beta-activation.md) |
 | Agent packs and teams | Done | 2026-07-20 | [agent-teams.md](agent-teams.md) |
-| Project/source memory and automatic ADR drafts | Local ADRs and explicit Cloud publication done; vectors/extraction planned | 2026-10-15 | [project-memory.md](project-memory.md) |
+| Project/source memory and automatic ADR drafts | Local ADRs, explicit Cloud publication and measured retrieval done; agent tools/extraction next | 2026-10-15 | [project-memory.md](project-memory.md) |
 | Rust and Tauri desktop | Superseded interface; core retained | 2026-10-14 | [rust-desktop.md](rust-desktop.md) |
 | Native Rust desktop interface | Implemented; platform release checks pending | 2026-10-15 | [native-rust-desktop.md](native-rust-desktop.md) |
 

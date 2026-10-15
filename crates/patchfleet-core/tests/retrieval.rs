@@ -8,7 +8,7 @@ fn row(n: u64, status: &str, title: &str, text: &str) -> Value {
     json!({"projectId":PROJECT,"decisionId":format!("decision:10000000-0000-4000-8000-{n:012}"),"revision":2,"status":status,"title":title,"decision":text,"context":"","rationale":"","consequences":""})
 }
 fn response(semantic: bool) -> Value {
-    json!({"schemaVersion":1,"sharedProjectId":SHARED,"manifestRevision":2,"mode":if semantic {"semantic"} else {"keyword"},"model":if semantic {json!({"id":retrieval::MODEL_ID,"revision":retrieval::MODEL_REVISION,"dimensions":384,"normalization":"l2","dtype":"q8","pooling":"mean","chunkVersion":1})} else {Value::Null},"index":{"state":"ready","indexed":2,"total":2},"matches":[{"decisionId":row(1,"accepted","","")["decisionId"],"revision":2,"title":"Rust kararı","score":0.9},{"decisionId":row(2,"accepted","","")["decisionId"],"revision":3,"title":"SQLite","score":0.3}]})
+    json!({"schemaVersion":1,"sharedProjectId":SHARED,"manifestRevision":2,"mode":if semantic {"semantic"} else {"keyword"},"model":if semantic {json!({"id":retrieval::MODEL_ID,"revision":retrieval::MODEL_REVISION,"dimensions":768,"normalization":"l2","dtype":"q8","pooling":"mean","chunkVersion":1})} else {Value::Null},"index":{"state":"ready","indexed":2,"total":2},"matches":[{"decisionId":row(1,"accepted","","")["decisionId"],"revision":2,"title":"Rust kararı","score":0.9},{"decisionId":row(2,"accepted","","")["decisionId"],"revision":3,"title":"SQLite","score":0.3}]})
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn semantic_response_requires_exact_model_space_and_complete_index() {
     for (path, value) in [
         ("/model/id", json!("other")),
         ("/model/revision", json!("main")),
-        ("/model/dimensions", json!(768)),
+        ("/model/dimensions", json!(384)),
         ("/model/dtype", json!("fp32")),
         ("/model/pooling", json!("cls")),
         ("/model/normalization", json!("none")),

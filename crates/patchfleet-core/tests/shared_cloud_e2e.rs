@@ -65,6 +65,26 @@ async fn exact(host: &Host, project: &Value, decision: &Value) -> Value {
     .await
     .unwrap()
 }
+
+async fn search(host: &Host, project: &Value, query: &str) -> Value {
+    host.action(
+        "memory_cloud_search",
+        json!({"projectId":project,"query":query,"limit":3}),
+    )
+    .await
+    .unwrap()
+}
+
+fn assert_no_query_files(directory: &std::path::Path, query: &str) {
+    for entry in std::fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            assert_no_query_files(&path, query);
+        } else if path.is_file() {
+            assert!(!String::from_utf8_lossy(&std::fs::read(path).unwrap()).contains(query));
+        }
+    }
+}
 async fn draft(host: &Host, project: &Value, source: &Value, title: &str) -> Value {
     let receipt=host.action("project_decision_propose",command(json!({"projectId":project,
         "expectedProjectRevision":source_revision(host,project),"title":title,"context":"Approved Cloud fixture context",
@@ -83,6 +103,7 @@ async fn two_installations_share_exact_decisions_through_postgres_and_recover_lo
     assert_eq!(parsed.host_str(), Some("127.0.0.1"));
     assert_eq!(parsed.path(), "/");
     let token = env("PATCHFLEET_MEMORY_E2E_TOKEN");
+    let retrieval = std::env::var("PATCHFLEET_MEMORY_RETRIEVAL_SMOKE").as_deref() == Ok("1");
     let data_a = tempfile::tempdir().unwrap();
     let data_b = tempfile::tempdir().unwrap();
     let mut a = Host::open(data_a.path().to_owned()).unwrap();
@@ -146,6 +167,23 @@ async fn two_installations_share_exact_decisions_through_postgres_and_recover_lo
         a.action("memory_cloud_publish", publish).await.unwrap(),
         queued
     );
+    if retrieval {
+        // Reader has revision0 cached; the fresh remote search can legitimately see1.
+        let pending = search(&b, &project_b, "amount").await;
+        assert_eq!(pending["mode"], "keyword");
+        assert_eq!(pending["index"]["state"], "pending");
+        assert_eq!(pending["matches"][0]["decisionId"], first);
+        assert_eq!(pending["manifestRevision"], 1);
+        assert_eq!(mapping(&b, &project_b)["sharedRevision"], 0);
+        control(&base, &token, "index_current").await;
+        let query = "How should invoices avoid rounding errors? EPHEMERAL_QUERY_0032";
+        let result = search(&b, &project_b, query).await;
+        assert_eq!(result["mode"], "semantic");
+        assert_eq!(result["matches"][0]["decisionId"], first);
+        assert!(!b.snapshot().unwrap().to_string().contains(query));
+        assert_no_query_files(data_a.path(), query);
+        assert_no_query_files(data_b.path(), query);
+    }
     sync(&b, &project_b).await.unwrap();
     let list = page(&b, &project_b).await;
     assert_eq!(list["total"], 1);
@@ -194,6 +232,13 @@ async fn two_installations_share_exact_decisions_through_postgres_and_recover_lo
     assert_eq!(latest["total"], 1);
     assert_eq!(latest["decisions"][0]["decisionId"], replacement);
     assert_eq!(mapping(&b, &project_b)["sharedRevision"], 2);
+    if retrieval {
+        control(&base, &token, "index_current").await;
+        let result = search(&b, &project_b, "How should invoice amounts be represented?").await;
+        assert_eq!(result["mode"], "semantic");
+        assert_eq!(result["matches"].as_array().unwrap().len(), 1);
+        assert_eq!(result["matches"][0]["decisionId"], replacement);
+    }
     assert_eq!(
         exact(&b, &project_b, &replacement).await["decision"]["supersedesDecisionId"],
         first

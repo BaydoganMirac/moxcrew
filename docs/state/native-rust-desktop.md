@@ -1,6 +1,6 @@
 # Native Rust desktop state
 
-Status: 0.7.0 implemented and independently accepted; platform release checks pending
+Status: 0.8.0 implemented and independently accepted; platform release checks pending
 
 Updated: 2026-10-15
 
@@ -254,3 +254,16 @@ disposable illustrative data. The form images are minimum-window GL captures.
 See [ADR 0024](../decisions/0024-native-rust-desktop-ui.md),
 [Task 0024](../plans/0024-native-rust-desktop-ui.md), [release](../release.md) and
 [installation](../install.md).
+
+## 0.8 retrieval increment
+
+[Task0032 search state](project-memory-search.md) records explicit TR/EN Cloud
+search, free Local ranked keyword retrieval, actual model/backend/native frame
+proofs and remaining operator/platform limits. Model inference runs only on the
+optional Cloud server; the native runtime/dependency set is unchanged.
+
+The0.8 development DMG is6,398,816bytes (6.10MiB). Its feature-off native App
+passed signature/purpose-key/smoke-marker checks, explicit macOS launch, window
+creation, normal close and writer-lock release. Sampled idle RSS105.9MiB;
+model/runtime dependencies remain absent from desktop. Exact hashes and limits
+are in the search state.

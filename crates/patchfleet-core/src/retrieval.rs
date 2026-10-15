@@ -4,8 +4,8 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
-pub const MODEL_ID: &str = "Xenova/multilingual-e5-small";
-pub const MODEL_REVISION: &str = "761b726dd34fb83930e26aab4e9ac3899aa1fa78";
+pub const MODEL_ID: &str = "Xenova/paraphrase-multilingual-mpnet-base-v2";
+pub const MODEL_REVISION: &str = "e5d116277351513fd260955ece953ecddde7046e";
 
 fn invalid(code: &str) -> Error {
     Error(code.into())
@@ -196,7 +196,7 @@ pub fn validate_search_response(response: &Value, shared: &Value, limit: u64) ->
                 && model["pooling"] == "mean",
             "MEMORY_PROTOCOL_INVALID",
         )?;
-        integer(&model["dimensions"], 384, 384)?;
+        integer(&model["dimensions"], 768, 768)?;
         integer(&model["chunkVersion"], 1, 1)?;
     } else {
         require(model.is_null(), "MEMORY_PROTOCOL_INVALID")?;

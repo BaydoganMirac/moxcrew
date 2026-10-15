@@ -15,7 +15,8 @@ commitments.
 - Preserve the [local sourced ADR lifecycle](plans/0030-local-decision-lifecycle.md)
   on top of the completed Project/source foundation and explicit subscription
   Cloud publication in [Task 0031](plans/0031-cloud-memory-publication.md).
-  Next evaluate Cloud vectors and the free Local index under Task 0029.
+  Preserve the measured Cloud retrieval and free Local keyword search in
+  [Task0032](plans/0032-project-memory-search.md).
   Scoped agent access and automatic ADR drafts follow independently verified
   decision retrieval; owner acceptance remains explicit.
 - Keep the completed Phase 1 observation, Phase 2 local control, and Phase 3

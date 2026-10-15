@@ -1,6 +1,6 @@
 # Install and operate Patchfleet Desktop
 
-Status: 0.6.0 native Rust desktop development distribution
+Status: 0.7.0 native Rust desktop development distribution
 
 Updated: 2026-10-15
 
@@ -26,11 +26,11 @@ Run `cargo run --locked -p patchfleet-desktop`. Build a production executable wi
 `cargo build --locked --release -p patchfleet-desktop`, then package it using
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
 
-For a native 0.6 upgrade, close the old application and replace its application
+For a native 0.7 upgrade, close the old application and replace its application
 bundle through the reviewed installer. The bundle identifier and data directory
 remain the same; existing Rust state can be read by the new application. Back up
-the stopped data directory before creating decisions: new V4 facts require
-the 0.6 reader. Rolling back to 0.5 or earlier requires that pre-upgrade backup. Uninstalling must not
+the stopped data directory before using shared memory: new V5 facts require
+the 0.7 reader. Rolling back after V5 writes requires that pre-upgrade backup. Uninstalling must not
 delete the canonical data directory.
 
 ### macOS opens an entirely white window
@@ -42,7 +42,7 @@ production application draws correctly when the old process is closed.
 
 1. Quit all running Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.6.0`
+3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.7.0`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut
@@ -66,8 +66,25 @@ replacement on the accepted decision. Confirm the replacement action: the old
 record becomes superseded and the new one accepted together. Original text,
 source versions and history remain readable. Keyword/status filters stay within
 the selected project. Local decisions require no account or subscription.
-Vector retrieval, agent context tools, automatic extraction and Cloud
-publication are not enabled by this version.
+Vector retrieval, agent context tools and automatic extraction remain later work.
+
+### Optional shared decisions
+
+This requires a deployed compatible Cloud memory service and a verified paid
+subscription. In Cloud, select the Local project and explicitly create a shared
+project on the publishing installation. In Decisions, open an accepted ADR,
+preview the published fields, confirm the upload checkbox and publish it. Queued
+means saved locally; only the server acknowledgement confirms publication.
+Source text and provenance events remain local; the upload includes opaque
+source ID/revision references only. Review the ADR text itself before sharing.
+
+Pair a second installation to the same personal workspace, select its Local
+project and explicitly link the shared project ID as a reader. The Cloud view
+lists downloaded decisions and opens exact immutable versions. These copies
+do not accept or overwrite Local decisions. Offline/access/subscription errors
+preserve downloaded records and show their last verification time. The publisher
+can disable sharing; this stops new reads/uploads, without erasing existing
+offline copies. Publisher transfer and organization invitations are not included.
 
 ### Git folders and work
 

@@ -24,6 +24,9 @@ window; a queued delivery is a separate durable operation. Authentication,
 current billing entitlement, host revocation and project scope are rechecked
 even for exact retries. An existing authorized operation returns its original
 receipt before expiry/revision checks. Conflicting reuse fails409.
+Sharing-off still permits an existing authorized role to recover its exact
+earlier receipt (metadata only); it denies new publication/linkage and all
+manifest/decision reads. Subscription and revocation checks still apply.
 
 Payload is one of these exact shapes:
 
@@ -32,8 +35,11 @@ Payload is one of these exact shapes:
 - `{type:"link_reader",sharedProjectId}`: an explicit reader grant for another
   paired host in the same personal workspace. Existing publisher is not demoted.
 - `{type:"publish",sharedProjectId,expectedRevision,decision}`: publisher only,
-  sharing enabled. Insert an immutable decision revision and update manifest
-  head atomically. If its supersedesDecisionId is a current head, remove that
+  sharing enabled. Insert an immutable decision revision and update its manifest
+  head atomically. Increment manifest revision by one for each new applied
+  operation, including an identical DTO.
+  An exact operation retry returns its original receipt without another change.
+  If its supersedesDecisionId is a current head, remove that
   predecessor from the manifest in the same transaction. Missing unpublished
   predecessor is allowed; no other project's head can be affected.
 - `{type:"sharing",sharedProjectId,expectedRevision,enabled}`: publisher only.
@@ -56,7 +62,9 @@ expectedRevision may be0, record revision starts1. A receipt is exactly
 sharedProjectId,revision,role,enabled,completedAt}`. outcome is applied/rejected/
 expired; role publisher/reader/null; sharedProjectId and enabled may be null.
 requestHash is SHA256 of recursively key-sorted compact JSON of the full operation.
-Valid stale/expired operations get durable terminal receipts. No applied status
+Valid stale/expired operations and semantic publication rejections get durable
+terminal receipts. Capacity or immutable-version conflicts must release the
+local queue slot; they cannot be transport errors that retry forever. No applied status
 is shown locally until a validated matching server receipt is durably recorded.
 
 Transport/auth/subscription/schema/conflicting-identity errors use HTTP status
@@ -65,7 +73,10 @@ Stable codes include MEMORY_SUBSCRIPTION_REQUIRED(402), MEMORY_ACCESS_DENIED(403
 MEMORY_SHARING_DISABLED(403), MEMORY_CONFLICT(409), MEMORY_INVALID_PAYLOAD(400).
 Receipt reason codes include MEMORY_PROJECT_CREATED, MEMORY_READER_LINKED,
 MEMORY_PUBLISHED, MEMORY_SHARING_UPDATED, MEMORY_STALE_REVISION,
-MEMORY_OPERATION_EXPIRED. Missing/out-of-scope projects deny access uniformly.
+MEMORY_OPERATION_EXPIRED, MEMORY_CAPACITY_EXCEEDED and MEMORY_CONFLICT.
+Conflicting operation identity/hash remains an HTTP409 error, preserving its
+original recorded operation rather than creating a new receipt.
+Missing/out-of-scope projects deny access uniformly.
 
 ## Reads
 

@@ -9,6 +9,10 @@ use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     process::Stdio,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 use tokio::{
@@ -22,6 +26,17 @@ use tokio::{
 type Result<T> = std::result::Result<T, String>;
 const LIMIT: usize = 256 * 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Ephemeral, owner-created MCP configuration. Dropping any binding revokes its lease.
+pub struct MemoryConfig {
+    pub config: Value,
+    pub active: Arc<AtomicBool>,
+}
+impl Drop for MemoryConfig {
+    fn drop(&mut self) {
+        self.active.store(false, Ordering::Release);
+    }
+}
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
@@ -358,6 +373,7 @@ struct AppServer {
     bound: Duration,
     signals: Vec<Value>,
     owned: HashMap<String, String>,
+    memory: HashMap<String, MemoryConfig>,
 }
 impl AppServer {
     async fn open(program: &Path, bound: Duration) -> Result<Self> {
@@ -433,6 +449,7 @@ impl AppServer {
             bound,
             signals: vec![],
             owned: HashMap::new(),
+            memory: HashMap::new(),
         };
         let init=server.request("initialize",json!({"clientInfo":{"name":"patchfleet","title":"Patchfleet","version":env!("CARGO_PKG_VERSION")},"capabilities":null})).await;
         if !matches!(init,Ok(ref v) if v.is_object()) {
@@ -485,6 +502,7 @@ impl AppServer {
                 }
                 self.signals.push(json!({"schemaVersion":1,"providerId":"codex","providerSessionId":id,"status":status,"observedAt":now()}));
                 if status != "running" {
+                    self.memory.remove(id);
                     self.owned.remove(id);
                 }
             }
@@ -522,7 +540,59 @@ impl AppServer {
         .await
         .map_err(|_| "CODEX_APP_SERVER_TIMEOUT".to_string())?
     }
+    async fn memory_ready(&mut self, thread: &str) -> Result<()> {
+        timeout(self.bound, async {
+            loop {
+                let mut cursor = Value::Null;
+                loop {
+                    let status = self
+                        .request("mcpServerStatus/list", json!({"threadId":thread,"detail":"toolsAndAuthOnly","limit":100,"cursor":cursor}))
+                        .await?;
+                    let entries = status["data"].as_array().ok_or("MEMORY_CONNECTION_FAILED")?;
+                    if let Some(server) = entries.iter().find(|v| v["name"] == "patchfleet_memory") {
+                        if server["runtimeStatus"] == "connected" {
+                            let tools = server["tools"].as_object().ok_or("MEMORY_CONNECTION_FAILED")?;
+                            let names = ["project_context", "memory_search", "decision_read"];
+                            return if server.get("toolsError") == Some(&Value::Null)
+                                && tools.len() == names.len()
+                                && names.iter().all(|name| tools.get(*name).is_some_and(|v| v["name"] == *name))
+                            {
+                                Ok(())
+                            } else {
+                                Err("MEMORY_CONNECTION_FAILED".into())
+                            };
+                        }
+                        if server["runtimeStatus"] == "failed" || !server["runtimeStatus"].is_string() {
+                            return Err("MEMORY_CONNECTION_FAILED".into());
+                        }
+                        break;
+                    }
+                    cursor = status.get("nextCursor").cloned().unwrap_or(Value::Null);
+                    if cursor.is_null() {
+                        break;
+                    }
+                    if !cursor.is_string() {
+                        return Err("MEMORY_CONNECTION_FAILED".into());
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .map_err(|_| "MEMORY_CONNECTION_FAILED".to_string())?
+        .map_err(|_: String| "MEMORY_CONNECTION_FAILED".to_string())?;
+        let context = self
+            .request("mcpServer/tool/call", json!({"threadId":thread,"server":"patchfleet_memory","tool":"project_context","arguments":{"limit":20}}))
+            .await
+            .map_err(|_| "MEMORY_CONNECTION_FAILED".to_string())?;
+        if context["isError"] == false && context["structuredContent"].is_object() {
+            Ok(())
+        } else {
+            Err("MEMORY_CONNECTION_FAILED".into())
+        }
+    }
     async fn close(&mut self) {
+        self.memory.clear();
         terminate(&mut self.child).await;
         self.reader.abort();
         let _ = (&mut self.reader).await;
@@ -734,6 +804,7 @@ impl Controller {
     }
     async fn discard(&self, guard: &mut Option<AppServer>) {
         if let Some(s) = guard.as_mut() {
+            s.memory.clear();
             let mut lost = self.lost.lock().await;
             lost.append(&mut s.signals);
             for id in s.owned.keys() {
@@ -744,6 +815,14 @@ impl Controller {
         *guard = None;
     }
     pub async fn prepare(&self, work: &Value, run: &Value) -> Result<String> {
+        self.prepare_with_memory(work, run, None).await
+    }
+    pub async fn prepare_with_memory(
+        &self,
+        work: &Value,
+        run: &Value,
+        memory: Option<MemoryConfig>,
+    ) -> Result<String> {
         let cwd = validate_workspace(
             work["workingDirectory"]
                 .as_str()
@@ -760,13 +839,26 @@ impl Controller {
         if !at_least(&version, [0, 144, 1], true) {
             return Err("CODEX_CONTROL_UNSUPPORTED".into());
         }
+        if memory.is_some() && !at_least(&version, [0, 155, 1], true) {
+            return Err("AGENT_MEMORY_UNSUPPORTED".into());
+        }
+        if memory
+            .as_ref()
+            .is_some_and(|v| !v.active.load(Ordering::Acquire))
+        {
+            return Err("MEMORY_CONNECTION_FAILED".into());
+        }
         let mut guard = self.server.lock().await;
         if guard.is_none() {
             *guard = Some(AppServer::open(&self.programs.codex, self.programs.timeout).await?);
         }
         let source = format!("patchfleet:{intent}");
         let s = guard.as_mut().unwrap();
-        let result=s.request("thread/start",json!({"cwd":cwd,"approvalPolicy":"never","sandbox":"workspace-write","ephemeral":false,"threadSource":source,"experimentalRawEvents":false})).await;
+        let mut params = json!({"cwd":cwd,"approvalPolicy":"never","sandbox":"workspace-write","ephemeral":false,"threadSource":source,"experimentalRawEvents":false});
+        if let Some(memory) = memory.as_ref() {
+            params["config"] = memory.config.clone();
+        }
+        let result = s.request("thread/start", params).await;
         let id = result.as_ref().ok().and_then(|r| {
             let t = &r["thread"];
             if t["cwd"] != cwd || t["threadSource"] != source || t["ephemeral"] != false {
@@ -775,6 +867,17 @@ impl Controller {
             t["id"].as_str().filter(|s| opaque(s)).map(str::to_string)
         });
         if let Some(id) = id {
+            if memory.is_some() && s.memory_ready(&id).await.is_err() {
+                self.discard(&mut guard).await;
+                return Err("MEMORY_CONNECTION_FAILED".into());
+            }
+            if let Some(memory) = memory {
+                if !memory.active.load(Ordering::Acquire) {
+                    self.discard(&mut guard).await;
+                    return Err("MEMORY_CONNECTION_FAILED".into());
+                }
+                s.memory.insert(id.clone(), memory);
+            }
             s.owned.insert(id.clone(), String::new());
             Ok(id)
         } else {
@@ -803,6 +906,16 @@ impl Controller {
             .as_str()
             .filter(|s| !s.is_empty() && s.encode_utf16().count() <= 50_000)
             .ok_or("CODEX_PROTOCOL_MALFORMED")?;
+        let instruction = match work.get("_memoryGuidance") {
+            Some(value) => {
+                let guidance = value
+                    .as_str()
+                    .filter(|s| !s.is_empty() && s.encode_utf16().count() <= 2048)
+                    .ok_or("CODEX_PROTOCOL_MALFORMED")?;
+                format!("{guidance}\n\n{instruction}")
+            }
+            None => instruction.to_owned(),
+        };
         let intent = run
             .get("intentId")
             .or_else(|| run.get("runId"))
@@ -816,6 +929,13 @@ impl Controller {
         }
         if !s.owned[session].is_empty() {
             return Err("CODEX_TURN_ALREADY_STARTED".into());
+        }
+        if s.memory
+            .get(session)
+            .is_some_and(|v| !v.active.load(Ordering::Acquire))
+        {
+            s.memory.remove(session);
+            return Err("MEMORY_CONNECTION_FAILED".into());
         }
         let result=s.request("turn/start",json!({"threadId":session,"clientUserMessageId":intent,"input":[{"type":"text","text":instruction,"text_elements":[]}]})).await;
         let tid = result
@@ -844,6 +964,7 @@ impl Controller {
                 s.owned.insert(session.into(), id.clone());
             }
             if status != Some("inProgress") {
+                s.memory.remove(session);
                 s.signals.push(json!({"schemaVersion":1,"providerId":"codex","providerSessionId":session,"status":status,"observedAt":now()}));
                 s.owned.remove(session);
             }
@@ -876,6 +997,7 @@ impl Controller {
         if s.owned.get(session).map(String::as_str) != Some(tid) {
             return Err("CODEX_SESSION_LOST".into());
         }
+        s.memory.remove(session);
         let result = s
             .request("turn/interrupt", json!({"threadId":session,"turnId":tid}))
             .await;

@@ -2,10 +2,15 @@
 
 Your coding agents. One local Rust desktop command center.
 
-Patchfleet 0.10 runs its interface and host in Rust. egui/eframe renders the native
+Patchfleet 0.12 runs its interface and host in Rust. egui/eframe renders the native
 window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
+
+The studio interface groups projects, work and teams beside project memory and
+decisions. Project cards open their own context; creating a task from a project
+selects its local folder while preserving any existing unsent draft. Bundled UI
+fonts and the vector fleet mark work offline.
 
 The native interface supports Turkish and English. Change the language in the
 sidebar; the owner Host saves it locally for the next launch. Source messages,

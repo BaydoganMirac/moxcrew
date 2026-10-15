@@ -4,6 +4,7 @@ mod bridge;
 mod command;
 mod folder;
 mod i18n;
+mod studio;
 mod ui;
 
 use bridge::Bridge;
@@ -27,52 +28,7 @@ struct Patchfleet {
 
 impl Patchfleet {
     fn new(cc: &eframe::CreationContext<'_>, directory: PathBuf, observe: bool) -> Self {
-        cc.egui_ctx.set_visuals(egui::Visuals::dark());
-        let mut style = (*cc.egui_ctx.global_style()).clone();
-        let rgb = egui::Color32::from_rgb;
-        let text = rgb(232, 235, 239);
-        let muted = rgb(134, 145, 159);
-        let accent = rgb(139, 224, 188);
-        style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-        style.spacing.button_padding = egui::vec2(10.0, 6.0);
-        style.spacing.interact_size.y = 30.0;
-        for (kind, size) in [
-            (egui::TextStyle::Body, 13.0),
-            (egui::TextStyle::Button, 13.0),
-            (egui::TextStyle::Small, 11.0),
-            (egui::TextStyle::Heading, 22.0),
-        ] {
-            style
-                .text_styles
-                .insert(kind, egui::FontId::proportional(size));
-        }
-        style.animation_time = 0.0;
-        style.scroll_animation = egui::style::ScrollAnimation::none();
-        style.visuals.override_text_color = Some(text);
-        style.visuals.weak_text_color = Some(muted);
-        style.visuals.panel_fill = rgb(17, 19, 24);
-        style.visuals.window_fill = rgb(22, 26, 32);
-        style.visuals.text_edit_bg_color = Some(rgb(18, 21, 26));
-        style.visuals.selection.bg_fill = rgb(39, 76, 61);
-        style.visuals.selection.stroke = egui::Stroke::new(1.0, accent);
-        style.visuals.hyperlink_color = accent;
-        style.visuals.window_stroke = egui::Stroke::new(1.0, rgb(43, 48, 57));
-        for widget in [
-            &mut style.visuals.widgets.inactive,
-            &mut style.visuals.widgets.hovered,
-            &mut style.visuals.widgets.active,
-            &mut style.visuals.widgets.open,
-        ] {
-            widget.bg_fill = rgb(29, 34, 41);
-            widget.weak_bg_fill = rgb(22, 26, 32);
-            widget.bg_stroke = egui::Stroke::new(1.0, rgb(43, 48, 57));
-            widget.fg_stroke = egui::Stroke::new(1.0, text);
-            widget.corner_radius = egui::CornerRadius::same(6);
-        }
-        style.visuals.widgets.hovered.bg_fill = rgb(40, 48, 57);
-        style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, rgb(67, 90, 79));
-        style.visuals.widgets.active.bg_fill = rgb(42, 73, 59);
-        cc.egui_ctx.set_global_style(style);
+        studio::install(&cc.egui_ctx);
         let mut bridge = Bridge::new(cc.egui_ctx.clone(), directory.clone(), observe);
         bridge.poll();
         #[cfg(feature = "ui-smoke")]
@@ -93,6 +49,13 @@ impl Patchfleet {
         #[cfg(feature = "ui-smoke")]
         let console = {
             let mut console = console;
+            if !observe {
+                if let Ok(scene) = std::env::var("PATCHFLEET_SMOKE_SCENE") {
+                    if scene.starts_with("studio-") {
+                        console.studio_smoke(&scene, bridge.snapshot.as_ref().unwrap());
+                    }
+                }
+            }
             if !observe
                 && std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("account-"))
             {
@@ -216,6 +179,40 @@ fn seed_memory_scene(directory: &std::path::Path) {
             let project = &snapshot["projectMemory"]["projects"][0];
             let args = serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"title":title,"text":text});
             host.action("project_message", command::Command::new("project_message", args).payload).await.unwrap();
+        }
+        host.shutdown().await;
+    });
+}
+
+#[cfg(feature = "ui-smoke")]
+fn seed_studio_scene(directory: &std::path::Path) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        for (index, name) in ["Billing sandbox", "Interface lab · demo", "Developer docs · demo"].iter().enumerate() {
+            let project_id = if index == 0 {
+                host.snapshot().unwrap()["projectMemory"]["projects"][0]["projectId"].clone()
+            } else {
+                host.action("project_create", command::Command::new("project_create", serde_json::json!({"name":name})).payload).await.unwrap()["projectId"].clone()
+            };
+            let path = directory.join(format!("demo-repository-{index}"));
+            std::fs::create_dir(&path).unwrap();
+            assert!(std::process::Command::new("git").args(["init", "--quiet"]).arg(&path).status().unwrap().success());
+            let registration = host.action("workspace_register", command::Command::new("workspace_register", serde_json::json!({"workingDirectory":path,"displayName":name})).payload).await.unwrap();
+            assert_eq!(registration["outcome"], "applied");
+            let snapshot = host.snapshot().unwrap();
+            let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"] == project_id).unwrap();
+            let linked = host.action("project_link_workspace", command::Command::new("project_link_workspace", serde_json::json!({"projectId":project_id,"workspaceId":registration["workspaceId"],"expectedProjectRevision":project["revision"]})).payload).await.unwrap();
+            assert_eq!(linked["outcome"], "applied");
+            if index == 0 {
+                for title in ["Review invoice rounding", "Document currency boundaries"] {
+                    let result = host.action("work_enqueue", command::Command::new("work_enqueue", serde_json::json!({"title":title,"instruction":"Illustrative disposable UI fixture. No provider execution requested.","workspaceId":registration["workspaceId"],"workingDirectory":""})).payload).await.unwrap();
+                    assert_eq!(result["outcome"], "applied");
+                }
+            }
         }
         host.shutdown().await;
     });
@@ -542,6 +539,12 @@ fn main() {
             directory.is_dir() && std::fs::read_dir(&directory).unwrap().next().is_none(),
             "Native smoke requires an empty test directory"
         );
+        #[cfg(feature = "ui-smoke")]
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("studio-")) {
+            seed_memory_scene(&directory);
+            seed_decision_scene(&directory);
+            seed_studio_scene(&directory);
+        }
         #[cfg(feature = "ui-smoke")]
         if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("account-")) {
             seed_memory_scene(&directory);

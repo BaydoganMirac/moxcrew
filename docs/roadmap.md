@@ -9,6 +9,10 @@ commitments.
 
 ## Now
 
+- Complete the owner-approved [studio interface](plans/0036-product-studio-interface.md)
+  with native TR/EN, adaptive project/team/knowledge screens and the existing
+  lightweight runtime.
+
 - Preserve optional desktop account sign-in, account/subscription reads and
   installation sign-out in [Task0033](plans/0033-desktop-account-sign-in.md).
   The Cloud origin is configurable until an operator provisions a live service;

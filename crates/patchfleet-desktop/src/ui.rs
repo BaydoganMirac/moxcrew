@@ -1,16 +1,10 @@
 use crate::command::{Command, Notice, NoticeKind};
 use crate::folder;
 use crate::i18n::{self, Language};
+use crate::studio::{self, BORDER, CANVAS, MINT, MUTED, RED, SIDEBAR, SURFACE, TEXT};
 use eframe::egui::{self, Color32, RichText, Ui};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-
-const MINT: Color32 = Color32::from_rgb(139, 224, 188);
-const MUTED: Color32 = Color32::from_rgb(134, 145, 159);
-const SURFACE: Color32 = Color32::from_rgb(22, 26, 32);
-const TEXT: Color32 = Color32::from_rgb(232, 235, 239);
-const BORDER: Color32 = Color32::from_rgb(43, 48, 57);
-const RED: Color32 = Color32::from_rgb(246, 142, 151);
 
 macro_rules! localized_format {
     ($ui:expr,$key:literal,$($value:expr),+ $(,)?) => {
@@ -31,6 +25,7 @@ enum Tab {
     Cloud,
 }
 impl Tab {
+    #[cfg(test)]
     const ALL: [Self; 8] = [
         Self::Projects,
         Self::Memory,
@@ -51,6 +46,13 @@ impl Tab {
             Self::Agents => "Agents",
             Self::Providers => "Providers",
             Self::Cloud => "Cloud",
+        }
+    }
+    fn group(self) -> &'static str {
+        match self {
+            Self::Projects | Self::Work | Self::Teams => "WORKSPACE",
+            Self::Memory | Self::Decisions => "KNOWLEDGE",
+            Self::Agents | Self::Providers | Self::Cloud => "SYSTEM",
         }
     }
     fn summary(self) -> &'static str {
@@ -622,6 +624,7 @@ impl ExtractionPanel {
 #[derive(Default)]
 pub struct Console {
     tab: Tab,
+    navigation_tab: Option<Tab>,
     new_project_name: String,
     link_choices: HashMap<String, String>,
     memory: MemoryDraft,
@@ -667,6 +670,23 @@ pub enum NoticeAction {
 }
 
 impl Console {
+    #[cfg(feature = "ui-smoke")]
+    pub fn studio_smoke(&mut self, scene: &str, snapshot: &Value) {
+        self.tab = match scene {
+            "studio-memory" => Tab::Memory,
+            "studio-work" => Tab::Work,
+            "studio-teams" => Tab::Teams,
+            "studio-agents" => Tab::Agents,
+            _ => Tab::Projects,
+        };
+        if let Some(project) = array(&snapshot["projectMemory"]["projects"]).first() {
+            self.memory.select(text(project, "projectId"));
+        }
+        if let Some(workspace) = items(&snapshot["workspaces"]).first() {
+            self.work.workspace = text(workspace, "workspaceId").to_owned();
+            self.team.workspace = text(workspace, "workspaceId").to_owned();
+        }
+    }
     #[cfg(feature = "ui-smoke")]
     pub fn account_smoke(&mut self, cloud_url: Option<&str>) {
         self.tab = Tab::Cloud;
@@ -818,50 +838,41 @@ impl Console {
                 Language::from_snapshot(snapshot),
             )
         });
-        ui.style_mut().animation_time = 0.0;
         ui.style_mut().scroll_animation = egui::style::ScrollAnimation::none();
         let mut commands = Vec::new();
+        let reveal_navigation = self.navigation_tab != Some(self.tab);
+        self.navigation_tab = Some(self.tab);
         egui::Panel::left("console-navigation")
             .resizable(false)
-            .default_size(196.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(Color32::from_rgb(18, 21, 26))
-                    .inner_margin(14),
-            )
+            .default_size(204.0)
+            .frame(egui::Frame::new().fill(SIDEBAR).inner_margin(16))
             .show(ui, |ui| {
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
                     let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
-                    ui.painter().rect_filled(rect, 6, MINT);
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "P",
-                        egui::FontId::proportional(16.0),
-                        Color32::from_rgb(18, 37, 29),
-                    );
-                    ui.label(
-                        RichText::new(t(ui, "Patchfleet"))
-                            .size(15.0)
-                            .strong()
-                            .color(TEXT),
-                    );
+                        ui.allocate_exact_size(egui::vec2(27.0, 29.0), egui::Sense::hover());
+                    studio::mark(ui.painter(), rect.shrink(2.0), MINT);
+                    ui.vertical(|ui| {
+                        ui.label(studio::title("patchfleet", 17.0));
+                        ui.label(
+                            RichText::new(t(ui, "LOCAL STUDIO"))
+                                .size(8.0)
+                                .color(MUTED)
+                                .extra_letter_spacing(1.8),
+                        );
+                    });
                 });
-                ui.add_space(26.0);
-                ui.label(RichText::new(t(ui, "WORKSPACE")).size(10.0).color(MUTED));
-                ui.add_space(8.0);
+                ui.add_space(25.0);
                 let account_footer =
                     if verified_account(snapshot).is_some_and(|a| a["email"].is_string()) {
-                        70.0
+                        64.0
                     } else {
-                        54.0
+                        48.0
                     };
                 let footer_height = if snapshot["desktopPreferences"]["error"] == true {
-                    220.0 + account_footer
+                    210.0 + account_footer
                 } else {
-                    138.0 + account_footer
+                    126.0 + account_footer
                 };
                 let nav_height = (ui.available_height() - footer_height).max(32.0);
                 egui::ScrollArea::vertical()
@@ -869,25 +880,43 @@ impl Console {
                     .max_height(nav_height)
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        for tab in Tab::ALL {
-                            let count = match tab {
-                                Tab::Projects => {
-                                    array(&snapshot["projectMemory"]["projects"]).len()
+                        for (group, tabs) in [
+                            ("WORKSPACE", &[Tab::Projects, Tab::Work, Tab::Teams][..]),
+                            ("KNOWLEDGE", &[Tab::Memory, Tab::Decisions][..]),
+                            ("SYSTEM", &[Tab::Agents, Tab::Providers, Tab::Cloud][..]),
+                        ] {
+                            ui.add_space(7.0);
+                            ui.label(
+                                RichText::new(t(ui, group))
+                                    .size(8.0)
+                                    .color(MUTED)
+                                    .extra_letter_spacing(1.4),
+                            );
+                            ui.add_space(6.0);
+                            for &tab in tabs {
+                                let count = match tab {
+                                    Tab::Projects => {
+                                        array(&snapshot["projectMemory"]["projects"]).len()
+                                    }
+                                    Tab::Decisions => {
+                                        array(&snapshot["projectDecisions"]["projects"])
+                                            .iter()
+                                            .map(|p| {
+                                                p["decisionCount"].as_u64().unwrap_or(0) as usize
+                                            })
+                                            .sum()
+                                    }
+                                    Tab::Work => items(&snapshot["work"]).len(),
+                                    Tab::Teams => items(&snapshot["teams"]).len(),
+                                    _ => 0,
+                                };
+                                if navigation(ui, tab, self.tab == tab, count, reveal_navigation) {
+                                    self.tab = tab;
+                                    self.form_error = None;
                                 }
-                                Tab::Memory => 0,
-                                Tab::Decisions => array(&snapshot["projectDecisions"]["projects"])
-                                    .iter()
-                                    .map(|p| p["decisionCount"].as_u64().unwrap_or(0) as usize)
-                                    .sum(),
-                                Tab::Work => items(&snapshot["work"]).len(),
-                                Tab::Teams => items(&snapshot["teams"]).len(),
-                                _ => 0,
-                            };
-                            if navigation(ui, tab, self.tab == tab, count) {
-                                self.tab = tab;
-                                self.form_error = None;
+                                ui.add_space(2.0);
                             }
-                            ui.add_space(2.0);
+                            ui.add_space(10.0);
                         }
                     });
                 ui.allocate_ui_with_layout(
@@ -895,21 +924,36 @@ impl Console {
                     egui::Layout::bottom_up(egui::Align::LEFT),
                     |ui| {
                         ui.add_space(8.0);
-                        ui.label(
-                            RichText::new(format!("Patchfleet {}", text(snapshot, "appVersion")))
-                                .size(10.0)
-                                .color(MUTED),
-                        );
                         ui.horizontal(|ui| {
-                            ui.colored_label(MINT, t(ui, "•"));
-                            ui.label(RichText::new(t(ui, "Local engine")).size(11.0).color(TEXT));
+                            let (dot, _) =
+                                ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                            ui.painter().circle_filled(dot.center(), 2.5, MINT);
+                            ui.label(RichText::new(t(ui, "Local engine")).size(10.0).color(MUTED));
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        RichText::new(text(snapshot, "appVersion"))
+                                            .size(9.0)
+                                            .monospace()
+                                            .color(MUTED),
+                                    );
+                                },
+                            );
                         });
-                        ui.add_space(7.0);
-                        ui.separator();
                         ui.add_space(9.0);
                         language_selector(ui, snapshot, busy, &mut commands);
-                        ui.add_space(8.0);
+                        ui.add_space(12.0);
                         ui.separator();
+                        ui.add_space(12.0);
+                        if let Some(email) =
+                            verified_account(snapshot).and_then(|a| a["email"].as_str())
+                        {
+                            ui.add(
+                                egui::Label::new(RichText::new(email).size(10.0).color(MUTED))
+                                    .truncate(),
+                            );
+                        }
                         if control(
                             ui,
                             if snapshot["cloud"]["paired"] == true {
@@ -923,32 +967,65 @@ impl Console {
                         {
                             self.tab = Tab::Cloud;
                         }
-                        if let Some(account) = verified_account(snapshot) {
-                            if let Some(email) = account["email"].as_str() {
-                                ui.add(
-                                    egui::Label::new(RichText::new(email).size(10.0).color(MUTED))
-                                        .truncate(),
-                                );
-                            }
-                        }
                     },
                 );
             });
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(17, 19, 24))
-                    .inner_margin(24),
+                    .fill(CANVAS)
+                    .inner_margin(egui::Margin::symmetric(28, 20)),
             )
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.heading(
-                        RichText::new(t(ui, self.tab.name()))
-                            .size(23.0)
-                            .strong()
-                            .color(TEXT),
+                    ui.label(
+                        RichText::new(t(ui, self.tab.group()))
+                            .size(9.0)
+                            .color(MUTED)
+                            .extra_letter_spacing(1.2),
                     );
+                    ui.label(RichText::new("/").size(10.0).color(BORDER));
+                    ui.label(RichText::new(t(ui, self.tab.name())).size(10.0).color(TEXT));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if busy {
+                            ui.label(
+                                RichText::new(t(ui, "Applying action…"))
+                                    .size(10.0)
+                                    .color(MINT),
+                            );
+                        } else {
+                            ui.label(RichText::new(t(ui, "Free · Local")).size(9.0).color(MUTED));
+                        }
+                    });
+                });
+                ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
+                    6.0
+                } else {
+                    18.0
+                });
+                ui.horizontal(|ui| {
+                    ui.label(studio::title(
+                        t(ui, self.tab.name()),
+                        if ui.ctx().viewport_rect().height() < 700.0 {
+                            25.0
+                        } else {
+                            30.0
+                        },
+                    ));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if self.tab == Tab::Projects {
+                            if !array(&snapshot["projectMemory"]["projects"]).is_empty()
+                                && control(ui, "New project", !busy).clicked()
+                            {
+                                self.new_project_open = true;
+                                self.form_error = None;
+                            }
+                            if control(ui, "Add folder", !busy).clicked() {
+                                self.registration_project = None;
+                                self.folder_request = Some(folder::Target::Registration);
+                                self.form_error = None;
+                            }
+                        }
                         if matches!(self.tab, Tab::Providers | Tab::Work | Tab::Teams) {
                             action(
                                 ui,
@@ -959,9 +1036,6 @@ impl Console {
                                 || json!({}),
                             );
                         }
-                        if busy {
-                            ui.label(t(ui, "Applying action…"));
-                        }
                     });
                 });
                 ui.add_space(3.0);
@@ -970,7 +1044,17 @@ impl Console {
                         .size(12.0)
                         .color(MUTED),
                 );
-                ui.add_space(24.0);
+                ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
+                    8.0
+                } else {
+                    18.0
+                });
+                ui.separator();
+                ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
+                    12.0
+                } else {
+                    20.0
+                });
                 if let Some(notice) = notice {
                     self.feedback(ui, notice, !busy, can_retry);
                     ui.add_space(14.0);
@@ -989,7 +1073,11 @@ impl Console {
                     .id_salt(("console-body", self.tab.name()))
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        ui.set_max_width(ui.available_width().min(1040.0));
+                        ui.set_max_width(ui.available_width().min(if self.tab == Tab::Memory {
+                            980.0
+                        } else {
+                            1180.0
+                        }));
                         ui.add_enabled_ui(!busy, |ui| match self.tab {
                             Tab::Projects => self.projects(ui, snapshot, &mut commands),
                             Tab::Memory => self.project_memory(ui, snapshot, &mut commands),
@@ -1132,14 +1220,35 @@ impl Console {
             ui.add_space(8.0);
             ui.label(
                 RichText::new(t(ui, "Create your first project"))
-                    .size(28.0)
+                    .size(24.0)
                     .strong()
                     .color(TEXT),
             );
             hint(ui, "Keep your folders, agents and project memory together.");
-            ui.add_space(18.0);
-            constrained(ui, 560.0, |ui| self.create_project_form(ui, commands));
+            ui.add_space(16.0);
+            if ui.available_width() > 800.0 {
+                ui.columns(2, |columns| {
+                    self.create_project_form(&mut columns[0], commands);
+                    studio_flow(&mut columns[1]);
+                });
+            } else {
+                constrained(ui, 560.0, |ui| self.create_project_form(ui, commands));
+            }
         } else {
+            let accepted = array(&snapshot["projectDecisions"]["projects"])
+                .iter()
+                .map(|p| p["acceptedCount"].as_u64().unwrap_or(0))
+                .sum::<u64>();
+            ui.columns(3, |columns| {
+                for (column, (label, count, icon)) in columns.iter_mut().zip([
+                    ("Projects", projects.len() as u64, Tab::Projects),
+                    ("Local folders", workspaces.len() as u64, Tab::Work),
+                    ("Accepted decisions", accepted, Tab::Decisions),
+                ]) {
+                    studio_metric(column, label, count, icon);
+                }
+            });
+            ui.add_space(22.0);
             ui.horizontal(|ui| {
                 hint(
                     ui,
@@ -1150,22 +1259,25 @@ impl Console {
                         workspaces.len()
                     ),
                 );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if control(ui, "New project", true).clicked() {
-                        self.new_project_open = true;
-                        self.form_error = None;
-                    }
-                });
             });
             ui.add_space(14.0);
-            for project in projects {
+            let columns = if ui.available_width() >= 940.0 && projects.len() > 1 {
+                2
+            } else {
+                1
+            };
+            for row in projects.chunks(columns) {
+                ui.columns(columns, |columns| {
+                    for (project, ui) in row.iter().zip(columns.iter_mut()) {
                 ui.push_id(text(project,"projectId"), |ui| card(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
+                    ui.horizontal(|ui| {
                         let (rect, _) = ui.allocate_exact_size(egui::vec2(34.0, 34.0), egui::Sense::hover());
                         ui.painter().rect_filled(rect, 8, Color32::from_rgb(31, 53, 44));
                         draw_icon(ui.painter(), rect.shrink(8.0), Tab::Projects, MINT);
-                        ui.vertical(|ui| {
-                            ui.label(RichText::new(text(project,"name")).size(18.0).strong().color(TEXT));
+                        let name_width = (ui.available_width() - 116.0).max(80.0);
+                        ui.allocate_ui_with_layout(egui::vec2(name_width, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                            ui.set_max_width(name_width);
+                            ui.add(egui::Label::new(studio::title(text(project,"name"), 20.0)).truncate()).on_hover_text(text(project,"name"));
                             hint(ui, &localized_format!(ui,"{0} folders · {1} sources",array(&project["workspaceIds"]).len(),project["sourceCount"].as_u64().unwrap_or(0)));
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1215,8 +1327,31 @@ impl Console {
                         ui.monospace(text(project,"projectId"));
                         hint(ui,&localized_format!(ui,"Revision {0} · created {1}",revision(project),format_time(ui,text(project,"createdAt"))));
                     });
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+                    ui.horizontal_wrapped(|ui| {
+                        if control(ui,"Open decisions",true).clicked() {
+                            self.decisions.select(text(project,"projectId"));
+                            self.tab = Tab::Decisions;
+                        }
+                        let workspace = array(&project["workspaceIds"]).iter()
+                            .find_map(|id| workspaces.iter().find(|w| w["workspaceId"] == *id));
+                        let new_task = self.work.title.is_empty() && self.work.instruction.is_empty();
+                        if control(ui,if new_task { "New task" } else { "Open task draft" },workspace.is_some()).clicked() {
+                            if new_task {
+                                self.work.workspace = text(workspace.unwrap(),"workspaceId").to_owned();
+                                self.work.path.clear();
+                                self.work.path_problem = None;
+                            }
+                            self.tab = Tab::Work;
+                            self.form_error = None;
+                        }
+                    });
                 }));
                 ui.add_space(12.0);
+                    }
+                });
             }
         }
         ui.add_space(18.0);
@@ -1228,13 +1363,6 @@ impl Console {
                     .size(10.0)
                     .color(MUTED),
             );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if control(ui, "Add folder", true).clicked() {
-                    self.registration_project = None;
-                    self.folder_request = Some(folder::Target::Registration);
-                    self.form_error = None;
-                }
-            });
         });
         if workspaces.is_empty() {
             hint(
@@ -1400,15 +1528,7 @@ impl Console {
             self.memory.select(text(&projects[0], "projectId"));
         }
         let previous = self.memory.project.clone();
-        choose(
-            ui,
-            "memory-project",
-            "Project",
-            &mut self.memory.project,
-            projects,
-            ("projectId", "name"),
-            true,
-        );
+        project_switcher(ui, "memory-project", &mut self.memory.project, projects);
         if self.memory.project != previous {
             let selected = self.memory.project.clone();
             self.memory.project = previous;
@@ -1946,14 +2066,11 @@ impl Console {
             self.decisions.select(text(&projects[0], "projectId"));
         }
         let previous = self.decisions.project.clone();
-        choose(
+        project_switcher(
             ui,
             "decision-project",
-            "Project",
             &mut self.decisions.project,
             projects,
-            ("projectId", "name"),
-            true,
         );
         if self.decisions.project != previous {
             let selected = self.decisions.project.clone();
@@ -1968,7 +2085,11 @@ impl Console {
             hint(ui, "Choose a project to review its decisions.");
             return;
         };
-        self.extraction_controls(ui, snapshot, project, commands);
+        if let Some((policy, _)) = extraction_policy(snapshot, text(project, "projectId")) {
+            self.extraction.scope(text(project, "projectId"), policy);
+        } else {
+            self.extraction.consent = false;
+        }
         self.decisions
             .sources
             .observe_extraction_revision(revision(&snapshot["projectExtraction"]));
@@ -1989,8 +2110,8 @@ impl Console {
                     .unwrap_or_default()
             };
         }
+        ui.add_space(8.0);
         ui.horizontal_wrapped(|ui| {
-            status(ui, "Free · Local");
             let counts = array(&snapshot["projectDecisions"]["projects"])
                 .iter()
                 .find(|p| text(p, "projectId") == self.decisions.project);
@@ -2007,9 +2128,6 @@ impl Console {
                         .unwrap_or(0)
                 ),
             );
-        });
-        ui.add_space(14.0);
-        ui.horizontal_wrapped(|ui| {
             if control(ui, "New decision draft", !self.decisions.composer_open).clicked() {
                 self.decisions.composer_open = true;
             }
@@ -2020,16 +2138,64 @@ impl Console {
                 self.memory.select(&self.decisions.project);
                 self.tab = Tab::Memory;
             }
+            if control(ui, "Drafting settings", true).clicked() {
+                self.memory.select(&self.decisions.project);
+                self.extraction.consent = false;
+                self.extraction.setup_open = true;
+                self.tab = Tab::Memory;
+            }
         });
-        ui.add_space(14.0);
-        self.memory_search(ui, snapshot, false, commands);
-        ui.add_space(14.0);
+        ui.add_space(8.0);
+        if ui.available_width() < 650.0 {
+            egui::CollapsingHeader::new(t(ui, "Search & filters"))
+                .id_salt("decision-compact-filters")
+                .show(ui, |ui| self.decision_filters(ui, snapshot, commands));
+        } else {
+            self.decision_filters(ui, snapshot, commands);
+        }
+        ui.add_space(8.0);
+
         if self.decisions.composer_open {
             constrained(ui, 860.0, |ui| {
                 self.decision_composer(ui, project, &snapshot["memoryPage"], manifest, commands)
             });
             ui.add_space(20.0);
         }
+        ui.add_space(16.0);
+        if ui.available_width() >= 850.0 {
+            ui.columns(2, |columns| {
+                self.decision_list(&mut columns[0], page, manifest);
+                self.decision_detail(&mut columns[1], detail, page, manifest, snapshot, commands);
+            });
+        } else {
+            self.decision_detail(ui, detail, page, manifest, snapshot, commands);
+            ui.add_space(16.0);
+            self.decision_list(ui, page, manifest);
+        }
+        if commands.is_empty() {
+            let busy = !ui.is_enabled() || self.hold_automatic_reads;
+            let read = self
+                .decisions
+                .next_list(page, manifest, busy)
+                .or_else(|| self.decisions.next_detail(detail, manifest, busy))
+                .or_else(|| {
+                    if self.decisions.composer_open {
+                        self.decisions
+                            .sources
+                            .next_read(project, &snapshot["memoryPage"], busy)
+                    } else {
+                        None
+                    }
+                });
+            if let Some(read) = read {
+                commands.push(read);
+            }
+        }
+    }
+
+    fn decision_filters(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        self.memory_search(ui, snapshot, false, commands);
+        ui.add_space(8.0);
         ui.horizontal_wrapped(|ui| {
             ui.add_enabled_ui(!self.hold_automatic_reads, |ui| {
                 egui::ComboBox::from_id_salt("decision-status")
@@ -2070,36 +2236,6 @@ impl Console {
                 }
             }
         });
-        ui.add_space(16.0);
-        if ui.available_width() >= 850.0 {
-            ui.columns(2, |columns| {
-                self.decision_list(&mut columns[0], page, manifest);
-                self.decision_detail(&mut columns[1], detail, page, manifest, snapshot, commands);
-            });
-        } else {
-            self.decision_detail(ui, detail, page, manifest, snapshot, commands);
-            ui.add_space(16.0);
-            self.decision_list(ui, page, manifest);
-        }
-        if commands.is_empty() {
-            let busy = !ui.is_enabled() || self.hold_automatic_reads;
-            let read = self
-                .decisions
-                .next_list(page, manifest, busy)
-                .or_else(|| self.decisions.next_detail(detail, manifest, busy))
-                .or_else(|| {
-                    if self.decisions.composer_open {
-                        self.decisions
-                            .sources
-                            .next_read(project, &snapshot["memoryPage"], busy)
-                    } else {
-                        None
-                    }
-                });
-            if let Some(read) = read {
-                commands.push(read);
-            }
-        }
     }
 
     fn decision_composer(
@@ -3305,75 +3441,17 @@ impl Console {
             .default_open(teams.is_empty())
             .show(ui, |ui| {
                 card(ui, |ui| {
-                    field(ui, "Team name", &mut self.team.name, 80, false);
-                    choose_workspace(ui, "team-project", &mut self.team.workspace, snapshot);
-                    choose(
-                        ui,
-                        "team-template",
-                        "Template",
-                        &mut self.team.template,
-                        array(&snapshot["templates"]),
-                        ("id", "name"),
-                        false,
-                    );
-                    let packs = array(&snapshot["packs"]);
-                    let orchestrators: Vec<_> = packs
-                        .iter()
-                        .filter(|p| text(p, "role") == "orchestrator")
-                        .collect();
-                    let workers: Vec<_> = packs
-                        .iter()
-                        .filter(|p| text(p, "role") != "orchestrator")
-                        .collect();
-                    choose_refs(
-                        ui,
-                        "orchestrator",
-                        "Orchestrator",
-                        &mut self.team.orchestrator,
-                        &orchestrators,
-                        ("id", "name"),
-                        false,
-                    );
-                    for slot in 0..4 {
-                        choose_refs(
-                            ui,
-                            format!("worker-{slot}"),
-                            &localized_format!(
-                                ui,
-                                "Agent {0}{1}",
-                                slot + 1,
-                                if slot == 0 {
-                                    t(ui, " (required)").into_owned()
-                                } else {
-                                    String::new()
-                                }
-                            ),
-                            &mut self.team.workers[slot],
-                            &workers,
-                            ("id", "name"),
-                            true,
-                        );
+                    if ui.available_width() >= 780.0 {
+                        ui.columns(2, |columns| {
+                            self.team_direction(&mut columns[0], snapshot);
+                            self.team_roles(&mut columns[1], snapshot);
+                        });
+                    } else {
+                        self.team_direction(ui, snapshot);
+                        ui.add_space(18.0);
+                        self.team_roles(ui, snapshot);
                     }
-                    ui.add_space(8.0);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(t(ui, "Concurrency"));
-                        ui.add(egui::DragValue::new(&mut self.team.concurrency).range(1..=4));
-                        ui.label(t(ui, "Retries"));
-                        ui.add(egui::DragValue::new(&mut self.team.retries).range(0..=3));
-                        ui.label(t(ui, "Minutes"));
-                        ui.add(egui::DragValue::new(&mut self.team.minutes).range(5..=480));
-                    });
-                    ui.checkbox(
-                        &mut self.team.continue_independent,
-                        t(ui, "Continue independent tasks after a failure"),
-                    );
-                    multiline(
-                        ui,
-                        "Goal and acceptance criteria",
-                        &mut self.team.goal,
-                        10_000,
-                        5,
-                    );
+                    ui.add_space(18.0);
                     if submit(ui, "Create team plan", "team_create") {
                         match self.team.payload(snapshot) {
                             Ok(payload) => {
@@ -3442,6 +3520,93 @@ impl Console {
         }
     }
 
+    fn team_direction(&mut self, ui: &mut Ui, snapshot: &Value) {
+        ui.label(
+            RichText::new(t(ui, "01 / DIRECTION"))
+                .size(10.0)
+                .color(MINT),
+        );
+        ui.add_space(12.0);
+        field(ui, "Team name", &mut self.team.name, 80, false);
+        choose_workspace(ui, "team-project", &mut self.team.workspace, snapshot);
+        choose(
+            ui,
+            "team-template",
+            "Template",
+            &mut self.team.template,
+            array(&snapshot["templates"]),
+            ("id", "name"),
+            false,
+        );
+        multiline(
+            ui,
+            "Goal and acceptance criteria",
+            &mut self.team.goal,
+            10_000,
+            5,
+        );
+    }
+
+    fn team_roles(&mut self, ui: &mut Ui, snapshot: &Value) {
+        ui.label(
+            RichText::new(t(ui, "02 / TEAM & LIMITS"))
+                .size(10.0)
+                .color(MINT),
+        );
+        ui.add_space(12.0);
+        let packs = array(&snapshot["packs"]);
+        let orchestrators: Vec<_> = packs
+            .iter()
+            .filter(|p| text(p, "role") == "orchestrator")
+            .collect();
+        let workers: Vec<_> = packs
+            .iter()
+            .filter(|p| text(p, "role") != "orchestrator")
+            .collect();
+        choose_refs(
+            ui,
+            "orchestrator",
+            "Orchestrator",
+            &mut self.team.orchestrator,
+            &orchestrators,
+            ("id", "name"),
+            false,
+        );
+        for slot in 0..4 {
+            choose_refs(
+                ui,
+                format!("worker-{slot}"),
+                &localized_format!(
+                    ui,
+                    "Agent {0}{1}",
+                    slot + 1,
+                    if slot == 0 {
+                        t(ui, " (required)").into_owned()
+                    } else {
+                        String::new()
+                    }
+                ),
+                &mut self.team.workers[slot],
+                &workers,
+                ("id", "name"),
+                true,
+            );
+        }
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(t(ui, "Concurrency"));
+            ui.add(egui::DragValue::new(&mut self.team.concurrency).range(1..=4));
+            ui.label(t(ui, "Retries"));
+            ui.add(egui::DragValue::new(&mut self.team.retries).range(0..=3));
+            ui.label(t(ui, "Minutes"));
+            ui.add(egui::DragValue::new(&mut self.team.minutes).range(5..=480));
+        });
+        ui.checkbox(
+            &mut self.team.continue_independent,
+            t(ui, "Continue independent tasks after a failure"),
+        );
+    }
+
     fn agents(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let packs = array(&snapshot["packs"]);
         hint(
@@ -3449,51 +3614,70 @@ impl Console {
             &localized_format!(ui, "{0} inspectable local packs", packs.len()),
         );
         ui.add_space(12.0);
-        for pack in packs {
-            ui.push_id(text(pack, "id"), |ui| {
-                card(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.strong(catalog_text(ui, pack, "name"));
-                        status(ui, text(pack, "role"));
-                        hint(ui, text(&pack["provenance"], "kind"));
-                    });
-                    ui.label(catalog_text(ui, pack, "description"));
-                    egui::CollapsingHeader::new(t(ui, "Inspect pack contract")).show(ui, |ui| {
-                        ui.label(localized_format!(
-                            ui,
-                            "Provider: {0} · {1} minutes · {2} attempts",
-                            text(pack, "providerId"),
-                            pack["limits"]["timeoutMinutes"],
-                            pack["limits"]["maxAttempts"]
-                        ));
-                        ui.label(localized_format!(
-                            ui,
-                            "Permissions: {0}",
-                            joined(&pack["permissions"])
-                        ));
-                        ui.label(localized_format!(
-                            ui,
-                            "Quality checks: {0}",
-                            joined(&pack["qualityChecks"])
-                        ));
-                        ui.label(catalog_text(ui, pack, "instructions"));
-                        ui.strong(t(ui, "Expected output"));
-                        ui.label(catalog_text(ui, pack, "expectedOutput"));
-                        ui.monospace(format!("{}@{}", text(pack, "id"), text(pack, "version")));
-                        if text(&pack["provenance"], "kind") == "local" {
-                            action(
+        let column_count = if ui.available_width() >= 1000.0 {
+            3
+        } else if ui.available_width() >= 620.0 {
+            2
+        } else {
+            1
+        };
+        for row in packs.chunks(column_count) {
+            ui.columns(column_count, |columns| {
+                for (pack, ui) in row.iter().zip(columns.iter_mut()) {
+                    ui.push_id(text(pack, "id"), |ui| {
+                        card(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(studio::title(catalog_text(ui, pack, "name"), 16.0));
+                                status(ui, text(pack, "role"));
+                                hint(ui, text(&pack["provenance"], "kind"));
+                            });
+                            ui.label(catalog_text(ui, pack, "description"));
+                            egui::CollapsingHeader::new(t(ui, "Inspect pack contract")).show(
                                 ui,
-                                commands,
-                                "Remove custom pack",
-                                "pack_remove",
-                                true,
-                                || json!({"packId":pack["id"]}),
+                                |ui| {
+                                    ui.label(localized_format!(
+                                        ui,
+                                        "Provider: {0} · {1} minutes · {2} attempts",
+                                        text(pack, "providerId"),
+                                        pack["limits"]["timeoutMinutes"],
+                                        pack["limits"]["maxAttempts"]
+                                    ));
+                                    ui.label(localized_format!(
+                                        ui,
+                                        "Permissions: {0}",
+                                        joined(&pack["permissions"])
+                                    ));
+                                    ui.label(localized_format!(
+                                        ui,
+                                        "Quality checks: {0}",
+                                        joined(&pack["qualityChecks"])
+                                    ));
+                                    ui.label(catalog_text(ui, pack, "instructions"));
+                                    ui.strong(t(ui, "Expected output"));
+                                    ui.label(catalog_text(ui, pack, "expectedOutput"));
+                                    ui.monospace(format!(
+                                        "{}@{}",
+                                        text(pack, "id"),
+                                        text(pack, "version")
+                                    ));
+                                    if text(&pack["provenance"], "kind") == "local" {
+                                        action(
+                                            ui,
+                                            commands,
+                                            "Remove custom pack",
+                                            "pack_remove",
+                                            true,
+                                            || json!({"packId":pack["id"]}),
+                                        );
+                                    }
+                                },
                             );
-                        }
+                        })
                     });
-                })
+                    ui.add_space(8.0);
+                }
             });
-            ui.add_space(8.0);
+            ui.add_space(10.0);
         }
         ui.add_space(12.0);
         card(ui, |ui| {
@@ -3889,8 +4073,15 @@ impl Console {
     }
 
     fn cloud(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
-        self.account_panel(ui, snapshot, commands);
-        self.shared_memory(ui, snapshot, commands);
+        if snapshot["cloud"]["paired"] == true && ui.available_width() >= 900.0 {
+            ui.columns(2, |columns| {
+                self.account_panel(&mut columns[0], snapshot, commands);
+                self.shared_memory(&mut columns[1], snapshot, commands);
+            });
+        } else {
+            self.account_panel(ui, snapshot, commands);
+            self.shared_memory(ui, snapshot, commands);
+        }
     }
 }
 
@@ -4245,7 +4436,6 @@ fn task_title<'a>(
     std::borrow::Cow::Borrowed(raw)
 }
 fn language_selector(ui: &mut Ui, snapshot: &Value, busy: bool, commands: &mut Vec<Command>) {
-    ui.label(RichText::new(t(ui, "Language")).size(10.0).color(MUTED));
     ui.add_enabled_ui(!busy, |ui| {
         ui.horizontal(|ui| {
             for (choice, label) in [(Language::Tr, "Türkçe"), (Language::En, "English")] {
@@ -4385,7 +4575,10 @@ fn folder_preview(ui: &mut Ui, path: &str) {
 }
 fn status(ui: &mut Ui, value: &str) {
     let color = match value {
-        "available" | "completed" | "applied" | "Codex ready" | "Paired" => MINT,
+        "available" | "completed" | "applied" | "accepted" | "active" | "running" | "Connected"
+        | "Codex ready" | "Paired" => MINT,
+        "proposed" | "queued" | "launching" | "cancelling" | "waiting_question"
+        | "waiting_approval" => Color32::from_rgb(226, 197, 139),
         "failed" | "rejected" | "timed_out" => RED,
         _ => MUTED,
     };
@@ -4409,20 +4602,89 @@ fn paint_status(ui: &mut Ui, label: String, color: Color32) {
     ui.painter()
         .galley(rect.min + egui::vec2(7.0, 3.0), galley, color);
 }
+fn studio_metric(ui: &mut Ui, label: &str, count: u64, icon: Tab) {
+    egui::Frame::new()
+        .fill(SURFACE)
+        .stroke(egui::Stroke::new(1.0, BORDER))
+        .corner_radius(10)
+        .inner_margin(16)
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(t(ui, label)).size(10.0).color(MUTED));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
+                    draw_icon(ui.painter(), rect, icon, MUTED);
+                });
+            });
+            ui.add_space(8.0);
+            ui.label(studio::title(count.to_string(), 28.0));
+        });
+}
+
+fn studio_flow(ui: &mut Ui) {
+    egui::Frame::new()
+        .fill(Color32::from_rgb(23, 32, 28))
+        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(48, 65, 56)))
+        .corner_radius(12)
+        .inner_margin(24)
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new(t(ui, "BUILT AROUND YOUR PROJECT"))
+                    .size(9.0)
+                    .color(MINT)
+                    .extra_letter_spacing(1.3),
+            );
+            ui.add_space(14.0);
+            ui.label(studio::title(t(ui, "One project. Shared direction."), 26.0));
+            ui.add_space(22.0);
+            for (number, title, detail) in [
+                (
+                    "01",
+                    "Connect your folder",
+                    "Your code stays on this device.",
+                ),
+                (
+                    "02",
+                    "Bring your agents together",
+                    "Bounded roles, one visible workflow.",
+                ),
+                (
+                    "03",
+                    "Keep the decisions",
+                    "Shared context. Explicit acceptance.",
+                ),
+            ] {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(number).monospace().size(10.0).color(MINT));
+                    ui.add_space(6.0);
+                    ui.vertical(|ui| {
+                        ui.label(studio::title(t(ui, title), 13.0));
+                        ui.label(RichText::new(t(ui, detail)).size(11.0).color(MUTED));
+                    });
+                });
+                ui.add_space(18.0);
+            }
+        });
+}
 fn card(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
         .fill(SURFACE)
         .stroke(egui::Stroke::new(1.0, BORDER))
-        .corner_radius(8)
-        .inner_margin(18)
+        .corner_radius(12)
+        .inner_margin(20)
         .show(ui, |ui| {
             ui.set_min_width((ui.available_width() - 1.0).max(0.0));
-            contents(ui);
+            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), contents);
         });
 }
 fn empty(ui: &mut Ui, title: &str, description: &str) {
     card(ui, |ui| {
-        ui.heading(t(ui, title));
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(30.0, 28.0), egui::Sense::hover());
+        studio::mark(ui.painter(), rect.shrink(5.0), MINT.gamma_multiply(0.65));
+        ui.add_space(12.0);
+        ui.label(studio::title(t(ui, title), 20.0));
         ui.add_space(8.0);
         hint(ui, description);
     });
@@ -4462,6 +4724,33 @@ fn choose_workspace(ui: &mut Ui, id: &str, selected: &mut String, snapshot: &Val
         ("workspaceId", "workingDirectory"),
         true,
     );
+}
+fn project_switcher(ui: &mut Ui, id: &str, selected: &mut String, projects: &[Value]) {
+    ui.horizontal_wrapped(|ui| {
+        let (icon, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+        draw_icon(ui.painter(), icon, Tab::Projects, MINT);
+        ui.label(RichText::new(t(ui, "Project")).size(11.0).color(MUTED));
+        let name = projects
+            .iter()
+            .find(|p| text(p, "projectId") == selected)
+            .map(|p| std::borrow::Cow::Borrowed(text(p, "name")))
+            .unwrap_or_else(|| t(ui, "Choose…"));
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(name)
+            .truncate()
+            .width((ui.available_width() - 2.0).clamp(150.0, 360.0))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(selected, String::new(), t(ui, "None"));
+                for project in projects {
+                    ui.selectable_value(
+                        selected,
+                        text(project, "projectId").to_owned(),
+                        text(project, "name"),
+                    );
+                }
+            });
+    });
+    ui.add_space(10.0);
 }
 fn choose(
     ui: &mut Ui,
@@ -4599,7 +4888,7 @@ fn constrained(ui: &mut Ui, max_width: f32, contents: impl FnOnce(&mut Ui)) {
     );
 }
 fn section_title(ui: &mut Ui, title: &str, description: &str) {
-    ui.label(RichText::new(t(ui, title)).size(16.0).strong().color(TEXT));
+    ui.label(studio::title(t(ui, title), 18.0));
     ui.add_space(3.0);
     hint(ui, description);
 }
@@ -4625,9 +4914,9 @@ fn source_kind_label(kind: &str) -> &'static str {
         _ => "Source context",
     }
 }
-fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize) -> bool {
+fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool) -> bool {
     let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 34.0), egui::Sense::click());
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 36.0), egui::Sense::click());
     #[cfg(test)]
     let clipped = rect.intersect(ui.clip_rect());
     #[cfg(test)]
@@ -4646,14 +4935,25 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize) -> bool {
             t(ui, tab.name()),
         )
     });
+    if selected && reveal {
+        response.scroll_to_me(Some(egui::Align::Center));
+    }
     let background = if selected {
-        Color32::from_rgb(27, 41, 36)
+        Color32::from_rgb(38, 53, 46)
     } else if response.hovered() {
-        Color32::from_rgb(27, 31, 38)
+        Color32::from_rgb(29, 36, 36)
     } else {
         Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, 6, background);
+    ui.painter().rect_filled(rect, 7, background);
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect,
+            7,
+            egui::Stroke::new(1.0, MINT),
+            egui::StrokeKind::Inside,
+        );
+    }
     if selected {
         ui.painter().rect_filled(
             egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 8.0), egui::vec2(2.0, 18.0)),
@@ -4669,7 +4969,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize) -> bool {
         if selected { MINT } else { MUTED },
     );
     ui.painter().text(
-        rect.min + egui::vec2(39.0, 17.0),
+        rect.min + egui::vec2(39.0, 18.0),
         egui::Align2::LEFT_CENTER,
         t(ui, tab.name()),
         egui::FontId::proportional(13.0),
@@ -4795,6 +5095,12 @@ fn draw_icon(painter: &egui::Painter, rect: egui::Rect, tab: Tab, color: Color32
 
 #[cfg(test)]
 mod tests {
+    fn test_context() -> egui::Context {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        ctx
+    }
+
     use super::*;
     use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 
@@ -4818,7 +5124,7 @@ mod tests {
     }
     #[test]
     fn older_failed_source_job_is_reachable_beyond_ten_recent_jobs_and_requires_fresh_metadata() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = extraction_snapshot(true);
         extraction_job(&mut data, "failed", 1, "EXTRACTION_PROVIDER_FAILED");
         let old = data["memoryPage"]["sources"][0]["extractionJob"].clone();
@@ -4890,7 +5196,7 @@ mod tests {
     }
     #[test]
     fn extraction_only_revision_refresh_is_bounded_and_preserves_failed_owner_recovery() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = extraction_snapshot(true);
         let mut console = extraction_console();
         assert!(render(&ctx, &mut console, &data, false, vec![])
@@ -4919,7 +5225,7 @@ mod tests {
     }
     #[test]
     fn manual_draft_sources_refresh_once_after_extraction_only_page_invalidation() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = extraction_snapshot(true);
         let mut console = Console {
             tab: Tab::Decisions,
@@ -4955,7 +5261,7 @@ mod tests {
                 ("completed", "EXTRACTION_NO_ADR", json!([]), 0),
                 ("completed", "EXTRACTION_DUPLICATE", json!([]), 1),
             ] {
-                let ctx = egui::Context::default();
+                let ctx = test_context();
                 let job = json!({"jobId":"extraction:fixture","projectId":"project:fixture","sourceId":"source:fixture","sourceRevision":1,"status":status,"reasonCode":code,"proposalIds":proposal_ids,"skippedDuplicates":duplicates,"attempt":1});
                 let mut commands = Vec::new();
                 let output = ctx.run_ui(
@@ -4998,7 +5304,7 @@ mod tests {
     #[cfg(feature = "ui-smoke")]
     #[test]
     fn memory_smoke_opens_initial_disclosure_without_enabling_or_prechecking_consent() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console::default();
         console.memory_smoke();
         let data = extraction_snapshot(false);
@@ -5021,7 +5327,7 @@ mod tests {
 
     #[test]
     fn drafting_is_off_by_default_and_a_real_consent_click_is_required_to_enable() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let data = decision_snapshot("proposed");
         let mut console = extraction_console();
         assert!(render(&ctx, &mut console, &data, false, vec![])
@@ -5084,7 +5390,7 @@ mod tests {
             "error",
             "malformed",
         ] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = extraction_snapshot(false);
             let mut console = extraction_console();
             click(
@@ -5129,7 +5435,7 @@ mod tests {
                 assert!(extraction_policy(&data, "project:fixture").is_none());
             }
         }
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let data = extraction_snapshot(false);
         let mut console = extraction_console();
         click(
@@ -5160,7 +5466,7 @@ mod tests {
     }
     #[test]
     fn enabled_drafting_can_pause_without_provider_and_running_jobs_do_not_block_local_controls() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = extraction_snapshot(true);
         data["observation"] = json!({"observations":[]});
         extraction_job(&mut data, "running", 1, "");
@@ -5196,7 +5502,7 @@ mod tests {
     }
     #[test]
     fn existing_source_drafting_requires_current_verified_scope_revision_and_enabled_policy() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = extraction_snapshot(true);
         let mut console = extraction_console();
         assert!(render(&ctx, &mut console, &data, false, vec![])
@@ -5262,7 +5568,7 @@ mod tests {
     #[test]
     fn manual_drafting_retries_keep_attempt_and_block_stale_paused_exhausted_jobs() {
         for state in ["failed", "interrupted", "cancelled"] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = extraction_snapshot(true);
             extraction_job(&mut data, state, 2, "EXTRACTION_PROVIDER_FAILED");
             let mut console = extraction_console();
@@ -5312,7 +5618,7 @@ mod tests {
             )
             .is_empty());
         }
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = extraction_snapshot(true);
         extraction_job(&mut data, "cancelled", 0, "EXTRACTION_POLICY_CHANGED");
         let mut console = extraction_console();
@@ -5326,7 +5632,7 @@ mod tests {
         );
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].payload["expectedAttempt"], 0);
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = extraction_snapshot(true);
         extraction_job(&mut data, "cancelled", 1, "EXTRACTION_SOURCE_CHANGED");
         let mut console = extraction_console();
@@ -5344,7 +5650,7 @@ mod tests {
     #[test]
     fn generated_provenance_is_localized_while_owner_evidence_and_acceptance_stay_explicit() {
         for lang in ["tr", "en"] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = extraction_snapshot(true);
             data["desktopPreferences"] = json!({"language":lang});
             data["decisionDetail"]["decision"]["extraction"] = json!({"providerId":"codex","extractorVersion":"codex-adr-v1","jobId":"job:private","sourceId":"source:fixture","sourceRevision":3,"evidence":[{"sourceId":"source:fixture","revision":3,"excerpt":"Memory · owner original alıntı"}],"relation":"possible_conflict","relatedDecisionIds":["decision:accepted-private"]});
@@ -5417,7 +5723,7 @@ mod tests {
     #[test]
     fn drafting_disclosure_and_controls_fit_the_minimum_native_width_in_both_languages() {
         for language in [Language::Tr, Language::En] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let data = extraction_snapshot(false);
             let mut console = extraction_console();
             console.extraction.scope("project:fixture", 2);
@@ -5543,7 +5849,7 @@ mod tests {
 
     #[test]
     fn account_sign_in_is_explicit_configurable_and_never_triggered_by_typing() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let data = snapshot();
         let mut console = Console {
             tab: Tab::Cloud,
@@ -5595,7 +5901,7 @@ mod tests {
 
     #[test]
     fn browser_opens_once_per_explicit_begin_and_rejects_foreign_urls() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = account_snapshot(true);
         let mut console = Console {
             tab: Tab::Cloud,
@@ -5671,7 +5977,7 @@ mod tests {
     #[test]
     fn verified_account_and_billing_link_are_scoped_and_owner_text_stays_original() {
         for language in ["tr", "en"] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = account_snapshot(false);
             data["desktopPreferences"] = json!({"language":language});
             let mut console = Console {
@@ -5720,7 +6026,7 @@ mod tests {
     fn account_states_are_localized_truthful_and_fit_the_minimum_window() {
         for language in ["tr", "en"] {
             for waiting in [false, true] {
-                let ctx = egui::Context::default();
+                let ctx = test_context();
                 let mut data = account_snapshot(waiting);
                 data["desktopPreferences"] = json!({"language":language});
                 let mut console = Console {
@@ -5752,7 +6058,7 @@ mod tests {
                     );
                 }
             }
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = snapshot();
             data["desktopPreferences"] = json!({"language":language});
             data["cloudAccountUi"] = json!({"logoutRemoteRevoked":false});
@@ -5835,7 +6141,7 @@ mod tests {
         search.limit = 11;
         assert!(search.payload("project:one").is_none());
         for shared in [false, true] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let data = search_snapshot(shared);
             let mut console = search_console(shared);
             assert!(render(&ctx, &mut console, &data, false, vec![])
@@ -5887,7 +6193,7 @@ mod tests {
     #[test]
     fn cloud_search_discloses_scope_and_fallback_without_translating_owner_text() {
         for lang in ["tr", "en"] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = search_snapshot(true);
             data["desktopPreferences"] = json!({"language":lang});
             let mut console = search_console(true);
@@ -5965,7 +6271,7 @@ mod tests {
                 "shared",
                 "remoteRevision",
             ] {
-                let ctx = egui::Context::default();
+                let ctx = test_context();
                 let mut console = search_console(shared);
                 let mut changed_data = data.clone();
                 let key = if shared {
@@ -5997,7 +6303,7 @@ mod tests {
                     "{shared} {changed}"
                 );
             }
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut console = search_console(shared);
             let notice = Notice::error("project_decision_propose", "HOST_ACTION_FAILED");
             let mut commands = vec![];
@@ -6025,7 +6331,7 @@ mod tests {
     fn search_forms_and_actions_fit_a_narrow_native_panel() {
         for shared in [false, true] {
             for language in [Language::Tr, Language::En] {
-                let ctx = egui::Context::default();
+                let ctx = test_context();
                 let data = search_snapshot(shared);
                 let mut console = search_console(shared);
                 let mut commands = vec![];
@@ -6066,7 +6372,7 @@ mod tests {
 
     #[test]
     fn cloud_search_modal_holds_background_reads_until_explicit_search_or_close() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = search_snapshot(true);
         data["sharedMemoryPage"] = Value::Null;
         data["sharedDecisionDetail"] = Value::Null;
@@ -6101,7 +6407,7 @@ mod tests {
 
     #[test]
     fn production_find_action_opens_the_search_modal_after_initial_project_selection() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let data = shared_snapshot("reader");
         let mut console = Console {
             tab: Tab::Cloud,
@@ -6132,7 +6438,7 @@ mod tests {
     #[cfg(feature = "ui-smoke")]
     #[test]
     fn cloud_search_smoke_startup_initializes_only_after_the_real_project_is_selected() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let data = search_snapshot(true);
         let mut console = Console::default();
         console.search_smoke(true, "Why Rust?");
@@ -6211,7 +6517,7 @@ mod tests {
 
     #[test]
     fn publication_requires_a_real_consent_click_and_queues_only_current_ids() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let data = shared_snapshot("publisher");
         let mut console = publication_console();
         assert!(render(&ctx, &mut console, &data, false, vec![])
@@ -6260,7 +6566,7 @@ mod tests {
     #[test]
     fn long_publication_preview_keeps_consent_and_action_outside_its_scroll_body() {
         for language in [Language::Tr, Language::En] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = shared_snapshot("publisher");
             data["decisionDetail"]["decision"]["decision"] =
                 json!("Long owner content. ".repeat(900));
@@ -6313,7 +6619,7 @@ mod tests {
             "disabled",
             "offline",
         ] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = shared_snapshot("publisher");
             let mut console = publication_console();
             render(&ctx, &mut console, &data, false, vec![]);
@@ -6348,7 +6654,7 @@ mod tests {
                 .is_empty());
             assert!(!console.shared.consent, "consent must reset on {change}");
         }
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let data = shared_snapshot("publisher");
         let mut console = publication_console();
         render(&ctx, &mut console, &data, false, vec![]);
@@ -6374,7 +6680,7 @@ mod tests {
     #[test]
     fn shared_reader_is_scoped_read_only_and_marks_historical_offline_data() {
         for lang in ["tr", "en"] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = shared_snapshot("reader");
             data["desktopPreferences"] = json!({"language":lang});
             data["sharedMemory"]["projects"][0]["offline"] = json!(true);
@@ -6419,7 +6725,7 @@ mod tests {
     fn unlinked_local_projects_do_not_claim_an_offline_or_stale_cloud_cache() {
         for language in ["tr", "en"] {
             for offline in [true, false] {
-                let ctx = egui::Context::default();
+                let ctx = test_context();
                 let mut data = shared_snapshot("reader");
                 data["desktopPreferences"] = json!({"language":language});
                 let metadata = &mut data["sharedMemory"]["projects"][0];
@@ -6509,7 +6815,7 @@ mod tests {
 
     #[test]
     fn failed_owner_mutation_blocks_shared_read_controls_without_consuming_keys() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = shared_snapshot("reader");
         data["sharedMemoryPage"] = Value::Null;
         data["sharedDecisionDetail"] = Value::Null;
@@ -6539,7 +6845,7 @@ mod tests {
 
     #[test]
     fn shared_setup_and_publisher_controls_keep_roles_and_expected_revisions() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut data = shared_snapshot("publisher");
         let mut console = Console {
             tab: Tab::Cloud,
@@ -6657,7 +6963,7 @@ mod tests {
             assert!(!opaque_id(bad, "shared"));
         }
         for lang in ["tr", "en"] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut data = shared_snapshot("publisher");
             data["desktopPreferences"] = json!({"language":lang});
             let mut console = Console {
@@ -6698,6 +7004,7 @@ mod tests {
 
     fn decision_snapshot(status: &str) -> Value {
         let mut data = memory_snapshot();
+        data["projectMemory"]["projects"][0]["sourceCount"] = json!(1);
         let record = json!({"decisionId":"decision:fixture","projectId":"project:fixture","title":"Memory","status":status,"revision":2,"createdAt":"2026-10-15T00:00:00.000Z","updatedAt":"2026-10-15T00:00:00.000Z","sourceCount":1,"context":"Work","decision":"Keep owner text unchanged.","rationale":"Projects","consequences":"Local only","actorId":"local-owner","sources":[{"sourceId":"source:fixture","revision":3}],"supersedesDecisionId":null,"supersededByDecisionId":null});
         data["projectDecisions"] = json!({"schemaVersion":4,"revision":6,"projects":[{"projectId":"project:fixture","revision":6,"decisionCount":1,"acceptedCount":u8::from(status=="accepted"),"proposedCount":u8::from(status=="proposed")}]});
         data["decisionPage"] = json!({"reasonCode":"PROJECT_DECISIONS_READ","projectId":"project:fixture","revision":6,"offset":0,"limit":10,"query":"","status":"all","total":1,"decisions":[record.clone()]});
@@ -6710,7 +7017,7 @@ mod tests {
 
     #[test]
     fn decision_proposal_click_uses_current_citations_and_never_submits_busy_or_stale() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Decisions,
             ..Default::default()
@@ -6781,7 +7088,7 @@ mod tests {
 
     #[test]
     fn decision_lifecycle_clicks_require_current_scoped_details_and_explicit_replacement() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Decisions,
             ..Default::default()
@@ -6856,7 +7163,7 @@ mod tests {
 
     #[test]
     fn decision_reads_page_filter_and_refresh_are_bounded_without_failed_read_loops() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Decisions,
             ..Default::default()
@@ -7088,7 +7395,7 @@ mod tests {
         }
         let error = Notice::error("project_decision_propose", "HOST_ACTION_FAILED");
         for tab in [Tab::Memory, Tab::Decisions] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut console = Console {
                 tab,
                 ..Default::default()
@@ -7149,7 +7456,7 @@ mod tests {
                 }
             );
         }
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Memory,
             ..Default::default()
@@ -7166,7 +7473,7 @@ mod tests {
 
     #[test]
     fn decision_localization_preserves_original_evidence_and_rejects_foreign_detail() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Decisions,
             ..Default::default()
@@ -7193,7 +7500,7 @@ mod tests {
     #[test]
     fn minimum_sidebar_navigation_never_overlaps_language_controls() {
         for code in ["tr", "en"] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut console = Console {
                 tab: Tab::Decisions,
                 ..Default::default()
@@ -7218,6 +7525,14 @@ mod tests {
                 )))
                 .unwrap()
             });
+            let account: Rect = ctx.data(|d| {
+                d.get_temp(egui::Id::new((
+                    "test-action",
+                    "memory_control",
+                    "Sign in · optional",
+                )))
+                .unwrap()
+            });
             for tab in Tab::ALL {
                 let clipped: Rect = ctx.data(|d| {
                     d.get_temp(egui::Id::new(("navigation-clip", tab.name())))
@@ -7225,8 +7540,8 @@ mod tests {
                 });
                 if clipped.is_positive() {
                     assert!(
-                        clipped.max.y <= footer.min.y,
-                        "{} overlaps the language selector",
+                        clipped.max.y <= footer.min.y.min(account.min.y),
+                        "{} overlaps a sidebar footer control",
                         tab.name()
                     );
                 }
@@ -7241,8 +7556,8 @@ mod tests {
             });
             assert!(accept.max.x <= 800.0);
             assert!(
-                accept.min.y < 560.0,
-                "acceptance must be discoverable before scrolling long owner text"
+                accept.max.y <= 560.0,
+                "acceptance must be discoverable before scrolling long owner text: {accept:?}"
             );
         }
     }
@@ -7263,7 +7578,7 @@ mod tests {
                 "Codex to 0.155.1",
             ),
         ] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut console = Console {
                 tab: Tab::Work,
                 ..Default::default()
@@ -7306,7 +7621,7 @@ mod tests {
         busy: bool,
         events: Vec<Event>,
     ) -> (Vec<Command>, usize) {
-        // Match the production no-animation theme before exercising disclosure clicks.
+        // Keep disclosure clicks deterministic while exercising the production fonts/theme.
         ctx.global_style_mut(|style| style.animation_time = 0.0);
         let mut commands = vec![];
         let input = RawInput {
@@ -7369,7 +7684,7 @@ mod tests {
     fn native_tabs_render_fresh_and_populated_snapshots_without_side_effects() {
         for snapshot in [snapshot(), json!({})] {
             for tab in Tab::ALL {
-                let ctx = egui::Context::default();
+                let ctx = test_context();
                 let mut console = Console {
                     tab,
                     ..Default::default()
@@ -7383,7 +7698,7 @@ mod tests {
 
     #[test]
     fn owner_click_keeps_current_revision_and_busy_or_unproven_control_blocks_start() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Work,
             ..Default::default()
@@ -7427,7 +7742,7 @@ mod tests {
 
     #[test]
     fn workspace_form_click_emits_only_local_registration() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Projects,
             project_name: "Native fixture".into(),
@@ -7456,7 +7771,7 @@ mod tests {
 
     #[test]
     fn folder_selection_is_explicit_and_cancel_preserves_the_draft() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             project_path: "/tmp/old-folder".into(),
             project_name: "Custom label".into(),
@@ -7560,7 +7875,7 @@ mod tests {
 
     #[test]
     fn registration_suggests_a_link_once_without_overriding_a_later_selection() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             project_path: "/tmp/fixture".into(),
             registration_project: Some("project:fixture".into()),
@@ -7585,7 +7900,7 @@ mod tests {
     #[test]
     fn folder_recovery_requires_an_idle_host_but_never_a_retryable_command() {
         for ready in [false, true] {
-            let ctx = egui::Context::default();
+            let ctx = test_context();
             let mut console = Console::default();
             let notice = Notice::error("workspace_register", "WORKSPACE_ACCESS_DENIED");
             let paint = |console: &mut Console, events| {
@@ -7644,7 +7959,7 @@ mod tests {
 
     #[test]
     fn permission_form_fits_the_minimum_window_and_localized_error_is_actionable() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console::default();
         console.accept_folder(
             folder::Target::Registration,
@@ -7739,7 +8054,7 @@ mod tests {
 
     #[test]
     fn explicit_owner_rejection_keeps_team_revision_and_decision() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Teams,
             ..Default::default()
@@ -7761,7 +8076,7 @@ mod tests {
 
     #[test]
     fn prior_host_run_has_no_cancel_authority() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Work,
             ..Default::default()
@@ -7788,7 +8103,7 @@ mod tests {
         };
         let mut snapshot = snapshot();
         let pair_id = egui::Id::new(("test-action", "cloud_pair", "Pair this host"));
-        let valid_ctx = egui::Context::default();
+        let valid_ctx = test_context();
         click(
             &valid_ctx,
             &mut console,
@@ -7800,7 +8115,7 @@ mod tests {
         assert!(valid_ctx.data(|d| d.get_temp::<Rect>(pair_id)).is_some());
 
         snapshot["cloud"] = json!({"paired":false,"error":true});
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let (commands, shapes) = render(&ctx, &mut console, &snapshot, false, vec![]);
         assert!(commands.is_empty());
         assert!(shapes > 10);
@@ -7816,8 +8131,71 @@ mod tests {
     }
 
     #[test]
+    fn project_shortcuts_keep_scope_and_only_prepare_a_local_draft() {
+        let ctx = test_context();
+        let mut data = memory_snapshot();
+        let mut console = Console::default();
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "New task"
+        )
+        .is_empty());
+        assert!(
+            console.tab == Tab::Projects,
+            "an unlinked project cannot select a task folder"
+        );
+        data["projectMemory"]["projects"][0]["workspaceIds"] = json!(["workspace:fixture"]);
+        console.work.path = "/tmp/old-manual-selection".into();
+        console.work.path_problem = Some("WORKSPACE_ACCESS_DENIED".into());
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "New task"
+        )
+        .is_empty());
+        assert!(console.tab == Tab::Work);
+        assert_eq!(console.work.workspace, "workspace:fixture");
+        assert!(console.work.path.is_empty() && console.work.path_problem.is_none());
+        console.tab = Tab::Projects;
+        console.work.instruction = "Keep my unsent task".into();
+        console.work.workspace = "workspace:other-draft".into();
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Open task draft"
+        )
+        .is_empty());
+        assert_eq!(console.work.instruction, "Keep my unsent task");
+        assert_eq!(console.work.workspace, "workspace:other-draft");
+        console.tab = Tab::Projects;
+        console.decisions.select("project:old");
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Open decisions"
+        )
+        .is_empty());
+        assert!(console.tab == Tab::Decisions);
+        assert_eq!(console.decisions.project, "project:fixture");
+        assert!(console.decisions.selected.is_empty());
+    }
+
+    #[test]
     fn stable_project_create_and_explicit_link_unlink_preserve_target_revision() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             new_project_name: "Stable project".into(),
             ..Default::default()
@@ -7863,7 +8241,7 @@ mod tests {
 
     #[test]
     fn memory_message_and_message_edit_clicks_use_scoped_current_revisions() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Memory,
             ..Default::default()
@@ -7961,7 +8339,7 @@ mod tests {
 
     #[test]
     fn keyword_filter_and_page_controls_emit_bounded_reads_and_hide_stale_pages() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Memory,
             ..Default::default()
@@ -8012,7 +8390,7 @@ mod tests {
 
     #[test]
     fn opening_other_project_drops_edit_and_reads_its_scope_once_then_refresh_retries() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console::default();
         let mut data = memory_snapshot();
         data["projectMemory"]["projects"]
@@ -8084,7 +8462,7 @@ mod tests {
 
     #[test]
     fn preloaded_memory_page_renders_without_read_and_stale_query_disables_edit() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Memory,
             ..Default::default()
@@ -8126,7 +8504,7 @@ mod tests {
 
     #[test]
     fn memory_filter_controls_fit_the_minimum_native_window() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Memory,
             ..Default::default()
@@ -8169,7 +8547,9 @@ mod tests {
         }
         let output = ctx.run_ui(
             RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 880.0))),
+                // Text-boundary assertions inspect the whole short fixture record.
+                // Dedicated minimum-window tests separately check initial visibility.
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 1600.0))),
                 ..Default::default()
             },
             |ui| {
@@ -8186,7 +8566,7 @@ mod tests {
 
     #[test]
     fn language_switch_changes_controls_and_keeps_owner_key_collisions_and_drafts_raw() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console {
             tab: Tab::Memory,
             ..Default::default()
@@ -8239,7 +8619,7 @@ mod tests {
 
     #[test]
     fn corrupted_language_preference_can_be_explicitly_replaced_by_current_default() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let mut console = Console::default();
         let mut data = snapshot();
         data["desktopPreferences"] = json!({"language":"tr","error":true});
@@ -8267,7 +8647,7 @@ mod tests {
 
     #[test]
     fn built_in_catalog_translation_never_changes_a_custom_pack_with_the_same_name() {
-        let ctx = egui::Context::default();
+        let ctx = test_context();
         let output=ctx.run_ui(RawInput::default(),|ui| {
             ui.ctx().data_mut(|data|data.insert_temp(egui::Id::new("console-language"),Language::Tr));
             let custom=json!({"id":"pack:custom","name":"Orchestrator","description":"Memory","provenance":{"kind":"local"}});

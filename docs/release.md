@@ -1,6 +1,6 @@
 # Native desktop release
 
-The 0.11 source builds a standalone Rust/egui desktop. Installers use
+The 0.12 source builds a standalone Rust/egui desktop. Installers use
 cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or desktop
 build requirements. npm publication is retired. Pushing, publishing installers,
 public signing and Cloud deployment remain explicit owner release actions.
@@ -50,6 +50,13 @@ the provider's fixed browser callback, then verify signed-out browser continuati
 allow/deny, native return, restart/account refresh and self sign-out on each
 advertised OS. Synthetic local proof does not establish live OAuth/email or TLS.
 Local must remain usable without an account or reachable Cloud.
+
+## Interface 0.12
+
+Task0036 refreshes presentation, bundled fonts and platform icons without new
+canonical events, services or production dependencies. Data written by0.12
+remains readable by0.11. Existing V6/V7 backup and rollback requirements below
+still apply. See [interface state](state/product-studio-interface.md).
 
 ## Native rendering proof
 

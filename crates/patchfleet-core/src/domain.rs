@@ -834,6 +834,9 @@ pub fn validate_event(v: &Value) -> Result<()> {
     let p = &v["payload"];
     let kind = string(&v["type"])?;
     object(p)?;
+    if v["schemaVersion"] == 4 {
+        return crate::decisions::validate_event(v);
+    }
     if v["schemaVersion"] == 3
         && matches!(kind, "owner.command.requested" | "owner.command.receipted")
     {
@@ -2261,5 +2264,6 @@ pub(crate) fn project_legacy_events(events: &[Value]) -> Result<Value> {
 pub fn project_events(events: &[Value]) -> Result<Value> {
     let mut bundle = project_legacy_events(events)?;
     bundle["projectMemory"] = crate::project_memory::project_validated(events)?;
+    bundle["projectDecisions"] = crate::decisions::project_validated(events)?;
     Ok(bundle)
 }

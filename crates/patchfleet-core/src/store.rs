@@ -18,6 +18,7 @@ const PROJECTIONS: &[(&str, &str)] = &[
     ("packs", "agent-packs.json"),
     ("teams", "agent-teams.json"),
     ("projectMemory", "project-memory.json"),
+    ("projectDecisions", "project-decisions.json"),
 ];
 
 pub struct Store {
@@ -36,6 +37,15 @@ struct State {
     fingerprint: Option<Fingerprint>,
     cache_dirty: bool,
     poisoned: bool,
+}
+fn read_payload(payload: &Value) -> Value {
+    let mut input = payload.clone();
+    if let Some(fields) = input.as_object_mut() {
+        for key in ["commandId", "createdAt", "expiresAt"] {
+            fields.remove(key);
+        }
+    }
+    input
 }
 #[derive(PartialEq)]
 struct Fingerprint {
@@ -563,6 +573,10 @@ impl Store {
             "projectMemory".into(),
             crate::project_memory::metadata(&state.projected["projectMemory"]),
         );
+        bundle.insert(
+            "projectDecisions".into(),
+            crate::decisions::metadata(&state.projected["projectDecisions"]),
+        );
         Ok(Value::Object(bundle))
     }
     pub fn read_memory(&self, payload: &Value) -> Result<Value> {
@@ -575,6 +589,16 @@ impl Store {
             }
         }
         crate::project_memory::read(&state.projected["projectMemory"], &input)
+    }
+    pub fn read_decisions(&self, payload: &Value) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        crate::decisions::read_list(&state.projected["projectDecisions"], &read_payload(payload))
+    }
+    pub fn read_decision(&self, payload: &Value) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        crate::decisions::read_detail(&state.projected["projectDecisions"], &read_payload(payload))
     }
     pub fn workspace_project(&self, workspace_id: &str) -> Result<Option<String>> {
         let state = self.guard()?;

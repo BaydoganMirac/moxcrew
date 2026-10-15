@@ -300,7 +300,7 @@ struct DecisionPanel {
     refresh_detail: bool,
     replacement: String,
     composer_open: bool,
-    pending_proposal_manifest: Option<u64>,
+    pending_proposal: Option<(u64, Value)>,
     title: String,
     context: String,
     decision: String,
@@ -320,13 +320,24 @@ impl DecisionPanel {
     fn finish_proposal(&mut self, snapshot: &Value, notice: Option<&Notice>, busy: bool) {
         if !busy
             && self
-                .pending_proposal_manifest
-                .is_some_and(|before| decision_manifest(snapshot, &self.project) > before)
+                .pending_proposal
+                .as_ref()
+                .is_some_and(|(before, _)| decision_manifest(snapshot, &self.project) > *before)
             && notice.is_some_and(|n| {
-                n.kind == NoticeKind::Success && n.code == "PROJECT_DECISION_PROPOSED"
+                n.action == "project_decision_propose"
+                    && n.kind == NoticeKind::Success
+                    && n.code == "PROJECT_DECISION_PROPOSED"
             })
         {
-            self.pending_proposal_manifest = None;
+            let (_, submitted) = self.pending_proposal.take().unwrap();
+            let current = array(&snapshot["projectMemory"]["projects"])
+                .iter()
+                .find(|p| text(p, "projectId") == self.project)
+                .and_then(|project| self.proposal(project).ok());
+            // An exact retry may succeed after the owner has already edited a new draft.
+            if current.as_ref() != Some(&submitted) {
+                return;
+            }
             self.composer_open = false;
             self.title.clear();
             self.context.clear();
@@ -470,6 +481,7 @@ pub struct Console {
     registration_project: Option<String>,
     folder_request: Option<folder::Target>,
     pub notice_action: Option<NoticeAction>,
+    hold_automatic_reads: bool,
     work: WorkDraft,
     team: TeamDraft,
     manifest: String,
@@ -566,6 +578,14 @@ impl Console {
                 self.registration_project = None;
             }
         }
+        self.hold_automatic_reads = can_retry
+            && notice.is_some_and(|n| {
+                n.kind == NoticeKind::Error
+                    && !matches!(
+                        n.action,
+                        "project_memory_read" | "project_decisions_read" | "project_decision_read"
+                    )
+            });
         self.decisions.finish_proposal(snapshot, notice, busy);
         ui.ctx().data_mut(|data| {
             data.insert_temp(
@@ -703,6 +723,10 @@ impl Console {
                 }
                 if let Some(error) = self.form_error {
                     ui.colored_label(RED, t(ui, error));
+                    ui.add_space(8.0);
+                }
+                if self.hold_automatic_reads && matches!(self.tab, Tab::Memory | Tab::Decisions) {
+                    hint(ui, "Retry or dismiss the failed action before refreshing.");
                     ui.add_space(8.0);
                 }
                 egui::ScrollArea::vertical()
@@ -1129,7 +1153,7 @@ impl Console {
                     .char_limit(160)
                     .hint_text(t(ui, "Words in source titles or text")),
             );
-            if control(ui, "Apply keyword", true).clicked() {
+            if control(ui, "Apply keyword", !self.hold_automatic_reads).clicked() {
                 if utf16_len(&self.memory.keyword_input) <= 160 {
                     self.memory.query = self.memory.keyword_input.trim().to_owned();
                     self.memory.offset = 0;
@@ -1140,7 +1164,7 @@ impl Console {
                     self.form_error = Some("Keyword filter is limited to 160 characters.");
                 }
             }
-            if control(ui, "Refresh memory", true).clicked() {
+            if control(ui, "Refresh memory", !self.hold_automatic_reads).clicked() {
                 self.memory.requested = None;
                 self.memory.refresh_requested = true;
             }
@@ -1205,7 +1229,13 @@ impl Console {
                     },
                     &[&total.to_string()],
                 ));
-                if control(ui, "Previous sources", self.memory.offset > 0).clicked() {
+                if control(
+                    ui,
+                    "Previous sources",
+                    self.memory.offset > 0 && !self.hold_automatic_reads,
+                )
+                .clicked()
+                {
                     self.memory.offset = self.memory.offset.saturating_sub(10);
                     self.memory.requested = None;
                 }
@@ -1217,7 +1247,7 @@ impl Console {
                 if control(
                     ui,
                     "Next sources",
-                    self.memory.offset.saturating_add(10) < total,
+                    self.memory.offset.saturating_add(10) < total && !self.hold_automatic_reads,
                 )
                 .clicked()
                 {
@@ -1307,7 +1337,10 @@ impl Console {
             hint(ui,"The current source page is unavailable. Use Refresh memory to retry a failed read.");
         }
         if commands.is_empty() {
-            if let Some(command) = self.memory.next_read(project, page, !ui.is_enabled()) {
+            if let Some(command) =
+                self.memory
+                    .next_read(project, page, !ui.is_enabled() || self.hold_automatic_reads)
+            {
                 commands.push(command);
             }
         }
@@ -1389,7 +1422,7 @@ impl Console {
             if control(ui, "New decision draft", !self.decisions.composer_open).clicked() {
                 self.decisions.composer_open = true;
             }
-            if control(ui, "Refresh decisions", true).clicked() {
+            if control(ui, "Refresh decisions", !self.hold_automatic_reads).clicked() {
                 self.decisions.refresh();
             }
             if control(ui, "Open project sources", true).clicked() {
@@ -1405,24 +1438,26 @@ impl Console {
             ui.add_space(20.0);
         }
         ui.horizontal_wrapped(|ui| {
-            egui::ComboBox::from_id_salt("decision-status")
-                .selected_text(t(ui, decision_status_label(&self.decisions.status)))
-                .width(150.0)
-                .show_ui(ui, |ui| {
-                    for value in ["all", "proposed", "accepted", "rejected", "superseded"] {
-                        if ui
-                            .selectable_value(
-                                &mut self.decisions.status,
-                                value.to_owned(),
-                                t(ui, decision_status_label(value)),
-                            )
-                            .changed()
-                        {
-                            self.decisions.offset = 0;
-                            self.decisions.refresh_list = true;
+            ui.add_enabled_ui(!self.hold_automatic_reads, |ui| {
+                egui::ComboBox::from_id_salt("decision-status")
+                    .selected_text(t(ui, decision_status_label(&self.decisions.status)))
+                    .width(150.0)
+                    .show_ui(ui, |ui| {
+                        for value in ["all", "proposed", "accepted", "rejected", "superseded"] {
+                            if ui
+                                .selectable_value(
+                                    &mut self.decisions.status,
+                                    value.to_owned(),
+                                    t(ui, decision_status_label(value)),
+                                )
+                                .changed()
+                            {
+                                self.decisions.offset = 0;
+                                self.decisions.refresh_list = true;
+                            }
                         }
-                    }
-                });
+                    });
+            });
             ui.add(
                 egui::TextEdit::singleline(&mut self.decisions.query_input)
                     .font(egui::TextStyle::Body)
@@ -1431,7 +1466,7 @@ impl Console {
                     .char_limit(160)
                     .hint_text(t(ui, "Search decision text")),
             );
-            if control(ui, "Apply decision filter", true).clicked() {
+            if control(ui, "Apply decision filter", !self.hold_automatic_reads).clicked() {
                 if utf16_len(self.decisions.query_input.trim()) <= 160 {
                     self.decisions.query = self.decisions.query_input.trim().to_owned();
                     self.decisions.offset = 0;
@@ -1454,7 +1489,7 @@ impl Console {
             self.decision_list(ui, page, manifest);
         }
         if commands.is_empty() {
-            let busy = !ui.is_enabled();
+            let busy = !ui.is_enabled() || self.hold_automatic_reads;
             let read = self
                 .decisions
                 .next_list(page, manifest, busy)
@@ -1547,7 +1582,7 @@ impl Console {
                     "{0}/8 sources selected",
                     self.decisions.citations.len()
                 ));
-                if control(ui, "Refresh draft sources", true).clicked() {
+                if control(ui, "Refresh draft sources", !self.hold_automatic_reads).clicked() {
                     self.decisions.sources.refresh_requested = true;
                 }
             });
@@ -1599,7 +1634,7 @@ impl Console {
                     if control(
                         ui,
                         "Previous draft sources",
-                        self.decisions.sources.offset > 0,
+                        self.decisions.sources.offset > 0 && !self.hold_automatic_reads,
                     )
                     .clicked()
                     {
@@ -1614,7 +1649,8 @@ impl Console {
                     if control(
                         ui,
                         "Next draft sources",
-                        self.decisions.sources.offset.saturating_add(10) < total,
+                        self.decisions.sources.offset.saturating_add(10) < total
+                            && !self.hold_automatic_reads,
                     )
                     .clicked()
                     {
@@ -1663,7 +1699,11 @@ impl Console {
                     .last()
                     .is_some_and(|c| c.action == "project_decision_propose")
             {
-                self.decisions.pending_proposal_manifest = Some(manifest);
+                let mut submitted = commands.last().unwrap().payload.clone();
+                for key in ["commandId", "createdAt", "expiresAt"] {
+                    submitted.as_object_mut().unwrap().remove(key);
+                }
+                self.decisions.pending_proposal = Some((manifest, submitted));
             }
             if let Err(message) = self.decisions.proposal(project) {
                 hint(ui, message);
@@ -1687,13 +1727,19 @@ impl Console {
         let total = page["total"].as_u64().unwrap_or(0);
         ui.horizontal_wrapped(|ui| {
             ui.label(localized_format!(ui, "{0} decisions", total));
-            if control(ui, "Previous decisions", self.decisions.offset > 0).clicked() {
+            if control(
+                ui,
+                "Previous decisions",
+                self.decisions.offset > 0 && !self.hold_automatic_reads,
+            )
+            .clicked()
+            {
                 self.decisions.offset = self.decisions.offset.saturating_sub(10);
             }
             if control(
                 ui,
                 "Next decisions",
-                self.decisions.offset.saturating_add(10) < total,
+                self.decisions.offset.saturating_add(10) < total && !self.hold_automatic_reads,
             )
             .clicked()
             {
@@ -1753,7 +1799,7 @@ impl Console {
                                 ),
                             );
                         });
-                        if control(ui, "Open decision", true).clicked() {
+                        if control(ui, "Open decision", !self.hold_automatic_reads).clicked() {
                             self.decisions.selected = text(decision, "decisionId").to_owned();
                             self.decisions.replacement.clear();
                         }
@@ -1847,7 +1893,13 @@ impl Console {
                         Vec::new()
                     };
                     if candidates.is_empty() {
-                        if control(ui, "Browse proposed replacements", true).clicked() {
+                        if control(
+                            ui,
+                            "Browse proposed replacements",
+                            !self.hold_automatic_reads,
+                        )
+                        .clicked()
+                        {
                             self.decisions.status = "proposed".into();
                             self.decisions.query.clear();
                             self.decisions.query_input.clear();
@@ -3215,6 +3267,13 @@ mod tests {
         );
         assert_eq!(commands[0].payload["title"], "Memory");
         assert_eq!(commands[0].payload["context"], "Work");
+        assert_eq!(
+            &console.decisions.pending_proposal.as_ref().unwrap().1,
+            &console
+                .decisions
+                .proposal(&data["projectMemory"]["projects"][0])
+                .unwrap()
+        );
         assert!(click(
             &ctx,
             &mut console,
@@ -3387,8 +3446,19 @@ mod tests {
         panel.composer_open = true;
         panel.title = "Owner draft".into();
         panel.decision = "Exact text".into();
-        panel.pending_proposal_manifest = Some(6);
         let mut data = decision_snapshot("proposed");
+        panel.citation_epoch = 9;
+        panel.citations.push(Citation {
+            source: "source:fixture".into(),
+            revision: 3,
+            title: "Evidence".into(),
+        });
+        panel.pending_proposal = Some((
+            6,
+            panel
+                .proposal(&data["projectMemory"]["projects"][0])
+                .unwrap(),
+        ));
         panel.finish_proposal(
             &data,
             Some(&Notice::error(
@@ -3414,6 +3484,204 @@ mod tests {
         assert_eq!(panel.title, "Next draft");
         assert!(!decision_text(&"😀".repeat(81), 160, true));
         assert!(!decision_text("control\u{7}", 160, true));
+    }
+
+    #[test]
+    fn original_proposal_retry_preserves_edits_and_citations_after_cache_write_failure() {
+        let mut data = decision_snapshot("proposed");
+        let mut panel = DecisionPanel::default();
+        panel.select("project:fixture");
+        panel.composer_open = true;
+        panel.title = "Original title".into();
+        panel.decision = "Original content".into();
+        panel.citation_epoch = 9;
+        panel.citations.push(Citation {
+            source: "source:fixture".into(),
+            revision: 3,
+            title: "Original evidence".into(),
+        });
+        let submitted = panel
+            .proposal(&data["projectMemory"]["projects"][0])
+            .unwrap();
+        panel.pending_proposal = Some((6, submitted));
+        data["projectDecisions"]["projects"][0]["revision"] = json!(7);
+        panel.finish_proposal(
+            &data,
+            Some(&Notice::error(
+                "project_decision_propose",
+                "HOST_ACTION_FAILED",
+            )),
+            false,
+        );
+        assert_eq!(panel.decision, "Original content");
+        assert!(panel.composer_open);
+        panel.title = "New title".into();
+        panel.context = "New context".into();
+        panel.decision = "New content".into();
+        panel.rationale = "New rationale".into();
+        panel.consequences = "New consequences".into();
+        panel.citations = vec![Citation {
+            source: "source:new".into(),
+            revision: 4,
+            title: "New evidence".into(),
+        }];
+        let updated = panel
+            .proposal(&data["projectMemory"]["projects"][0])
+            .unwrap();
+        let success = Notice::receipt(
+            "project_decision_propose",
+            &json!({"reasonCode":"PROJECT_DECISION_PROPOSED","outcome":"applied"}),
+        );
+        panel.finish_proposal(&data, Some(&success), false);
+        assert_eq!(
+            panel
+                .proposal(&data["projectMemory"]["projects"][0])
+                .unwrap(),
+            updated
+        );
+        assert!(panel.composer_open);
+        assert!(panel.pending_proposal.is_none());
+        panel.finish_proposal(&data, Some(&success), false);
+        assert_eq!(panel.title, "New title");
+        assert_eq!(panel.citations[0].source, "source:new");
+    }
+
+    #[test]
+    fn proposal_completion_never_clears_a_changed_project_or_source_epoch() {
+        let mut data = decision_snapshot("proposed");
+        let mut panel = DecisionPanel::default();
+        panel.select("project:fixture");
+        panel.title = "Draft title".into();
+        panel.decision = "Keep this text".into();
+        panel.composer_open = true;
+        panel.citation_epoch = 9;
+        panel.citations.push(Citation {
+            source: "source:fixture".into(),
+            revision: 3,
+            title: "Evidence".into(),
+        });
+        let submitted = panel
+            .proposal(&data["projectMemory"]["projects"][0])
+            .unwrap();
+        panel.pending_proposal = Some((6, submitted));
+        data["projectDecisions"]["projects"][0]["revision"] = json!(7);
+        data["projectMemory"]["projects"][0]["revision"] = json!(10);
+        let success = Notice::receipt(
+            "project_decision_propose",
+            &json!({"reasonCode":"PROJECT_DECISION_PROPOSED","outcome":"applied"}),
+        );
+        panel.finish_proposal(&data, Some(&success), false);
+        assert_eq!(panel.decision, "Keep this text");
+        assert_eq!(panel.citations.len(), 1);
+        assert!(panel.pending_proposal.is_none());
+        panel.select("project:other");
+        panel.title = "Other project draft".into();
+        panel.decision = "Other project content".into();
+        panel.composer_open = true;
+        panel.finish_proposal(&data, Some(&success), false);
+        assert_eq!(panel.title, "Other project draft");
+        assert_eq!(panel.decision, "Other project content");
+        assert!(panel.composer_open);
+    }
+
+    #[test]
+    fn recoverable_mutation_error_holds_all_automatic_reads_without_consuming_request_keys() {
+        fn show(
+            ctx: &egui::Context,
+            console: &mut Console,
+            data: &Value,
+            notice: Option<&Notice>,
+            can_retry: bool,
+            events: Vec<Event>,
+        ) -> Vec<Command> {
+            let mut commands = vec![];
+            let output = ctx.run_ui(
+                RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 1200.0))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| commands = console.show(ui, data, false, notice, can_retry),
+            );
+            output.drop_without_applying_deltas();
+            commands
+        }
+        let error = Notice::error("project_decision_propose", "HOST_ACTION_FAILED");
+        for tab in [Tab::Memory, Tab::Decisions] {
+            let ctx = egui::Context::default();
+            let mut console = Console {
+                tab,
+                ..Default::default()
+            };
+            let mut data = decision_snapshot("proposed");
+            console.memory.select("project:fixture");
+            console.decisions.select("project:fixture");
+            console.decisions.selected = "decision:fixture".into();
+            console.decisions.composer_open = true;
+            console.decisions.title = "Editable after error".into();
+            console.decisions.decision = "Keep my pending draft".into();
+            data["projectDecisions"]["projects"][0]["revision"] = json!(7);
+            data["projectMemory"]["projects"][0]["revision"] = json!(10);
+            assert!(show(&ctx, &mut console, &data, Some(&error), true, vec![]).is_empty());
+            assert!(console.memory.requested.is_none());
+            assert!(console.decisions.list_requested.is_none());
+            assert!(console.decisions.detail_requested.is_none());
+            assert!(console.decisions.sources.requested.is_none());
+            assert_eq!(console.decisions.title, "Editable after error");
+            assert_eq!(console.decisions.decision, "Keep my pending draft");
+            let label = if tab == Tab::Memory {
+                "Refresh memory"
+            } else {
+                "Refresh decisions"
+            };
+            let rect: Rect = ctx.data(|d| {
+                d.get_temp(egui::Id::new(("test-action", "memory_control", label)))
+                    .unwrap()
+            });
+            let pos = rect.center();
+            for pressed in [true, false] {
+                assert!(show(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    Some(&error),
+                    true,
+                    vec![
+                        Event::PointerMoved(pos),
+                        Event::PointerButton {
+                            pos,
+                            button: PointerButton::Primary,
+                            pressed,
+                            modifiers: Modifiers::default()
+                        }
+                    ]
+                )
+                .is_empty());
+            }
+            let commands = show(&ctx, &mut console, &data, None, false, vec![]);
+            assert_eq!(commands.len(), 1);
+            assert_eq!(
+                commands[0].action,
+                if tab == Tab::Memory {
+                    "project_memory_read"
+                } else {
+                    "project_decisions_read"
+                }
+            );
+        }
+        let ctx = egui::Context::default();
+        let mut console = Console {
+            tab: Tab::Memory,
+            ..Default::default()
+        };
+        let mut data = decision_snapshot("proposed");
+        data["memoryPage"] = Value::Null;
+        let read_error = Notice::error("project_memory_read", "HOST_ACTION_FAILED");
+        assert_eq!(
+            show(&ctx, &mut console, &data, Some(&read_error), true, vec![])[0].action,
+            "project_memory_read",
+            "read-only failures do not lock mutation recovery"
+        );
     }
 
     #[test]

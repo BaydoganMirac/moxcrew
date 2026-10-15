@@ -243,6 +243,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Close another Patchfleet instance if it owns this data directory. Your local state is preserved." => "Bu veri dizinini kullanan başka bir Patchfleet varsa kapatın. Yerel verileriniz korunur.",
         "Retry opening the host" => "Ana makineyi yeniden açmayı dene", "Opening Patchfleet" => "Patchfleet açılıyor", "Loading the local Rust host…" => "Yerel ana makine yükleniyor…",
         "The local host is not ready for another action." => "Yerel ana makine yeni bir işlem için hazır değil.",
+        "Retry or dismiss the failed action before refreshing." => "Yenilemeden önce başarısız işlemi yeniden deneyin veya bildirimi kapatın.",
         "Language preference could not be read. Select a language to replace it." => "Dil tercihi okunamadı. Yeniden kaydetmek için bir dil seçin.",
         "available" => "hazır", "completed" => "tamamlandı", "applied" => "uygulandı", "failed" => "başarısız", "rejected" => "reddedildi", "timed_out" => "süre doldu",
         "queued" => "kuyrukta", "running" => "çalışıyor", "launching" => "başlatılıyor", "cancelling" => "iptal ediliyor", "cancelled" => "iptal edildi", "interrupted" => "kesildi",

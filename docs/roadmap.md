@@ -2,13 +2,16 @@
 
 Status: active
 
-Updated: 2026-10-14
+Updated: 2026-10-15
 
 This roadmap describes public technical direction, not dates or commercial
 commitments.
 
 ## Now
 
+- Apply the [free Local and subscription Cloud
+  boundary](decisions/0029-free-local-and-subscription-cloud.md). Explicit sharing requires
+  service authorization.
 - Build on the completed [Project/source foundation](plans/0025-project-source-memory-foundation.md)
   to implement decision proposal/acceptance and evaluate a rebuildable local
   index under [Task 0022](plans/0022-project-memory-and-decision-service.md).
@@ -28,8 +31,7 @@ commitments.
 
 - Validate the completed macOS, Windows, and Linux package, diagnostics,
   upgrade, uninstall, and recovery paths with external beta users.
-- Validate the self-service Cloud Free release and the full Local-to-Cloud team
-  journey with moderated external users.
+- Validate the Local-to-Cloud team workflow with external users.
 - Generalize execution control to Claude Code or Gemini only after a provider
   proves an equally safe supported lifecycle surface.
 

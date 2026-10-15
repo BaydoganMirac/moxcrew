@@ -31,3 +31,5 @@ supersedes the old one.
 | [0024](0024-native-rust-desktop-ui.md) | Accepted | Native Rust/egui interface supersedes Tauri; prioritize low RAM and event-driven rendering |
 | [0025](0025-project-source-memory-foundation.md) | Accepted | Stable projects, explicit worktree links and durable owner sources before decisions or vectors |
 | [0026](0026-native-desktop-language-preferences.md) | Accepted | Turkish/English native copy with protected owner language preference; source content stays original |
+| [0028](0028-native-folder-consent-and-feedback.md) | Accepted | Native folder selection and actionable access feedback |
+| [0029](0029-free-local-and-subscription-cloud.md) | Accepted product boundary | Free Local and optional subscription Cloud; runtime transition remains separate |

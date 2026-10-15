@@ -2,7 +2,7 @@
 
 Status: Slice A complete; decision/index/agent/extraction slices remain planned
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 ## Owner selected outcome
 
@@ -10,6 +10,9 @@ Multiple agents or teams share project-scoped local memory. Patchfleet project
 messages, tasks, and owner answers are the default sources. External agent
 conversations are optional imports. Automatic extraction creates ADR drafts;
 only explicit owner acceptance makes a decision authoritative.
+
+[ADR 0029](../decisions/0029-free-local-and-subscription-cloud.md) keeps Local free and shared
+memory optional. See ADR 0030 for the proposed single-publisher boundary.
 
 ## Recorded
 

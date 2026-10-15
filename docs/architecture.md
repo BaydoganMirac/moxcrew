@@ -173,8 +173,7 @@ contract. Task0032 implements measured Cloud vector and Local keyword retrieval.
 [Task0034](plans/0034-scoped-agent-memory.md) implements the Local Codex attachment
 through a lazy loopback reader and an existing-executable stdio bridge, protected
 one-shot bootstrap tickets, revocable RAM leases and strict V6 context facts.
-See [agent protocol](agent-memory-protocol.md). Automatic extraction and Cloud
-agent attachment remain later slices; Task0031 publication stays explicit.
+See [agent protocol](agent-memory-protocol.md). [Task0035](plans/0035-automatic-sourced-drafts.md) adds per-project consented Codex drafting, V7 job/provenance facts and source-backed V4 proposals through the same writer. Inference runs outside Local operations; sources travel only after explicit provider disclosure. See [extraction protocol](extraction-protocol.md). Cloud agent attachment remains a later slice; Task0031 publication stays explicit.
 
 ## Provider adapter boundary
 

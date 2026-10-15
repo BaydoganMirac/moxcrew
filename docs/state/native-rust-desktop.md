@@ -1,6 +1,6 @@
 # Native Rust desktop state
 
-Status: 0.10.0 implemented and independently accepted; platform release checks pending
+Status: 0.11.0 implemented and independently accepted; platform release checks pending
 
 Updated: 2026-10-15
 
@@ -264,7 +264,7 @@ disposable illustrative data. The form images are minimum-window GL captures.
 - Memory still scales with retained canonical history and visible operational
   data. Source memory is implemented with compact metadata/scoped reads, but the
   canonical event cache remains proportional to history. Cloud vector retrieval and Local agent tools are implemented;
-  automatic extraction remains a later slice. Explicit Cloud
+  optional consented automatic extraction is implemented in0.11. Explicit Cloud
   publication is implemented in 0.7 and requires compatible service deployment.
 
 See [ADR 0024](../decisions/0024-native-rust-desktop-ui.md),
@@ -293,3 +293,14 @@ Version 0.10 passes 224 Rust and 149 legacy checks, real Codex MCP preflight,
 feature-off packaging and explicit native launch. The final DMG is 6.35 MiB;
 idle UI RSS sampled at 106.3 MiB and static stdio reader RSS at 10.2 MiB.
 See agent state for exact artifacts, review repairs, hashes and limits.
+
+## 0.11 consented automatic drafts
+
+[Task0035](../plans/0035-automatic-sourced-drafts.md) is complete and independently
+reviewed. Project opt-in, future-only source queueing, old-source explicit
+queueing, bounded provider execution and sourced generated proposals are wired
+through the existing writer. Accepted decisions remain owner-controlled; no
+additional Local database/model runtime was added. See [draft state](automatic-drafts.md)
+for final262 Rust/149 legacy checks, reviewed fixes, native frames, package
+hashes and106.2MiB empty-state App sample. Native0.11 writes V7 extraction facts;
+backup/rollback requirements are documented in [release](../release.md).

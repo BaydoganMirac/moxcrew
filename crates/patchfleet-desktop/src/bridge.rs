@@ -98,8 +98,16 @@ fn poll_delay(snapshot: &Value) -> Duration {
     let active_team = snapshot["teams"]["items"]
         .as_array()
         .is_some_and(|items| items.iter().any(|v| v["status"] == "active"));
+    let extraction = snapshot["projectExtraction"]["projects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|p| {
+            p["counts"]["queued"].as_u64().unwrap_or(0) > 0
+                || p["counts"]["running"].as_u64().unwrap_or(0) > 0
+        });
     Duration::from_secs(
-        if active_work || active_team || snapshot["cloud"]["paired"] == true {
+        if active_work || active_team || extraction || snapshot["cloud"]["paired"] == true {
             5
         } else {
             60
@@ -685,14 +693,18 @@ impl Bridge {
                 }
                 self.account_connection = Some(connection);
                 if self.memory_page.as_ref().is_some_and(|page| {
-                    !snapshot["projectMemory"]["projects"]
-                        .as_array()
-                        .is_some_and(|projects| {
-                            projects.iter().any(|project| {
-                                project["projectId"] == page["projectId"]
-                                    && project["revision"] == page["revision"]
+                    page["extractionRevision"].as_u64().unwrap_or(0)
+                        != snapshot["projectExtraction"]["revision"]
+                            .as_u64()
+                            .unwrap_or(0)
+                        || !snapshot["projectMemory"]["projects"]
+                            .as_array()
+                            .is_some_and(|projects| {
+                                projects.iter().any(|project| {
+                                    project["projectId"] == page["projectId"]
+                                        && project["revision"] == page["revision"]
+                                })
                             })
-                        })
                 }) {
                     self.memory_page = None;
                 }
@@ -981,6 +993,18 @@ mod tests {
         assert_eq!(
             poll_delay(&json!({"cloud":{"paired":true}})),
             Duration::from_secs(5)
+        );
+        for status in ["queued", "running"] {
+            assert_eq!(
+                poll_delay(&json!({"projectExtraction":{"projects":[{"counts":{status:1}}]}})),
+                Duration::from_secs(5)
+            );
+        }
+        assert_eq!(
+            poll_delay(
+                &json!({"projectExtraction":{"projects":[{"counts":{"failed":1,"completed":2}}]}})
+            ),
+            Duration::from_secs(60)
         );
     }
 
@@ -1455,6 +1479,20 @@ mod tests {
         assert!(bridge.snapshot.as_ref().unwrap()["memoryPage"].is_null());
         await_idle(&mut bridge);
         assert_eq!(bridge.snapshot.as_ref().unwrap()["memoryPage"]["total"], 1);
+        bridge.submit(Command::new("project_extraction_configure", json!({"projectId":project["projectId"],"expectedPolicyRevision":0,"enabled":true,"consent":true})));
+        await_idle(&mut bridge);
+        assert!(bridge.snapshot.as_ref().unwrap()["memoryPage"].is_null());
+        bridge.submit(Command::new(
+            "project_memory_read",
+            json!({"projectId":project["projectId"],"query":"currency"}),
+        ));
+        await_idle(&mut bridge);
+        let snapshot = bridge.snapshot.as_ref().unwrap();
+        assert_eq!(
+            snapshot["memoryPage"]["extractionRevision"],
+            snapshot["projectExtraction"]["revision"]
+        );
+        assert!(snapshot["memoryPage"]["sources"][0]["extractionJob"].is_null());
         bridge.shutdown();
     }
 

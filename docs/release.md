@@ -1,6 +1,6 @@
 # Native desktop release
 
-The 0.10 source builds a standalone Rust/egui desktop. Installers use
+The 0.11 source builds a standalone Rust/egui desktop. Installers use
 cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or desktop
 build requirements. npm publication is retired. Pushing, publishing installers,
 public signing and Cloud deployment remain explicit owner release actions.
@@ -115,3 +115,11 @@ project-bound agent launch. Readers before 0.10 reject those facts. Preserve the
 stopped pre-upgrade backup for rollback. Verify MCP inventory plus actual context
 preflight against an isolated Codex 0.155.1+ without a model turn. Check two
 worktrees, terminal revocation, stale context, and no source/query/token export.
+
+Native0.11 adds V7 extraction settings/jobs/provenance when the owner uses the
+new commands. Preserve the stopped pre-upgrade backup before enabling or
+queueing; older readers reject V7. The extraction-memory and extraction-decisions
+smoke scenes use deterministic canonical provider results without any live model
+turn. Verify consent/default-off, source edit/disable cancellation and truthful
+manual retry in addition to the existing Local acceptance lifecycle. See
+[draft evidence](state/automatic-drafts.md).

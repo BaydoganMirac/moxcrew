@@ -1,6 +1,6 @@
 # Project memory feature state
 
-Status: Local ADR lifecycle and explicit paid Cloud publication independently accepted
+Status: Local ADR lifecycle, paid Cloud publication, retrieval, agent tools and optional drafts independently accepted
 
 Last updated: 2026-10-15
 
@@ -196,16 +196,24 @@ and reduced transport contract with no remaining concrete code blocker.
 
 The staged [Task 0029](../plans/0029-decision-memory-and-cloud-publication.md)
 turns the free Local/subscription Cloud decision into bounded implementation
-slices. Following explicit Cloud publication, Cloud vectors, embedded Local
-retrieval evaluation, scoped agent tools
-and automatic extraction follow working exact decision retrieval.
+slices. Cloud publication, vector retrieval, free Local keyword search, scoped
+Local agent tools and optional automatic drafts are implemented. Cloud agent
+attachment is the next separate memory slice.
 
 ## Current limits
 
-[Task0032](project-memory-search.md) now implements optional Cloud vector retrieval and free Local ranked keyword search. Task0034 now enables scoped read-only Local MCP tools; an automatic ADR extractor is not enabled. Cloud publication code requires compatible service deployment,
+[Task0032](project-memory-search.md) now implements optional Cloud vector retrieval and free Local ranked keyword search. Task0034 now enables scoped read-only Local MCP tools; the Task0035 extractor is optional and disabled by default. Cloud publication code requires compatible service deployment,
 explicit consent and verified subscription. Owned Codex work and team roles now receive current accepted Local ADR context through bounded tools. See [agent state](agent-memory.md). External conversations and historical
 unbound work are not imported. Cloud-created teams do not get implicit bindings;
 owner replies on an already locally bound team retain its historical scope and
 are labeled `owner` rather than claiming a local author. Deletion/retention controls
 are deferred; unlinking is not forgetting. No provider settings, transcript import,
 live Cloud account or installed owner data was modified by this slice.
+
+## Automatic source-backed drafts — Task0035
+
+Native0.11 adds optional per-project provider consent, future-only automatic
+source processing, explicit old-source queueing and bounded V7 jobs. Generated
+V4 proposals retain exact evidence and Codex provenance; acceptance remains an
+explicit owner decision. See [draft state](automatic-drafts.md) and
+[protocol](../extraction-protocol.md). Cloud agent attachment remains separate.

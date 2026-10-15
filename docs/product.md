@@ -80,7 +80,7 @@ Owned Codex work and team roles now read current accepted Local decisions throug
 three scoped read-only MCP tools. Worktree links share one project memory; the
 agent cannot select another project or read raw source bodies. Local keyword
 retrieval stays free; Cloud vector retrieval retains its paid boundary. Automatic
-source-backed ADR drafts and agent Cloud attachment remain later slices. See
+source-backed ADR drafts are optional per project with explicit provider-upload/usage consent; they remain proposed until owner acceptance. Existing sources require deliberate queueing. Agent Cloud attachment remains a later slice. See
 [Task 0022](plans/0022-project-memory-and-decision-service.md). External agent
 conversations require an explicit import; this foundation does not import them.
 Memory does not widen the default Cloud data boundary. The implemented optional

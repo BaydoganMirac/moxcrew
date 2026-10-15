@@ -16,10 +16,11 @@
 | V0 publishable Local beta | Done | 2026-07-17 | [v0-local-beta.md](v0-local-beta.md) |
 | External beta activation | In progress | 2026-07-17 | [external-beta-activation.md](external-beta-activation.md) |
 | Agent packs and teams | Done | 2026-07-20 | [agent-teams.md](agent-teams.md) |
-| Project/source memory and automatic ADR drafts | Local ADRs, Cloud publication, retrieval and Local agent tools done; extraction next | 2026-10-15 | [project-memory.md](project-memory.md) |
+| Project/source memory and automatic ADR drafts | Local ADRs, Cloud publication, retrieval, agent tools and optional extraction implemented | 2026-10-15 | [project-memory.md](project-memory.md) |
 | Rust and Tauri desktop | Superseded interface; core retained | 2026-10-14 | [rust-desktop.md](rust-desktop.md) |
 | Native Rust desktop interface | Implemented; platform release checks pending | 2026-10-15 | [native-rust-desktop.md](native-rust-desktop.md) |
 | Scoped agent memory | Complete; independent review and macOS development package verified | 2026-10-15 | [agent-memory.md](agent-memory.md) |
+| Automatic sourced ADR drafts | Complete; reviewed and macOS development package verified | 2026-10-15 | [automatic-drafts.md](automatic-drafts.md) |
 | Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
@@ -40,7 +41,7 @@ and remaining platform release checks. Version 0.5 adds stable project/source me
 and Turkish/English display. Version 0.6 adds Local sourced ADR acceptance;
 version 0.7 adds optional explicit paid Cloud publication and exact reader copies.
 Version0.8 adds measured Cloud vector retrieval and free Local keyword search;
-version0.9 adds optional native account sign-in. version0.10 adds scoped Local agent tools. Automatic extraction follows.
+version0.9 adds optional native account sign-in. version0.10 adds scoped Local agent tools. Version0.11 adds consented automatic sourced ADR drafts.
 
 State files are resumable handoffs. Update the relevant file whenever a work
 session changes implementation status, blockers, decisions, or next steps.

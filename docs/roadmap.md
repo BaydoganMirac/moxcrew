@@ -24,7 +24,7 @@ commitments.
   Preserve the measured Cloud retrieval and free Local keyword search in
   [Task0032](plans/0032-project-memory-search.md).
   Scoped Local agent access is implemented in [Task0034](plans/0034-scoped-agent-memory.md).
-  Automatic ADR drafts follow; owner acceptance remains explicit.
+  Optional consented ADR drafts are implemented in [Task0035](plans/0035-automatic-sourced-drafts.md); owner acceptance remains explicit. Cloud agent attachment is the next separate memory slice.
 - Keep the completed Phase 1 observation, Phase 2 local control, and Phase 3
   paired Cloud control loops stable.
 - Stabilize the shipped declarative agent catalog, owner-composed teams,

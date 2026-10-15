@@ -1,6 +1,6 @@
 use crate::{
     cloud::Cloud,
-    domain, event, now, project_memory, providers,
+    decisions, domain, event, now, project_memory, providers,
     store::Store,
     teams::{catalog, templates},
     work::{array, find, intent, text},
@@ -64,6 +64,28 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
             "expectedSourceRevision",
         ],
         "project_memory_read" => &["projectId", "offset", "limit", "query"],
+        "project_decision_propose" => &[
+            "projectId",
+            "expectedProjectRevision",
+            "title",
+            "context",
+            "decision",
+            "rationale",
+            "consequences",
+            "sources",
+        ],
+        "project_decision_accept" | "project_decision_reject" => {
+            &["projectId", "decisionId", "expectedDecisionRevision"]
+        }
+        "project_decision_supersede" => &[
+            "projectId",
+            "decisionId",
+            "expectedDecisionRevision",
+            "replacementDecisionId",
+            "expectedReplacementRevision",
+        ],
+        "project_decisions_read" => &["projectId", "offset", "limit", "query", "status"],
+        "project_decision_read" => &["projectId", "decisionId"],
         "desktop_language" => &["language"],
         "work_enqueue" => &["title", "instruction", "workspaceId", "workingDirectory"],
         "work_start" | "work_retry" | "work_remove" => &["workItemId", "expectedItemRevision"],
@@ -108,7 +130,10 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
 
 impl Host {
     pub fn action_payload_limit(action: &str) -> usize {
-        if matches!(action, "project_message" | "project_source_edit") {
+        if matches!(
+            action,
+            "project_message" | "project_source_edit" | "project_decision_propose"
+        ) {
             192 * 1024
         } else {
             128 * 1024
@@ -144,6 +169,8 @@ impl Host {
         });
         host.store
             .transaction(|events| Ok((project_memory::recover(events)?, Value::Null)))?;
+        host.store
+            .transaction(|events| Ok((decisions::recover(events)?, Value::Null)))?;
         let events = host.store.read_events()?;
         let workspace_receipts: std::collections::HashSet<_> = events
             .iter()
@@ -231,6 +258,17 @@ impl Host {
         }
         if action == "project_memory_read" {
             return self.store.read_memory(&payload);
+        }
+        if action == "project_decisions_read" {
+            return self.store.read_decisions(&payload);
+        }
+        if action == "project_decision_read" {
+            return self.store.read_decision(&payload);
+        }
+        if action.starts_with("project_decision_") {
+            return self
+                .store
+                .transaction(|events| decisions::apply(events, action, &payload));
         }
         if action.starts_with("project_") {
             return self

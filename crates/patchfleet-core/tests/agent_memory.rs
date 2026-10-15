@@ -158,6 +158,41 @@ fn context_revision_counts_only_prior_project_v4_facts() {
     assert!(memory::project(&events).is_err());
 }
 #[test]
+fn terminal_start_receipt_closes_context_admission_without_erasing_a_prior_context() {
+    let failed = event(
+        1,
+        "command.receipted",
+        json!({"receipt":{"schemaVersion":1,"intentId":INTENT,"idempotencyKey":INTENT,
+            "commandType":"start_work","outcome":"failed","reasonCode":"PROVIDER_CONTROL_FAILED",
+            "completedAt":"2026-10-15T12:00:00.000Z","workProjectionRevision":0,"workItemId":WORK}}),
+    );
+    let mut ended = history();
+    ended.push(failed.clone());
+    ended.push(context(0));
+    assert!(memory::project(&ended).is_err());
+
+    let mut bound_before_failure = history();
+    bound_before_failure.push(context(0));
+    bound_before_failure.push(failed.clone());
+    assert_eq!(
+        memory::project(&bound_before_failure).unwrap()["contexts"][0],
+        context(0)["payload"]
+    );
+
+    let mut other_request_ended = history();
+    let mut other_receipt = failed;
+    other_receipt["payload"]["receipt"]["intentId"] = json!("cmd:unrelated-start");
+    other_request_ended.push(other_receipt);
+    other_request_ended.push(context(0));
+    assert_eq!(
+        memory::project(&other_request_ended).unwrap()["contexts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+#[test]
 fn tool_arguments_are_bounded_read_only_and_never_select_scope() {
     for (tool, args) in [
         ("project_context", json!({})),

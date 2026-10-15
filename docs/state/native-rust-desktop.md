@@ -304,3 +304,12 @@ additional Local database/model runtime was added. See [draft state](automatic-d
 for final262 Rust/149 legacy checks, reviewed fixes, native frames, package
 hashes and106.2MiB empty-state App sample. Native0.11 writes V7 extraction facts;
 backup/rollback requirements are documented in [release](../release.md).
+
+## 0.12 product studio
+
+The owner-requested interface refresh is complete in [Task0036](../plans/0036-product-studio-interface.md).
+The [interface state](product-studio-interface.md) records grouped navigation,
+actual-count project cards and scoped shortcuts, adaptive team/catalog/decision
+layouts, bundled fonts/icons,263 Rust/149 legacy checks, independent review,
+actual macOS production pixels and the 6.65 MiB development DMG. The empty App
+startup sample used 109.2 MiB RSS; no new runtime service/dependency was added.

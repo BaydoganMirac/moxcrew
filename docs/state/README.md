@@ -21,7 +21,7 @@
 | Native Rust desktop interface | Implemented; platform release checks pending | 2026-10-15 | [native-rust-desktop.md](native-rust-desktop.md) |
 | Scoped agent memory | Complete; independent review and macOS development package verified | 2026-10-15 | [agent-memory.md](agent-memory.md) |
 | Automatic sourced ADR drafts | Complete; reviewed and macOS development package verified | 2026-10-15 | [automatic-drafts.md](automatic-drafts.md) |
-| Product studio interface | Implemented; review/package verification in progress | 2026-10-15 | [product-studio-interface.md](product-studio-interface.md) |
+| Product studio interface | Complete; independently reviewed and macOS package verified | 2026-10-15 | [product-studio-interface.md](product-studio-interface.md) |
 | Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

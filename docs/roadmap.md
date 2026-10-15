@@ -12,9 +12,10 @@ commitments.
 - Apply the [free Local and subscription Cloud
   boundary](decisions/0029-free-local-and-subscription-cloud.md). Explicit sharing requires
   service authorization.
-- Build on the completed [Project/source foundation](plans/0025-project-source-memory-foundation.md)
-  to implement decision proposal/acceptance and evaluate a rebuildable local
-  index under [Task 0022](plans/0022-project-memory-and-decision-service.md).
+- Preserve the [local sourced ADR lifecycle](plans/0030-local-decision-lifecycle.md)
+  on top of the completed Project/source foundation. Next implement explicit
+  subscription Cloud publication under a separately approved concrete card,
+  then evaluate Cloud vectors and the free Local index under Task 0029.
   Scoped agent access and automatic ADR drafts follow independently verified
   decision retrieval; owner acceptance remains explicit.
 - Keep the completed Phase 1 observation, Phase 2 local control, and Phase 3

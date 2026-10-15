@@ -2,7 +2,7 @@
 
 Your coding agents. One local Rust desktop command center.
 
-Patchfleet 0.5 runs its interface and host in Rust. egui/eframe renders the native
+Patchfleet 0.6 runs its interface and host in Rust. egui/eframe renders the native
 window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
@@ -12,7 +12,9 @@ sidebar; the owner Host saves it locally for the next launch. Source messages,
 work instructions, code and custom user content retain their original language.
 
 Create stable projects, link multiple Git worktrees, keep project messages and
-owner task/team sources in local Project Memory. Queue and control supported Codex work, configure twelve
+owner task/team sources in local Project Memory. Create sourced ADR drafts in
+Decisions, explicitly accept/reject them and replace an accepted decision while
+preserving its evidence and history. Queue and control supported Codex work, configure twelve
 agent packs and six bounded team templates, answer owner gates, and inspect
 provider status. Claude Code and Gemini CLI remain observation-only. Provider
 CLIs and their own model/account/runtime requirements are installed separately.
@@ -52,9 +54,10 @@ build/runtime evidence and remaining signing/platform checks are recorded in
 
 Read [installation and recovery](docs/install.md), [architecture](docs/architecture.md)
 and [release checks](docs/release.md). [Project Memory](docs/state/project-memory.md)
-supports durable sources, message revisions and scoped keyword reads. Accepted
-ADRs, vector search, agent memory tools and automatic drafts are later slices;
-only explicit owner acceptance will bind agents to a decision.
+supports durable sources, message revisions, sourced ADR lifecycle and scoped
+keyword reads. Vector search, agent memory tools, automatic drafts and explicit
+Cloud publication are later slices. Only owner acceptance makes an ADR active;
+agent context injection is not enabled yet. Local memory remains free.
 
 ## Product boundaries
 

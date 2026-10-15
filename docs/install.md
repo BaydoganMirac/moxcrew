@@ -1,6 +1,6 @@
 # Install and operate Patchfleet Desktop
 
-Status: 0.5.1 native Rust desktop development distribution
+Status: 0.6.0 native Rust desktop development distribution
 
 Updated: 2026-10-15
 
@@ -26,11 +26,11 @@ Run `cargo run --locked -p patchfleet-desktop`. Build a production executable wi
 `cargo build --locked --release -p patchfleet-desktop`, then package it using
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
 
-For a native 0.5 upgrade, close the old application and replace its application
+For a native 0.6 upgrade, close the old application and replace its application
 bundle through the reviewed installer. The bundle identifier and data directory
 remain the same; existing Rust state can be read by the new application. Back up
-the stopped data directory before creating project memory: new V3 facts require
-the 0.5 reader. Rolling back to 0.3/0.4 requires that pre-upgrade backup. Uninstalling must not
+the stopped data directory before creating decisions: new V4 facts require
+the 0.6 reader. Rolling back to 0.5 or earlier requires that pre-upgrade backup. Uninstalling must not
 delete the canonical data directory.
 
 ### macOS opens an entirely white window
@@ -42,7 +42,7 @@ production application draws correctly when the old process is closed.
 
 1. Quit all running Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.5.1`
+3. Open `Applications/Patchfleet.app`. The sidebar should show `Patchfleet 0.6.0`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut
@@ -50,6 +50,26 @@ and add the application from Applications. No data or preferences need to be
 deleted. See the [verified production window](screenshots/native-production-0.5-tr.png).
 
 ## Local operation
+
+### Project decisions
+
+Create a project and add messages in Memory (linked task/team sources also
+appear there). Open Decisions, select the project and choose **New decision
+draft**. Write the title/decision and cite one to eight current source versions.
+Context, rationale and consequences are optional. Saving a draft does not
+make it active. Review its exact evidence and choose **Accept decision** or
+**Reject decision** explicitly. If a source changed before acceptance, create a
+fresh draft citing current evidence; the stale draft can still be rejected.
+
+To change an accepted ADR, create a new sourced draft, then select it as the
+replacement on the accepted decision. Confirm the replacement action: the old
+record becomes superseded and the new one accepted together. Original text,
+source versions and history remain readable. Keyword/status filters stay within
+the selected project. Local decisions require no account or subscription.
+Vector retrieval, agent context tools, automatic extraction and Cloud
+publication are not enabled by this version.
+
+### Git folders and work
 
 On Projects, choose **Choose folder** or **Add folder**. The system folder picker
 opens; select the actual Git repository root, then confirm **Add folder** in
@@ -93,8 +113,9 @@ sources for new bound tasks/teams; it does not silently import historical work o
 provider transcripts. Select a project to read its bounded source page, filter by
 keyword, enter a message or revise a directly entered message. Captured task/team
 sources preserve their original text and project. Unlinking/unregistering a worktree
-does not erase history. No accepted ADRs, semantic/vector search or agent memory
-tools are enabled in this foundation.
+does not erase history. Source records alone are context; authoritative ADRs
+are managed in Decisions. Semantic/vector search, agent memory tools and
+automatic extraction remain unavailable.
 
 Choose Türkçe or English in the sidebar. Turkish is the default; the selected
 interface language is saved locally in protected `desktop-preferences.json`.

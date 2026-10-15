@@ -26,7 +26,14 @@ fn memory_read(action: &str) -> bool {
             | "project_decision_read"
             | "memory_cloud_read"
             | "memory_cloud_decision_read"
+            | "project_decision_search"
+            | "memory_cloud_search"
     )
+}
+
+fn cloud_identity(snapshot: &Value) -> Value {
+    let cloud = &snapshot["cloud"];
+    serde_json::json!({"paired":cloud["paired"],"cloudUrl":cloud["cloudUrl"],"hostId":cloud["hostId"],"workspaceId":cloud["workspaceId"]})
 }
 
 enum Message {
@@ -51,6 +58,9 @@ pub struct Bridge {
     decision_detail: Option<Value>,
     shared_memory_page: Option<Value>,
     shared_decision_detail: Option<Value>,
+    decision_search: Option<Value>,
+    shared_search: Option<Value>,
+    shared_search_connection: Option<Value>,
     pub error: Option<String>,
     pub feedback: Option<Notice>,
     pub picking_folder: bool,
@@ -89,6 +99,37 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 }
 
 impl Bridge {
+    #[cfg(feature = "ui-smoke")]
+    pub fn search_smoke(&mut self, shared: bool, query: &str) {
+        let Some(project) = self.snapshot.as_ref().and_then(|s| {
+            s[if shared {
+                "sharedMemory"
+            } else {
+                "projectDecisions"
+            }]["projects"]
+                .as_array()
+                .and_then(|rows| rows.first())
+                .map(|p| p["projectId"].clone())
+        }) else {
+            return;
+        };
+        self.submit(Command::new(
+            if shared {
+                "memory_cloud_search"
+            } else {
+                "project_decision_search"
+            },
+            serde_json::json!({"projectId":project,"query":query,"limit":5}),
+        ));
+        for _ in 0..1600 {
+            self.poll();
+            if !self.busy {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     #[cfg(feature = "ui-smoke")]
     pub fn decision_smoke(&mut self) {
         let Some(id) = self
@@ -275,6 +316,9 @@ impl Bridge {
             decision_detail: None,
             shared_memory_page: None,
             shared_decision_detail: None,
+            decision_search: None,
+            shared_search: None,
+            shared_search_connection: None,
             error: None,
             feedback: None,
             picking_folder: false,
@@ -291,6 +335,18 @@ impl Bridge {
             match message {
                 Message::Snapshot(snapshot) => self.apply_snapshot(snapshot),
                 Message::Outcome(command, result, snapshot) => {
+                    let preserve_owner = memory_read(command.action)
+                        && self
+                            .pending
+                            .as_ref()
+                            .is_some_and(|pending| !memory_read(pending.action))
+                        && self
+                            .feedback
+                            .as_ref()
+                            .is_some_and(|notice| notice.kind == NoticeKind::Error);
+                    if preserve_owner {
+                        continue;
+                    }
                     match result {
                         Ok(receipt) => {
                             match command.action {
@@ -307,6 +363,10 @@ impl Bridge {
                                 "memory_cloud_decision_read" => {
                                     self.shared_decision_detail = Some(receipt.clone())
                                 }
+                                "project_decision_search" => {
+                                    self.decision_search = Some(receipt.clone())
+                                }
+                                "memory_cloud_search" => self.shared_search = Some(receipt.clone()),
                                 _ => (),
                             }
                             self.pending = None;
@@ -352,7 +412,11 @@ impl Bridge {
                     self.memory_page = None;
                 }
                 snapshot["memoryPage"] = self.memory_page.clone().unwrap_or(Value::Null);
-                for page in [&mut self.decision_page, &mut self.decision_detail] {
+                for page in [
+                    &mut self.decision_page,
+                    &mut self.decision_detail,
+                    &mut self.decision_search,
+                ] {
                     if page.as_ref().is_some_and(|page| {
                         !snapshot["projectDecisions"]["projects"]
                             .as_array()
@@ -368,6 +432,7 @@ impl Bridge {
                 }
                 snapshot["decisionPage"] = self.decision_page.clone().unwrap_or(Value::Null);
                 snapshot["decisionDetail"] = self.decision_detail.clone().unwrap_or(Value::Null);
+                snapshot["decisionSearch"] = self.decision_search.clone().unwrap_or(Value::Null);
                 for page in [
                     &mut self.shared_memory_page,
                     &mut self.shared_decision_detail,
@@ -390,6 +455,27 @@ impl Bridge {
                     self.shared_memory_page.clone().unwrap_or(Value::Null);
                 snapshot["sharedDecisionDetail"] =
                     self.shared_decision_detail.clone().unwrap_or(Value::Null);
+                if self.shared_search.as_ref().is_some_and(|page| {
+                    self.shared_search_connection.as_ref() != Some(&cloud_identity(&snapshot))
+                        || page["revision"] != snapshot["sharedMemory"]["revision"]
+                        || !snapshot["sharedMemory"]["projects"].as_array().is_some_and(
+                            |projects| {
+                                projects.iter().any(|project| {
+                                    project["projectId"] == page["projectId"]
+                                        && project["sharedProjectId"] == page["sharedProjectId"]
+                                        && project["state"] != "connection_changed"
+                                        && project["enabled"] == true
+                                        && page["manifestRevision"]
+                                            .as_u64()
+                                            .zip(project["sharedRevision"].as_u64())
+                                            .is_some_and(|(found, current)| found >= current)
+                                })
+                            },
+                        )
+                }) {
+                    self.shared_search = None;
+                }
+                snapshot["sharedSearch"] = self.shared_search.clone().unwrap_or(Value::Null);
                 self.snapshot = Some(snapshot);
                 self.error = None;
             }
@@ -416,6 +502,38 @@ impl Bridge {
         }
         match self.requests.try_send(Request::Action(command.clone())) {
             Ok(()) => {
+                for (result, key) in [
+                    (&mut self.decision_search, "decisionSearch"),
+                    (&mut self.shared_search, "sharedSearch"),
+                ] {
+                    if result.as_ref().is_some_and(|page| {
+                        command.payload["projectId"].is_string()
+                            && (page["projectId"] != command.payload["projectId"]
+                                || (matches!(
+                                    command.action,
+                                    "project_decision_search" | "memory_cloud_search"
+                                ) && page["query"].as_str()
+                                    != command.payload["query"].as_str().map(str::trim)))
+                    }) {
+                        *result = None;
+                    }
+                    if let Some(snapshot) = self.snapshot.as_mut() {
+                        snapshot[key] = result.clone().unwrap_or(Value::Null);
+                    }
+                }
+                if command.action == "project_decision_search" {
+                    self.decision_search = None;
+                    if let Some(snapshot) = self.snapshot.as_mut() {
+                        snapshot["decisionSearch"] = Value::Null;
+                    }
+                }
+                if command.action == "memory_cloud_search" {
+                    self.shared_search = None;
+                    self.shared_search_connection = self.snapshot.as_ref().map(cloud_identity);
+                    if let Some(snapshot) = self.snapshot.as_mut() {
+                        snapshot["sharedSearch"] = Value::Null;
+                    }
+                }
                 if matches!(
                     command.action,
                     "memory_cloud_read" | "memory_cloud_decision_read"
@@ -931,6 +1049,8 @@ mod tests {
             "project_decision_read",
             "memory_cloud_read",
             "memory_cloud_decision_read",
+            "project_decision_search",
+            "memory_cloud_search",
         ] {
             bridge.submit(Command::new(action, json!({"projectId":project})));
             assert!(!bridge.busy);
@@ -959,6 +1079,132 @@ mod tests {
             bridge.snapshot.as_ref().unwrap()["decisionPage"]["total"],
             1
         );
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn local_search_is_an_ephemeral_read_and_query_replacement_clears_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        bridge.submit(Command::new("project_create", json!({"name":"Search"})));
+        await_idle(&mut bridge);
+        let project =
+            bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0]["projectId"].clone();
+        let events = std::fs::read(directory.path().join("events.jsonl")).unwrap();
+        bridge.submit(Command::new(
+            "project_decision_search",
+            json!({"projectId":project,"query":"  PRIVATE_SEARCH_CANARY  ","limit":5}),
+        ));
+        await_idle(&mut bridge);
+        let result = &bridge.snapshot.as_ref().unwrap()["decisionSearch"];
+        assert_eq!(result["query"], "PRIVATE_SEARCH_CANARY");
+        assert_eq!(result["reasonCode"], "DECISION_SEARCH_READ");
+        assert_eq!(result["mode"], "keyword");
+        assert!(bridge.pending.is_none());
+        assert!(bridge.feedback.is_none());
+        assert_eq!(
+            std::fs::read(directory.path().join("events.jsonl")).unwrap(),
+            events
+        );
+        for entry in std::fs::read_dir(directory.path()).unwrap().flatten() {
+            if entry.file_type().unwrap().is_file() {
+                assert!(
+                    !String::from_utf8_lossy(&std::fs::read(entry.path()).unwrap())
+                        .contains("PRIVATE_SEARCH_CANARY")
+                );
+            }
+        }
+        bridge.submit(Command::new(
+            "project_decision_search",
+            json!({"projectId":project,"query":"new query"}),
+        ));
+        assert!(bridge.snapshot.as_ref().unwrap()["decisionSearch"].is_null());
+        await_idle(&mut bridge);
+        let mut changed = bridge.snapshot.as_ref().unwrap().clone();
+        changed["projectDecisions"]["projects"] = json!([]);
+        bridge.apply_snapshot(Ok(changed));
+        assert!(bridge.snapshot.as_ref().unwrap()["decisionSearch"].is_null());
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn shared_search_is_scoped_to_connection_metadata_and_current_remote_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        let mut snapshot = bridge.snapshot.as_ref().unwrap().clone();
+        snapshot["cloud"] = json!({"paired":true,"cloudUrl":"https://cloud.example.invalid","hostId":"host:one","workspaceId":"workspace:one"});
+        snapshot["sharedMemory"] = json!({"revision":12,"projects":[{"projectId":"project:one","sharedProjectId":"shared:one","sharedRevision":4,"enabled":true,"state":"ready"}]});
+        let result = json!({"schemaVersion":1,"reasonCode":"SHARED_MEMORY_SEARCH_READ","projectId":"project:one","revision":12,"query":"why Rust","sharedProjectId":"shared:one","manifestRevision":5,"mode":"semantic","model":{},"index":{"state":"ready","indexed":1,"total":1},"matches":[{"decisionId":"decision:one","revision":2,"title":"Owner text","score":0.8}]});
+        for change in [
+            "host",
+            "workspace",
+            "url",
+            "unpaired",
+            "global",
+            "scope",
+            "manifest",
+            "disabled",
+            "remap",
+        ] {
+            bridge.shared_search = Some(result.clone());
+            bridge.shared_search_connection = Some(cloud_identity(&snapshot));
+            bridge.apply_snapshot(Ok(snapshot.clone()));
+            assert_eq!(bridge.snapshot.as_ref().unwrap()["sharedSearch"], result);
+            let mut changed = snapshot.clone();
+            match change {
+                "host" => changed["cloud"]["hostId"] = json!("host:two"),
+                "workspace" => changed["cloud"]["workspaceId"] = json!("workspace:two"),
+                "url" => changed["cloud"]["cloudUrl"] = json!("https://other.example.invalid"),
+                "unpaired" => changed["cloud"]["paired"] = json!(false),
+                "global" => changed["sharedMemory"]["revision"] = json!(13),
+                "scope" => {
+                    changed["sharedMemory"]["projects"][0]["sharedProjectId"] = json!("shared:two")
+                }
+                "manifest" => changed["sharedMemory"]["projects"][0]["sharedRevision"] = json!(6),
+                "disabled" => changed["sharedMemory"]["projects"][0]["enabled"] = json!(false),
+                _ => changed["sharedMemory"]["projects"][0]["state"] = json!("connection_changed"),
+            }
+            bridge.apply_snapshot(Ok(changed));
+            assert!(
+                bridge.snapshot.as_ref().unwrap()["sharedSearch"].is_null(),
+                "{change}"
+            );
+        }
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn late_search_outcome_never_replaces_failed_owner_retry() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        let owner = Command::new("project_decision_propose", json!({"title":"Keep editor"}));
+        for outcome in [
+            Ok(json!({"reasonCode":"DECISION_SEARCH_READ"})),
+            Err("CLOUD_UNAVAILABLE".into()),
+        ] {
+            bridge.pending = Some(owner.clone());
+            bridge.feedback = Some(Notice::error(owner.action, "HOST_ACTION_FAILED"));
+            let before = bridge.snapshot.clone();
+            let mut old_snapshot = before.as_ref().unwrap().clone();
+            old_snapshot["projectMemory"]["projects"] =
+                json!([{"projectId":"project:old","revision":1}]);
+            bridge
+                .output
+                .blocking_send(Message::Outcome(
+                    Command::new("project_decision_search", json!({"query":"private query"})),
+                    outcome,
+                    Ok(old_snapshot),
+                ))
+                .unwrap();
+            bridge.poll();
+            assert_eq!(bridge.pending.as_ref().unwrap().payload, owner.payload);
+            assert_eq!(bridge.feedback.as_ref().unwrap().action, owner.action);
+            assert_eq!(bridge.feedback.as_ref().unwrap().code, "HOST_ACTION_FAILED");
+            assert_eq!(bridge.snapshot, before);
+        }
         bridge.shutdown();
     }
 }

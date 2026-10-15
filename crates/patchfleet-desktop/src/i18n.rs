@@ -85,6 +85,28 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Decisions belong to a project and cite its local sources." => "Kararlar bir projeye aittir ve yerel kaynaklarına dayanır.",
         "Choose a project to review its decisions." => "Kararlarını incelemek için bir proje seçin.",
         "Free · Local" => "Ücretsiz · Yerel",
+        "Search published decisions" => "Paylaşılan kararlarda ara",
+        "Find a published decision" => "Paylaşılan karar bul",
+        "Close search" => "Aramayı kapat",
+        "Search accepted Local decisions" => "Kabul edilen yerel kararlarda ara",
+        "Only Search Cloud sends this query to your selected shared project. Typing stays on this device." => "Sorgu yalnızca Bulutta ara düğmesiyle seçili paylaşılan projeye gönderilir. Yazarken bu cihazda kalır.",
+        "Free keyword ranking over current accepted decisions. Your query stays on this device." => "Güncel kabul edilmiş kararlarda ücretsiz anahtar sözcük sıralaması. Sorgunuz bu cihazda kalır.",
+        "Ask about a project decision…" => "Bir proje kararını sorun…",
+        "Results" => "Sonuç sayısı", "Search Cloud" => "Bulutta ara", "Search Local" => "Yerelde ara",
+        "Use a query of up to 400 characters without control characters." => "Kontrol karakterleri içermeyen, en fazla 400 karakterlik bir sorgu yazın.",
+        "Search again to refresh results for this query and project." => "Bu sorgu ve proje için güncel sonuçları almak üzere yeniden arayın.",
+        "Semantic matches" => "Anlamsal eşleşmeler", "Keyword fallback" => "Yedek anahtar sözcük araması",
+        "Local keyword matches" => "Yerel anahtar sözcük eşleşmeleri",
+        "Search snapshot · revision {0}" => "Arama anındaki sürüm · {0}",
+        "Indexed {0} of {1} current decisions" => "{1} güncel kararın {0} tanesi indekslendi",
+        "Semantic index ready" => "Anlamsal indeks hazır",
+        "Indexing in progress · keyword results cover current decisions." => "İndeksleme sürüyor · anahtar sözcük sonuçları güncel kararları kapsar.",
+        "Indexing failed · keyword fallback is available." => "İndeksleme başarısız · anahtar sözcük araması kullanılabilir.",
+        "Semantic service unavailable · keyword fallback is available." => "Anlamsal arama kullanılamıyor · anahtar sözcük araması kullanılabilir.",
+        "Sync shared memory to download and verify these exact revisions, then search again. Remote matches do not change Local acceptance." => "Bu sürümleri indirip doğrulamak için paylaşılan hafızayı eşitleyin, ardından yeniden arayın. Bulut eşleşmeleri yerel kabul durumunu değiştirmez.",
+        "No matching current decisions found." => "Eşleşen güncel karar bulunamadı.",
+        "Read exact downloaded copy" => "İndirilen bu sürümü oku",
+        "Read accepted decision" => "Kabul edilen kararı oku",
         "{0} accepted · {1} proposed" => "{0} kabul edildi · {1} önerildi",
         "Drafts are evidence. Only explicit acceptance makes a decision active." => "Taslaklar kanıttır. Bir karar yalnızca açık kabulünüzle geçerli olur.",
         "New decision draft" => "Yeni karar taslağı", "Refresh decisions" => "Kararları yenile", "Open project sources" => "Proje kaynaklarını aç",
@@ -577,6 +599,10 @@ fn reason(code: &str) -> Option<(&'static str, &'static str)> {
             "Bulut eşitlemesi kullanılamıyor. Yerel çalışma devam eder.",
         ),
         "INVALID_PAYLOAD"
+        | "INVALID_SEARCH_FIELDS"
+        | "INVALID_SEARCH_QUERY"
+        | "INVALID_SEARCH_LIMIT"
+        | "INVALID_PROJECT_ID"
         | "INVALID_COMMAND_TIME"
         | "INVALID_PROJECT_QUERY"
         | "INVALID_PROJECT_TEXT" => (

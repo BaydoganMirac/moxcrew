@@ -310,11 +310,48 @@ struct DecisionPanel {
     citation_epoch: u64,
     citations: Vec<Citation>,
     sources_changed: bool,
+    search: SearchPanel,
 }
 struct Citation {
     source: String,
     revision: u64,
     title: String,
+}
+
+struct SearchPanel {
+    input: String,
+    limit: u64,
+    submitted_limit: u64,
+}
+impl Default for SearchPanel {
+    fn default() -> Self {
+        Self {
+            input: String::new(),
+            limit: 5,
+            submitted_limit: 5,
+        }
+    }
+}
+impl SearchPanel {
+    fn payload(&self, project: &str) -> Option<Value> {
+        let query = self.input.trim();
+        (!project.is_empty() && decision_text(query, 400, true) && (1..=10).contains(&self.limit))
+            .then(|| json!({"projectId":project,"query":query,"limit":self.limit}))
+    }
+    fn matches(&self, result: &Value, project: &str, manifest: u64, shared: bool) -> bool {
+        self.payload(project).is_some()
+            && text(result, "reasonCode")
+                == if shared {
+                    "SHARED_MEMORY_SEARCH_READ"
+                } else {
+                    "DECISION_SEARCH_READ"
+                }
+            && text(result, "projectId") == project
+            && revision(result) == manifest
+            && text(result, "query") == self.input.trim()
+            && self.limit == self.submitted_limit
+            && (!result["limit"].is_number() || result["limit"] == self.limit)
+    }
 }
 
 #[derive(Default)]
@@ -334,6 +371,8 @@ struct SharedPanel {
     preview_open: bool,
     consent_scope: Option<Value>,
     consent: bool,
+    search: SearchPanel,
+    search_open: bool,
 }
 impl SharedPanel {
     fn select(&mut self, project: &str) {
@@ -564,6 +603,8 @@ pub struct Console {
     shared: SharedPanel,
     #[cfg(feature = "ui-smoke")]
     shared_smoke_focus: bool,
+    #[cfg(feature = "ui-smoke")]
+    search_smoke_query: Option<(bool, String)>,
     project_name: String,
     project_path: String,
     project_path_problem: Option<String>,
@@ -614,6 +655,15 @@ impl Console {
     pub fn publication_smoke(&mut self) {
         self.tab = Tab::Decisions;
         self.shared.preview_open = true;
+    }
+
+    #[cfg(feature = "ui-smoke")]
+    pub fn search_smoke(&mut self, shared: bool, query: &str) {
+        self.tab = if shared { Tab::Cloud } else { Tab::Decisions };
+        self.search_smoke_query = Some((shared, query.into()));
+        if shared {
+            self.shared.search_open = true;
+        }
     }
 
     #[cfg(feature = "ui-smoke")]
@@ -691,6 +741,8 @@ impl Console {
                             | "project_decision_read"
                             | "memory_cloud_read"
                             | "memory_cloud_decision_read"
+                            | "project_decision_search"
+                            | "memory_cloud_search"
                     )
             });
         self.decisions.finish_proposal(snapshot, notice, busy);
@@ -877,6 +929,35 @@ impl Console {
                 });
             if modal.should_close() {
                 self.new_project_open = false;
+            }
+        }
+        if self.shared.search_open {
+            let id = egui::Id::new("shared-decision-search");
+            let mut close = false;
+            let modal = egui::Modal::new(id)
+                .area(egui::Modal::default_area(id).fade_in(false))
+                .show(ui.ctx(), |ui| {
+                    ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 620.0));
+                    let start = ui.next_widget_position().y;
+                    if let Some(notice) = notice.filter(|n| n.kind == NoticeKind::Error) {
+                        self.feedback(ui, notice, !busy, can_retry);
+                    }
+                    let feedback_height = ui.next_widget_position().y - start;
+                    egui::ScrollArea::vertical()
+                        .id_salt("shared-search-body")
+                        .max_height(
+                            (ui.ctx().viewport_rect().height() - 140.0 - feedback_height)
+                                .max(120.0),
+                        )
+                        .show(ui, |ui| {
+                            ui.add_enabled_ui(!busy, |ui| {
+                                self.memory_search(ui, snapshot, true, &mut commands)
+                            });
+                        });
+                    close = control(ui, "Close search", true).clicked();
+                });
+            if close || modal.should_close() {
+                self.shared.search_open = false;
             }
         }
         commands
@@ -1455,6 +1536,159 @@ impl Console {
         }
     }
 
+    fn memory_search(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        shared: bool,
+        commands: &mut Vec<Command>,
+    ) {
+        let project = if shared {
+            &self.shared.project
+        } else {
+            &self.decisions.project
+        }
+        .clone();
+        let metadata = shared_project(snapshot, &project);
+        let global = if shared {
+            revision(&snapshot["sharedMemory"])
+        } else {
+            decision_manifest(snapshot, &project)
+        };
+        let result = &snapshot[if shared {
+            "sharedSearch"
+        } else {
+            "decisionSearch"
+        }];
+        let connected = snapshot["cloud"]["paired"] == true && snapshot["cloud"]["error"] != true;
+        let allowed = !self.hold_automatic_reads
+            && (!shared
+                || (connected
+                    && metadata["enabled"] == true
+                    && metadata["sharedProjectId"].is_string()
+                    && text(metadata, "state") != "connection_changed"));
+        #[cfg(feature = "ui-smoke")]
+        if self
+            .search_smoke_query
+            .as_ref()
+            .is_some_and(|(scope, _)| *scope == shared)
+        {
+            let (_, query) = self.search_smoke_query.take().unwrap();
+            if shared {
+                self.shared.search.input = query;
+                self.shared.search_open = true;
+            } else {
+                self.decisions.search.input = query;
+            }
+        }
+        let search = if shared {
+            &mut self.shared.search
+        } else {
+            &mut self.decisions.search
+        };
+        let mut selected = None;
+        ui.push_id(if shared { "cloud-search" } else { "local-search" }, |ui| {
+            egui::CollapsingHeader::new(t(ui, if shared { "Search published decisions" } else { "Search accepted Local decisions" }))
+                .default_open(!search.input.is_empty())
+                .open(shared.then_some(true))
+                .show(ui, |ui| {
+            card(ui, |ui| {
+                if shared {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(t(ui,"Project"));
+                        if let Some(selected) = array(&snapshot["projectMemory"]["projects"]).iter().find(|p|text(p,"projectId")==project) {
+                            ui.label(RichText::new(text(selected,"name")).strong().color(TEXT));
+                        }
+                    });
+                    ui.collapsing(t(ui,"Shared project identity"),|ui| { ui.monospace(text(metadata,"sharedProjectId")); });
+                }
+                hint(ui, if shared {
+                    "Only Search Cloud sends this query to your selected shared project. Typing stays on this device."
+                } else { "Free keyword ranking over current accepted decisions. Your query stays on this device." });
+                ui.add_space(8.0);
+                ui.add(egui::TextEdit::singleline(&mut search.input)
+                    .desired_width(ui.available_width())
+                    .margin(egui::Margin::symmetric(10,7))
+                    .char_limit(400)
+                    .hint_text(t(ui,"Ask about a project decision…")));
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui,"Results"));
+                    ui.add(egui::DragValue::new(&mut search.limit).range(1..=10));
+                    let payload = search.payload(&project);
+                    let before = commands.len();
+                    action(ui,commands,if shared { "Search Cloud" } else { "Search Local" },
+                        if shared { "memory_cloud_search" } else { "project_decision_search" },
+                        allowed && payload.is_some(),||payload.unwrap());
+                    if commands.len() > before { search.submitted_limit = search.limit; }
+                });
+                if !search.input.trim().is_empty() && search.payload(&project).is_none() {
+                    hint(ui,"Use a query of up to 400 characters without control characters.");
+                }
+                let current = search.matches(result,&project,global,shared)
+                    && (!shared || (result["sharedProjectId"] == metadata["sharedProjectId"]
+                        && result["manifestRevision"].as_u64().zip(metadata["sharedRevision"].as_u64()).is_some_and(|(found,current)| found >= current)));
+                if !current {
+                    if !result.is_null() { hint(ui,"Search again to refresh results for this query and project."); }
+                    return;
+                }
+                ui.add_space(10.0);
+                ui.horizontal_wrapped(|ui| {
+                    status(ui,if text(result,"mode") == "semantic" { "Semantic matches" }
+                        else if shared { "Keyword fallback" } else { "Local keyword matches" });
+                    hint(ui,&localized_format!(ui,"Search snapshot · revision {0}",if shared { result["manifestRevision"].as_u64().unwrap_or(0) } else { global }));
+                });
+                if shared {
+                    let index = &result["index"];
+                    hint(ui,&localized_format!(ui,"Indexed {0} of {1} current decisions",index["indexed"].as_u64().unwrap_or(0),index["total"].as_u64().unwrap_or(0)));
+                    hint(ui,match text(index,"state") {
+                        "ready" => "Semantic index ready",
+                        "pending" => "Indexing in progress · keyword results cover current decisions.",
+                        "failed" => "Indexing failed · keyword fallback is available.",
+                        _ => "Semantic service unavailable · keyword fallback is available.",
+                    });
+                }
+                let downloaded = !shared || (metadata["sharedRevision"] == result["manifestRevision"]
+                    && metadata["verifiedAt"].is_string() && metadata["stale"] == false
+                    && metadata["offline"] == false && allowed);
+                if shared && !downloaded {
+                    hint(ui,"Sync shared memory to download and verify these exact revisions, then search again. Remote matches do not change Local acceptance.");
+                    action(ui,commands,"Sync shared memory","memory_cloud_sync",allowed,||json!({"projectId":project}));
+                }
+                if array(&result["matches"]).is_empty() { hint(ui,"No matching current decisions found."); }
+                for record in array(&result["matches"]).iter().take(search.limit as usize) {
+                    ui.push_id(text(record,"decisionId"),|ui| {
+                        ui.separator();
+                        ui.label(RichText::new(text(record,"title")).strong().color(TEXT));
+                        hint(ui,&localized_format!(ui,"Revision {0}",revision(record)));
+                        if control(ui,if shared { "Read exact downloaded copy" } else { "Read accepted decision" },
+                            allowed && downloaded && revision(record)>0).clicked() {
+                            selected = Some((text(record,"decisionId").to_owned(),revision(record)));
+                        }
+                    });
+                }
+            });
+                });
+        });
+        if let Some((decision, revision)) = selected {
+            if shared {
+                self.shared.search_open = false;
+                self.shared.selected = decision.clone();
+                self.shared.selected_revision = revision;
+                commands.push(Command::new(
+                    "memory_cloud_decision_read",
+                    json!({"projectId":project,"decisionId":decision,"revision":revision}),
+                ));
+            } else {
+                self.decisions.selected = decision.clone();
+                self.decisions.replacement.clear();
+                commands.push(Command::new(
+                    "project_decision_read",
+                    json!({"projectId":project,"decisionId":decision}),
+                ));
+            }
+        }
+    }
+
     fn decision_panel(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let projects = array(&snapshot["projectMemory"]["projects"]);
         if projects.is_empty() {
@@ -1539,6 +1773,8 @@ impl Console {
                 self.tab = Tab::Memory;
             }
         });
+        ui.add_space(14.0);
+        self.memory_search(ui, snapshot, false, commands);
         ui.add_space(14.0);
         if self.decisions.composer_open {
             constrained(ui, 860.0, |ui| {
@@ -2418,6 +2654,9 @@ impl Console {
                 });
                 ui.horizontal_wrapped(|ui| {
                     action(ui,commands,"Sync shared memory","memory_cloud_sync",connected,||json!({"projectId":self.shared.project}));
+                    if control(ui,"Find a published decision",!self.hold_automatic_reads).clicked() {
+                        self.shared.search_open = true;
+                    }
                     if text(metadata,"role")=="publisher" {
                         let enabled=metadata["enabled"]==true;
                         action(ui,commands,if enabled {"Disable sharing"}else{"Enable sharing"},"memory_cloud_sharing",connected&&metadata["pendingOperation"].is_null(),||json!({"projectId":self.shared.project,"expectedSharedRevision":metadata["sharedRevision"],"enabled":!enabled}));
@@ -2600,7 +2839,7 @@ impl Console {
                 "Exact downloaded revision unavailable. Refresh retries the cached read.",
             );
         }
-        if commands.is_empty() {
+        if commands.is_empty() && !self.shared.search_open {
             if let Some(read) = self.shared.next_read(
                 page,
                 detail,
@@ -3887,6 +4126,329 @@ mod tests {
         payload
     }
     const SHARED_ID: &str = "shared:60c029a4-bc68-44c8-87c9-08d0c2688e9b";
+    fn search_snapshot(shared: bool) -> Value {
+        let mut data = shared_snapshot("reader");
+        let result = json!({"schemaVersion":1,"reasonCode":if shared {"SHARED_MEMORY_SEARCH_READ"} else {"DECISION_SEARCH_READ"},"projectId":"project:fixture","revision":if shared {8} else {decision_manifest(&data,"project:fixture")},"query":"Why Rust?","mode":"keyword","limit":5,"matches":[{"decisionId":if shared {"decision:published"} else {"decision:fixture"},"revision":if shared {3} else {2},"title":"SEARCH_OWNER_CANARY Projects","score":2.0}]});
+        data[if shared {
+            "sharedSearch"
+        } else {
+            "decisionSearch"
+        }] = result;
+        if shared {
+            data["sharedSearch"]
+                .as_object_mut()
+                .unwrap()
+                .remove("limit");
+            data["sharedSearch"]["sharedProjectId"] = json!(SHARED_ID);
+            data["sharedSearch"]["manifestRevision"] = json!(4);
+            data["sharedSearch"]["model"] = Value::Null;
+            data["sharedSearch"]["index"] = json!({"state":"pending","indexed":0,"total":1});
+        }
+        data
+    }
+    fn search_console(shared: bool) -> Console {
+        let mut console = Console {
+            tab: if shared { Tab::Cloud } else { Tab::Decisions },
+            ..Default::default()
+        };
+        if shared {
+            console.shared.select("project:fixture");
+            console.shared.search.input = "Why Rust?".into();
+            console.shared.search_open = true;
+        } else {
+            console.decisions.select("project:fixture");
+            console.decisions.search.input = "Why Rust?".into();
+        }
+        console
+    }
+
+    #[test]
+    fn search_input_is_trimmed_bounded_and_never_searches_while_typing() {
+        let mut search = SearchPanel {
+            input: "  Why Rust?  ".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            search.payload("project:one"),
+            Some(json!({"projectId":"project:one","query":"Why Rust?","limit":5}))
+        );
+        for input in [
+            "".to_owned(),
+            " \t ".into(),
+            "bad\0query".into(),
+            "😀".repeat(201),
+        ] {
+            search.input = input;
+            assert!(search.payload("project:one").is_none());
+        }
+        search.input = "😀".repeat(200);
+        assert!(search.payload("project:one").is_some());
+        search.limit = 11;
+        assert!(search.payload("project:one").is_none());
+        for shared in [false, true] {
+            let ctx = egui::Context::default();
+            let data = search_snapshot(shared);
+            let mut console = search_console(shared);
+            assert!(render(&ctx, &mut console, &data, false, vec![])
+                .0
+                .iter()
+                .all(|c| !c.action.ends_with("_search")));
+            let action = if shared {
+                "memory_cloud_search"
+            } else {
+                "project_decision_search"
+            };
+            let label = if shared {
+                "Search Cloud"
+            } else {
+                "Search Local"
+            };
+            let commands = click(&ctx, &mut console, &data, false, action, label);
+            let search = commands.iter().find(|c| c.action == action).unwrap();
+            assert_eq!(
+                normalized_decision_command(search),
+                json!({"projectId":"project:fixture","query":"Why Rust?","limit":5})
+            );
+            assert!(click(&ctx, &mut console, &data, true, action, label)
+                .iter()
+                .all(|c| c.action != action));
+            if !shared {
+                console.decisions.replacement = "decision:previous-selection".into();
+                let commands = click(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    false,
+                    "memory_control",
+                    "Read accepted decision",
+                );
+                let read = commands
+                    .iter()
+                    .find(|c| c.action == "project_decision_read")
+                    .unwrap();
+                assert_eq!(
+                    normalized_decision_command(read),
+                    json!({"projectId":"project:fixture","decisionId":"decision:fixture"})
+                );
+                assert!(console.decisions.replacement.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn cloud_search_discloses_scope_and_fallback_without_translating_owner_text() {
+        for lang in ["tr", "en"] {
+            let ctx = egui::Context::default();
+            let mut data = search_snapshot(true);
+            data["desktopPreferences"] = json!({"language":lang});
+            let mut console = search_console(true);
+            for _ in 0..4 {
+                painted_copy(&ctx, &mut console, &data);
+            }
+            let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+            assert!(copy.contains("SEARCH_OWNER_CANARY Projects"), "{copy}");
+            assert!(copy.contains("Why Rust?"));
+            assert!(copy.contains(if lang == "tr" {
+                "Yedek anahtar sözcük araması"
+            } else {
+                "Keyword fallback"
+            }));
+            assert!(copy.contains(if lang == "tr" {
+                "Yazarken bu cihazda kalır"
+            } else {
+                "Typing stays on this device"
+            }));
+            assert!(copy.contains(if lang == "tr" {
+                "İndeksleme sürüyor"
+            } else {
+                "Indexing in progress"
+            }));
+            let commands = click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "memory_control",
+                "Read exact downloaded copy",
+            );
+            let read = commands
+                .iter()
+                .find(|c| c.action == "memory_cloud_decision_read")
+                .unwrap();
+            assert_eq!(
+                normalized_decision_command(read),
+                json!({"projectId":"project:fixture","decisionId":"decision:published","revision":3})
+            );
+            data["sharedSearch"]["manifestRevision"] = json!(5);
+            console.shared.search_open = true;
+            for _ in 0..4 {
+                painted_copy(&ctx, &mut console, &data);
+            }
+            let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+            assert!(copy.contains("SEARCH_OWNER_CANARY"));
+            assert!(copy.contains(if lang == "tr" {
+                "indirip doğrulamak"
+            } else {
+                "download and verify"
+            }));
+            assert!(click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "memory_control",
+                "Read exact downloaded copy"
+            )
+            .iter()
+            .all(|c| c.action != "memory_cloud_decision_read"));
+        }
+    }
+
+    #[test]
+    fn search_results_hide_changed_query_limit_scope_and_revisions() {
+        for shared in [false, true] {
+            let data = search_snapshot(shared);
+            for changed in [
+                "query",
+                "limit",
+                "project",
+                "revision",
+                "shared",
+                "remoteRevision",
+            ] {
+                let ctx = egui::Context::default();
+                let mut console = search_console(shared);
+                let mut changed_data = data.clone();
+                let key = if shared {
+                    "sharedSearch"
+                } else {
+                    "decisionSearch"
+                };
+                match changed {
+                    "query" => changed_data[key]["query"] = json!("other query"),
+                    "limit" => {
+                        if shared {
+                            console.shared.search.limit = 10;
+                        } else {
+                            console.decisions.search.limit = 10;
+                        }
+                    }
+                    "project" => changed_data[key]["projectId"] = json!("project:foreign"),
+                    "revision" => changed_data[key]["revision"] = json!(999),
+                    "shared" if shared => {
+                        changed_data[key]["sharedProjectId"] = json!("shared:foreign")
+                    }
+                    "remoteRevision" if shared => changed_data[key]["manifestRevision"] = json!(3),
+                    _ => continue,
+                }
+                assert!(
+                    !painted_copy(&ctx, &mut console, &changed_data)
+                        .join("\n")
+                        .contains("SEARCH_OWNER_CANARY"),
+                    "{shared} {changed}"
+                );
+            }
+            let ctx = egui::Context::default();
+            let mut console = search_console(shared);
+            let notice = Notice::error("project_decision_propose", "HOST_ACTION_FAILED");
+            let mut commands = vec![];
+            let output = ctx.run_ui(
+                RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 1200.0))),
+                    ..Default::default()
+                },
+                |ui| commands = console.show(ui, &data, false, Some(&notice), true),
+            );
+            output.drop_without_applying_deltas();
+            assert!(commands.is_empty());
+            assert_eq!(
+                if shared {
+                    &console.shared.search.input
+                } else {
+                    &console.decisions.search.input
+                },
+                "Why Rust?"
+            );
+        }
+    }
+
+    #[test]
+    fn search_forms_and_actions_fit_a_narrow_native_panel() {
+        for shared in [false, true] {
+            for language in [Language::Tr, Language::En] {
+                let ctx = egui::Context::default();
+                let data = search_snapshot(shared);
+                let mut console = search_console(shared);
+                let mut commands = vec![];
+                let output = ctx.run_ui(
+                    RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            egui::vec2(800.0, 560.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        ui.data_mut(|d| d.insert_temp(egui::Id::new("console-language"), language));
+                        ui.set_max_width(470.0);
+                        console.memory_search(ui, &data, shared, &mut commands);
+                    },
+                );
+                output.drop_without_applying_deltas();
+                let action = if shared {
+                    "memory_cloud_search"
+                } else {
+                    "project_decision_search"
+                };
+                let label = if shared {
+                    "Search Cloud"
+                } else {
+                    "Search Local"
+                };
+                let rect: Rect = ctx.data(|d| {
+                    d.get_temp(egui::Id::new(("test-action", action, label)))
+                        .unwrap()
+                });
+                assert!(rect.max.x <= 480.0 && rect.max.y <= 560.0);
+                assert!(commands.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn cloud_search_modal_holds_background_reads_until_explicit_search_or_close() {
+        let ctx = egui::Context::default();
+        let mut data = search_snapshot(true);
+        data["sharedMemoryPage"] = Value::Null;
+        data["sharedDecisionDetail"] = Value::Null;
+        let mut console = search_console(true);
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert!(console.shared.page_requested.is_none());
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_cloud_search",
+            "Search Cloud",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "memory_cloud_search");
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Close search",
+        );
+        assert!(commands.is_empty());
+        assert!(!console.shared.search_open);
+        let commands = render(&ctx, &mut console, &data, false, vec![]).0;
+        assert_eq!(commands[0].action, "memory_cloud_read");
+    }
     fn shared_snapshot(role: &str) -> Value {
         let mut data = decision_snapshot("accepted");
         data["cloud"] = json!({"paired":true,"cloudUrl":"https://cloud.example.invalid","hostId":"host:current","workspaceId":"workspace:current"});

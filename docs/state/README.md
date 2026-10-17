@@ -22,6 +22,7 @@
 | Scoped agent memory | Complete; independent review and macOS development package verified | 2026-10-15 | [agent-memory.md](agent-memory.md) |
 | Automatic sourced ADR drafts | Complete; reviewed and macOS development package verified | 2026-10-15 | [automatic-drafts.md](automatic-drafts.md) |
 | Product studio interface | Complete; independently reviewed and macOS package verified | 2026-10-15 | [product-studio-interface.md](product-studio-interface.md) |
+| Dobbly native interface | Detailed plan prepared; implementation not started | 2026-10-17 | [dobbly-brand-interface.md](dobbly-brand-interface.md) |
 | Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

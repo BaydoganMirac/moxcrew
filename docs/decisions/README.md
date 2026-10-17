@@ -40,3 +40,4 @@ supersedes the old one.
 | [0034](0034-native-browser-account-sign-in.md) | Accepted | Optional native account sign-in through external browser, strict loopback/S256 and existing installation credential |
 | [0035](0035-run-scoped-agent-memory.md) | Accepted | Run-bound read-only Local MCP access with single-use bootstrap and revocable leases |
 | [0036](0036-consented-provider-draft-extraction.md) | Accepted | Per-project consented provider drafting, bounded V7 jobs and attributed V4 proposals; explicit owner acceptance |
+| [0037](0037-dobbly-display-identity.md) | Proposed implementation boundary | Dobbly visible identity with stable installation, data and protocol identifiers |

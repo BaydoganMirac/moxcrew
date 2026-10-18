@@ -1,16 +1,17 @@
-# Patchfleet
+# Moxcrew
 
-Your coding agents. One local Rust desktop command center.
+Your AI team. On it.
 
-Patchfleet 0.12 runs its interface and host in Rust. egui/eframe renders the native
+Moxcrew 0.12 runs its interface and host in Rust. egui/eframe renders the native
 window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
 
-The studio interface groups projects, work and teams beside project memory and
+The Moxcrew interface groups projects, tasks and teams beside project memory and
 decisions. Project cards open their own context; creating a task from a project
 selects its local folder while preserving any existing unsent draft. Bundled UI
-fonts and the vector fleet mark work offline.
+fonts, Mox mascot and the vector Moxcrew mark work offline. Both light and dark
+themes follow the system preference. The brand source is in [design/moxcrew](design/moxcrew/README.txt).
 
 The native interface supports Turkish and English. Change the language in the
 sidebar; the owner Host saves it locally for the next launch. Source messages,
@@ -34,6 +35,10 @@ quickly during active work; idle provider probes are limited to once a minute.
 Cloud receives only allowlisted operational data by default. Optional paid
 shared memory publishes only explicitly previewed and confirmed accepted ADRs.
 Source bodies, paths, prompts, output and credentials remain local by default.
+
+Mox is the mascot; crew is the cooperating agent team. The owner has secured
+`moxcrew.com`; service deployment is a separate step. Existing installation, data,
+command and protocol identifiers retain `patchfleet` for compatibility.
 
 ## Build and run
 

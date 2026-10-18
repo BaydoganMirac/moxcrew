@@ -1,0 +1,126 @@
+{
+  "brand": "Moxcrew",
+  "mascot": "Mox",
+  "domain": "moxcrew.com",
+  "version": "1.0",
+  "approvedMascotConcept": 4,
+  "palette": {
+    "cobalt": "#2854F4",
+    "cobaltHover": "#1D3ED3",
+    "orange": "#FF7A2F",
+    "ink": "#15223D",
+    "paper": "#F8F7F3",
+    "cream": "#FFF8E7",
+    "white": "#FFFFFF",
+    "slate": "#56627A",
+    "line": "#DDE2EC"
+  },
+  "themes": {
+    "light": {
+      "canvas": "#F8F7F3",
+      "surface": "#FFFFFF",
+      "raised": "#F0F3FA",
+      "text": "#15223D",
+      "secondaryText": "#56627A",
+      "border": "#DDE2EC",
+      "primary": "#2854F4",
+      "onPrimary": "#FFFFFF",
+      "controlBorder": "#8290A8",
+      "accent": "#FF7A2F",
+      "onAccent": "#15223D",
+      "focus": "#2854F4",
+      "success": "#137C5B",
+      "successSurface": "#E8F5EE",
+      "warning": "#8C440A",
+      "warningSurface": "#FFF0DD",
+      "danger": "#BC294A",
+      "dangerSurface": "#FCECF0",
+      "info": "#2348D7",
+      "infoSurface": "#EEF2FF"
+    },
+    "dark": {
+      "canvas": "#101827",
+      "surface": "#182438",
+      "raised": "#21314A",
+      "text": "#F7F8FC",
+      "secondaryText": "#AEB9CF",
+      "border": "#40516D",
+      "primary": "#8DA6FF",
+      "onPrimary": "#101827",
+      "controlBorder": "#64799C",
+      "accent": "#FF9B66",
+      "onAccent": "#101827",
+      "focus": "#A7BCFF",
+      "success": "#75D9B5",
+      "successSurface": "#173D34",
+      "warning": "#FFC08A",
+      "warningSurface": "#49341F",
+      "danger": "#FF9CB3",
+      "dangerSurface": "#492735",
+      "info": "#ABC0FF",
+      "infoSurface": "#263860"
+    }
+  },
+  "typography": {
+    "family": "Manrope",
+    "weights": [
+      450,
+      650
+    ],
+    "scale": [
+      12,
+      14,
+      16,
+      20,
+      24,
+      32,
+      48
+    ],
+    "uiBody": {
+      "size": 14,
+      "lineHeight": 20
+    },
+    "body": {
+      "size": 16,
+      "lineHeight": 24
+    }
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48
+  ],
+  "radius": {
+    "small": 8,
+    "control": 12,
+    "card": 16,
+    "hero": 24
+  },
+  "stroke": {
+    "border": 1,
+    "icon": 1.75,
+    "focus": 2
+  },
+  "control": {
+    "defaultHeight": 44,
+    "compactHeight": 36,
+    "touchTarget": 44
+  },
+  "motion": {
+    "fastMs": 160,
+    "normalMs": 220,
+    "easing": "cubic-bezier(.2,.8,.2,1)",
+    "respectReducedMotion": true,
+    "idleLoop": false
+  },
+  "logo": {
+    "clearSpace": "one quarter of symbol height",
+    "minimumSymbolPx": 24,
+    "minimumLockupPx": 128,
+    "minimumAppIconPx": 32
+  }
+}

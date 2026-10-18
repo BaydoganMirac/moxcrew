@@ -93,6 +93,11 @@ Package the App first, then use hdiutil with a distinct versioned volume name
 and a temporary folder containing the App, Applications shortcut and LICENSE.
 Verify the resulting compressed image before handing it off.
 
+Moxcrew display-identity packages retain `com.patchfleet.desktop`, binary names
+and canonical data paths. The packaged App is now `Moxcrew.app`; CI archive and
+verification paths use that display name. Theme smoke controls additionally
+accept `PATCHFLEET_SMOKE_THEME=light` or `dark`; these remain test-only.
+
 ## Rollback
 
 Close the app and restore a compatible executable and verified data backup.

@@ -50,7 +50,7 @@ pub fn permission_guidance(code: &str) -> &'static str {
     if cfg!(target_os = "macos") && code == "WORKSPACE_READ_ONLY" {
         "In Finder, open the folder's Get Info > Sharing & Permissions and allow your account to Read & Write. If the drive is read-only, choose a folder on a writable drive."
     } else if cfg!(target_os = "macos") {
-        "Select the folder again and allow access if macOS asks. If access was denied, enable Patchfleet in System Settings > Privacy & Security > Files and Folders."
+        "Select the folder again and allow access if macOS asks. If access was denied, enable Moxcrew in System Settings > Privacy & Security > Files and Folders."
     } else if cfg!(target_os = "windows") {
         "Select the folder again. In the folder's Properties > Security, allow your account to read and modify it. If Windows blocked an agent, review that agent's access separately."
     } else {

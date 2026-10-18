@@ -2,13 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
     <key>NSDocumentsFolderUsageDescription</key>
-    <string>Patchfleet accesses the project folder you select to run your local agents. Project files stay on this Mac.</string>
+    <string>Moxcrew accesses the project folder you select to run your local agents. Project files stay on this Mac.</string>
     <key>NSDesktopFolderUsageDescription</key>
-    <string>Patchfleet accesses a project folder you select on your Desktop. Project files stay on this Mac.</string>
+    <string>Moxcrew accesses a project folder you select on your Desktop. Project files stay on this Mac.</string>
     <key>NSDownloadsFolderUsageDescription</key>
-    <string>Patchfleet accesses a project folder you select in Downloads. Project files stay on this Mac.</string>
+    <string>Moxcrew accesses a project folder you select in Downloads. Project files stay on this Mac.</string>
     <key>NSRemovableVolumesUsageDescription</key>
-    <string>Patchfleet accesses the project folder you select on a removable drive to run your local agents.</string>
+    <string>Moxcrew accesses the project folder you select on a removable drive to run your local agents.</string>
     <key>NSNetworkVolumesUsageDescription</key>
-    <string>Patchfleet accesses the project folder you select on a network drive to run your local agents.</string>
+    <string>Moxcrew accesses the project folder you select on a network drive to run your local agents.</string>
 </dict></plist>

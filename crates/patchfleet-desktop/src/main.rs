@@ -29,6 +29,14 @@ struct Patchfleet {
 impl Patchfleet {
     fn new(cc: &eframe::CreationContext<'_>, directory: PathBuf, observe: bool) -> Self {
         studio::install(&cc.egui_ctx);
+        #[cfg(feature = "ui-smoke")]
+        if !observe {
+            match std::env::var("PATCHFLEET_SMOKE_THEME").as_deref() {
+                Ok("dark") => cc.egui_ctx.set_theme(egui::Theme::Dark),
+                Ok("light") => cc.egui_ctx.set_theme(egui::Theme::Light),
+                _ => {}
+            }
+        }
         let mut bridge = Bridge::new(cc.egui_ctx.clone(), directory.clone(), observe);
         bridge.poll();
         #[cfg(feature = "ui-smoke")]
@@ -434,9 +442,9 @@ impl eframe::App for Patchfleet {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.heading(i18n::tr(language,"The local host needs attention"));
                 if error == "LOCAL_WRITER_ALREADY_RUNNING" {
-                    ui.label(i18n::tr(language,"Close another Patchfleet instance if it owns this data directory. Your local state is preserved."));
+                    ui.label(i18n::tr(language,"Close another Moxcrew instance if it owns this data directory. Your local state is preserved."));
                 } else {
-                    ui.label(i18n::tr(language,"Local data could not be opened safely. Close Patchfleet and back up its data before checking the storage or access permissions."));
+                    ui.label(i18n::tr(language,"Local data could not be opened safely. Close Moxcrew and back up its data before checking the storage or access permissions."));
                 }
                 ui.collapsing(i18n::tr(language,"Technical details"), |ui| { ui.monospace(&error); });
                 if !self.bridge.closing && ui.button(i18n::tr(language,"Retry opening the host")).clicked() {
@@ -483,7 +491,7 @@ impl eframe::App for Patchfleet {
             }
         } else {
             egui::CentralPanel::default().show(ui, |ui| {
-                ui.heading(i18n::tr(language, "Opening Patchfleet"));
+                ui.heading(i18n::tr(language, "Opening Moxcrew"));
                 ui.label(i18n::tr(language, "Loading the local Rust host…"));
             });
         }
@@ -624,7 +632,7 @@ fn main() {
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Patchfleet")
+            .with_title("Moxcrew")
             .with_app_id("com.patchfleet.desktop")
             .with_inner_size(window_size)
             .with_min_inner_size([800.0, 560.0])
@@ -637,7 +645,7 @@ fn main() {
         ..Default::default()
     };
     if let Err(error) = eframe::run_native(
-        "Patchfleet",
+        "Moxcrew",
         options,
         Box::new(move |cc| Ok(Box::new(Patchfleet::new(cc, directory, observe)))),
     ) {

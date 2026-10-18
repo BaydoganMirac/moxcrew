@@ -1,15 +1,15 @@
-# Install and operate Patchfleet Desktop
+# Install and operate Moxcrew Desktop
 
-Status: 0.11.0 native Rust desktop development distribution
+Status: 0.12.0 native Rust desktop development distribution
 
-Updated: 2026-10-15
+Updated: 2026-10-18
 
 ## Application requirements
 
 - macOS 11+; Windows 10+ with suitable OpenGL drivers; or Linux with native
   X11/Wayland and OpenGL runtime libraries. No WebView runtime is required.
 - Provider CLIs installed separately. Their own Node/model/account requirements
-  are independent of the Rust Patchfleet application.
+  are independent of the Rust Moxcrew application.
 - Native Windows/Linux installer and runtime checks remain CI/release evidence;
   the local development package has been built on macOS ARM64.
 - Linux folder selection needs a working XDG desktop portal with a desktop
@@ -25,6 +25,10 @@ For development, install Rust 1.99+ and platform compiler/window prerequisites.
 Run `cargo run --locked -p patchfleet-desktop`. Build a production executable with
 `cargo build --locked --release -p patchfleet-desktop`, then package it using
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
+
+Moxcrew is the new display identity. Existing `patchfleet-desktop` executable,
+`com.patchfleet.desktop` bundle identifier and data locations remain stable.
+Do not run the old and new display names as separate writers.
 
 For a native 0.12 upgrade, close the old application and replace its application
 bundle through the reviewed installer. The bundle identifier and data directory
@@ -42,9 +46,9 @@ An already-running 0.3 WebView copy can be reactivated even when opening the
 This launch routing was reproduced with disposable data. The installed 0.5
 production application draws correctly when the old process is closed.
 
-1. Quit all running Patchfleet copies with Command-Q.
+1. Quit all running Moxcrew / older Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Patchfleet.app`. The sidebar should show `0.12.0`
+3. Open `Applications/Moxcrew.app`. The sidebar should show `0.12.0`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut

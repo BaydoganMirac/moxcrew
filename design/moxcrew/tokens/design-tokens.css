@@ -1,0 +1,110 @@
+/* Moxcrew brand kit v1: semantic colors; apply data-theme="dark" to the root. */
+@font-face { font-family: "Manrope"; src: url("../fonts/manrope-latin.woff2") format("woff2"); font-style: normal; font-weight: 450 650; font-display: swap; }
+:root {
+  --moxcrew-brand-cobalt: #2854F4;
+  --moxcrew-brand-cobaltHover: #1D3ED3;
+  --moxcrew-brand-orange: #FF7A2F;
+  --moxcrew-brand-ink: #15223D;
+  --moxcrew-brand-paper: #F8F7F3;
+  --moxcrew-brand-cream: #FFF8E7;
+  --moxcrew-brand-white: #FFFFFF;
+  --moxcrew-brand-slate: #56627A;
+  --moxcrew-brand-line: #DDE2EC;
+  --moxcrew-canvas: #F8F7F3;
+  --moxcrew-surface: #FFFFFF;
+  --moxcrew-raised: #F0F3FA;
+  --moxcrew-text: #15223D;
+  --moxcrew-secondaryText: #56627A;
+  --moxcrew-border: #DDE2EC;
+  --moxcrew-primary: #2854F4;
+  --moxcrew-onPrimary: #FFFFFF;
+  --moxcrew-controlBorder: #8290A8;
+  --moxcrew-accent: #FF7A2F;
+  --moxcrew-onAccent: #15223D;
+  --moxcrew-focus: #2854F4;
+  --moxcrew-success: #137C5B;
+  --moxcrew-successSurface: #E8F5EE;
+  --moxcrew-warning: #8C440A;
+  --moxcrew-warningSurface: #FFF0DD;
+  --moxcrew-danger: #BC294A;
+  --moxcrew-dangerSurface: #FCECF0;
+  --moxcrew-info: #2348D7;
+  --moxcrew-infoSurface: #EEF2FF;
+  --moxcrew-font: "Manrope", sans-serif;
+  --moxcrew-weight-body: 450;
+  --moxcrew-weight-emphasis: 650;
+  --moxcrew-text-12: 12px;
+  --moxcrew-text-14: 14px;
+  --moxcrew-text-16: 16px;
+  --moxcrew-text-20: 20px;
+  --moxcrew-text-24: 24px;
+  --moxcrew-text-32: 32px;
+  --moxcrew-text-48: 48px;
+  --moxcrew-space-4: 4px;
+  --moxcrew-space-8: 8px;
+  --moxcrew-space-12: 12px;
+  --moxcrew-space-16: 16px;
+  --moxcrew-space-24: 24px;
+  --moxcrew-space-32: 32px;
+  --moxcrew-space-48: 48px;
+  --moxcrew-radius-small: 8px;
+  --moxcrew-radius-control: 12px;
+  --moxcrew-radius-card: 16px;
+  --moxcrew-radius-hero: 24px;
+  --moxcrew-body-line-height: 24px;
+  --moxcrew-ui-line-height: 20px;
+  --moxcrew-control-height: 44px;
+  --moxcrew-control-compact: 36px;
+  --moxcrew-touch-target: 44px;
+  --moxcrew-focus-width: 2px;
+  --moxcrew-motion-fast: 160ms;
+  --moxcrew-motion-normal: 220ms;
+  --moxcrew-motion-easing: cubic-bezier(.2,.8,.2,1);
+}
+[data-theme="dark"] {
+  --moxcrew-canvas: #101827;
+  --moxcrew-surface: #182438;
+  --moxcrew-raised: #21314A;
+  --moxcrew-text: #F7F8FC;
+  --moxcrew-secondaryText: #AEB9CF;
+  --moxcrew-border: #40516D;
+  --moxcrew-primary: #8DA6FF;
+  --moxcrew-onPrimary: #101827;
+  --moxcrew-controlBorder: #64799C;
+  --moxcrew-accent: #FF9B66;
+  --moxcrew-onAccent: #101827;
+  --moxcrew-focus: #A7BCFF;
+  --moxcrew-success: #75D9B5;
+  --moxcrew-successSurface: #173D34;
+  --moxcrew-warning: #FFC08A;
+  --moxcrew-warningSurface: #49341F;
+  --moxcrew-danger: #FF9CB3;
+  --moxcrew-dangerSurface: #492735;
+  --moxcrew-info: #ABC0FF;
+  --moxcrew-infoSurface: #263860;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --moxcrew-canvas: #101827;
+  --moxcrew-surface: #182438;
+  --moxcrew-raised: #21314A;
+  --moxcrew-text: #F7F8FC;
+  --moxcrew-secondaryText: #AEB9CF;
+  --moxcrew-border: #40516D;
+  --moxcrew-primary: #8DA6FF;
+  --moxcrew-onPrimary: #101827;
+  --moxcrew-controlBorder: #64799C;
+  --moxcrew-accent: #FF9B66;
+  --moxcrew-onAccent: #101827;
+  --moxcrew-focus: #A7BCFF;
+  --moxcrew-success: #75D9B5;
+  --moxcrew-successSurface: #173D34;
+  --moxcrew-warning: #FFC08A;
+  --moxcrew-warningSurface: #49341F;
+  --moxcrew-danger: #FF9CB3;
+  --moxcrew-dangerSurface: #492735;
+  --moxcrew-info: #ABC0FF;
+  --moxcrew-infoSurface: #263860;
+} }
+@media (prefers-reduced-motion: reduce) {
+  :root { --moxcrew-motion-fast: 0ms; --moxcrew-motion-normal: 0ms; }
+}

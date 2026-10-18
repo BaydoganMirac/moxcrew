@@ -1,13 +1,17 @@
 # cargo-packager 0.11.8; build the Rust executable before running the packager.
 name = "patchfleet-desktop"
-product-name = "Patchfleet"
+product-name = "Moxcrew"
 version = "0.12.0"
 identifier = "com.patchfleet.desktop"
-publisher = "Patchfleet"
-authors = ["Patchfleet contributors"]
-description = "Local coding-agent teams and command center"
+publisher = "Moxcrew"
+authors = ["Moxcrew contributors"]
+description = "Your local AI crew: projects, tasks and shared decisions"
 homepage = "https://github.com/BaydoganMirac/patchfleet"
 license-file = "LICENSE"
+resources = [
+  { src = "LICENSE", target = "LICENSE.txt" },
+  { src = "crates/patchfleet-desktop/assets/fonts/OFL.txt", target = "FONT-LICENSE.txt" },
+]
 category = "DeveloperTool"
 out-dir = "dist/native"
 binaries-dir = "target/release"

@@ -1,7 +1,7 @@
 use crate::command::{Command, Notice, NoticeKind};
 use crate::folder;
 use crate::i18n::{self, Language};
-use crate::studio::{self, BORDER, CANVAS, MINT, MUTED, RED, SIDEBAR, SURFACE, TEXT};
+use crate::studio;
 use eframe::egui::{self, Color32, RichText, Ui};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -41,7 +41,7 @@ impl Tab {
             Self::Projects => "Projects",
             Self::Memory => "Memory",
             Self::Decisions => "Decisions",
-            Self::Work => "Work",
+            Self::Work => "Tasks",
             Self::Teams => "Teams",
             Self::Agents => "Agents",
             Self::Providers => "Providers",
@@ -58,10 +58,10 @@ impl Tab {
     fn summary(self) -> &'static str {
         match self {
             Self::Projects => "Your projects, local folders and shared memory.",
-            Self::Memory => "Project sources, evidence and optional ADR drafting.",
+            Self::Memory => "Keep project context, sources and decision drafts together.",
             Self::Decisions => "Sourced local decisions. Acceptance stays in your hands.",
-            Self::Work => "Queue a bounded task, start Codex, and verify its durable outcome.",
-            Self::Teams => "Choose agents and a bounded plan. Owner decisions stay explicit.",
+            Self::Work => "Give your agents a clear task. Review the result before moving on.",
+            Self::Teams => "Bring your agents together around one goal. Keep control of decisions.",
             Self::Agents => {
                 "Inspect instructions, permissions and limits before selecting an agent."
             }
@@ -677,6 +677,7 @@ impl Console {
             "studio-work" => Tab::Work,
             "studio-teams" => Tab::Teams,
             "studio-agents" => Tab::Agents,
+            "studio-providers" => Tab::Providers,
             _ => Tab::Projects,
         };
         if let Some(project) = array(&snapshot["projectMemory"]["projects"]).first() {
@@ -844,20 +845,20 @@ impl Console {
         self.navigation_tab = Some(self.tab);
         egui::Panel::left("console-navigation")
             .resizable(false)
-            .default_size(204.0)
-            .frame(egui::Frame::new().fill(SIDEBAR).inner_margin(16))
+            .default_size(216.0)
+            .frame(egui::Frame::new().fill(colors(ui).surface).inner_margin(16))
             .show(ui, |ui| {
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
                     let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(27.0, 29.0), egui::Sense::hover());
-                    studio::mark(ui.painter(), rect.shrink(2.0), MINT);
+                        ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
+                    studio::mark(ui.painter(), rect);
                     ui.vertical(|ui| {
-                        ui.label(studio::title("patchfleet", 17.0));
+                        ui.label(studio::title("Moxcrew", 18.0));
                         ui.label(
                             RichText::new(t(ui, "LOCAL STUDIO"))
-                                .size(8.0)
-                                .color(MUTED)
+                                .size(10.0)
+                                .color(colors(ui).muted)
                                 .extra_letter_spacing(1.8),
                         );
                     });
@@ -888,8 +889,8 @@ impl Console {
                             ui.add_space(7.0);
                             ui.label(
                                 RichText::new(t(ui, group))
-                                    .size(8.0)
-                                    .color(MUTED)
+                                    .size(10.0)
+                                    .color(colors(ui).muted)
                                     .extra_letter_spacing(1.4),
                             );
                             ui.add_space(6.0);
@@ -927,16 +928,21 @@ impl Console {
                         ui.horizontal(|ui| {
                             let (dot, _) =
                                 ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                            ui.painter().circle_filled(dot.center(), 2.5, MINT);
-                            ui.label(RichText::new(t(ui, "Local engine")).size(10.0).color(MUTED));
+                            ui.painter()
+                                .circle_filled(dot.center(), 2.5, colors(ui).primary);
+                            ui.label(
+                                RichText::new(t(ui, "Local engine"))
+                                    .size(10.0)
+                                    .color(colors(ui).muted),
+                            );
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     ui.label(
                                         RichText::new(text(snapshot, "appVersion"))
-                                            .size(9.0)
+                                            .size(11.0)
                                             .monospace()
-                                            .color(MUTED),
+                                            .color(colors(ui).muted),
                                     );
                                 },
                             );
@@ -950,8 +956,10 @@ impl Console {
                             verified_account(snapshot).and_then(|a| a["email"].as_str())
                         {
                             ui.add(
-                                egui::Label::new(RichText::new(email).size(10.0).color(MUTED))
-                                    .truncate(),
+                                egui::Label::new(
+                                    RichText::new(email).size(10.0).color(colors(ui).muted),
+                                )
+                                .truncate(),
                             );
                         }
                         if control(
@@ -973,28 +981,36 @@ impl Console {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(CANVAS)
+                    .fill(colors(ui).canvas)
                     .inner_margin(egui::Margin::symmetric(28, 20)),
             )
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(t(ui, self.tab.group()))
-                            .size(9.0)
-                            .color(MUTED)
+                            .size(11.0)
+                            .color(colors(ui).muted)
                             .extra_letter_spacing(1.2),
                     );
-                    ui.label(RichText::new("/").size(10.0).color(BORDER));
-                    ui.label(RichText::new(t(ui, self.tab.name())).size(10.0).color(TEXT));
+                    ui.label(RichText::new("/").size(10.0).color(colors(ui).border));
+                    ui.label(
+                        RichText::new(t(ui, self.tab.name()))
+                            .size(10.0)
+                            .color(colors(ui).text),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if busy {
                             ui.label(
                                 RichText::new(t(ui, "Applying action…"))
                                     .size(10.0)
-                                    .color(MINT),
+                                    .color(colors(ui).primary),
                             );
                         } else {
-                            ui.label(RichText::new(t(ui, "Free · Local")).size(9.0).color(MUTED));
+                            ui.label(
+                                RichText::new(t(ui, "Free · Local"))
+                                    .size(11.0)
+                                    .color(colors(ui).muted),
+                            );
                         }
                     });
                 });
@@ -1042,7 +1058,7 @@ impl Console {
                 ui.label(
                     RichText::new(i18n::tr_for_snapshot(snapshot, self.tab.summary()))
                         .size(12.0)
-                        .color(MUTED),
+                        .color(colors(ui).muted),
                 );
                 ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
                     8.0
@@ -1060,7 +1076,7 @@ impl Console {
                     ui.add_space(14.0);
                 }
                 if let Some(error) = self.form_error {
-                    ui.colored_label(RED, t(ui, error));
+                    ui.colored_label(colors(ui).danger, t(ui, error));
                     ui.add_space(8.0);
                 }
                 if self.hold_automatic_reads
@@ -1149,7 +1165,7 @@ impl Console {
     fn feedback(&mut self, ui: &mut Ui, notice: &Notice, ready: bool, can_retry: bool) {
         if notice.kind == NoticeKind::Success {
             egui::Frame::new()
-                .fill(MINT.gamma_multiply(0.06))
+                .fill(colors(ui).success_surface)
                 .corner_radius(8)
                 .inner_margin(10)
                 .show(ui, |ui| {
@@ -1161,7 +1177,7 @@ impl Console {
                             } else {
                                 message
                             })
-                            .color(MINT),
+                            .color(colors(ui).success),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.small_button(t(ui, "Dismiss")).clicked() {
@@ -1173,11 +1189,11 @@ impl Console {
             return;
         }
         let color = match notice.kind {
-            NoticeKind::Success => MINT,
-            NoticeKind::Warning => Color32::from_rgb(239, 197, 132),
-            NoticeKind::Error => RED,
+            NoticeKind::Success => colors(ui).success,
+            NoticeKind::Warning => colors(ui).warning,
+            NoticeKind::Error => colors(ui).danger,
         };
-        egui::Frame::new().fill(color.gamma_multiply(0.07)).stroke(egui::Stroke::new(1.0,color.gamma_multiply(0.3))).corner_radius(8).inner_margin(12).show(ui,|ui| {
+        egui::Frame::new().fill(if notice.kind == NoticeKind::Warning { colors(ui).warning_surface } else { colors(ui).danger_surface }).stroke(egui::Stroke::new(1.0,color)).corner_radius(8).inner_margin(12).show(ui,|ui| {
             let title = match notice.code.as_str() {
                 "WORKSPACE_ACCESS_DENIED" | "WORKSPACE_READ_ONLY" => "Folder access needs attention",
                 "WORKSPACE_NOT_GIT_ROOT" => "Select the repository folder",
@@ -1212,26 +1228,39 @@ impl Console {
         let projects = array(&snapshot["projectMemory"]["projects"]);
         let workspaces = items(&snapshot["workspaces"]);
         if projects.is_empty() {
-            ui.label(
-                RichText::new(t(ui, "YOUR LOCAL WORKSPACE"))
-                    .size(10.0)
-                    .color(MINT),
-            );
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new(t(ui, "Create your first project"))
-                    .size(24.0)
-                    .strong()
-                    .color(TEXT),
-            );
-            hint(ui, "Keep your folders, agents and project memory together.");
-            ui.add_space(16.0);
+            if ui.ctx().viewport_rect().height() >= 700.0 {
+                ui.label(
+                    RichText::new(t(ui, "YOUR LOCAL WORKSPACE"))
+                        .size(10.0)
+                        .color(colors(ui).primary),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(t(ui, "Create your first project"))
+                        .size(24.0)
+                        .strong()
+                        .color(colors(ui).text),
+                );
+                hint(ui, "Keep your folders, agents and project memory together.");
+                ui.add_space(16.0);
+            }
             if ui.available_width() > 800.0 {
                 ui.columns(2, |columns| {
                     self.create_project_form(&mut columns[0], commands);
                     studio_flow(&mut columns[1]);
                 });
             } else {
+                ui.horizontal(|ui| {
+                    studio::mascot(ui, 104.0);
+                    ui.vertical(|ui| {
+                        ui.label(studio::title(t(ui, "Meet Mox. Your crew is ready."), 18.0));
+                        hint(
+                            ui,
+                            "Start with one project. Your work stays on this device.",
+                        );
+                    });
+                });
+                ui.add_space(12.0);
                 constrained(ui, 560.0, |ui| self.create_project_form(ui, commands));
             }
         } else {
@@ -1272,8 +1301,8 @@ impl Console {
                 ui.push_id(text(project,"projectId"), |ui| card(ui, |ui| {
                     ui.horizontal(|ui| {
                         let (rect, _) = ui.allocate_exact_size(egui::vec2(34.0, 34.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 8, Color32::from_rgb(31, 53, 44));
-                        draw_icon(ui.painter(), rect.shrink(8.0), Tab::Projects, MINT);
+                        ui.painter().rect_filled(rect, 8, colors(ui).info_surface);
+                        draw_icon(ui.painter(), rect.shrink(8.0), Tab::Projects, colors(ui).primary);
                         let name_width = (ui.available_width() - 116.0).max(80.0);
                         ui.allocate_ui_with_layout(egui::vec2(name_width, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
                             ui.set_max_width(name_width);
@@ -1286,9 +1315,9 @@ impl Console {
                     });
                     ui.add_space(14.0);
                     if array(&project["workspaceIds"]).is_empty() {
-                        egui::Frame::new().fill(Color32::from_rgb(18,22,28)).corner_radius(8).inner_margin(12).show(ui, |ui| {
+                        egui::Frame::new().fill(colors(ui).raised).corner_radius(8).inner_margin(12).show(ui, |ui| {
                             ui.set_min_width(ui.available_width());
-                            ui.label(RichText::new(t(ui,"Connect a local folder")).strong().color(TEXT));
+                            ui.label(RichText::new(t(ui,"Connect a local folder")).strong().color(colors(ui).text));
                             hint(ui,"Choose the Git repository where your agents will work.");
                             ui.add_space(8.0);
                             if submit(ui,"Choose folder","folder_picker") {
@@ -1361,7 +1390,7 @@ impl Console {
             ui.label(
                 RichText::new(t(ui, "LOCAL FOLDERS"))
                     .size(10.0)
-                    .color(MUTED),
+                    .color(colors(ui).muted),
             );
         });
         if workspaces.is_empty() {
@@ -1374,7 +1403,7 @@ impl Console {
                 ui.push_id(text(workspace,"workspaceId"),|ui| {
                     ui.add_space(10.0);
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new(text(workspace,"displayName")).strong().color(TEXT));
+                        ui.label(RichText::new(text(workspace,"displayName")).strong().color(colors(ui).text));
                         if let Some(project) = projects.iter().find(|p|array(&p["workspaceIds"]).contains(&workspace["workspaceId"])) { raw_status(ui,text(project,"name")); }
                         else { status(ui,"Unlinked"); }
                         action(ui,commands,"Remove folder","workspace_remove",revision(workspace)>0,||json!({"workspaceId":workspace["workspaceId"],"expectedWorkspaceRevision":workspace["revision"]}));
@@ -1398,7 +1427,7 @@ impl Console {
                 "Project name",
                 &mut self.new_project_name,
                 80,
-                "e.g. Patchfleet, Website, Mobile app",
+                "e.g. Moxcrew, Website, Mobile app",
             );
             if submit(ui, "Create project", "project_create") {
                 match required(
@@ -1438,7 +1467,7 @@ impl Console {
         }
         if let Some(code) = &self.project_path_problem {
             ui.add_space(12.0);
-            ui.colored_label(RED, t(ui, code));
+            ui.colored_label(colors(ui).danger, t(ui, code));
             if matches!(
                 code.as_str(),
                 "WORKSPACE_ACCESS_DENIED" | "WORKSPACE_READ_ONLY"
@@ -1484,7 +1513,7 @@ impl Console {
             );
         }
         if let Some(error) = self.form_error {
-            ui.colored_label(RED, t(ui, error));
+            ui.colored_label(colors(ui).danger, t(ui, error));
         }
         });
         ui.add_space(10.0);
@@ -1555,8 +1584,8 @@ impl Console {
         ui.horizontal_wrapped(|ui| {
             ui.label(
                 RichText::new(t(ui, "Keyword filter"))
-                    .size(11.0)
-                    .color(MUTED),
+                    .size(12.0)
+                    .color(colors(ui).muted),
             );
             ui.add(
                 egui::TextEdit::singleline(&mut self.memory.keyword_input)
@@ -1696,7 +1725,7 @@ impl Console {
                                 RichText::new(text(source, "title"))
                                     .size(14.0)
                                     .strong()
-                                    .color(TEXT),
+                                    .color(colors(ui).text),
                             );
                             status(ui, source_kind_label(text(source, "kind")));
                             hint(ui, &localized_format!(ui, "Revision {0}", revision(source)));
@@ -1959,7 +1988,7 @@ impl Console {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(t(ui,"Project"));
                         if let Some(selected) = array(&snapshot["projectMemory"]["projects"]).iter().find(|p|text(p,"projectId")==project) {
-                            ui.label(RichText::new(text(selected,"name")).strong().color(TEXT));
+                            ui.label(RichText::new(text(selected,"name")).strong().color(colors(ui).text));
                         }
                     });
                     ui.collapsing(t(ui,"Shared project identity"),|ui| { ui.monospace(text(metadata,"sharedProjectId")); });
@@ -2020,7 +2049,7 @@ impl Console {
                 for record in array(&result["matches"]).iter().take(search.limit as usize) {
                     ui.push_id(text(record,"decisionId"),|ui| {
                         ui.separator();
-                        ui.label(RichText::new(text(record,"title")).strong().color(TEXT));
+                        ui.label(RichText::new(text(record,"title")).strong().color(colors(ui).text));
                         hint(ui,&localized_format!(ui,"Revision {0}",revision(record)));
                         if control(ui,if shared { "Read exact downloaded copy" } else { "Read accepted decision" },
                             allowed && downloaded && revision(record)>0).clicked() {
@@ -2161,7 +2190,11 @@ impl Console {
             });
             ui.add_space(20.0);
         }
-        ui.add_space(16.0);
+        ui.add_space(if ui.available_width() < 650.0 {
+            0.0
+        } else {
+            16.0
+        });
         if ui.available_width() >= 850.0 {
             ui.columns(2, |columns| {
                 self.decision_list(&mut columns[0], page, manifest);
@@ -2292,12 +2325,12 @@ impl Console {
             ui.label(
                 RichText::new(t(ui, "Cited project sources"))
                     .strong()
-                    .color(TEXT),
+                    .color(colors(ui).text),
             );
             hint(ui,"Select one to eight source versions. Their original text remains attached to the decision.");
             if self.decisions.sources_changed {
                 ui.colored_label(
-                    RED,
+                    colors(ui).danger,
                     t(
                         ui,
                         "Sources changed. Select current evidence again before saving.",
@@ -2495,16 +2528,16 @@ impl Console {
                 let selected = self.decisions.selected == text(decision, "decisionId");
                 egui::Frame::new()
                     .fill(if selected {
-                        Color32::from_rgb(25, 36, 33)
+                        colors(ui).info_surface
                     } else {
-                        SURFACE
+                        colors(ui).surface
                     })
                     .stroke(egui::Stroke::new(
                         1.0,
                         if selected {
-                            MINT.gamma_multiply(0.5)
+                            colors(ui).primary
                         } else {
-                            BORDER
+                            colors(ui).border
                         },
                     ))
                     .corner_radius(8)
@@ -2515,7 +2548,7 @@ impl Console {
                             RichText::new(text(decision, "title"))
                                 .size(14.0)
                                 .strong()
-                                .color(TEXT),
+                                .color(colors(ui).text),
                         );
                         ui.horizontal_wrapped(|ui| {
                             status(ui, text(decision, "status"));
@@ -2573,7 +2606,7 @@ impl Console {
                 RichText::new(text(decision, "title"))
                     .size(19.0)
                     .strong()
-                    .color(TEXT),
+                    .color(colors(ui).text),
             );
             ui.horizontal_wrapped(|ui| {
                 status(ui, text(decision, "status"));
@@ -2684,7 +2717,11 @@ impl Console {
                 ("consequences", "Consequences"),
             ] {
                 if !text(decision, key).is_empty() {
-                    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
+                    ui.label(
+                        RichText::new(t(ui, label))
+                            .size(12.0)
+                            .color(colors(ui).muted),
+                    );
                     ui.label(text(decision, key));
                     ui.add_space(10.0);
                 }
@@ -2695,7 +2732,7 @@ impl Console {
             ui.label(
                 RichText::new(t(ui, "Original cited evidence"))
                     .strong()
-                    .color(TEXT),
+                    .color(colors(ui).text),
             );
             hint(
                 ui,
@@ -2708,7 +2745,11 @@ impl Console {
             {
                 ui.push_id(text(source, "sourceId"), |ui| {
                     ui.add_space(8.0);
-                    ui.label(RichText::new(text(source, "title")).strong().color(TEXT));
+                    ui.label(
+                        RichText::new(text(source, "title"))
+                            .strong()
+                            .color(colors(ui).text),
+                    );
                     ui.horizontal_wrapped(|ui| {
                         status(ui, source_kind_label(text(source, "kind")));
                         hint(ui, &localized_format!(ui, "Revision {0}", revision(source)));
@@ -2831,7 +2872,11 @@ impl Console {
                     ("rationale", "Rationale"),
                     ("consequences", "Consequences"),
                 ] {
-                    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
+                    ui.label(
+                        RichText::new(t(ui, label))
+                            .size(12.0)
+                            .color(colors(ui).muted),
+                    );
                     ui.label(if text(&preview, key).is_empty() {
                         "—"
                     } else {
@@ -2861,7 +2906,7 @@ impl Console {
                         egui::Label::new(
                             RichText::new(serde_json::to_string_pretty(&preview).unwrap())
                                 .monospace()
-                                .size(11.0),
+                                .size(12.0),
                         )
                         .wrap(),
                     );
@@ -2972,7 +3017,10 @@ impl Console {
             }
             if metadata["sharedProjectId"].is_string() && text(metadata, "state") != "unlinked" {
                 if metadata["offline"] == true {
-                    ui.colored_label(RED, t(ui, "Offline cache · verification is not current."));
+                    ui.colored_label(
+                        colors(ui).danger,
+                        t(ui, "Offline cache · verification is not current."),
+                    );
                 } else if metadata["stale"] == true {
                     hint(
                         ui,
@@ -3111,7 +3159,11 @@ impl Console {
             for record in array(&page["decisions"]).iter().take(10) {
                 ui.push_id(text(record, "decisionId"), |ui| {
                     card(ui, |ui| {
-                        ui.label(RichText::new(text(record, "title")).strong().color(TEXT));
+                        ui.label(
+                            RichText::new(text(record, "title"))
+                                .strong()
+                                .color(colors(ui).text),
+                        );
                         hint(ui, &localized_format!(ui, "Revision {0}", revision(record)));
                         if control(ui, "Read published copy", !self.hold_automatic_reads).clicked()
                         {
@@ -3191,7 +3243,7 @@ impl Console {
                     RichText::new(text(record, "title"))
                         .size(16.0)
                         .strong()
-                        .color(TEXT),
+                        .color(colors(ui).text),
                 );
                 for (key, label) in [
                     ("decision", "Decision statement"),
@@ -3200,7 +3252,11 @@ impl Console {
                     ("consequences", "Consequences"),
                 ] {
                     if !text(record, key).is_empty() {
-                        ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
+                        ui.label(
+                            RichText::new(t(ui, label))
+                                .size(12.0)
+                                .color(colors(ui).muted),
+                        );
                         ui.label(text(record, key));
                         ui.add_space(6.0);
                     }
@@ -3268,11 +3324,15 @@ impl Console {
     fn work_list(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let ready = codex_ready(snapshot);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(t(ui, "TASK QUEUE")).size(10.0).color(MUTED));
+            ui.label(
+                RichText::new(t(ui, "TASK QUEUE"))
+                    .size(10.0)
+                    .color(colors(ui).muted),
+            );
             ui.label(
                 RichText::new(items(&snapshot["work"]).len().to_string())
-                    .size(11.0)
-                    .color(TEXT),
+                    .size(12.0)
+                    .color(colors(ui).text),
             );
         });
         ui.add_space(10.0);
@@ -3399,7 +3459,7 @@ impl Console {
                     self.folder_request = Some(folder::Target::Task);
                 }
                 if let Some(code) = &self.work.path_problem {
-                    ui.colored_label(RED, t(ui, code));
+                    ui.colored_label(colors(ui).danger, t(ui, code));
                     if matches!(
                         code.as_str(),
                         "WORKSPACE_ACCESS_DENIED" | "WORKSPACE_READ_ONLY"
@@ -3524,7 +3584,7 @@ impl Console {
         ui.label(
             RichText::new(t(ui, "01 / DIRECTION"))
                 .size(10.0)
-                .color(MINT),
+                .color(colors(ui).primary),
         );
         ui.add_space(12.0);
         field(ui, "Team name", &mut self.team.name, 80, false);
@@ -3551,7 +3611,7 @@ impl Console {
         ui.label(
             RichText::new(t(ui, "02 / TEAM & LIMITS"))
                 .size(10.0)
-                .color(MINT),
+                .color(colors(ui).primary),
         );
         ui.add_space(12.0);
         let packs = array(&snapshot["packs"]);
@@ -3745,7 +3805,10 @@ impl Console {
                         }
                     ));
                     if !provider["error"].is_null() {
-                        ui.colored_label(RED, t(ui, text(&provider["error"], "message")));
+                        ui.colored_label(
+                            colors(ui).danger,
+                            t(ui, text(&provider["error"], "message")),
+                        );
                         ui.monospace(text(&provider["error"], "code"));
                     }
                     hint(
@@ -3811,7 +3874,7 @@ impl Console {
         let waiting = login["status"] == "waiting";
         card(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.heading(t(ui, "Patchfleet Cloud"));
+                ui.heading(t(ui, "Moxcrew Cloud"));
                 status(
                     ui,
                     if cloud["paired"] == true {
@@ -3825,13 +3888,13 @@ impl Console {
             ui.add_space(12.0);
             if cloud["error"] == true {
                 ui.colored_label(
-                    RED,
+                    colors(ui).danger,
                     t(
                         ui,
                         "Cloud settings need local recovery. Local work remains available.",
                     ),
                 );
-                ui.label(t(ui, "Close Patchfleet and back up the private cloud.json file in its data directory. Explicitly repair or remove that file, then reopen the app."));
+                ui.label(t(ui, "Close Moxcrew and back up the private cloud.json file in its data directory. Explicitly repair or remove that file, then reopen the app."));
                 hint(
                     ui,
                     "Pairing is unavailable until the local Cloud state can be read safely.",
@@ -3839,11 +3902,11 @@ impl Console {
                 return;
             }
             if let Some(error) = account_ui["error"].as_str() {
-                ui.colored_label(RED, t(ui, error));
+                ui.colored_label(colors(ui).danger, t(ui, error));
                 hint(ui,"Account status could not be verified. Local work and downloaded decisions remain available.");
             }
             if let Some(error) = self.account_form_error {
-                ui.colored_label(RED, t(ui, error));
+                ui.colored_label(colors(ui).danger, t(ui, error));
             }
             if account_ui["logoutRemoteRevoked"] == false {
                 hint(ui,"Signed out on this device. Cloud could not confirm revocation; sign out this installation from Cloud when online.");
@@ -3864,7 +3927,7 @@ impl Console {
                         .monospace()
                         .size(22.0)
                         .strong()
-                        .color(MINT),
+                        .color(colors(ui).primary),
                 );
                 hint(
                     ui,
@@ -3877,7 +3940,7 @@ impl Console {
                 let valid = valid_login_url(snapshot);
                 if !valid {
                     ui.colored_label(
-                        RED,
+                        colors(ui).danger,
                         t(
                             ui,
                             "The browser address was rejected. Cancel and start sign-in again.",
@@ -3902,11 +3965,11 @@ impl Console {
                         || json!({}),
                     );
                 });
-                hint(ui,"The browser keeps your login session. Patchfleet receives only this installation's connection credential.");
+                hint(ui,"The browser keeps your login session. Moxcrew receives only this installation's connection credential.");
             } else if cloud["paired"] == true {
                 if let Some(account) = verified_account(snapshot) {
                     if let Some(email) = account["email"].as_str() {
-                        ui.label(RichText::new(email).strong().color(TEXT));
+                        ui.label(RichText::new(email).strong().color(colors(ui).text));
                     } else {
                         ui.label(t(ui, "Verified account"));
                     }
@@ -3994,7 +4057,7 @@ impl Console {
                         patchfleet_core::desktop_login::validate_cloud_origin(self.cloud_url.trim())
                     {
                         let name = if self.host_name.trim().is_empty() {
-                            "Patchfleet desktop"
+                            "Moxcrew desktop"
                         } else {
                             self.host_name.trim()
                         };
@@ -4041,7 +4104,7 @@ impl Console {
                         ),
                     );
                     if let Some(code) = cloud["lastErrorCode"].as_str() {
-                        ui.colored_label(RED, t(ui, cloud_error(code)));
+                        ui.colored_label(colors(ui).danger, t(ui, cloud_error(code)));
                     }
                     ui.horizontal_wrapped(|ui| {
                         action(ui, commands, "Sync now", "cloud_sync", true, || json!({}));
@@ -4240,7 +4303,7 @@ fn extraction_provenance(ui: &mut Ui, decision: &Value) {
     match text(extraction, "relation") {
         "possible_conflict" => {
             ui.colored_label(
-                RED,
+                colors(ui).danger,
                 t(ui, "Possible conflict · compare with accepted decisions."),
             );
         }
@@ -4254,8 +4317,8 @@ fn extraction_provenance(ui: &mut Ui, decision: &Value) {
             for evidence in array(&extraction["evidence"]).iter().take(8) {
                 ui.label(
                     RichText::new(t(ui, "Supporting excerpt"))
-                        .size(11.0)
-                        .color(MUTED),
+                        .size(12.0)
+                        .color(colors(ui).muted),
                 );
                 ui.label(text(evidence, "excerpt"));
                 hint(
@@ -4525,22 +4588,30 @@ fn cloud_error(code: &str) -> &'static str {
         _ => "Cloud sync is unavailable. Local work continues while the host retries.",
     }
 }
+fn colors(ui: &Ui) -> studio::Palette {
+    studio::palette(ui.ctx())
+}
+
 fn hint(ui: &mut Ui, value: &str) {
-    ui.label(RichText::new(t(ui, value)).size(11.0).color(MUTED));
+    ui.label(
+        RichText::new(t(ui, value))
+            .size(12.0)
+            .color(colors(ui).muted),
+    );
 }
 fn raw_hint(ui: &mut Ui, value: &str) {
-    ui.label(RichText::new(value).size(11.0).color(MUTED));
+    ui.label(RichText::new(value).size(12.0).color(colors(ui).muted));
 }
 
 fn path_label(ui: &mut Ui, value: &str) {
-    ui.add(egui::Label::new(RichText::new(value).size(11.0).color(MUTED)).truncate())
+    ui.add(egui::Label::new(RichText::new(value).size(12.0).color(colors(ui).muted)).truncate())
         .on_hover_text(value);
 }
 
 fn folder_preview(ui: &mut Ui, path: &str) {
     egui::Frame::new()
-        .fill(Color32::from_rgb(18, 22, 28))
-        .stroke(egui::Stroke::new(1.0, BORDER))
+        .fill(colors(ui).raised)
+        .stroke(egui::Stroke::new(1.0, colors(ui).border))
         .corner_radius(8)
         .inner_margin(12)
         .show(ui, |ui| {
@@ -4548,7 +4619,12 @@ fn folder_preview(ui: &mut Ui, path: &str) {
             ui.horizontal(|ui| {
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
-                draw_icon(ui.painter(), rect.shrink(4.0), Tab::Projects, MINT);
+                draw_icon(
+                    ui.painter(),
+                    rect.shrink(4.0),
+                    Tab::Projects,
+                    colors(ui).primary,
+                );
                 ui.allocate_ui_with_layout(
                     egui::vec2(text_width, 0.0),
                     egui::Layout::top_down(egui::Align::LEFT),
@@ -4562,8 +4638,10 @@ fn folder_preview(ui: &mut Ui, path: &str) {
                             ui.label(t(ui, "No folder selected"));
                         } else {
                             ui.add(
-                                egui::Label::new(RichText::new(name).strong().color(TEXT))
-                                    .truncate(),
+                                egui::Label::new(
+                                    RichText::new(name).strong().color(colors(ui).text),
+                                )
+                                .truncate(),
                             );
                             path_label(ui, path);
                         }
@@ -4574,48 +4652,52 @@ fn folder_preview(ui: &mut Ui, path: &str) {
     ui.add_space(8.0);
 }
 fn status(ui: &mut Ui, value: &str) {
-    let color = match value {
-        "available" | "completed" | "applied" | "accepted" | "active" | "running" | "Connected"
-        | "Codex ready" | "Paired" => MINT,
-        "proposed" | "queued" | "launching" | "cancelling" | "waiting_question"
-        | "waiting_approval" => Color32::from_rgb(226, 197, 139),
-        "failed" | "rejected" | "timed_out" => RED,
-        _ => MUTED,
+    let p = colors(ui);
+    let (color, background) = match value {
+        "available" | "completed" | "applied" | "accepted" | "active" | "Connected"
+        | "Codex ready" | "Paired" => (p.success, p.success_surface),
+        "running" | "launching" | "queued" | "proposed" => (p.info, p.info_surface),
+        "cancelling" | "waiting_question" | "waiting_approval" => (p.warning, p.warning_surface),
+        "failed" | "rejected" | "timed_out" => (p.danger, p.danger_surface),
+        _ => (p.muted, p.raised),
     };
     let label = t(ui, value).replace('_', " ");
-    paint_status(ui, label, color);
+    paint_status(ui, label, color, background);
 }
 fn raw_status(ui: &mut Ui, value: &str) {
-    paint_status(ui, value.to_owned(), MUTED);
+    paint_status(ui, value.to_owned(), colors(ui).muted, colors(ui).raised);
 }
-fn paint_status(ui: &mut Ui, label: String, color: Color32) {
+fn paint_status(ui: &mut Ui, label: String, color: Color32, background: Color32) {
     let galley =
         ui.painter()
-            .layout_no_wrap(label.clone(), egui::FontId::proportional(10.0), color);
+            .layout_no_wrap(label.clone(), egui::FontId::proportional(12.0), color);
     let (rect, response) =
-        ui.allocate_exact_size(galley.size() + egui::vec2(14.0, 6.0), egui::Sense::hover());
+        ui.allocate_exact_size(galley.size() + egui::vec2(16.0, 8.0), egui::Sense::hover());
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), &label)
     });
+    ui.painter().rect_filled(rect, 8, background);
     ui.painter()
-        .rect_filled(rect, 4, color.gamma_multiply(0.10));
-    ui.painter()
-        .galley(rect.min + egui::vec2(7.0, 3.0), galley, color);
+        .galley(rect.min + egui::vec2(8.0, 4.0), galley, color);
 }
 fn studio_metric(ui: &mut Ui, label: &str, count: u64, icon: Tab) {
     egui::Frame::new()
-        .fill(SURFACE)
-        .stroke(egui::Stroke::new(1.0, BORDER))
+        .fill(colors(ui).surface)
+        .stroke(egui::Stroke::new(1.0, colors(ui).border))
         .corner_radius(10)
         .inner_margin(16)
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(RichText::new(t(ui, label)).size(10.0).color(MUTED));
+                ui.label(
+                    RichText::new(t(ui, label))
+                        .size(10.0)
+                        .color(colors(ui).muted),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let (rect, _) =
                         ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
-                    draw_icon(ui.painter(), rect, icon, MUTED);
+                    draw_icon(ui.painter(), rect, icon, colors(ui).muted);
                 });
             });
             ui.add_space(8.0);
@@ -4625,19 +4707,20 @@ fn studio_metric(ui: &mut Ui, label: &str, count: u64, icon: Tab) {
 
 fn studio_flow(ui: &mut Ui) {
     egui::Frame::new()
-        .fill(Color32::from_rgb(23, 32, 28))
-        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(48, 65, 56)))
+        .fill(colors(ui).info_surface)
+        .stroke(egui::Stroke::new(1.0, colors(ui).border))
         .corner_radius(12)
         .inner_margin(24)
         .show(ui, |ui| {
             ui.label(
                 RichText::new(t(ui, "BUILT AROUND YOUR PROJECT"))
-                    .size(9.0)
-                    .color(MINT)
+                    .size(11.0)
+                    .color(colors(ui).primary)
                     .extra_letter_spacing(1.3),
             );
-            ui.add_space(14.0);
-            ui.label(studio::title(t(ui, "One project. Shared direction."), 26.0));
+            studio::mascot(ui, ui.available_width().min(260.0));
+            ui.add_space(12.0);
+            ui.label(studio::title(t(ui, "One project. Shared direction."), 24.0));
             ui.add_space(22.0);
             for (number, title, detail) in [
                 (
@@ -4657,11 +4740,20 @@ fn studio_flow(ui: &mut Ui) {
                 ),
             ] {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(number).monospace().size(10.0).color(MINT));
+                    ui.label(
+                        RichText::new(number)
+                            .monospace()
+                            .size(10.0)
+                            .color(colors(ui).primary),
+                    );
                     ui.add_space(6.0);
                     ui.vertical(|ui| {
                         ui.label(studio::title(t(ui, title), 13.0));
-                        ui.label(RichText::new(t(ui, detail)).size(11.0).color(MUTED));
+                        ui.label(
+                            RichText::new(t(ui, detail))
+                                .size(12.0)
+                                .color(colors(ui).muted),
+                        );
                     });
                 });
                 ui.add_space(18.0);
@@ -4670,8 +4762,8 @@ fn studio_flow(ui: &mut Ui) {
 }
 fn card(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
-        .fill(SURFACE)
-        .stroke(egui::Stroke::new(1.0, BORDER))
+        .fill(colors(ui).surface)
+        .stroke(egui::Stroke::new(1.0, colors(ui).border))
         .corner_radius(12)
         .inner_margin(20)
         .show(ui, |ui| {
@@ -4682,7 +4774,7 @@ fn card(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
 fn empty(ui: &mut Ui, title: &str, description: &str) {
     card(ui, |ui| {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(30.0, 28.0), egui::Sense::hover());
-        studio::mark(ui.painter(), rect.shrink(5.0), MINT.gamma_multiply(0.65));
+        studio::mark(ui.painter(), rect);
         ui.add_space(12.0);
         ui.label(studio::title(t(ui, title), 20.0));
         ui.add_space(8.0);
@@ -4691,7 +4783,11 @@ fn empty(ui: &mut Ui, title: &str, description: &str) {
     ui.add_space(14.0);
 }
 fn field(ui: &mut Ui, label: &str, value: &mut String, max: usize, password: bool) {
-    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
+    ui.label(
+        RichText::new(t(ui, label))
+            .size(12.0)
+            .color(colors(ui).muted),
+    );
     ui.add(
         egui::TextEdit::singleline(value)
             .desired_width(f32::INFINITY)
@@ -4703,7 +4799,11 @@ fn field(ui: &mut Ui, label: &str, value: &mut String, max: usize, password: boo
     ui.add_space(8.0);
 }
 fn multiline(ui: &mut Ui, label: &str, value: &mut String, max: usize, rows: usize) {
-    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
+    ui.label(
+        RichText::new(t(ui, label))
+            .size(12.0)
+            .color(colors(ui).muted),
+    );
     ui.add(
         egui::TextEdit::multiline(value)
             .desired_width(f32::INFINITY)
@@ -4728,8 +4828,12 @@ fn choose_workspace(ui: &mut Ui, id: &str, selected: &mut String, snapshot: &Val
 fn project_switcher(ui: &mut Ui, id: &str, selected: &mut String, projects: &[Value]) {
     ui.horizontal_wrapped(|ui| {
         let (icon, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-        draw_icon(ui.painter(), icon, Tab::Projects, MINT);
-        ui.label(RichText::new(t(ui, "Project")).size(11.0).color(MUTED));
+        draw_icon(ui.painter(), icon, Tab::Projects, colors(ui).primary);
+        ui.label(
+            RichText::new(t(ui, "Project"))
+                .size(12.0)
+                .color(colors(ui).muted),
+        );
         let name = projects
             .iter()
             .find(|p| text(p, "projectId") == selected)
@@ -4774,7 +4878,11 @@ fn choose_refs(
     empty: bool,
 ) {
     let (id_key, name_key) = keys;
-    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
+    ui.label(
+        RichText::new(t(ui, label))
+            .size(12.0)
+            .color(colors(ui).muted),
+    );
     let current = options
         .iter()
         .find(|v| text(v, id_key) == selected)
@@ -4837,12 +4945,12 @@ fn submit(ui: &mut Ui, label: &str, action: &str) -> bool {
             RichText::new(t(ui, label))
                 .size(12.0)
                 .strong()
-                .color(Color32::from_rgb(18, 37, 29)),
+                .color(colors(ui).on_primary),
         )
-        .fill(MINT)
+        .fill(colors(ui).primary)
         .stroke(egui::Stroke::NONE)
-        .corner_radius(6)
-        .min_size(egui::vec2(128.0, 32.0)),
+        .corner_radius(12)
+        .min_size(egui::vec2(128.0, 44.0)),
     );
     #[cfg(test)]
     ui.data_mut(|data| {
@@ -4861,11 +4969,15 @@ fn action(
 ) {
     let response = ui.add_enabled(
         enabled,
-        egui::Button::new(RichText::new(t(ui, label)).size(11.0).color(TEXT))
-            .fill(Color32::TRANSPARENT)
-            .stroke(egui::Stroke::new(1.0, BORDER))
-            .corner_radius(5)
-            .min_size(egui::vec2(74.0, 28.0)),
+        egui::Button::new(
+            RichText::new(t(ui, label))
+                .size(12.0)
+                .color(colors(ui).text),
+        )
+        .fill(Color32::TRANSPARENT)
+        .stroke(egui::Stroke::new(1.0, colors(ui).control_border))
+        .corner_radius(8)
+        .min_size(egui::vec2(74.0, 36.0)),
     );
     #[cfg(test)]
     ui.data_mut(|data| {
@@ -4893,7 +5005,11 @@ fn section_title(ui: &mut Ui, title: &str, description: &str) {
     hint(ui, description);
 }
 fn field_hint(ui: &mut Ui, label: &str, value: &mut String, max: usize, placeholder: &str) {
-    ui.label(RichText::new(t(ui, label)).size(11.0).color(MUTED));
+    ui.label(
+        RichText::new(t(ui, label))
+            .size(12.0)
+            .color(colors(ui).muted),
+    );
     ui.add(
         egui::TextEdit::singleline(value)
             .desired_width(f32::INFINITY)
@@ -4939,9 +5055,9 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         response.scroll_to_me(Some(egui::Align::Center));
     }
     let background = if selected {
-        Color32::from_rgb(38, 53, 46)
+        colors(ui).info_surface
     } else if response.hovered() {
-        Color32::from_rgb(29, 36, 36)
+        colors(ui).raised
     } else {
         Color32::TRANSPARENT
     };
@@ -4950,7 +5066,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         ui.painter().rect_stroke(
             rect,
             7,
-            egui::Stroke::new(1.0, MINT),
+            egui::Stroke::new(1.0, colors(ui).primary),
             egui::StrokeKind::Inside,
         );
     }
@@ -4958,15 +5074,23 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         ui.painter().rect_filled(
             egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 8.0), egui::vec2(2.0, 18.0)),
             1,
-            MINT,
+            colors(ui).primary,
         );
     }
-    let color = if selected { TEXT } else { MUTED };
+    let color = if selected {
+        colors(ui).text
+    } else {
+        colors(ui).muted
+    };
     draw_icon(
         ui.painter(),
         egui::Rect::from_min_size(rect.min + egui::vec2(11.0, 8.0), egui::vec2(18.0, 18.0)),
         tab,
-        if selected { MINT } else { MUTED },
+        if selected {
+            colors(ui).primary
+        } else {
+            colors(ui).muted
+        },
     );
     ui.painter().text(
         rect.min + egui::vec2(39.0, 18.0),
@@ -4981,7 +5105,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
             egui::Align2::RIGHT_CENTER,
             count.to_string(),
             egui::FontId::proportional(10.0),
-            MUTED,
+            colors(ui).muted,
         );
     }
     response.clicked()
@@ -7682,9 +7806,14 @@ mod tests {
 
     #[test]
     fn native_tabs_render_fresh_and_populated_snapshots_without_side_effects() {
-        for snapshot in [snapshot(), json!({})] {
+        for (snapshot, theme) in [snapshot(), json!({})].into_iter().flat_map(|snapshot| {
+            [egui::Theme::Light, egui::Theme::Dark]
+                .into_iter()
+                .map(move |theme| (snapshot.clone(), theme))
+        }) {
             for tab in Tab::ALL {
                 let ctx = test_context();
+                ctx.set_theme(theme);
                 let mut console = Console {
                     tab,
                     ..Default::default()
@@ -7692,6 +7821,45 @@ mod tests {
                 let (commands, shapes) = render(&ctx, &mut console, &snapshot, false, vec![]);
                 assert!(commands.is_empty());
                 assert!(shapes > 10, "{} should paint a usable frame", tab.name());
+            }
+        }
+    }
+
+    #[test]
+    fn first_project_action_is_visible_in_both_themes_and_languages_at_minimum_size() {
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            for code in ["tr", "en"] {
+                let ctx = test_context();
+                ctx.set_theme(theme);
+                let mut console = Console::default();
+                let data = json!({"desktopPreferences":{"language":code,"error":false}});
+                let mut commands = vec![];
+                let output = ctx.run_ui(
+                    RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            egui::vec2(800.0, 560.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        commands = console.show(ui, &data, false, None, false);
+                    },
+                );
+                output.drop_without_applying_deltas();
+                let create: Rect = ctx.data(|d| {
+                    d.get_temp(egui::Id::new((
+                        "test-action",
+                        "project_create",
+                        "Create project",
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    create.max.x <= 800.0 && create.max.y <= 540.0,
+                    "first-project action should be visible: {create:?}"
+                );
+                assert!(commands.is_empty());
             }
         }
     }

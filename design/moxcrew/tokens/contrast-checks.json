@@ -1,0 +1,126 @@
+[
+  {
+    "theme": "light",
+    "foreground": "text",
+    "background": "surface",
+    "contrast": 15.81
+  },
+  {
+    "theme": "light",
+    "foreground": "secondaryText",
+    "background": "surface",
+    "contrast": 6.13
+  },
+  {
+    "theme": "light",
+    "foreground": "onPrimary",
+    "background": "primary",
+    "contrast": 5.73
+  },
+  {
+    "theme": "light",
+    "foreground": "onAccent",
+    "background": "accent",
+    "contrast": 6.08
+  },
+  {
+    "theme": "light",
+    "foreground": "success",
+    "background": "successSurface",
+    "contrast": 4.61
+  },
+  {
+    "theme": "light",
+    "foreground": "warning",
+    "background": "warningSurface",
+    "contrast": 6.37
+  },
+  {
+    "theme": "light",
+    "foreground": "danger",
+    "background": "dangerSurface",
+    "contrast": 5.18
+  },
+  {
+    "theme": "light",
+    "foreground": "info",
+    "background": "infoSurface",
+    "contrast": 6.3
+  },
+  {
+    "theme": "light",
+    "foreground": "controlBorder",
+    "background": "surface",
+    "contrast": 3.23,
+    "minimum": 3
+  },
+  {
+    "theme": "light",
+    "foreground": "focus",
+    "background": "surface",
+    "contrast": 5.73,
+    "minimum": 3
+  },
+  {
+    "theme": "dark",
+    "foreground": "text",
+    "background": "surface",
+    "contrast": 14.68
+  },
+  {
+    "theme": "dark",
+    "foreground": "secondaryText",
+    "background": "surface",
+    "contrast": 7.89
+  },
+  {
+    "theme": "dark",
+    "foreground": "onPrimary",
+    "background": "primary",
+    "contrast": 7.64
+  },
+  {
+    "theme": "dark",
+    "foreground": "onAccent",
+    "background": "accent",
+    "contrast": 8.57
+  },
+  {
+    "theme": "dark",
+    "foreground": "success",
+    "background": "successSurface",
+    "contrast": 7.04
+  },
+  {
+    "theme": "dark",
+    "foreground": "warning",
+    "background": "warningSurface",
+    "contrast": 7.33
+  },
+  {
+    "theme": "dark",
+    "foreground": "danger",
+    "background": "dangerSurface",
+    "contrast": 6.56
+  },
+  {
+    "theme": "dark",
+    "foreground": "info",
+    "background": "infoSurface",
+    "contrast": 6.45
+  },
+  {
+    "theme": "dark",
+    "foreground": "controlBorder",
+    "background": "surface",
+    "contrast": 3.53,
+    "minimum": 3
+  },
+  {
+    "theme": "dark",
+    "foreground": "focus",
+    "background": "surface",
+    "contrast": 8.37,
+    "minimum": 3
+  }
+]

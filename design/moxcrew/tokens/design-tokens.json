@@ -4,6 +4,11 @@
   "domain": "moxcrew.com",
   "version": "1.0",
   "approvedMascotConcept": 4,
+  "naming": {
+    "structure": "Mox + crew",
+    "Mox": "mascot name",
+    "crew": "cooperating agent team and community spirit"
+  },
   "palette": {
     "cobalt": "#2854F4",
     "cobaltHover": "#1D3ED3",

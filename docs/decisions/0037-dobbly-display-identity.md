@@ -8,7 +8,8 @@ Date: 2026-10-18
 
 After the earlier Dobbly planning, the owner purchased moxcrew.com and
 authorized the coordinated Moxcrew desktop/Cloud implementation. The selected
-concept-4 mascot is named Mox. The existing product is a native
+concept-4 mascot is named Mox. The naming structure is Mox + crew: Mox is
+the character; crew expresses the cooperating team and community spirit. The existing product is a native
 Rust/egui application with a separate optional Cloud console. Existing installs
 and canonical data use Patchfleet technical identifiers.
 

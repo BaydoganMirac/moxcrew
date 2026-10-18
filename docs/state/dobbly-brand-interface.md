@@ -1,6 +1,6 @@
 # Moxcrew native interface
 
-Status: Implemented and locally verified; independent review in progress
+Status: Complete; independently reviewed and locally verified
 
 Updated: 2026-10-19
 
@@ -8,7 +8,9 @@ Updated: 2026-10-19
 
 The owner purchased moxcrew.com and explicitly requested the Moxcrew kit and
 Cloud/desktop implementation. This supersedes the earlier Dobbly name; Mox is
-the selected concept-4 mascot. Existing plan/state/ADR filenames remain stable
+the selected concept-4 mascot. The owner reconfirmed the architecture as
+Mox + crew: Mox names the character; crew expresses the cooperating team and
+community spirit; Moxcrew names the product. Existing plan/state/ADR filenames remain stable
 so prior links continue to resolve.
 
 [Task0037](../plans/0037-dobbly-brand-interface.md) and accepted
@@ -62,17 +64,17 @@ so prior links continue to resolve.
 
 ## Artifact and measurement
 
-`dist/native/Moxcrew_0.12.0_aarch64.dmg`:7,294,532 bytes; checksum verification passes.
-SHA-256 `1fec20dac6cf7856ac82f6515026cf8d05df2c5d32879aa8cd15b73acfc08eb5`.
+`dist/native/Moxcrew_0.12.0_aarch64.dmg`:7,294,667 bytes; checksum verification passes.
+SHA-256 `3e6006945df21c576c259e0ce31ef12ba5e62956b54c540fcc52035a37cacb30`.
 Signed App executable SHA-256
-`b558fddc1591efaff4a8baf5099f78ae9cc6cca56b940a615e91876bb28cf930`.
+`15e7c628e0ffafeaeac987fcbe3934ddf94a7cca696239b0693676df374c5d7b`.
 
 Same-method development measurements with empty data/failing provider stubs:
 
 | Measure | Before | Moxcrew |
 |---|---:|---:|
 | Release executable bytes |13,618,368|13,982,080 (+2.67%)|
-| Locally assembled DMG bytes |6,977,041|7,294,532 (+4.55%)|
+| Locally assembled DMG bytes |6,977,041|7,294,667 (+4.55%)|
 | LaunchServices callback |62ms|415ms|
 | Eight-second process RSS |112,048KiB|115,904KiB|
 | Eight-second cumulative CPU |0.25s|0.27s|
@@ -105,4 +107,14 @@ The review checked actual control borders on canvas, surface, raised and
 selected surfaces. Shared controlBorder is now light `#7A889F` / dark
 `#7588A8`, matching Cloud; all32 text/control/focus pairs pass. The final
 90 desktop checks, strict Clippy and native captures were repeated. Windows
-NSIS upgrade discovery is being corrected separately before handoff.
+NSIS/WiX upgrade discovery was corrected in `9332ecc` and independently reviewed.
+The pinned0.11.8 templates preserve prior registry/install/shortcut identities
+with Moxcrew display labels. Four focused identity checks pass; both templates
+render with actual Handlebars and rendered WiX XML parses. The MIT notice ships
+with the development package. Actual Windows compiler/install/upgrade/uninstall
+remains a release gate, without any canonical data cleanup.
+
+Independent review covered native `bb70bae`, contrast `f1e7d1c` and installer
+`9332ecc`; both findings are resolved with no remaining actionable findings.
+The reviewer independently repeated90 native checks,4 installer checks and all32
+contrast ratios. It did not claim Windows runtime or hosted release verification.

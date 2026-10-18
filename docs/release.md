@@ -98,6 +98,14 @@ and canonical data paths. The packaged App is now `Moxcrew.app`; CI archive and
 verification paths use that display name. Theme smoke controls additionally
 accept `PATCHFLEET_SMOKE_THEME=light` or `dark`; these remain test-only.
 
+Windows installer templates are pinned to cargo-packager0.11.8 under
+`crates/patchfleet-desktop/assets/windows/`. Moxcrew display labels deliberately
+retain Patchfleet registry/install/shortcut directory identities so existing
+NSIS/WiX installations are discovered. Reconcile the documented delta when
+upgrading the packager. Before a Windows release, exercise actual fresh install,
+upgrade from Patchfleet (including custom directories), cross-format upgrade
+and uninstall/data preservation. Source/template checks do not replace that gate.
+
 ## Rollback
 
 Close the app and restore a compatible executable and verified data backup.

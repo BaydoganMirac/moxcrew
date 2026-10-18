@@ -1,8 +1,8 @@
 # Task 0037: Moxcrew native interface
 
-Status: Implemented and locally verified; independent review in progress
+Status: Complete; independently reviewed and locally verified
 
-Updated: 2026-10-18
+Updated: 2026-10-19
 
 ## Outcome and authority
 

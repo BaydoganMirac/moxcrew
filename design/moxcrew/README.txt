@@ -1,8 +1,9 @@
 MOXCREW / BRAND SOURCE / V1 / 2026-10-18
 
-Product: Moxcrew. Mascot: Mox. Brand domain: moxcrew.com.
+Product: Moxcrew = Mox + crew. Mascot: Mox. Brand domain: moxcrew.com.
 Promise: Your AI team. On it.
-Crew describes cooperating AI helpers, not a new multi-user feature.
+Mox is the character; crew expresses a cooperating team and community spirit.
+This identity does not add a new multi-user feature.
 
 The owner selected concept 4: cobalt rectangular helper, asymmetric cream eyes,
 orange eye ring and top tab. The original tactile PNG is reused unchanged.

@@ -118,3 +118,19 @@ Independent review covered native `bb70bae`, contrast `f1e7d1c` and installer
 `9332ecc`; both findings are resolved with no remaining actionable findings.
 The reviewer independently repeated90 native checks,4 installer checks and all32
 contrast ratios. It did not claim Windows runtime or hosted release verification.
+
+## Repository-name follow-up
+
+On2026-10-19 the owner explicitly requested the GitHub repository names to match
+Moxcrew. The existing public repository was renamed to `BaydoganMirac/moxcrew`;
+its GitHub identity, public visibility and main branch were verified unchanged.
+The local origin uses the new URL. README logo/theme variants, canonical package
+homepage/repository/security URLs, agent entry point and active product/
+architecture/roadmap/docs headings now use Moxcrew. Installation/data/package/
+protocol identifiers remain compatible.
+
+Nine relevant CLI/installer metadata checks pass; README image paths and absence
+of obsolete canonical GitHub links are checked. No Rust runtime change or new
+package/release is claimed by this documentation follow-up. These local commits
+have not been pushed; the pre-existing accumulated history requires an explicit
+owner publishing direction under AGENTS.md.

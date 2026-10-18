@@ -1,12 +1,12 @@
-# Patchfleet product brief
+# Moxcrew product brief
 
 Status: working product contract
 
-Updated: 2026-10-15
+Updated: 2026-10-19
 
 ## One-line promise
 
-Patchfleet gives serious builders one local command center to form, direct,
+Moxcrew gives serious builders one local command center to form, direct,
 supervise, and recover teams of coding agents, with an optional Cloud view for
 safe remote decisions.
 
@@ -25,15 +25,15 @@ When several coding agents are active, the customer needs to:
 
 ## Product shape
 
-Patchfleet has two products with a hard trust boundary:
+Moxcrew has two products with a hard trust boundary:
 
-### Patchfleet
+### Moxcrew
 
 The public native Rust/egui desktop application. It detects providers, normalizes their observable
 state, stores canonical local events, presents the local console, and applies
-validated commands. It works offline from Patchfleet Cloud.
+validated commands. It works offline from Moxcrew Cloud.
 
-### Patchfleet Cloud
+### Moxcrew Cloud
 
 The optional private SaaS. It authenticates users, stores sanitized operational
 projections, and delivers allowlisted command intents to paired local hosts. In
@@ -98,12 +98,12 @@ remain separate release work.
 
 V0 is complete when one user can:
 
-1. install Patchfleet locally;
+1. install Moxcrew locally;
 2. see Claude Code, Codex, and Gemini CLI availability and active work in one
    normalized view;
 3. create a local work item and send it through a supported provider;
 4. observe durable lifecycle history and recover after restart;
-5. pair the installation with Patchfleet Cloud through an outbound connection;
+5. pair the installation with Moxcrew Cloud through an outbound connection;
 6. view sanitized status remotely;
 7. issue the safe V1 remote cancel action and receive a definitive receipt.
 

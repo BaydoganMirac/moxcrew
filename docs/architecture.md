@@ -1,12 +1,12 @@
-# Patchfleet architecture
+# Moxcrew architecture
 
 Status: Native Rust desktop architecture
 
-Updated: 2026-10-14
+Updated: 2026-10-19
 
 ## System boundary
 
-Patchfleet uses a local execution plane and an optional remote control plane.
+Moxcrew uses a local execution plane and an optional remote control plane.
 The boundary is intentionally asymmetric: the local host can connect outbound
 to Cloud, but Cloud cannot open an inbound session to the developer machine.
 
@@ -25,7 +25,7 @@ to Cloud, but Cloud cannot open an inbound session to the developer machine.
                 |
          outbound HTTPS
                 |
-        Patchfleet Cloud
+        Moxcrew Cloud
      remote UI + intent queue
 
 ## Public/local responsibilities
@@ -46,7 +46,7 @@ The public repository owns:
 
 ## Private/Cloud responsibilities
 
-Patchfleet Cloud owns in the Free beta release candidate:
+Moxcrew Cloud owns in the Free beta release candidate:
 
 - authenticated users and one personal workspace per user;
 - host pairing and credential rotation;
@@ -97,7 +97,7 @@ modules remain event/protocol parity references.
 
 The normalized model starts small:
 
-- Host: one Patchfleet installation and its pairing state.
+- Host: one Moxcrew installation and its pairing state.
 - ProviderInstallation: provider identity, availability, version, and
   capabilities.
 - Workspace: an opaque local registration for one canonical Git worktree; its
@@ -276,6 +276,6 @@ Remote action:
 - Remote commands are an enum with validated payloads, never strings executed
   by a shell.
 - Local provider credentials are discovered through provider-supported local
-  mechanisms and are never copied into Patchfleet Cloud.
+  mechanisms and are never copied into Moxcrew Cloud.
 - Telemetry is opt-in and must use the same data-classification rules as Cloud
   sync.

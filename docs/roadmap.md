@@ -1,13 +1,16 @@
-# Patchfleet public roadmap
+# Moxcrew public roadmap
 
 Status: active
 
-Updated: 2026-10-15
+Updated: 2026-10-19
 
 This roadmap describes public technical direction, not dates or commercial
 commitments.
 
 ## Now
+
+- Preserve the completed [Moxcrew identity and native interface](state/dobbly-brand-interface.md),
+  with Mox as the mascot and compatible existing installation/data identities.
 
 - Preserve the owner-approved [studio interface](plans/0036-product-studio-interface.md)
   with native TR/EN, adaptive project/team/knowledge screens and the existing
@@ -65,4 +68,4 @@ The 2026-07-20 owner approval intentionally supersedes the earlier sequencing
 gate that deferred packs and orchestration. ADRs 0019 and 0020 preserve the
 original safety requirements while moving this work into the current phase.
 
-Patchfleet remains useful without Patchfleet Cloud throughout every stage.
+Moxcrew remains useful without Moxcrew Cloud throughout every stage.

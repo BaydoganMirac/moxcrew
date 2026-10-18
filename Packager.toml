@@ -6,7 +6,7 @@ identifier = "com.patchfleet.desktop"
 publisher = "Moxcrew"
 authors = ["Moxcrew contributors"]
 description = "Your local AI crew: projects, tasks and shared decisions"
-homepage = "https://github.com/BaydoganMirac/patchfleet"
+homepage = "https://github.com/BaydoganMirac/moxcrew"
 license-file = "LICENSE"
 resources = [
   { src = "LICENSE", target = "LICENSE.txt" },

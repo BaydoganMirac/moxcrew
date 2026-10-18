@@ -186,3 +186,12 @@ N0-N4 are implemented. Fresh checks, artifacts, measurements, screenshots and
 platform limits are recorded in the [state](../state/dobbly-brand-interface.md).
 The owner-selected Moxcrew/Mox identity supersedes the earlier Dobbly name; old
 document filenames remain stable for existing links.
+
+## Repository-name follow-up (2026-10-19)
+
+The owner explicitly requested GitHub repository names to follow the new brand.
+The public repository is `BaydoganMirac/moxcrew`; the separate private repository
+is `BaydoganMirac/moxcrew-cloud`. Update canonical repository links, active
+documentation and CI/fixture checkout discovery while preserving installed data,
+protocol, package and executable identities. Publishing accumulated local commits
+is a separate owner direction under AGENTS.md.

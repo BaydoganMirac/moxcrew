@@ -1,4 +1,4 @@
-# Patchfleet documentation
+# Moxcrew documentation
 
 These documents are written for both humans and coding agents. Product intent
 and trust boundaries come before implementation details.
@@ -21,6 +21,10 @@ and trust boundaries come before implementation details.
    local state, the Cloud boundary, and team delegation.
 
 ## Current product focus
+
+[Moxcrew identity and interface](state/dobbly-brand-interface.md) records the
+Mox mascot, system themes, native package and completed local verification.
+Technical installation/data identifiers remain compatible with earlier releases.
 
 [Native Rust interface](plans/0024-native-rust-desktop-ui.md) replaces the Tauri
 interface with a lightweight egui desktop. See [native state](state/native-rust-desktop.md)

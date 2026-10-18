@@ -192,5 +192,5 @@ document filenames remain stable for existing links.
 The owner explicitly requested GitHub repository names to follow the new brand.
 The public repository is `BaydoganMirac/moxcrew`. Update canonical repository links, active
 documentation and CI/fixture checkout discovery while preserving installed data,
-protocol, package and executable identities. Publishing accumulated local commits
-is a separate owner direction under AGENTS.md.
+protocol, package and executable identities. The owner then explicitly approved publishing both accumulated histories;
+the main pushes and GitHub README/SHA verification are recorded in feature state.

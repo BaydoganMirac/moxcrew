@@ -51,7 +51,28 @@
     "theme": "light",
     "foreground": "controlBorder",
     "background": "surface",
+    "contrast": 3.59,
+    "minimum": 3
+  },
+  {
+    "theme": "light",
+    "foreground": "controlBorder",
+    "background": "canvas",
+    "contrast": 3.35,
+    "minimum": 3
+  },
+  {
+    "theme": "light",
+    "foreground": "controlBorder",
+    "background": "raised",
     "contrast": 3.23,
+    "minimum": 3
+  },
+  {
+    "theme": "light",
+    "foreground": "controlBorder",
+    "background": "infoSurface",
+    "contrast": 3.21,
     "minimum": 3
   },
   {
@@ -59,6 +80,27 @@
     "foreground": "focus",
     "background": "surface",
     "contrast": 5.73,
+    "minimum": 3
+  },
+  {
+    "theme": "light",
+    "foreground": "focus",
+    "background": "canvas",
+    "contrast": 5.35,
+    "minimum": 3
+  },
+  {
+    "theme": "light",
+    "foreground": "focus",
+    "background": "raised",
+    "contrast": 5.16,
+    "minimum": 3
+  },
+  {
+    "theme": "light",
+    "foreground": "focus",
+    "background": "infoSurface",
+    "contrast": 5.12,
     "minimum": 3
   },
   {
@@ -113,7 +155,28 @@
     "theme": "dark",
     "foreground": "controlBorder",
     "background": "surface",
-    "contrast": 3.53,
+    "contrast": 4.33,
+    "minimum": 3
+  },
+  {
+    "theme": "dark",
+    "foreground": "controlBorder",
+    "background": "canvas",
+    "contrast": 4.94,
+    "minimum": 3
+  },
+  {
+    "theme": "dark",
+    "foreground": "controlBorder",
+    "background": "raised",
+    "contrast": 3.65,
+    "minimum": 3
+  },
+  {
+    "theme": "dark",
+    "foreground": "controlBorder",
+    "background": "infoSurface",
+    "contrast": 3.22,
     "minimum": 3
   },
   {
@@ -121,6 +184,27 @@
     "foreground": "focus",
     "background": "surface",
     "contrast": 8.37,
+    "minimum": 3
+  },
+  {
+    "theme": "dark",
+    "foreground": "focus",
+    "background": "canvas",
+    "contrast": 9.54,
+    "minimum": 3
+  },
+  {
+    "theme": "dark",
+    "foreground": "focus",
+    "background": "raised",
+    "contrast": 7.04,
+    "minimum": 3
+  },
+  {
+    "theme": "dark",
+    "foreground": "focus",
+    "background": "infoSurface",
+    "contrast": 6.21,
     "minimum": 3
   }
 ]

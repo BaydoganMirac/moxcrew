@@ -2,7 +2,7 @@
 
 Status: Implemented and locally verified; independent review in progress
 
-Updated: 2026-10-18
+Updated: 2026-10-19
 
 ## Authority and identity
 
@@ -57,22 +57,22 @@ so prior links continue to resolve.
   provider stubs. Own bundle/PID/layer-zero window matched; normal close released
   each writer lock. Ad-hoc signature, identifier/version, all five folder-purpose
   keys and bundled licenses pass. No installed application or owner data used.
-- Shared16 normal-text pairs meet4.5:1; four additional control/focus pairs meet
+- Shared16 normal-text pairs meet4.5:1; sixteen additional control/focus pairs meet
   3:1. `design/moxcrew/tokens/contrast-checks.json` records actual ratios.
 
 ## Artifact and measurement
 
-`dist/native/Moxcrew_0.12.0_aarch64.dmg`:7,294,531 bytes; checksum verification passes.
-SHA-256 `5d925c7c94b3cd04cf1e17adab9877db90978eb9c34401c0f0700e3568eee5c7`.
+`dist/native/Moxcrew_0.12.0_aarch64.dmg`:7,294,532 bytes; checksum verification passes.
+SHA-256 `1fec20dac6cf7856ac82f6515026cf8d05df2c5d32879aa8cd15b73acfc08eb5`.
 Signed App executable SHA-256
-`e1321b91389150fbc7f20e950934a6ee639375a272488962e7e353be092ccee4`.
+`b558fddc1591efaff4a8baf5099f78ae9cc6cca56b940a615e91876bb28cf930`.
 
 Same-method development measurements with empty data/failing provider stubs:
 
 | Measure | Before | Moxcrew |
 |---|---:|---:|
 | Release executable bytes |13,618,368|13,982,080 (+2.67%)|
-| Locally assembled DMG bytes |6,977,041|7,294,531 (+4.55%)|
+| Locally assembled DMG bytes |6,977,041|7,294,532 (+4.55%)|
 | LaunchServices callback |62ms|415ms|
 | Eight-second process RSS |112,048KiB|115,904KiB|
 | Eight-second cumulative CPU |0.25s|0.27s|
@@ -98,3 +98,11 @@ billing services, exhaustive keyboard traversal and live Cloud deployment remain
 outside this local presentation verification. No DNS, migration, release,
 installed-app replacement or inference call occurred. Cloud verification is
 recorded in its separate repository; this file does not publish private details.
+
+## Independent review corrections
+
+The review checked actual control borders on canvas, surface, raised and
+selected surfaces. Shared controlBorder is now light `#7A889F` / dark
+`#7588A8`, matching Cloud; all32 text/control/focus pairs pass. The final
+90 desktop checks, strict Clippy and native captures were repeated. Windows
+NSIS upgrade discovery is being corrected separately before handoff.

@@ -9,7 +9,7 @@ pub mod light {
     pub const BORDER: [u8; 4] = [221, 226, 236, 255];
     pub const PRIMARY: [u8; 4] = [40, 84, 244, 255];
     pub const ON_PRIMARY: [u8; 4] = [255, 255, 255, 255];
-    pub const CONTROL_BORDER: [u8; 4] = [130, 144, 168, 255];
+    pub const CONTROL_BORDER: [u8; 4] = [122, 136, 159, 255];
     pub const ACCENT: [u8; 4] = [255, 122, 47, 255];
     pub const ON_ACCENT: [u8; 4] = [21, 34, 61, 255];
     pub const FOCUS: [u8; 4] = [40, 84, 244, 255];
@@ -31,7 +31,7 @@ pub mod dark {
     pub const BORDER: [u8; 4] = [64, 81, 109, 255];
     pub const PRIMARY: [u8; 4] = [141, 166, 255, 255];
     pub const ON_PRIMARY: [u8; 4] = [16, 24, 39, 255];
-    pub const CONTROL_BORDER: [u8; 4] = [100, 121, 156, 255];
+    pub const CONTROL_BORDER: [u8; 4] = [117, 136, 168, 255];
     pub const ACCENT: [u8; 4] = [255, 155, 102, 255];
     pub const ON_ACCENT: [u8; 4] = [16, 24, 39, 255];
     pub const FOCUS: [u8; 4] = [167, 188, 255, 255];

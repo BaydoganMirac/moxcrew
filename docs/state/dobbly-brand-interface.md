@@ -131,6 +131,9 @@ protocol identifiers remain compatible.
 
 Nine relevant CLI/installer metadata checks pass; README image paths and absence
 of obsolete canonical GitHub links are checked. No Rust runtime change or new
-package/release is claimed by this documentation follow-up. These local commits
-have not been pushed; the pre-existing accumulated history requires an explicit
-owner publishing direction under AGENTS.md.
+package/release is claimed by this documentation follow-up. The owner explicitly approved publishing both accumulated histories. The
+approved66-commit public batch was pushed to main at
+`dd8ee574245917281d5045b794af7d3839d1d64a`; the GitHub main SHA and README blob
+`0b2db33fb9da0dcd457595ea8ee15c13e87c321b` match the local checkout. GitHub Actions
+were triggered. Publishing source does not change the separate platform/runtime
+and hosted-service release gates above.

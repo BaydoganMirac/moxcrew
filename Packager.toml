@@ -34,9 +34,13 @@ signing-identity = "-"
 info-plist-path = "crates/patchfleet-desktop/assets/macos-permissions.plist"
 
 [nsis]
+template = "crates/patchfleet-desktop/assets/windows/installer.nsi"
 installMode = "currentUser"
 installer-icon = "crates/patchfleet-desktop/assets/icons/icon.ico"
 # No appdata-paths: uninstallers must preserve the existing local canonical data.
+
+[wix]
+template = "crates/patchfleet-desktop/assets/windows/main.wxs"
 
 [deb]
 package-name = "patchfleet-desktop"

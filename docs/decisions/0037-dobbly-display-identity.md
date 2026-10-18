@@ -1,19 +1,20 @@
-# ADR 0037: Dobbly display identity with installation compatibility
+# ADR 0037: Moxcrew display identity with installation compatibility
 
-Status: Proposed implementation boundary; Dobbly name and mascot selected by owner
+Status: Accepted; Moxcrew name, moxcrew.com and implementation selected by owner
 
-Date: 2026-10-17
+Date: 2026-10-18
 
 ## Context
 
-The owner selected Dobbly and mascot concept 4, approved a brand kit, and asked
-for a coordinated desktop/Cloud redesign plan. The existing product is a native
+After the earlier Dobbly planning, the owner purchased moxcrew.com and
+authorized the coordinated Moxcrew desktop/Cloud implementation. The selected
+concept-4 mascot is named Mox. The existing product is a native
 Rust/egui application with a separate optional Cloud console. Existing installs
 and canonical data use Patchfleet technical identifiers.
 
-## Proposed decision
+## Decision
 
-- Dobbly is the visible product identity; Dobbly Cloud labels the optional
+- Moxcrew is the visible product identity; Mox names the mascot; Moxcrew Cloud labels the optional
   service. Use the selected cobalt/orange asymmetric-eyed helper and the
   approved Manrope-based design contract.
 - Maintain shared versioned brand inputs and checked-in product-specific
@@ -43,5 +44,5 @@ compatibility identifiers; a global text replacement is not acceptable.
 The presentation part of [Task 0036](../plans/0036-product-studio-interface.md)
 is superseded only as [Task 0037](../plans/0037-dobbly-brand-interface.md) is
 implemented. The native architecture, trust contracts and previous verification
-history remain valid. This proposal records the future implementation boundary,
-not a completed rename or release.
+history remain valid. This decision authorizes the presentation boundary. Completion and release
+remain separate facts recorded by the implementation state.

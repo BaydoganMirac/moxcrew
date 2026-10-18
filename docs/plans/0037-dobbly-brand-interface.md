@@ -1,17 +1,18 @@
-# Task 0037: Dobbly native interface
+# Task 0037: Moxcrew native interface
 
-Status: Plan prepared; runtime implementation has not started
+Status: Implemented and locally verified; independent review in progress
 
-Updated: 2026-10-17
+Updated: 2026-10-18
 
 ## Outcome and authority
 
-The owner selected Dobbly mascot concept 4, approved a brand kit, and requested
-a detailed implementation plan for the desktop and Cloud. This card describes
-the native slice. The planning request does not mean runtime work is complete
-or authorize a hosted release.
+The owner purchased moxcrew.com and explicitly requested the Moxcrew brand kit
+and implementation in desktop and Cloud on 2026-10-18. Mox is the selected
+concept-4 mascot; crew expresses the cooperating AI team. This approved card
+covers the native presentation and packaging slice. It does not authorize a
+hosted release or changes to production configuration.
 
-Replace the current graphite/mint presentation with the Dobbly identity across
+Replace the current graphite/mint presentation with the Moxcrew identity across
 the actual Rust/egui application. Keep the established local execution,
 project scope, consent and receipt behavior. Shared visual decisions and the
 display-name compatibility proposal are recorded in
@@ -31,7 +32,7 @@ display-name compatibility proposal are recorded in
   icon exports and packaged display identity.
 
 The old Next.js Local UI is a legacy parity reference, not this task's app.
-Task 0036 and its screenshots are the before-state, not Dobbly evidence.
+Task 0036 and its screenshots are the before-state, not Moxcrew evidence.
 
 ## Design contract
 
@@ -68,7 +69,7 @@ write to the current strict schema.
 | Memory | Clear project scope, source list/detail hierarchy and discoverable drafting settings | Revision history, evidence identity, opt-in provider disclosure/usage consent, no automatic consent |
 | Decisions | Distinguish proposed, accepted, rejected and superseded records; readable evidence and accept controls | Current citations/revisions, immutable accepted text, explicit replacement and owner acceptance |
 | Providers | Friendly heading/help and explicit availability/capability rows; technical diagnostics remain accessible | Observation-only providers never acquire fake start/pause/resume controls |
-| Cloud / Account | Dobbly Cloud identity, clearly optional sign-in, readable connection/account/shared-memory states | Browser auth, matching code, paid/capability gates, separate project linkage/publication consent, stale downloaded copies |
+| Cloud / Account | Moxcrew Cloud identity, clearly optional sign-in, readable connection/account/shared-memory states | Browser auth, matching code, paid/capability gates, separate project linkage/publication consent, stale downloaded copies |
 | Loading/error/notice | Shared inline feedback with next action and localized text; errors never celebrate | Retry identity, busy/action guards, safe diagnostic redaction and data-recovery instructions |
 
 Keep Workspace / Knowledge / System grouping. The first tab remains Projects;
@@ -83,7 +84,7 @@ reserved for navigation/content rather than trapping the footer.
 1. Capture current test/build results and normal/minimum screenshots using
    disposable data; preserve them separately from after-state evidence.
 2. Promote the selected kit into versioned repository assets. Keep canonical
-   public brand inputs under `design/dobbly/`: tokens, approved vector marks,
+   public brand inputs under `design/moxcrew/`: tokens, approved vector marks,
    mascot, usage notes, font/license references and export provenance.
 3. Check in native-ready assets and generated palette data. Cloud consumes its
    own checked-in snapshot of the same version; neither product requires a
@@ -100,12 +101,12 @@ the desktop still builds with its normal Rust toolchain.
    themes. Migrate shared widgets and remaining literal brand/status colors.
 2. Install both egui styles without reinstalling fonts every frame. Follow the
    OS preference and update when it changes; retain an accessible light fallback.
-3. Replace the fleet mark with the approved Dobbly geometry. Cache any decoded
+3. Replace the fleet mark with the approved Moxcrew geometry. Cache any decoded
    mascot texture once using the existing PNG decoding path; add no image/SVG
    framework and no render-thread I/O.
 4. Rework navigation/header/footer spacing and the primary/secondary/danger,
    focus, selected, disabled, field, disclosure and notice treatments.
-5. Change visible window/chrome name to Dobbly. Preserve `com.patchfleet.desktop`,
+5. Change visible window/chrome name to Moxcrew. Preserve `com.patchfleet.desktop`,
    crate/executable names, environment variables and private data locations.
 
 Exit: Projects and first-use work in both languages/themes at 1280x880 and
@@ -178,3 +179,10 @@ verified and intended changes are committed locally. Windows/Linux runtime,
 public signing and release must be reported accurately when not exercised.
 
 Handoff: [native state](../state/dobbly-brand-interface.md).
+
+## Implementation handoff
+
+N0-N4 are implemented. Fresh checks, artifacts, measurements, screenshots and
+platform limits are recorded in the [state](../state/dobbly-brand-interface.md).
+The owner-selected Moxcrew/Mox identity supersedes the earlier Dobbly name; old
+document filenames remain stable for existing links.

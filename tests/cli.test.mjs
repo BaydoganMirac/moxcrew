@@ -16,9 +16,9 @@ test("desktop package retires the Node CLI release surface", async () => {
   assert.equal(packageJson.publishConfig, undefined);
   assert.equal(packageJson.scripts.prepack, undefined);
   assert.equal(packageJson.engines.node, ">=22.18.0");
-  assert.equal(packageJson.repository.url, "git+https://github.com/BaydoganMirac/patchfleet.git");
-  assert.equal(packageJson.homepage, "https://github.com/BaydoganMirac/patchfleet#readme");
-  assert.equal(packageJson.bugs, "https://github.com/BaydoganMirac/patchfleet/issues");
+  assert.equal(packageJson.repository.url, "git+https://github.com/BaydoganMirac/moxcrew.git");
+  assert.equal(packageJson.homepage, "https://github.com/BaydoganMirac/moxcrew#readme");
+  assert.equal(packageJson.bugs, "https://github.com/BaydoganMirac/moxcrew/issues");
   assert.equal(packageJson.dependencies.next, undefined);
   assert.equal(packageJson.devDependencies.next, "15.5.19");
   assert.equal(packageJson.scripts["desktop:build"], "cargo build --locked --release -p patchfleet-desktop");

@@ -2,13 +2,13 @@
 
 ## Supported versions
 
-Patchfleet has not released a supported version yet. Security fixes currently
+Moxcrew has not released a supported version yet. Security fixes currently
 target the latest code on the default branch.
 
 ## Report a vulnerability
 
 Report vulnerabilities privately through
-[GitHub Security Advisories](https://github.com/BaydoganMirac/patchfleet/security/advisories/new).
+[GitHub Security Advisories](https://github.com/BaydoganMirac/moxcrew/security/advisories/new).
 
 Include the affected component, reproduction steps, impact, and the smallest
 safe proof of concept you can provide. Do not open a public issue for an

@@ -3,8 +3,8 @@
   "version": "0.12.0",
   "description": "Native Rust desktop command center for local coding-agent teams.",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/BaydoganMirac/patchfleet#readme",
-  "bugs": "https://github.com/BaydoganMirac/patchfleet/issues",
+  "homepage": "https://github.com/BaydoganMirac/moxcrew#readme",
+  "bugs": "https://github.com/BaydoganMirac/moxcrew/issues",
   "keywords": [
     "ai-agents",
     "claude-code",
@@ -14,7 +14,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/BaydoganMirac/patchfleet.git"
+    "url": "git+https://github.com/BaydoganMirac/moxcrew.git"
   },
   "engines": {
     "node": ">=22.18.0"

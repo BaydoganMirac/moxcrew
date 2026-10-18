@@ -1,11 +1,11 @@
 # AGENTS.md
 
-This file is the entry point for AI coding assistants working in Patchfleet.
+This file is the entry point for AI coding assistants working in Moxcrew.
 Read it before changing code or documentation.
 
 ## What this repository owns
 
-Patchfleet is the public local product:
+Moxcrew is the public local product:
 
 - provider detection and adapters;
 - local agent and run observation;
@@ -14,7 +14,7 @@ Patchfleet is the public local product:
 - the native desktop console;
 - the public host-to-cloud protocol.
 
-Patchfleet must remain useful without Patchfleet Cloud. The private Cloud repo
+Moxcrew must remain useful without Moxcrew Cloud. The private Cloud repo
 implements an optional remote control plane; it does not own canonical run
 state and does not execute local work.
 

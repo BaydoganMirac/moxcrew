@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="design/moxcrew/logos/moxcrew-reversed.svg">
+  <img src="design/moxcrew/logos/moxcrew-primary.svg" alt="Moxcrew — Mox + crew" width="320">
+</picture>
+
 # Moxcrew
 
 Your AI team. On it.
@@ -36,9 +41,11 @@ Cloud receives only allowlisted operational data by default. Optional paid
 shared memory publishes only explicitly previewed and confirmed accepted ADRs.
 Source bodies, paths, prompts, output and credentials remain local by default.
 
-Mox is the mascot; crew is the cooperating agent team. The owner has secured
-`moxcrew.com`; service deployment is a separate step. Existing installation, data,
+Moxcrew = **Mox + crew**: Mox is the mascot; crew is the cooperating agent team.
+The brand domain is `moxcrew.com`; service deployment is a separate step. Existing installation, data,
 command and protocol identifiers retain `patchfleet` for compatibility.
+
+The public repository is [BaydoganMirac/moxcrew](https://github.com/BaydoganMirac/moxcrew).
 
 ## Build and run
 

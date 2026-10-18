@@ -11,6 +11,7 @@ license-file = "LICENSE"
 resources = [
   { src = "LICENSE", target = "LICENSE.txt" },
   { src = "crates/patchfleet-desktop/assets/fonts/OFL.txt", target = "FONT-LICENSE.txt" },
+  { src = "crates/patchfleet-desktop/assets/windows/LICENSE-cargo-packager-MIT", target = "LICENSE-CARGO-PACKAGER-MIT.txt" },
 ]
 category = "DeveloperTool"
 out-dir = "dist/native"

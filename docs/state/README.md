@@ -38,6 +38,7 @@
 | Explicit app connections | Implemented; loopback evidence | 2026-10-19 | [app-connections.md](app-connections.md) |
 | Productive native interface | Implemented; native fixture evidence | 2026-10-19 | [desktop-productive-integration.md](desktop-productive-integration.md) |
 | Native task hierarchy | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [native-task-hierarchy.md](native-task-hierarchy.md) |
+| Product crew design | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [product-crew-design.md](product-crew-design.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

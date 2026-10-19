@@ -1,6 +1,6 @@
 # Task0046: Product crew design
 
-Status: Owner-approved, implementing
+Status: Complete; independently reviewed and locally verified
 
 Updated: 2026-10-19
 
@@ -37,3 +37,12 @@ No new dependencies, WebView, schemas, provider calls or external account writes
 Keep exact receipt scopes, private token clearing, explicit frozen approval,
 keyboard/focus accessibility and reduced motion. Do not describe mock fixtures
 as live agent work or infer dependencies not present in the actual plan.
+
+## Completion
+
+The redesigned native surface, responsive keyboard-focus correction,160passing
+all-feature desktop tests, strict workspace Clippy/formatting,52finalnative
+captures and separately verified feature-off development package are recorded
+in [product crew design state](../state/product-crew-design.md). Runtime and
+Cloud contracts did not change. Owner aesthetic feedback and public/other-platform
+release validation remain separate from the completed implementation.

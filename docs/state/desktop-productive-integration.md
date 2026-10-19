@@ -99,3 +99,7 @@ Task0045 supersedes this milestone's large overlay layout with inline Project
 views. Its final all-feature desktop suite passes 158/158; 52 current native
 captures and the separate development package are documented in
 [native task hierarchy](native-task-hierarchy.md).
+
+Task0046 replaces the earlier visual layout with the responsive Project header,
+agent-card plan, connected preparation area and focused start surface. Current
+presentation and verification are in [product crew design](product-crew-design.md).

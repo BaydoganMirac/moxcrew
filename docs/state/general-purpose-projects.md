@@ -28,8 +28,10 @@ supported Codex control. No non-coding runner, file import, browser/application
 control, general preference inheritance, migration or new onboarding shipped
 in this clarification. Historical internal workspace IDs remain compatible.
 
-Choose one concrete non-coding result and write its bounded task card before
-runtime work. Define required inputs, allowed tools/access, reviewable output
-and recovery, and verify the whole user flow. The first such workflow remains
-unselected. No end-user validation, universal capability claim, push or deployment
+The owner subsequently rejected the narrow three-ability launch proposal and
+selected a broad release including presentations, video editing and research.
+[ADR 0039](../decisions/0039-broad-general-purpose-ability-release.md) records
+this direction. Detailed capabilities, skill/tool compatibility and execution
+environment remain to be scoped in bounded cards within one release. No broader
+runtime, end-user validation, universal skill compatibility, push or deployment
 is implied by this documentation change.

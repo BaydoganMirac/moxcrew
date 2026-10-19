@@ -47,10 +47,13 @@ commitments.
 
 ## Next
 
-- Define one complete non-coding project outcome and its required resources,
-  capabilities, consent, result review and onboarding in a separate bounded
-  card. The first workflow is not selected; do not claim generic execution or
-  remove existing Git validation before a replacement contract is approved.
+- Define the owner-selected [broad general-purpose ability release](decisions/0039-broad-general-purpose-ability-release.md),
+  including presentations, video editing and research, with compatible skill/tool
+  reuse and composed project work. Evaluate document, image, audio, data, web
+  and connected-action capabilities in the same release definition. Use bounded
+  implementation cards for resources, execution, consent, results and onboarding
+  inside that release; do not substitute a three-ability launch. Do not claim
+  support or remove Git validation before replacement contracts are verified.
 
 - Run the native desktop build/runtime matrix and signing evidence for
   [Task 0023](plans/0023-rust-desktop-migration.md). The macOS development

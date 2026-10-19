@@ -26,9 +26,14 @@ context until explicitly accepted. Decisions stay scoped to their project.
 
 This is the product direction, not a claim of universal execution today. The
 current task/team runner and Quick start still require Git worktrees and
-supported Codex control. General-purpose execution, resource ingestion and
-onboarding need concrete approved slices before they can be advertised as
-delivered. Current internal workspace/schema identifiers retain their meaning.
+supported Codex control. The owner selected one broad general-purpose ability
+release, including presentations, video editing and research, under
+[ADR 0039](decisions/0039-broad-general-purpose-ability-release.md). Evaluate
+compatible existing skills and tools across documents, images, audio, data,
+web and connected actions. General-purpose execution, resource ingestion,
+reviewable outputs and onboarding need bounded implementation cards and
+verification before being advertised as delivered. Current internal
+workspace/schema identifiers retain their meaning.
 
 ## Jobs to be done
 

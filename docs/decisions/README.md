@@ -42,3 +42,4 @@ supersedes the old one.
 | [0036](0036-consented-provider-draft-extraction.md) | Accepted | Per-project consented provider drafting, bounded V7 jobs and attributed V4 proposals; explicit owner acceptance |
 | [0037](0037-dobbly-display-identity.md) | Accepted | Moxcrew display identity and Mox mascot with stable installation, data and protocol identifiers |
 | [0038](0038-general-purpose-projects.md) | Accepted product direction; implementation gap explicit | General-purpose audience with Project as the primary scope; current Git/Codex execution remains narrower |
+| [0039](0039-broad-general-purpose-ability-release.md) | Accepted product/release direction; implementation pending | One broad general-purpose ability release, including presentations, video editing and research; reuse compatible skills and tools |

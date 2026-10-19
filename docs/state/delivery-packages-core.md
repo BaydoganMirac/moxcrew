@@ -2,10 +2,11 @@
 
 Updated: 2026-10-19
 
-Status: Implemented; focused native checks pass, integrated review pending.
+Status: Complete; focused checks and integrated independent review pass.
 
 Plan: [Task0047](../plans/0047-project-delivery-packages.md).
 Decision: [ADR0046](../decisions/0046-project-delivery-archives.md).
+Integrated evidence: [delivery packages](delivery-packages.md).
 
 `project_delivery_export` uses the existing native V12 owner requested/receipted
 audit. Its payload is `{projectId, files, targetPath}`; each of 1–32 files is

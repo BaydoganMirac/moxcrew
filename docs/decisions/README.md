@@ -48,3 +48,5 @@ supersedes the old one.
 | [0042](0042-owner-providers-default-skills-and-motion.md) | Accepted requirements; implementation pending | Owner-connected local Codex/Gemini/Claude, verified default skills and truthful expressive motion |
 | [0043](0043-local-project-conversation.md) | Accepted; Task0041 | Durable Project conversation, bounded copied revision inputs, explicit connection diagnostics and local motion preferences |
 | [0044](0044-project-crews-and-scoped-communication.md) | Accepted; Task0043 | Reusable Project crews, explicit missions and scoped attributable agent messages over the existing local runner |
+| [0045](0045-productive-crews-and-explicit-tools.md) | Accepted; Task0044 | Productive crews, explicit local production tools and checked app operations |
+| [0046](0046-project-delivery-archives.md) | Accepted; Task0047 | Explicit hash-pinned Project output ZIP archives with provenance |

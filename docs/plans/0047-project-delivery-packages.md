@@ -1,6 +1,6 @@
 # Task0047: Project delivery packages
 
-Status: Owner-approved continuation, implementing
+Status: Complete; independently reviewed and macOS development package verified
 
 Updated: 2026-10-19
 
@@ -56,3 +56,13 @@ in TR/EN, both themes and minimum/normal windows. Preserve Task0046 design.
 Run relevant core/desktop checks, strict workspace Clippy/formatting and build a
 separate smoke-free macOS development package. No inference, real account writes,
 Cloud change, push or public release.
+
+## Completion
+
+Implemented and independently reviewed at `41512ee`, after core `c7d18de`,
+desktop `5306e50` and core `c8c49e0`. The full workspace run passed 423 tests;
+the final affected desktop suite passed 164 tests and all 6 focused Host delivery
+tests passed after review corrections. Strict workspace Clippy/formatting pass.
+Twelve native captures, independent standard ZIP-reader checks and a smoke-free
+macOS ARM64 development package pass. See [delivery state](../state/delivery-packages.md)
+for hashes, evidence, exact limits and unverified platforms/accounts.

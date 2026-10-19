@@ -24,7 +24,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Audio | A1–A5 | Real bounded cleanup to WAV; full area pending |
 | Data | T1–T5 | CSV cleanup/statistics and XLSX output/open proof; full area pending |
 | Web/actions | W1–W5 | Explicit Drive import, Notion page, Calendar event with loopback proof; live accounts/full area pending |
-| Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery and local schedules implemented; full ten-workflow release proof pending |
+| Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery, local schedules and checked multi-file delivery packages implemented; full ten-workflow release proof pending |
 
 The first [Create studio slice](project-create-studio.md) reuses Project/decision,
 durable tasks, native UI and supported Codex control for managed non-Git jobs.
@@ -64,6 +64,9 @@ revisions, typed Office/data/media production and explicit app-action previews.
 Python 3.9+, FFmpeg/FFprobe and optional PDF text extraction are owner-installed;
 no third-party binary is redistributed. See [productive crews](productive-project-crews.md)
 and [Output Studio](output-studio.md) for actual operation limits and evidence.
+Task0047 adds [delivery packages](delivery-packages.md): searchable Project outputs,
+explicit multi-file selection and a checked ZIP with provenance. It makes existing
+outputs usable together; it does not complete an additional generation ability.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

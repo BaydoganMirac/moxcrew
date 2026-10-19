@@ -39,6 +39,13 @@ Outputs gives previews their own space. Provider, budget and setup details open
 when needed. The navigation becomes a compact rail in smaller Studio windows.
 See [native product design](docs/state/product-crew-design.md).
 
+Find outputs by name/path or file type, then choose **Create package** to select
+up to 32 files from the current Project. Review the selection and export one ZIP
+through the native save dialog. The package retains original bytes and includes
+a source/version manifest; changed files and existing destinations are refused.
+Packaging requires no external tool. See [delivery packages](docs/state/delivery-packages.md)
+for size limits and platform support.
+
 Google Drive blob import, Notion page creation and Google Calendar event creation
 use private, manually configured access tokens. Each action has a concrete preview
 and a separate explicit execution command; uncertain remote writes are never retried

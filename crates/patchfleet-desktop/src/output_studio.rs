@@ -291,7 +291,6 @@ impl CreateState {
             self.studio.query.clear();
             self.studio.file_type = 0;
             self.studio.package_mode = false;
-            self.studio.delivery_request = None;
         }
         self.studio
             .packages
@@ -587,6 +586,8 @@ impl Console {
             );
             return;
         }
+        delivery::file_filters(ui, &mut self.create.studio);
+        ui.add_space(8.0);
         let current = selected_artifact(&self.create, snapshot)
             .map(|artifact| {
                 format!(
@@ -604,7 +605,6 @@ impl Console {
             .width(ui.available_width().min(540.0))
             .height(220.0)
             .show_ui(ui, |ui| {
-                delivery::file_filters(ui, &mut self.create.studio);
                 let mut count = 0;
                 for artifact in artifacts.iter().filter(|artifact| {
                     delivery::matches_file(

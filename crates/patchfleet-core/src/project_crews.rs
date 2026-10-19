@@ -643,8 +643,10 @@ pub(crate) fn project(events: &[Value], work: &Value) -> Result<Value> {
                         .iter()
                         .any(|t| t["agentId"] == m["toAgentId"])
                     && events[..index].iter().any(|a| {
-                        a["type"] == "project_crew.task_allocated"
-                            && a["payload"]["missionId"] == m["fromMissionId"]
+                        matches!(
+                            a["type"].as_str(),
+                            Some("project_crew.task_allocated" | "project_workflow.task_allocated")
+                        ) && a["payload"]["missionId"] == m["fromMissionId"]
                             && a["payload"]["workItemId"] == m["fromWorkItemId"]
                             && array(sender, "tasks").iter().any(|t| {
                                 t["taskId"] == a["payload"]["taskId"]
@@ -1011,7 +1013,7 @@ pub(crate) fn work_start_allowed(events: &[Value], work_id: &str) -> bool {
     })
 }
 
-fn clip(value: &str, max: usize) -> String {
+pub(crate) fn clip(value: &str, max: usize) -> String {
     let mut units = 0;
     value
         .chars()

@@ -6,6 +6,10 @@ Status: Complete; independently reviewed, native captures and macOS development 
 
 Plan: [Task0045](../plans/0045-native-task-hierarchy.md).
 
+The owner rejected this milestone's visual result. [Task0046 product design](product-crew-design.md)
+supersedes its layout; this report retains the interaction and package evidence
+for the earlier milestone.
+
 ## User-visible result
 
 Each Project has quiet Chat / Crew / Outputs navigation inside the native shell.

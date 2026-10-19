@@ -31,11 +31,13 @@ exportable. These bounded operations do not imply arbitrary format compatibility
 full document rendering, media playback or forty verified end-to-end abilities.
 See [Output Studio state](docs/state/output-studio.md).
 
-Each Project has Chat, Crew and Outputs views inside the same native window.
-Chat keeps the request and conversation central; Crew leads with the current plan
-and its next action. Outputs gives files and previews their own space. Detailed
-provider, budget and setup controls open when needed, without covering the whole
-application with a second control panel.
+Each Project has one compact Chat / Crew / Outputs switch inside the native
+window. A new conversation groups the request composer and capability choices.
+Crew presents the goal, agent cards and a clearly framed preparation action;
+contextual controls keep direction, recipes, schedules and activity available.
+Outputs gives previews their own space. Provider, budget and setup details open
+when needed. The navigation becomes a compact rail in smaller Studio windows.
+See [native product design](docs/state/product-crew-design.md).
 
 Google Drive blob import, Notion page creation and Google Calendar event creation
 use private, manually configured access tokens. Each action has a concrete preview

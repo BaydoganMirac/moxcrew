@@ -1324,7 +1324,8 @@ impl Console {
         if self.new_project_open {
             let id = egui::Id::new("create-project");
             let modal = egui::Modal::new(id)
-                .frame(studio::card(ui))
+                // The reusable project form already owns its card frame.
+                .frame(egui::Frame::NONE)
                 .area(egui::Modal::default_area(id).fade_in(false))
                 .show(ui.ctx(), |ui| {
                     ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 460.0));

@@ -38,6 +38,11 @@ own provider processes, configuration and normalized signals.
   process trees. Terminal native results revoke access before the next Host poll.
   A bounded output reader rejects malformed, oversized, foreign-session, incomplete
   or trailing output. Native bodies/errors are not normalized into events.
+  Typed local production workers reuse this bounded process lifecycle. The
+  deadline includes stdin, stdout, stderr and process exit; cancellation or a
+  dropped caller still reaps the owned tree, including descendants retaining
+  stdout after their parent exits. Windows uses the existing suspended process
+  and Job object path; only Unix behavior has been executed locally.
 - `generate_structured(provider, scratch, prompt, schema, active)` is a separate
   tool-free worker. Codex retains the existing extraction path; Claude uses native
   JSON schema output; Gemini receives the schema in stdin and returns exact JSON.
@@ -77,7 +82,9 @@ checks are unchanged.
   Isolated adapter verification: 17 provider unit tests and 9 conformance tests
   pass; extraction (5) and memory (7) suites pass. Strict all-target core Clippy
   passes. Native process cleanup tests ran with process inspection permitted.
-  Final integrated totals and independent review belong to the task state.
+  Two additional typed-worker tests cover stream/exit validation, inherited
+  stdout, deadline, explicit cancellation and dropped-caller cleanup. Final
+  integrated totals and independent review belong to the task state.
 
 ## Limits
 

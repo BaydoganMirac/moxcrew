@@ -45,7 +45,7 @@
     "theme": "light",
     "foreground": "info",
     "background": "infoSurface",
-    "contrast": 6.3
+    "contrast": 6.18
   },
   {
     "theme": "light",
@@ -65,14 +65,14 @@
     "theme": "light",
     "foreground": "controlBorder",
     "background": "raised",
-    "contrast": 3.23,
+    "contrast": 3.2,
     "minimum": 3
   },
   {
     "theme": "light",
     "foreground": "controlBorder",
     "background": "infoSurface",
-    "contrast": 3.21,
+    "contrast": 3.15,
     "minimum": 3
   },
   {
@@ -93,33 +93,33 @@
     "theme": "light",
     "foreground": "focus",
     "background": "raised",
-    "contrast": 5.16,
+    "contrast": 5.11,
     "minimum": 3
   },
   {
     "theme": "light",
     "foreground": "focus",
     "background": "infoSurface",
-    "contrast": 5.12,
+    "contrast": 5.02,
     "minimum": 3
   },
   {
     "theme": "dark",
     "foreground": "text",
     "background": "surface",
-    "contrast": 14.68
+    "contrast": 16.29
   },
   {
     "theme": "dark",
     "foreground": "secondaryText",
     "background": "surface",
-    "contrast": 7.89
+    "contrast": 8.42
   },
   {
     "theme": "dark",
     "foreground": "onPrimary",
     "background": "primary",
-    "contrast": 7.64
+    "contrast": 9.14
   },
   {
     "theme": "dark",
@@ -149,62 +149,134 @@
     "theme": "dark",
     "foreground": "info",
     "background": "infoSurface",
-    "contrast": 6.45
+    "contrast": 7.9
   },
   {
     "theme": "dark",
     "foreground": "controlBorder",
     "background": "surface",
-    "contrast": 4.33,
+    "contrast": 4.46,
     "minimum": 3
   },
   {
     "theme": "dark",
     "foreground": "controlBorder",
     "background": "canvas",
-    "contrast": 4.94,
+    "contrast": 4.88,
     "minimum": 3
   },
   {
     "theme": "dark",
     "foreground": "controlBorder",
     "background": "raised",
-    "contrast": 3.65,
+    "contrast": 3.85,
     "minimum": 3
   },
   {
     "theme": "dark",
     "foreground": "controlBorder",
     "background": "infoSurface",
-    "contrast": 3.22,
+    "contrast": 3.56,
     "minimum": 3
   },
   {
     "theme": "dark",
     "foreground": "focus",
     "background": "surface",
-    "contrast": 8.37,
+    "contrast": 10.37,
     "minimum": 3
   },
   {
     "theme": "dark",
     "foreground": "focus",
     "background": "canvas",
-    "contrast": 9.54,
+    "contrast": 11.35,
     "minimum": 3
   },
   {
     "theme": "dark",
     "foreground": "focus",
     "background": "raised",
-    "contrast": 7.04,
+    "contrast": 8.95,
     "minimum": 3
   },
   {
     "theme": "dark",
     "foreground": "focus",
     "background": "infoSurface",
-    "contrast": 6.21,
+    "contrast": 8.29,
     "minimum": 3
+  },
+  {
+    "theme": "light",
+    "foreground": "text",
+    "background": "canvas",
+    "contrast": 14.75
+  },
+  {
+    "theme": "light",
+    "foreground": "secondaryText",
+    "background": "canvas",
+    "contrast": 5.72
+  },
+  {
+    "theme": "light",
+    "foreground": "text",
+    "background": "raised",
+    "contrast": 14.09
+  },
+  {
+    "theme": "light",
+    "foreground": "secondaryText",
+    "background": "raised",
+    "contrast": 5.47
+  },
+  {
+    "theme": "light",
+    "foreground": "text",
+    "background": "infoSurface",
+    "contrast": 13.86
+  },
+  {
+    "theme": "light",
+    "foreground": "secondaryText",
+    "background": "infoSurface",
+    "contrast": 5.38
+  },
+  {
+    "theme": "dark",
+    "foreground": "text",
+    "background": "canvas",
+    "contrast": 17.81
+  },
+  {
+    "theme": "dark",
+    "foreground": "secondaryText",
+    "background": "canvas",
+    "contrast": 9.2
+  },
+  {
+    "theme": "dark",
+    "foreground": "text",
+    "background": "raised",
+    "contrast": 14.05
+  },
+  {
+    "theme": "dark",
+    "foreground": "secondaryText",
+    "background": "raised",
+    "contrast": 7.26
+  },
+  {
+    "theme": "dark",
+    "foreground": "text",
+    "background": "infoSurface",
+    "contrast": 13.01
+  },
+  {
+    "theme": "dark",
+    "foreground": "secondaryText",
+    "background": "infoSurface",
+    "contrast": 6.72
   }
 ]

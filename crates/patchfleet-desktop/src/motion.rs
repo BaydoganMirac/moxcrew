@@ -9,6 +9,45 @@ pub fn mox(ui: &mut Ui, size: f32, active: bool, reduced: bool) -> Response {
     let phase = if moving { time as f32 * 2.4 } else { 0.0 };
     let center = rect.center();
     let p = studio::palette(ui.ctx());
+    if size >= 96.0 {
+        // A static orbital stage makes Mox prominent even when no job is running.
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(center, p.primary.gamma_multiply(0.18));
+        for i in 0..=48 {
+            let angle = i as f32 / 48.0 * std::f32::consts::TAU;
+            mesh.colored_vertex(
+                center + egui::vec2(angle.cos() * size * 0.6, angle.sin() * size * 0.43),
+                Color32::TRANSPARENT,
+            );
+            if i > 0 {
+                mesh.add_triangle(0, i, i + 1);
+            }
+        }
+        ui.painter().add(egui::Shape::mesh(mesh));
+        for (radius, opacity) in [(0.48, 0.35), (0.60, 0.15)] {
+            let points = (0..64)
+                .map(|i| {
+                    let angle = i as f32 / 64.0 * std::f32::consts::TAU;
+                    center
+                        + egui::vec2(
+                            angle.cos() * size * radius,
+                            angle.sin() * size * radius * 0.58,
+                        )
+                })
+                .collect();
+            ui.painter().add(egui::Shape::closed_line(
+                points,
+                Stroke::new(1.0, p.primary.gamma_multiply(opacity)),
+            ));
+        }
+        for (x, y, radius) in [(-0.45, -0.16, 2.3), (0.44, 0.18, 3.0), (0.18, -0.30, 1.8)] {
+            ui.painter().circle_filled(
+                center + egui::vec2(x * size, y * size),
+                radius,
+                p.primary.gamma_multiply(0.65),
+            );
+        }
+    }
     if active {
         ui.painter()
             .circle_stroke(center, size * 0.34, Stroke::new(1.0, p.border));

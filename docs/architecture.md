@@ -163,6 +163,12 @@ and still reads schema1. Conversation, diagnostic and file bodies remain local.
 See [ADR0043](decisions/0043-local-project-conversation.md) and
 [conversation state](state/connected-project-conversation.md).
 
+The native studio uses shared semantic tokens, bounded ambient meshes and
+embedded Mox assets. The welcome, conversation and composer adapt to the
+available window; visual effects do not add a background service or idle
+animation loop. [Task0042](plans/0042-futuristic-native-studio.md) changes
+presentation without changing the conversation or provider contracts.
+
 Unix result access pins directory handles and rejects links. Windows result
 list/read/export fail closed until equivalent protection is implemented and
 verified. Failed export can leave a partial newly created copy; cleanup cannot

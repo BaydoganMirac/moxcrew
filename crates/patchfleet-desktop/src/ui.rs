@@ -964,13 +964,17 @@ impl Console {
         self.navigation_tab = Some(self.tab);
         egui::Panel::left("console-navigation")
             .resizable(false)
-            .default_size(216.0)
-            .frame(egui::Frame::new().fill(colors(ui).surface).inner_margin(16))
+            .default_size(if ui.ctx().viewport_rect().width() < 1000.0 {
+                184.0
+            } else {
+                200.0
+            })
+            .frame(egui::Frame::new().fill(colors(ui).surface).inner_margin(14))
             .show(ui, |ui| {
-                ui.add_space(14.0);
+                ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
+                        ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
                     studio::mark(ui.painter(), rect);
                     ui.vertical(|ui| {
                         ui.label(studio::title("Moxcrew", 18.0));
@@ -982,7 +986,7 @@ impl Console {
                         );
                     });
                 });
-                ui.add_space(25.0);
+                ui.add_space(32.0);
                 let account_footer =
                     if verified_account(snapshot).is_some_and(|a| a["email"].is_string()) {
                         64.0
@@ -1074,16 +1078,24 @@ impl Console {
                                 .truncate(),
                             );
                         }
-                        if control(
-                            ui,
-                            if snapshot["cloud"]["paired"] == true {
-                                "Your account"
-                            } else {
-                                "Sign in · optional"
-                            },
-                            true,
-                        )
-                        .clicked()
+                        if ui
+                            .scope(|ui| {
+                                ui.style_mut().text_styles.insert(
+                                    egui::TextStyle::Button,
+                                    egui::FontId::proportional(12.0),
+                                );
+                                control(
+                                    ui,
+                                    if snapshot["cloud"]["paired"] == true {
+                                        "Your account"
+                                    } else {
+                                        "Sign in · optional"
+                                    },
+                                    true,
+                                )
+                                .clicked()
+                            })
+                            .inner
                         {
                             self.tab = Tab::Cloud;
                         }
@@ -1091,41 +1103,55 @@ impl Console {
                 );
             });
         egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(colors(ui).canvas)
-                    .inner_margin(egui::Margin::symmetric(28, 20)),
-            )
+            .frame(egui::Frame::new().fill(colors(ui).canvas).inner_margin(
+                egui::Margin::symmetric(
+                    if ui.ctx().viewport_rect().width() < 1000.0 {
+                        16
+                    } else {
+                        24
+                    },
+                    20,
+                ),
+            ))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(t(ui, self.tab.group()))
-                            .size(11.0)
-                            .color(colors(ui).muted)
-                            .extra_letter_spacing(1.2),
-                    );
-                    ui.label(RichText::new("/").size(10.0).color(colors(ui).border));
-                    ui.label(
-                        RichText::new(t(ui, self.tab.name()))
-                            .size(10.0)
-                            .color(colors(ui).text),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if busy {
-                            ui.label(
-                                RichText::new(t(ui, "Applying action…"))
-                                    .size(10.0)
-                                    .color(colors(ui).primary),
-                            );
-                        } else {
-                            ui.label(
-                                RichText::new(t(ui, "Free · Local"))
-                                    .size(11.0)
-                                    .color(colors(ui).muted),
-                            );
-                        }
+                studio::ambient(ui);
+                if self.tab != Tab::Create {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(t(ui, self.tab.group()))
+                                .size(11.0)
+                                .color(colors(ui).muted)
+                                .extra_letter_spacing(1.2),
+                        );
+                        ui.label(RichText::new("/").size(10.0).color(colors(ui).border));
+                        ui.label(
+                            RichText::new(t(ui, self.tab.name()))
+                                .size(10.0)
+                                .color(colors(ui).text),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if busy {
+                                ui.label(
+                                    RichText::new(t(ui, "Applying action…"))
+                                        .size(10.0)
+                                        .color(colors(ui).primary),
+                                );
+                            } else {
+                                ui.label(
+                                    RichText::new(t(ui, "Free · Local"))
+                                        .size(11.0)
+                                        .color(colors(ui).muted),
+                                );
+                            }
+                        });
                     });
-                });
+                } else if busy {
+                    ui.label(
+                        RichText::new(t(ui, "Applying action…"))
+                            .size(11.0)
+                            .color(colors(ui).primary),
+                    );
+                }
                 if self.tab != Tab::Create {
                     ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
                         6.0
@@ -1182,14 +1208,14 @@ impl Console {
                         18.0
                     });
                 }
-                ui.separator();
-                ui.add_space(if self.tab == Tab::Create {
-                    8.0
-                } else if ui.ctx().viewport_rect().height() < 700.0 {
-                    12.0
-                } else {
-                    20.0
-                });
+                if self.tab != Tab::Create {
+                    ui.separator();
+                    ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
+                        12.0
+                    } else {
+                        20.0
+                    });
+                }
                 if let Some(notice) = notice {
                     self.feedback(ui, notice, !busy, can_retry);
                     if self.quick_start.open
@@ -5400,7 +5426,15 @@ fn choose_refs(
     ui.add_space(8.0);
 }
 fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
-    let response = ui.add_enabled(enabled, egui::Button::new(t(ui, label)));
+    let response = ui.add_enabled(
+        enabled,
+        egui::Button::new(
+            RichText::new(t(ui, label))
+                .font(ui.style().text_styles[&egui::TextStyle::Button].clone()),
+        )
+        .fill(colors(ui).raised)
+        .stroke(egui::Stroke::NONE),
+    );
     #[cfg(test)]
     let visibility = (ui.clip_rect(), ui.is_visible());
     #[cfg(test)]
@@ -5510,7 +5544,7 @@ fn source_kind_label(kind: &str) -> &'static str {
 }
 fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool) -> bool {
     let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 36.0), egui::Sense::click());
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 42.0), egui::Sense::click());
     #[cfg(test)]
     let clipped = rect.intersect(ui.clip_rect());
     #[cfg(test)]
@@ -5539,7 +5573,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
     } else {
         Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, 7, background);
+    ui.painter().rect_filled(rect, 10, background);
     if response.has_focus() {
         ui.painter().rect_stroke(
             rect,
@@ -5550,7 +5584,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
     }
     if selected {
         ui.painter().rect_filled(
-            egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 8.0), egui::vec2(2.0, 18.0)),
+            egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 13.0), egui::vec2(2.0, 16.0)),
             1,
             colors(ui).primary,
         );
@@ -5562,7 +5596,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
     };
     draw_icon(
         ui.painter(),
-        egui::Rect::from_min_size(rect.min + egui::vec2(11.0, 8.0), egui::vec2(18.0, 18.0)),
+        egui::Rect::from_min_size(rect.min + egui::vec2(12.0, 12.0), egui::vec2(18.0, 18.0)),
         tab,
         if selected {
             colors(ui).primary
@@ -5571,16 +5605,21 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         },
     );
     ui.painter().text(
-        rect.min + egui::vec2(39.0, 18.0),
+        rect.min + egui::vec2(40.0, 21.0),
         egui::Align2::LEFT_CENTER,
         t(ui, tab.name()),
         egui::FontId::proportional(13.0),
         color,
     );
     if count > 0 {
+        ui.painter().circle_filled(
+            egui::pos2(rect.max.x - 17.0, rect.center().y),
+            11.0,
+            colors(ui).raised,
+        );
         ui.painter().text(
-            egui::pos2(rect.max.x - 10.0, rect.center().y),
-            egui::Align2::RIGHT_CENTER,
+            egui::pos2(rect.max.x - 17.0, rect.center().y),
+            egui::Align2::CENTER_CENTER,
             count.to_string(),
             egui::FontId::proportional(10.0),
             colors(ui).muted,
@@ -8754,7 +8793,7 @@ mod tests {
                             .unwrap()
                     });
                     assert!(
-                        rect.min.x >= 216.0
+                        rect.min.x >= 200.0
                             && rect.max.x <= 800.0
                             && rect.min.y >= 0.0
                             && rect.max.y <= 540.0,

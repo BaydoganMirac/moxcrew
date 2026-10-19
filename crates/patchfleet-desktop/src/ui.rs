@@ -965,15 +965,21 @@ impl Console {
         let mut commands = Vec::new();
         let reveal_navigation = self.navigation_tab != Some(self.tab);
         self.navigation_tab = Some(self.tab);
+        let compact_navigation = ui.ctx().viewport_rect().width() < 1000.0
+            && matches!(self.tab, Tab::Create | Tab::Teams);
         egui::Panel::left("console-navigation")
             .resizable(false)
-            .default_size(if ui.ctx().viewport_rect().width() < 1000.0 {
-                184.0
-            } else {
-                200.0
-            })
-            .frame(egui::Frame::new().fill(colors(ui).surface).inner_margin(14))
+            .exact_size(if compact_navigation { 72.0 } else { 192.0 })
+            .frame(
+                egui::Frame::new()
+                    .fill(colors(ui).surface)
+                    .inner_margin(if compact_navigation { 10 } else { 14 }),
+            )
             .show(ui, |ui| {
+                if compact_navigation {
+                    self.compact_sidebar(ui, snapshot, busy, &mut commands, reveal_navigation);
+                    return;
+                }
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     let (rect, _) =
@@ -1350,6 +1356,49 @@ impl Console {
             }
         }
         commands
+    }
+
+    fn compact_sidebar(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        busy: bool,
+        commands: &mut Vec<Command>,
+        reveal: bool,
+    ) {
+        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.vertical_centered(|ui| {
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
+            studio::mark(ui.painter(), rect);
+            response.on_hover_text(format!("Moxcrew · {}", text(snapshot, "appVersion")));
+        });
+        ui.add_space(16.0);
+        egui::ScrollArea::vertical()
+            .id_salt("compact-navigation")
+            .max_height((ui.available_height() - 48.0).max(44.0))
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for tab in [
+                    Tab::Create,
+                    Tab::Projects,
+                    Tab::Teams,
+                    Tab::Work,
+                    Tab::Memory,
+                    Tab::Decisions,
+                    Tab::Agents,
+                    Tab::Providers,
+                    Tab::Cloud,
+                ] {
+                    self.sidebar_route(ui, snapshot, tab, reveal);
+                }
+            });
+        ui.add_space(8.0);
+        ui.add_enabled_ui(!busy, |ui| {
+            ui.menu_button(language(ui).code().to_uppercase(), |ui| {
+                language_selector(ui, snapshot, busy, commands);
+            });
+        });
     }
 
     fn sidebar_route(&mut self, ui: &mut Ui, snapshot: &Value, tab: Tab, reveal: bool) {
@@ -5626,9 +5675,17 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
     } else {
         colors(ui).muted
     };
+    let compact = rect.width() < 80.0;
     draw_icon(
         ui.painter(),
-        egui::Rect::from_min_size(rect.min + egui::vec2(12.0, 12.0), egui::vec2(18.0, 18.0)),
+        egui::Rect::from_center_size(
+            if compact {
+                rect.center()
+            } else {
+                rect.min + egui::vec2(21.0, 21.0)
+            },
+            egui::vec2(18.0, 18.0),
+        ),
         tab,
         if selected {
             colors(ui).primary
@@ -5636,14 +5693,16 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
             colors(ui).muted
         },
     );
-    ui.painter().text(
-        rect.min + egui::vec2(40.0, 21.0),
-        egui::Align2::LEFT_CENTER,
-        t(ui, tab.name()),
-        egui::FontId::proportional(13.0),
-        color,
-    );
-    if count > 0 {
+    if !compact {
+        ui.painter().text(
+            rect.min + egui::vec2(40.0, 21.0),
+            egui::Align2::LEFT_CENTER,
+            t(ui, tab.name()),
+            egui::FontId::proportional(13.0),
+            color,
+        );
+    }
+    if count > 0 && !compact {
         ui.painter().circle_filled(
             egui::pos2(rect.max.x - 17.0, rect.center().y),
             11.0,
@@ -5657,6 +5716,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
             colors(ui).muted,
         );
     }
+    let response = response.on_hover_text(t(ui, tab.name()));
     response.clicked()
         || (response.has_focus()
             && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)))

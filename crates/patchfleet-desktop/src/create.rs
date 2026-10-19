@@ -9,6 +9,82 @@ mod crew;
 mod output_studio;
 pub use output_studio::{StudioPathKind, StudioPathRequest};
 
+// Inline project views share quiet secondary actions and a single accent action.
+fn view_control(ui: &mut Ui, label: &str, enabled: bool, primary: bool) -> egui::Response {
+    let response = ui
+        .add_enabled_ui(enabled, |ui| {
+            if primary {
+                let response = ui.add(
+                    egui::Button::new(
+                        RichText::new(t(ui, label))
+                            .size(13.0)
+                            .strong()
+                            .color(colors(ui).on_primary),
+                    )
+                    .fill(colors(ui).primary)
+                    .stroke(egui::Stroke::NONE)
+                    .corner_radius(10)
+                    .min_size(egui::vec2(128.0, 40.0)),
+                );
+                keyboard_focus(ui, &response, 10);
+                response
+            } else {
+                studio::quiet_button(ui, t(ui, label).as_ref())
+            }
+        })
+        .inner;
+    #[cfg(test)]
+    ui.data_mut(|data| {
+        data.insert_temp(
+            egui::Id::new(("test-action", "memory_control", label)),
+            response.rect,
+        );
+        data.insert_temp(
+            egui::Id::new(("test-action-visibility", label)),
+            (
+                ui.clip_rect(),
+                response.enabled() && ui.clip_rect().intersects(response.rect),
+            ),
+        );
+        data.insert_temp(
+            egui::Id::new(("test-action-id", "memory_control", label)),
+            response.id,
+        );
+    });
+    response
+}
+fn quiet_action(
+    ui: &mut Ui,
+    commands: &mut Vec<Command>,
+    label: &str,
+    name: &'static str,
+    enabled: bool,
+    payload: impl FnOnce() -> Value,
+) {
+    let response = view_control(ui, label, enabled, false);
+    #[cfg(test)]
+    ui.data_mut(|data| {
+        data.insert_temp(egui::Id::new(("test-action", name, label)), response.rect);
+        data.insert_temp(
+            egui::Id::new(("test-action-state", name, label)),
+            (response.enabled(), response.rect, ui.clip_rect()),
+        );
+    });
+    if response.clicked() && commands.is_empty() {
+        commands.push(Command::new(name, payload()));
+    }
+}
+fn inline_surface(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
+    let width = ui.available_width().min(840.0);
+    ui.horizontal_top(|ui| {
+        ui.add_space(((ui.available_width() - width) * 0.5).max(0.0));
+        ui.vertical(|ui| {
+            ui.set_width(width);
+            content(ui);
+        });
+    });
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CreateExportRequest {
     pub project_id: String,
@@ -360,15 +436,22 @@ impl Console {
         self.chat_studio(ui, snapshot, commands);
         self.crew_roster_dialog(ui, snapshot);
         self.create_catalog_dialog(ui, snapshot);
-        self.output_studio(ui, snapshot, commands);
-        self.workflow_dialog(ui, snapshot, commands);
         self.connection_dialog(ui, snapshot, commands);
     }
 
     pub(super) fn crew_hub(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
-        self.crew_hub_view(ui, snapshot, commands);
-        self.output_studio(ui, snapshot, commands);
-        self.workflow_dialog(ui, snapshot, commands);
+        if self.create.productive_view() != 0
+            && view_control(ui, "Back to crews", true, false).clicked()
+        {
+            self.create.select_productive_view(0);
+        }
+        match self.create.productive_view() {
+            1 => self.workflow_dialog(ui, snapshot, commands),
+            2 => self.output_studio(ui, snapshot, commands),
+            _ => self.crew_hub_view(ui, snapshot, commands),
+        }
+        self.crew_roster_dialog(ui, snapshot);
+        self.create_catalog_dialog(ui, snapshot);
         self.connection_dialog(ui, snapshot, commands);
     }
 

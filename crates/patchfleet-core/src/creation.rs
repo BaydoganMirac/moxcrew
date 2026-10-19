@@ -5,8 +5,10 @@ use crate::{
     Error, Host, Result,
 };
 use serde_json::{json, Value};
+#[cfg(unix)]
+use std::fs::OpenOptions;
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
 };
@@ -57,7 +59,130 @@ fn expected_directory(data_dir: &Path, project: &str, work: &str) -> Result<Path
         .join(uuid_part(project, "project:")?)
         .join(uuid_part(work, "work:")?))
 }
-fn authorized_job(events: &[Value], memory: &Value, project: &str, work: &str) -> bool {
+fn work_project<'a>(events: &'a [Value], work: &str) -> Option<&'a str> {
+    events.iter().find(|e| {
+        e["type"] == "project.subject.bound"
+            && e["payload"]["subjectKind"] == "work"
+            && e["payload"]["subjectId"] == work
+    })?["payload"]["projectId"]
+        .as_str()
+}
+
+// Recover only an already committed queue outcome; never repeat a side effect.
+fn applied_queue_result(events: &[Value], owner: &Value) -> Option<Value> {
+    let action = owner["action"].as_str()?;
+    if !matches!(action, "project_work_enqueue" | "work_retry") {
+        return None;
+    }
+    let command = owner["commandId"].as_str()?;
+    let work_id = format!("work:{}", uuid_part(command, "cmd:").ok()?);
+    let owner_index = events.iter().position(|e| {
+        e["schemaVersion"] == 8 && e["type"] == "owner.command.requested" && e["payload"] == *owner
+    })?;
+    let queue_index = events
+        .iter()
+        .enumerate()
+        .find(|(i, e)| {
+            *i > owner_index
+                && e["type"] == "command.requested"
+                && e["payload"]["intent"]["intentId"] == command
+        })?
+        .0;
+    let request = &events[queue_index]["payload"]["intent"];
+    if request["type"] != "enqueue_work"
+        || request["idempotencyKey"] != command
+        || request["actorId"] != "local-owner"
+        || request["createdAt"] != owner["payload"]["createdAt"]
+        || request["expiresAt"] != owner["payload"]["expiresAt"]
+    {
+        return None;
+    }
+    let work = &request["payload"]["workItem"];
+    if work["workItemId"] != work_id {
+        return None;
+    }
+    let fact_index = events
+        .iter()
+        .enumerate()
+        .find(|(i, e)| {
+            *i > queue_index
+                && e["type"] == "work.enqueued"
+                && e["payload"]["intentId"] == command
+                && e["payload"]["workItem"] == *work
+        })?
+        .0;
+    let mut receipt = events
+        .iter()
+        .enumerate()
+        .find(|(i, e)| {
+            *i > fact_index
+                && e["type"] == "command.receipted"
+                && e["payload"]["receipt"]["intentId"] == command
+        })?
+        .1["payload"]["receipt"]
+        .clone();
+    if receipt["outcome"] != "applied"
+        || receipt["reasonCode"] != "WORK_ENQUEUED"
+        || receipt["idempotencyKey"] != command
+        || receipt["commandType"] != "enqueue_work"
+        || receipt["workItemId"] != work_id
+    {
+        return None;
+    }
+    let project = work_project(events, &work_id);
+    if action == "project_work_enqueue" {
+        let project = project?;
+        if owner["payload"]["projectId"] != project
+            || owner["payload"]["title"].as_str()?.trim() != work["title"].as_str()?
+        {
+            return None;
+        }
+        receipt["projectId"] = json!(project);
+    } else {
+        let previous_id = owner["payload"]["workItemId"].as_str()?;
+        let previous = &events[..owner_index].iter().find(|e| {
+            e["type"] == "work.enqueued" && e["payload"]["workItem"]["workItemId"] == previous_id
+        })?["payload"]["workItem"];
+        if ["title", "instruction", "providerId"]
+            .iter()
+            .any(|field| previous[*field] != work[*field])
+        {
+            return None;
+        }
+        if previous["workingDirectory"] != work["workingDirectory"] {
+            let project = project?;
+            if work_project(events, previous_id) != Some(project) {
+                return None;
+            }
+            let previous_path = Path::new(previous["workingDirectory"].as_str()?);
+            let expected = previous_path
+                .parent()?
+                .join(uuid_part(&work_id, "work:").ok()?);
+            if Path::new(work["workingDirectory"].as_str()?) != expected {
+                return None;
+            }
+            receipt["projectId"] = json!(project);
+        }
+    }
+    Some(receipt)
+}
+
+pub(crate) fn recovered_owner_result(events: &[Value], payload: &Value) -> Option<Value> {
+    if events.iter().any(|e| {
+        e["type"] == "owner.command.receipted" && e["payload"]["commandId"] == payload["commandId"]
+    }) {
+        return None;
+    }
+    let result = applied_queue_result(events, payload)?;
+    if let Some(project) = result["projectId"].as_str() {
+        if !authorized_job(events, project, result["workItemId"].as_str()?) {
+            return None;
+        }
+    }
+    Some(result)
+}
+
+fn authorized_job(events: &[Value], project: &str, work: &str) -> bool {
     let mut current = work.to_owned();
     let mut visited = std::collections::HashSet::new();
     while visited.insert(current.clone()) {
@@ -71,6 +196,12 @@ fn authorized_job(events: &[Value], memory: &Value, project: &str, work: &str) -
             return false;
         };
         let payload = &request["payload"];
+        let Some(receipt) = applied_queue_result(events, payload) else {
+            return false;
+        };
+        if receipt["projectId"] != project {
+            return false;
+        }
         if payload["action"] == "project_work_enqueue" {
             return payload["payload"]["projectId"] == project;
         }
@@ -80,11 +211,6 @@ fn authorized_job(events: &[Value], memory: &Value, project: &str, work: &str) -
         let Some(previous) = payload["payload"]["workItemId"].as_str() else {
             return false;
         };
-        if !array(memory, "bindings").iter().any(|b| {
-            b["subjectKind"] == "work" && b["subjectId"] == previous && b["projectId"] == project
-        }) {
-            return false;
-        }
         current = previous.to_owned();
     }
     false
@@ -149,7 +275,7 @@ fn managed_job_identity(
         .ok_or_else(|| invalid("PROJECT_JOB_SCOPE_INVALID"))?;
     let project = text(binding, "projectId")?;
     let expected = expected_directory(data_dir, project, work_id)?;
-    if directory != expected || !authorized_job(events, memory, project, work_id) {
+    if directory != expected || !authorized_job(events, project, work_id) {
         return Err(invalid("PROJECT_JOB_SCOPE_INVALID"));
     }
     Ok(Some(expected))
@@ -285,46 +411,9 @@ fn open_result(root: &Path, relative: &Path) -> Result<File> {
 }
 
 #[cfg(not(unix))]
-fn open_result(root: &Path, relative: &Path) -> Result<File> {
-    let mut path = root.to_owned();
-    for part in relative.components() {
-        let Component::Normal(name) = part else {
-            return Err(invalid("PROJECT_RESULT_PATH_INVALID"));
-        };
-        path.push(name);
-        let metadata =
-            fs::symlink_metadata(&path).map_err(|_| invalid("PROJECT_RESULT_UNAVAILABLE"))?;
-        if linked(&metadata) {
-            return Err(invalid("PROJECT_RESULT_UNSAFE"));
-        }
-    }
-    if !fs::canonicalize(&path)?.starts_with(root.join("outputs")) {
-        return Err(invalid("PROJECT_RESULT_UNSAFE"));
-    }
-    let file = crate::store::open_private_reader(&path)?;
-    #[cfg(windows)]
-    {
-        use std::os::windows::{ffi::OsStringExt, io::AsRawHandle};
-        use windows_sys::Win32::Storage::FileSystem::GetFinalPathNameByHandleW;
-        let mut buffer = vec![0u16; 4096];
-        let length = unsafe {
-            GetFinalPathNameByHandleW(
-                file.as_raw_handle(),
-                buffer.as_mut_ptr(),
-                buffer.len() as u32,
-                0,
-            )
-        };
-        if length == 0 || length as usize >= buffer.len() {
-            return Err(invalid("PROJECT_RESULT_UNSAFE"));
-        }
-        let actual = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length as usize]));
-        // Canonical Windows paths and this handle query both use verbatim paths.
-        if !actual.starts_with(root.join("outputs")) {
-            return Err(invalid("PROJECT_RESULT_UNSAFE"));
-        }
-    }
-    Ok(file)
+fn open_result(_root: &Path, _relative: &Path) -> Result<File> {
+    // shortcut: enable after native pinned no-reparse Windows handles are verified.
+    Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"))
 }
 
 fn text_preview(path: &Path) -> bool {
@@ -369,18 +458,19 @@ fn export_destination(parent: &Path, name: &std::ffi::OsStr) -> Result<File> {
     }
     #[cfg(not(unix))]
     {
-        OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(parent.join(name))
-            .map_err(|e| {
-                invalid(if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    "PROJECT_RESULT_EXPORT_EXISTS"
-                } else {
-                    "PROJECT_RESULT_EXPORT_FAILED"
-                })
-            })
+        let _ = (parent, name);
+        Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"))
     }
+}
+
+fn copy_export(source: impl Read, destination: &mut File) -> Result<u64> {
+    let count = std::io::copy(&mut source.take(EXPORT_BYTES + 1), destination)?;
+    if count > EXPORT_BYTES {
+        return Err(invalid("PROJECT_RESULT_TOO_LARGE"));
+    }
+    destination.flush()?;
+    destination.sync_all()?;
+    Ok(count)
 }
 
 impl Host {
@@ -393,7 +483,8 @@ impl Host {
         else {
             return Ok(None);
         };
-        if managed_work_directory(self.creation_data_dir(), &events, work)?.is_none() {
+        let memory = crate::project_memory::project(&events)?;
+        if managed_job_identity(self.creation_data_dir(), &events, &memory, work)?.is_none() {
             return Ok(None);
         }
         if !matches!(
@@ -407,7 +498,6 @@ impl Host {
             .store
             .subject_project("work", text(work, "workItemId")?)?
             .ok_or_else(|| invalid("PROJECT_JOB_SCOPE_INVALID"))?;
-        let memory = crate::project_memory::project(&events)?;
         let revision = &array(&memory, "projects")
             .iter()
             .find(|p| p["projectId"] == project)
@@ -459,6 +549,13 @@ impl Host {
     pub(crate) async fn creation_action(&self, action: &str, payload: &Value) -> Result<Value> {
         if action == "project_work_enqueue" {
             return self.creation_enqueue(payload);
+        }
+        #[cfg(not(unix))]
+        if matches!(
+            action,
+            "project_results_read" | "project_result_read" | "project_result_export"
+        ) {
+            return Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"));
         }
         let (directory, work) = self.creation_scope(payload)?;
         let mut response =
@@ -574,23 +671,8 @@ impl Host {
                         .ok_or_else(|| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?,
                 );
                 let mut destination = export_destination(&parent, target.file_name().unwrap())?;
-                let copied = (|| -> Result<u64> {
-                    let count = std::io::copy(&mut file.take(EXPORT_BYTES + 1), &mut destination)?;
-                    if count > EXPORT_BYTES {
-                        return Err(invalid("PROJECT_RESULT_TOO_LARGE"));
-                    }
-                    destination.flush()?;
-                    destination.sync_all()?;
-                    Ok(count)
-                })();
-                match copied {
-                    Ok(count) => response["bytes"] = json!(count),
-                    Err(error) => {
-                        drop(destination);
-                        let _ = fs::remove_file(&target);
-                        return Err(error);
-                    }
-                }
+                // On failure retain the partial file: the public path may already name somebody else's replacement.
+                response["bytes"] = json!(copy_export(file, &mut destination)?);
                 response["reasonCode"] = json!("PROJECT_RESULT_EXPORTED");
             }
             _ => return Err(invalid("UNKNOWN_ACTION")),
@@ -648,7 +730,7 @@ fn create_job_directory(directory: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -657,6 +739,7 @@ mod tests {
         payload
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn host_runs_a_managed_job_to_a_real_artifact_and_retains_terminal_state() {
         let (_peer, programs) = crate::providers::managed_tests::peer("codex-managed-complete");
@@ -720,5 +803,36 @@ mod tests {
         assert_eq!(results["workStatus"], "completed");
         assert_eq!(results["items"][0]["path"], "outputs/summary.md");
         host.shutdown().await;
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn export_failure_never_unlinks_a_replacement_at_the_public_path() {
+        struct ReplacingReader {
+            target: PathBuf,
+            original: PathBuf,
+        }
+        impl Read for ReplacingReader {
+            fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+                fs::rename(&self.target, &self.original)?;
+                fs::write(&self.target, "Owner replacement")?;
+                Err(std::io::Error::other("injected source failure"))
+            }
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let parent = fs::canonicalize(directory.path()).unwrap();
+        let target = parent.join("export.md");
+        let original = parent.join("original.md");
+        let mut destination = export_destination(&parent, target.file_name().unwrap()).unwrap();
+        assert!(copy_export(
+            ReplacingReader {
+                target: target.clone(),
+                original: original.clone()
+            },
+            &mut destination
+        )
+        .is_err());
+        assert_eq!(fs::read_to_string(target).unwrap(), "Owner replacement");
+        assert!(original.exists());
     }
 }

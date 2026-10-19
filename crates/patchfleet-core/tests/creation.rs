@@ -102,10 +102,14 @@ async fn project_job_needs_no_git_and_replays_exact_scope_after_restart() {
             "project_results_read",
             json!({"projectId":p,"workItemId":work}),
         )
-        .await
-        .unwrap();
-    assert_eq!(empty["workStatus"], "queued");
-    assert_eq!(empty["items"], json!([]));
+        .await;
+    if cfg!(unix) {
+        let empty = empty.unwrap();
+        assert_eq!(empty["workStatus"], "queued");
+        assert_eq!(empty["items"], json!([]));
+    } else {
+        assert_eq!(empty.unwrap_err().0, "PROJECT_RESULTS_UNSUPPORTED_PLATFORM");
+    }
     let sources = host
         .action("project_memory_read", json!({"projectId":p}))
         .await
@@ -135,6 +139,7 @@ async fn project_job_needs_no_git_and_replays_exact_scope_after_restart() {
     host.shutdown().await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn actual_results_export_without_overwrite_and_stay_project_scoped() {
     let temporary = tempfile::tempdir().unwrap();
@@ -219,6 +224,7 @@ async fn actual_results_export_without_overwrite_and_stay_project_scoped() {
     host.shutdown().await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn results_reject_traversal_unsupported_and_oversize_files() {
     let temporary = tempfile::tempdir().unwrap();
@@ -447,4 +453,221 @@ fn append_unknown_start(data: &Path, work: &Value) {
             patchfleet_core::event("run.start_unknown", payload),
         ])
         .unwrap();
+}
+
+fn cut_owner_receipt(data: &Path, command: &Value, requested_only: bool) {
+    let path = data.join("events.jsonl");
+    let mut events: Vec<Value> = std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let last = events.pop().unwrap();
+    assert_eq!(last["type"], "owner.command.receipted");
+    assert_eq!(last["payload"]["commandId"], *command);
+    if requested_only {
+        let index = events
+            .iter()
+            .position(|e| {
+                e["type"] == "owner.command.requested" && e["payload"]["commandId"] == *command
+            })
+            .unwrap();
+        events.truncate(index + 1);
+    }
+    let bytes = events
+        .iter()
+        .map(|event| format!("{event}\n"))
+        .collect::<String>();
+    std::fs::write(path, bytes).unwrap();
+}
+
+#[tokio::test]
+async fn committed_enqueue_recovers_the_exact_owner_result_after_a_crash_prefix() {
+    let temporary = tempfile::tempdir().unwrap();
+    let data = temporary.path().join("data");
+    let host = Host::open(data.clone()).unwrap();
+    let p = project(&host, "P").await;
+    let request = enqueue(&host, &p);
+    let original = host
+        .action("project_work_enqueue", request.clone())
+        .await
+        .unwrap();
+    host.shutdown().await;
+    drop(host);
+    cut_owner_receipt(&data, &request["commandId"], false);
+    let host = Host::open(data).unwrap();
+    assert_eq!(
+        host.action("project_work_enqueue", request).await.unwrap(),
+        original
+    );
+    assert_eq!(
+        host.snapshot().unwrap()["work"]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(host.snapshot().unwrap()["projectJobs"][0]["projectId"], p);
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn committed_managed_retry_recovers_after_a_crash_and_old_directory_loss() {
+    for remove_root in [false, true] {
+        let temporary = tempfile::tempdir().unwrap();
+        let data = temporary.path().join("data");
+        let host = Host::open(data.clone()).unwrap();
+        let p = project(&host, "P").await;
+        let original = host
+            .action("project_work_enqueue", enqueue(&host, &p))
+            .await
+            .unwrap();
+        let work = original["workItemId"].clone();
+        let original_directory = directory(&host, &work);
+        host.shutdown().await;
+        drop(host);
+        append_unknown_start(&data, &work);
+        std::fs::remove_dir_all(if remove_root {
+            original_directory
+        } else {
+            original_directory.join("outputs")
+        })
+        .unwrap();
+        let host = Host::open(data.clone()).unwrap();
+        let revision = host.snapshot().unwrap()["work"]["items"][0]["revision"].clone();
+        let request = command(json!({"workItemId":work,"expectedItemRevision":revision}));
+        let retried = host.action("work_retry", request.clone()).await.unwrap();
+        assert_eq!(retried["outcome"], "applied");
+        assert_eq!(retried["projectId"], p);
+        let new_directory = directory(&host, &retried["workItemId"]);
+        std::fs::write(
+            new_directory.join("outputs/keep.txt"),
+            "Keep existing artifact",
+        )
+        .unwrap();
+        host.shutdown().await;
+        drop(host);
+        cut_owner_receipt(&data, &request["commandId"], false);
+        let host = Host::open(data).unwrap();
+        assert_eq!(host.action("work_retry", request).await.unwrap(), retried);
+        assert_eq!(
+            host.snapshot().unwrap()["work"]["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            std::fs::read_to_string(new_directory.join("outputs/keep.txt")).unwrap(),
+            "Keep existing artifact"
+        );
+        host.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn ordinary_git_retry_recovers_its_original_unenriched_receipt() {
+    let temporary = tempfile::tempdir().unwrap();
+    let data = temporary.path().join("data");
+    let repository = temporary.path().join("repository");
+    std::fs::create_dir(&repository).unwrap();
+    assert!(std::process::Command::new("git")
+        .args(["init", "--quiet"])
+        .arg(&repository)
+        .status()
+        .unwrap()
+        .success());
+    let host = Host::open(data.clone()).unwrap();
+    let queued = host.action("work_enqueue", command(json!({"workingDirectory":repository,"title":"Ordinary task","instruction":"Keep the coding flow."}))).await.unwrap();
+    let work = queued["workItemId"].clone();
+    host.shutdown().await;
+    drop(host);
+    append_unknown_start(&data, &work);
+    let host = Host::open(data.clone()).unwrap();
+    let revision = host.snapshot().unwrap()["work"]["items"][0]["revision"].clone();
+    let request = command(json!({"workItemId":work,"expectedItemRevision":revision}));
+    let receipt = host.action("work_retry", request.clone()).await.unwrap();
+    assert!(receipt.get("projectId").is_none());
+    host.shutdown().await;
+    drop(host);
+    cut_owner_receipt(&data, &request["commandId"], false);
+    let host = Host::open(data).unwrap();
+    assert_eq!(host.action("work_retry", request).await.unwrap(), receipt);
+    assert_eq!(
+        host.snapshot().unwrap()["work"]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(host.snapshot().unwrap()["projectJobs"], json!([]));
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn requested_only_owner_prefix_does_not_invent_a_committed_job() {
+    let temporary = tempfile::tempdir().unwrap();
+    let data = temporary.path().join("data");
+    let host = Host::open(data.clone()).unwrap();
+    let p = project(&host, "P").await;
+    let request = enqueue(&host, &p);
+    let receipt = host
+        .action("project_work_enqueue", request.clone())
+        .await
+        .unwrap();
+    let directory = directory(&host, &receipt["workItemId"]);
+    host.shutdown().await;
+    drop(host);
+    cut_owner_receipt(&data, &request["commandId"], true);
+    std::fs::remove_dir_all(&directory).unwrap();
+    let host = Host::open(data).unwrap();
+    let result = host.action("project_work_enqueue", request).await.unwrap();
+    assert_eq!(result["outcome"], "failed");
+    assert_eq!(result["reasonCode"], "OWNER_COMMAND_OUTCOME_UNKNOWN");
+    assert!(host.snapshot().unwrap()["work"]["items"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!directory.exists());
+    host.shutdown().await;
+}
+
+#[cfg(not(unix))]
+#[tokio::test]
+async fn unsupported_result_operations_fail_before_any_file_mutation() {
+    let temporary = tempfile::tempdir().unwrap();
+    let host = Host::open(temporary.path().join("data")).unwrap();
+    let p = project(&host, "P").await;
+    let receipt = host
+        .action("project_work_enqueue", enqueue(&host, &p))
+        .await
+        .unwrap();
+    let work = &receipt["workItemId"];
+    let source = directory(&host, work).join("outputs/report.txt");
+    std::fs::write(&source, "Preserve this content").unwrap();
+    let target = temporary.path().join("export.txt");
+    let mut export = command(selection(&p, work, "outputs/report.txt"));
+    export["targetPath"] = json!(target);
+    for (action, payload) in [
+        (
+            "project_results_read",
+            json!({"projectId":p,"workItemId":work}),
+        ),
+        (
+            "project_result_read",
+            selection(&p, work, "outputs/report.txt"),
+        ),
+        ("project_result_export", export),
+    ] {
+        assert_eq!(
+            host.action(action, payload).await.unwrap_err().0,
+            "PROJECT_RESULTS_UNSUPPORTED_PLATFORM"
+        );
+    }
+    assert!(!target.exists());
+    assert_eq!(
+        std::fs::read_to_string(source).unwrap(),
+        "Preserve this content"
+    );
+    host.shutdown().await;
 }

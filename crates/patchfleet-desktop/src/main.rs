@@ -59,6 +59,19 @@ impl Patchfleet {
             let mut console = console;
             if !observe {
                 if let Ok(scene) = std::env::var("PATCHFLEET_SMOKE_SCENE") {
+                    if scene.starts_with("quick-") {
+                        console.quick_start_smoke();
+                        if matches!(scene.as_str(), "quick-task" | "quick-failed") {
+                            // Illustrative readiness only; no installed provider is probed or run.
+                            bridge.snapshot.as_mut().unwrap()["observation"] = serde_json::json!({"observations":[{"provider":{"id":"codex","displayName":"Codex · UI fixture","state":"available","version":"0.155.1","capabilities":{"recentObservation":true,"explicitLiveStatus":true}},"sessions":[]}]});
+                        }
+                        if scene == "quick-failed" {
+                            bridge.feedback = Some(command::Notice::error(
+                                "work_start",
+                                "PROVIDER_CONTROL_FAILED",
+                            ));
+                        }
+                    }
                     if scene.starts_with("studio-") {
                         console.studio_smoke(&scene, bridge.snapshot.as_ref().unwrap());
                     }
@@ -164,6 +177,39 @@ impl Patchfleet {
             smoke_capture_requested: false,
         }
     }
+}
+
+#[cfg(feature = "ui-smoke")]
+fn seed_quick_start_scene(directory: &std::path::Path, scene: &str) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        if std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en") {
+            host.action("desktop_language", command::Command::new("desktop_language", serde_json::json!({"language":"en"})).payload).await.unwrap();
+        }
+        if scene != "quick-project" {
+            let created = host.action("project_create", command::Command::new("project_create", serde_json::json!({"name":"Welcome project · UI fixture"})).payload).await.unwrap();
+            assert_eq!(created["outcome"], "applied");
+            if scene != "quick-folder" {
+                let path = directory.join("preview-repository");
+                std::fs::create_dir(&path).unwrap();
+                assert!(std::process::Command::new("git").args(["init", "--quiet"]).arg(&path).status().unwrap().success());
+                let registration = host.action("workspace_register", command::Command::new("workspace_register", serde_json::json!({"workingDirectory":path,"displayName":"Welcome repository · UI fixture"})).payload).await.unwrap();
+                assert_eq!(registration["outcome"], "applied");
+                let snapshot = host.snapshot().unwrap();
+                let linked = host.action("project_link_workspace", command::Command::new("project_link_workspace", serde_json::json!({"projectId":created["projectId"],"workspaceId":registration["workspaceId"],"expectedProjectRevision":snapshot["projectMemory"]["projects"][0]["revision"]})).payload).await.unwrap();
+                assert_eq!(linked["outcome"], "applied");
+                if scene == "quick-failed" {
+                    let queued = host.action("work_enqueue", command::Command::new("work_enqueue", serde_json::json!({"title":"Welcome task · UI fixture","instruction":"Illustrative queued task. No provider turn was requested.","workspaceId":registration["workspaceId"],"workingDirectory":""})).payload).await.unwrap();
+                    assert_eq!(queued["outcome"], "applied");
+                }
+            }
+        }
+        host.shutdown().await;
+    });
 }
 
 #[cfg(feature = "ui-smoke")]
@@ -547,6 +593,12 @@ fn main() {
             directory.is_dir() && std::fs::read_dir(&directory).unwrap().next().is_none(),
             "Native smoke requires an empty test directory"
         );
+        #[cfg(feature = "ui-smoke")]
+        if let Ok(scene) = std::env::var("PATCHFLEET_SMOKE_SCENE") {
+            if scene.starts_with("quick-") {
+                seed_quick_start_scene(&directory, &scene);
+            }
+        }
         #[cfg(feature = "ui-smoke")]
         if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("studio-")) {
             seed_memory_scene(&directory);

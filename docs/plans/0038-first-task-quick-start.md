@@ -1,12 +1,11 @@
 # Task 0038: First-task quick start
 
-Status: Proposed; implementation awaits owner approval of this bounded card
+Status: Approved; implementation in progress
 
 Updated: 2026-10-19
 
-Owner direction: ship a new feature, prioritizing easier first use. This card
-defines the proposed implementation scope; the direction does not approve every
-detail below automatically.
+Owner approval: 2026-10-19, explicitly approved this Hızlı Başlangıç plan and
+requested implementation.
 
 ## Observable outcome
 

@@ -83,3 +83,10 @@ canonical milliseconds before dispatch, including offset and submillisecond
 input. Saved plans expose the same explicit bounded paging as recipes/schedules.
 All 14 focused crew tests pass, including actual Prepare/Schedule click payloads
 and keyboard-driven plan pagination with exact Project/section/offset.
+
+Final native polish uses friendly app names and readable localized label/value
+rows for every frozen Drive/Notion/Calendar argument. Owner values remain exact;
+the prepared action identity and explicit approval are unchanged. Usage waiting
+reasons now read the actual `{taskId, reasonCode}` bottleneck shape. The final
+all-feature desktop suite passes 151/151, including seven Output Studio tests,
+minimum-window approval controls and actual-object bottleneck rendering.

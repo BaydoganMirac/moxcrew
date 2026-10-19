@@ -52,6 +52,16 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
     let translated = match text {
+        "End time" => "Bitiş zamanı",
+        "Start time" => "Başlangıç zamanı",
+        "Size (bytes)" => "Boyut (bayt)",
+        "End" => "Bitiş",
+        "Start" => "Başlangıç",
+        "Event ID" => "Etkinlik kimliği",
+        "Page ID" => "Sayfa kimliği",
+        "Operation" => "İşlem",
+        "App operation" => "Uygulama işlemi",
+        "App" => "Uygulama",
         "Apps" => "Uygulamalar",
         "Tools" => "Araçlar",
         "Goal" => "Hedef",
@@ -799,6 +809,7 @@ pub fn format(language: Language, key: &str, args: &[&str]) -> String {
 
 fn reason(code: &str) -> Option<(&'static str, &'static str)> {
     Some(match code {
+        "WAITING_FOR_DEPENDENCIES" => ("Waiting for earlier tasks to finish.","Önceki işlerin bitmesi bekleniyor."),
         "PRODUCTION_TOOL_AVAILABLE" => ("Installed tool passed its local version check.","Kurulu araç yerel sürüm kontrolünü geçti."),
         "PRODUCTION_TOOL_SETUP_REQUIRED" => ("Choose a compatible installed executable or open the official setup guide.","Uyumlu, kurulu bir program seç veya resmi kurulum rehberini aç."),
         "PROJECT_CONNECTION_CHANGED" => ("The connection changed after this preview. Prepare a new preview before approving.","Bu önizlemeden sonra bağlantı değişti. Onaylamadan önce yeni bir önizleme hazırla."),

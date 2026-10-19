@@ -1992,7 +1992,13 @@ impl Console {
                         );
                     }
                     for bottleneck in array(&item["bottlenecks"]) {
-                        ui.label(bottleneck.as_str().unwrap_or(""));
+                        hint(
+                            ui,
+                            bottleneck["reasonCode"]
+                                .as_str()
+                                .or_else(|| bottleneck.as_str())
+                                .unwrap_or(""),
+                        );
                     }
                 }
                 "reviews" => {
@@ -2387,7 +2393,7 @@ mod tests {
                     ctx.set_theme(theme);
                     let mut data = fixture();
                     data["desktopPreferences"]["language"] = json!(language);
-                    data["projectWorkflows"] = json!({"revision":7,"plans":[],"recipes":[{"recipeId":"recipe:one","projectId":null,"revision":2,"name":"Research brief","description":"Bounded project recipe","members":plan().members,"settings":plan().settings}],"schedules":[],"usage":[{"missionId":"mission:one","projectId":"project:one","startedJobs":2,"elapsedSeconds":14,"inputTokens":null,"outputTokens":null,"costMicros":null,"measurementComplete":false}]});
+                    data["projectWorkflows"] = json!({"revision":7,"plans":[],"recipes":[{"recipeId":"recipe:one","projectId":null,"revision":2,"name":"Research brief","description":"Bounded project recipe","members":plan().members,"settings":plan().settings}],"schedules":[],"usage":[{"missionId":"mission:one","projectId":"project:one","startedJobs":2,"elapsedSeconds":14,"inputTokens":null,"outputTokens":null,"costMicros":null,"measurementComplete":false,"bottlenecks":[{"taskId":"task:reviewer","reasonCode":"WAITING_FOR_DEPENDENCIES"}]}]});
                     let mut console = console();
                     console.create.crew.workflow.open = true;
                     console.create.crew.workflow.tab = tab;
@@ -2434,6 +2440,10 @@ mod tests {
                         } else {
                             "Bilinmiyor"
                         }));
+                        assert!(copy.contains(
+                            i18n::tr(Language::from_code(language), "WAITING_FOR_DEPENDENCIES")
+                                .as_ref()
+                        ));
                     }
                 }
             }

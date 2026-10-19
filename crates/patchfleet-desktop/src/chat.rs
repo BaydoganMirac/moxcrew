@@ -1042,6 +1042,7 @@ mod tests {
                     create: draft(),
                     ..Default::default()
                 };
+                let mut focused_route = None;
                 for width in [1280.0, 800.0, 1280.0] {
                     let screen =
                         egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 560.0));
@@ -1061,6 +1062,14 @@ mod tests {
                     for view in [1usize, 2, 0] {
                         frame(&mut console, vec![]);
                         frame(&mut console, vec![]);
+                        if view == 1 {
+                            if let Some(id) = focused_route {
+                                assert!(
+                                    ctx.memory(|memory| memory.has_focus(id)),
+                                    "Sidebar focus survives responsive layout"
+                                );
+                            }
+                        }
                         let rect = ctx.data(|data| {
                             data.get_temp::<egui::Rect>(egui::Id::new(("project-view-tab", view)))
                                 .unwrap()
@@ -1106,7 +1115,40 @@ mod tests {
                         assert_eq!(console.create.productive_view(), view);
                         assert_eq!(console.create.draft().goal, "Revise the introduction");
                     }
+                    let route = ctx.data(|data| {
+                        data.get_temp::<egui::Id>(egui::Id::new(("navigation-id", "Chat")))
+                            .unwrap()
+                    });
+                    ctx.memory_mut(|memory| memory.request_focus(route));
+                    focused_route = Some(route);
                 }
+                let project_route = ctx.data(|data| {
+                    data.get_temp::<egui::Id>(egui::Id::new(("navigation-id", "Projects")))
+                        .unwrap()
+                });
+                ctx.memory_mut(|memory| memory.request_focus(project_route));
+                ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(800.0, 560.0),
+                        )),
+                        events: vec![egui::Event::Key {
+                            key: egui::Key::Enter,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::default(),
+                        }],
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let _ = console.show(ui, &snapshot, false, None, false);
+                    },
+                )
+                .drop_without_applying_deltas();
+                assert!(console.tab == Tab::Projects);
+                assert_eq!(console.create.draft().goal, "Revise the introduction");
             }
         }
     }

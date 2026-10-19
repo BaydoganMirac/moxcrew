@@ -179,7 +179,7 @@ impl Console {
                 .filter_map(|path| path.as_str().map(str::to_owned))
                 .collect(),
         });
-        if self.create.chat.replies.get(&key).is_none() {
+        if !self.create.chat.replies.contains_key(&key) {
             if let Some(reply) = &reply {
                 self.create.chat.replies.insert(key.clone(), reply.clone());
             }

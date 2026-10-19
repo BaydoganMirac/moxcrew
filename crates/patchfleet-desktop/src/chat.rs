@@ -339,7 +339,13 @@ impl Console {
             egui::Panel::bottom("conversation-composer")
                 .resizable(false)
                 .show_separator_line(false)
-                .exact_size(if has_reply { 210.0 } else { 174.0 })
+                .exact_size(
+                    if ui.available_width() < 640.0 {
+                        224.0
+                    } else {
+                        174.0
+                    } + if has_reply { 52.0 } else { 0.0 },
+                )
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
                     centered(ui, 820.0, |ui| {
@@ -420,7 +426,7 @@ impl Console {
                 &self.create.ability,
             )))
         });
-        egui::Frame::new()
+        let frame = egui::Frame::new()
             .fill(colors(ui).surface)
             .stroke(egui::Stroke::new(
                 1.0,
@@ -439,6 +445,15 @@ impl Console {
                 color: colors(ui).primary.gamma_multiply(0.10),
             })
             .show(ui, |ui| self.chat_composer(ui, snapshot, commands));
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("chat-composer-bounds"),
+                (frame.response.rect, ui.clip_rect()),
+            )
+        });
+        #[cfg(not(test))]
+        let _ = frame;
     }
 
     fn chat_composer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -490,6 +505,7 @@ impl Console {
                 .any(|ability| text(ability, "id") == *id)
         });
         let payload = self.create.chat_payload(snapshot);
+        let two_rows = ui.available_width() < 640.0;
         ui.horizontal_wrapped(|ui| {
             if self.create.crew.single {
                 let enabled = payload.is_some() && self.create.pending.is_none();
@@ -522,28 +538,13 @@ impl Console {
             } else {
                 self.crew_plan_button(ui, snapshot, commands, shortcut);
             }
-            if view_control(ui, "Skills", true, false).clicked() {
-                self.create.crew.catalog_target = None;
-                self.create.catalog_open = true;
+            if !two_rows {
+                self.chat_composer_options(ui);
             }
-            if view_control(ui, "Details", true, false).clicked() {
-                self.create.chat.details_open = true;
-            }
-            egui::ComboBox::from_id_salt("conversation-work-mode")
-                .selected_text(t(
-                    ui,
-                    if self.create.crew.single {
-                        "Single task"
-                    } else {
-                        "Crew"
-                    },
-                ))
-                .width(94.0)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.create.crew.single, false, t(ui, "Crew"));
-                    ui.selectable_value(&mut self.create.crew.single, true, t(ui, "Single task"));
-                });
         });
+        if two_rows {
+            self.chat_composer_options(ui);
+        }
         if let Some(selected) = array(&snapshot["abilities"])
             .iter()
             .find(|ability| text(ability, "id") == self.create.ability)
@@ -582,6 +583,39 @@ impl Console {
                 "Crew plans use bundled guides. Review before preparing.",
             );
         }
+    }
+
+    fn chat_composer_options(&mut self, ui: &mut Ui) {
+        let id = egui::Id::new(("chat-composer-options", &self.create.project));
+        ui.scope_builder(egui::UiBuilder::new().id(id), |ui| {
+            ui.horizontal(|ui| {
+                if view_control(ui, "Skills", true, false).clicked() {
+                    self.create.crew.catalog_target = None;
+                    self.create.catalog_open = true;
+                }
+                if view_control(ui, "Details", true, false).clicked() {
+                    self.create.chat.details_open = true;
+                }
+                egui::ComboBox::from_id_salt("conversation-work-mode")
+                    .selected_text(t(
+                        ui,
+                        if self.create.crew.single {
+                            "Single task"
+                        } else {
+                            "Crew"
+                        },
+                    ))
+                    .width(94.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.create.crew.single, false, t(ui, "Crew"));
+                        ui.selectable_value(
+                            &mut self.create.crew.single,
+                            true,
+                            t(ui, "Single task"),
+                        );
+                    });
+            });
+        });
     }
 
     fn chat_history(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -1075,7 +1109,7 @@ mod tests {
                 ctx.set_theme(theme);
                 let mut data = fixture();
                 data["desktopPreferences"] = json!({"language":language,"reduceMotion":true});
-                data["projectChat"] = json!({"reasonCode":"PROJECT_CHAT_READ","projectId":"project:one","workRevision":4,"offset":0,"items":[]});
+                data["projectChat"] = json!({"reasonCode":"PROJECT_CHAT_READ","projectId":"project:one","workRevision":4,"offset":0,"items":[{"projectId":"project:one","workItemId":"work:old","instruction":"Earlier project request","abilityId":"P1"}]});
                 data["projectStudio"] = json!({"reasonCode":"PROJECT_STUDIO_READ","projectId":"project:one","artifacts":[{"workItemId":"work:old","name":"Özet.md","path":"outputs/Özet.md","sha256":"a".repeat(64),"bytes":42}]});
                 let mut console = Console {
                     tab: Tab::Create,
@@ -1144,6 +1178,16 @@ mod tests {
                         assert!(
                             screen.contains_rect(goal) && goal.right() <= context.left(),
                             "Composer stays beside context: {goal:?}/{context:?}"
+                        );
+                        let (frame, clip) = ctx.data(|d| {
+                            d.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new(
+                                "chat-composer-bounds",
+                            ))
+                            .unwrap()
+                        });
+                        assert!(
+                            screen.contains_rect(frame) && clip.contains_rect(frame),
+                            "{language}/{theme:?}: complete composer visible: {frame:?}/{clip:?}"
                         );
                     }
                 }

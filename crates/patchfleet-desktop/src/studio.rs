@@ -121,12 +121,19 @@ fn kit_button(
     widgets.noninteractive.weak_bg_fill = p.raised;
     widgets.noninteractive.fg_stroke.color = p.muted;
     // Add directly to the parent so wrapped rows measure the whole button.
-    let response = ui.add_enabled(
-        enabled,
-        egui::Button::new(RichText::new(label).size(14.0))
+    let response =
+        ui.add_enabled(
+            enabled,
+            egui::Button::new(RichText::new(label).size(14.0).color(
+                if enabled && ui.is_enabled() {
+                    foreground
+                } else {
+                    p.muted
+                },
+            ))
             .wrap_mode(egui::TextWrapMode::Extend)
             .min_size(egui::vec2(0.0, height)),
-    );
+        );
     ui.set_style(previous);
     if response.has_focus() {
         ui.painter().rect_stroke(
@@ -579,6 +586,33 @@ pub fn mascot(ui: &mut egui::Ui, width: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn button_semantic_foregrounds_survive_the_global_body_text_color() {
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let ctx = egui::Context::default();
+            install(&ctx);
+            ctx.set_theme(theme);
+            let p = palette(&ctx);
+            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                button(ui, "Primary", ButtonKind::Primary, true);
+                button(ui, "Cancel run", ButtonKind::Danger, true);
+            });
+            for (label, expected) in [("Primary", p.on_primary), ("Cancel run", p.danger)] {
+                let color = output
+                    .shapes
+                    .iter()
+                    .find_map(|shape| match &shape.shape {
+                        egui::Shape::Text(text) if text.galley.job.text == label => {
+                            Some(text.galley.job.sections[0].format.color)
+                        }
+                        _ => None,
+                    })
+                    .expect("Button label is painted");
+                assert_eq!(color, expected, "{theme:?}/{label}");
+            }
+            output.drop_without_applying_deltas();
+        }
+    }
     #[test]
     fn kit_metrics_match_the_brand_contract_and_controls_keep_one_height() {
         let contract: serde_json::Value = serde_json::from_str(include_str!(

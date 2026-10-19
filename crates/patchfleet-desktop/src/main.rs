@@ -812,11 +812,14 @@ fn main() {
     }
     let window_size = [1280.0, 880.0];
     #[cfg(feature = "ui-smoke")]
-    let window_size = if !observe && std::env::var_os("PATCHFLEET_SMOKE_MIN_WINDOW").is_some() {
-        [800.0, 560.0]
-    } else {
-        window_size
-    };
+    let window_size =
+        if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("ui-kit") {
+            [1280.0, 1040.0]
+        } else if !observe && std::env::var_os("PATCHFLEET_SMOKE_MIN_WINDOW").is_some() {
+            [800.0, 560.0]
+        } else {
+            window_size
+        };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Moxcrew")

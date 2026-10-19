@@ -56,6 +56,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Chat" => "Sohbet",
         "Coding teams" => "Kodlama takımları",
         "Crew" => "Takım",
+        "Messages" => "Mesajlar",
         "Single task" => "Tek görev",
         "Plan crew" => "Takımı planla",
         "Prepare crew" => "Takımı hazırla",

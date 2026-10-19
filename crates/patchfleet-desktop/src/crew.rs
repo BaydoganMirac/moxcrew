@@ -993,7 +993,7 @@ impl Console {
                                     }
                                 }
                             }
-                            raw_hint(ui, &format!("{from} → {to}"));
+                            raw_hint(ui, &format!("{from} > {to}"));
                             ui.add(
                                 egui::Label::new(text(message, "body"))
                                     .wrap()
@@ -1388,7 +1388,7 @@ mod tests {
         let copy = copy.join("\n");
         assert!(commands.is_empty());
         assert!(copy.contains("Actual message Projects Memory"));
-        assert!(copy.contains("Builder → Reviewer"));
+        assert!(copy.contains("Builder > Reviewer"));
         assert!(copy.contains("Pending recipient read"));
         assert!(!copy.contains("Read by the recipient"));
         let mut origin = data["projectCrews"]["missions"][0].clone();
@@ -1409,7 +1409,7 @@ mod tests {
         );
         assert!(
             copy.join("\n")
-                .contains("Builder · Earlier project mission → Reviewer"),
+                .contains("Builder · Earlier project mission > Reviewer"),
             "cross-mission messages must identify the source mission"
         );
     }
@@ -1562,6 +1562,21 @@ mod tests {
                         assert!(render(&ctx, &mut console, &data, size, busy, vec![])
                             .0
                             .is_empty());
+                    }
+                    let (_, copy) = render(&ctx, &mut console, &data, size, busy, vec![]);
+                    let tabs = if language == "tr" {
+                        ["Ajanlar", "Mesajlar", "Dosyalar"]
+                    } else {
+                        ["Agents", "Messages", "Files"]
+                    };
+                    for tab in tabs {
+                        assert!(
+                            copy.iter().any(|text| text == tab),
+                            "{language} {theme:?} crew tab must use the selected language: {tab}"
+                        );
+                    }
+                    if language == "tr" {
+                        assert!(!copy.iter().any(|text| text == "Messages"));
                     }
                     let (enabled, rect, clip) = ctx.data(|data| {
                         data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((

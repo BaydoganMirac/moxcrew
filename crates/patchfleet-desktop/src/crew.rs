@@ -177,6 +177,12 @@ impl CreateState {
             }) {
                 return;
             }
+            let current_plan = self.crew_key() == pending.key
+                && self.drafts.get(&pending.key) == Some(&pending.draft)
+                && self.chat.replies.get(&pending.key) == pending.reply.as_ref()
+                && self.crew.plans.get(&pending.key) == Some(&pending.plan);
+            let return_to_chat =
+                current_plan && self.productive_view() == 1 && self.crew.workflow.tab == 0;
             self.crew
                 .selected
                 .insert(pending.key.0.clone(), mission.into());
@@ -189,7 +195,10 @@ impl CreateState {
                 self.crew.plans.remove(&pending.key);
                 self.crew.workflow.models.remove(&pending.key);
             }
-            if self.project == pending.key.0 {
+            if self.project == pending.key.0 && (self.productive_view() == 0 || return_to_chat) {
+                if return_to_chat {
+                    self.select_productive_view(0);
+                }
                 self.crew.panel_open = true;
                 self.crew.tab = 0;
                 self.chat.files_open = false;
@@ -1535,10 +1544,10 @@ impl Console {
             ));
         }
         if text(job, "status") == "completed" {
+            self.model_use_goal(ui, &key, &model);
             ui.collapsing(t(ui, "Planning details"), |ui| {
                 raw_hint(ui, text(job, "providerId"));
                 ui.add(egui::Label::new(&model.draft.goal).wrap().selectable(true));
-                self.model_use_goal(ui, &key, &model);
                 ui.add_space(8.0);
                 ui.label(RichText::new(t(ui, "Agent providers")).size(13.0).strong());
                 for (index, member) in self
@@ -1690,6 +1699,7 @@ impl Console {
             ));
         }
         inline_surface(ui, |ui| {
+            let compact = ui.ctx().viewport_rect().height() < 700.0;
             let key = self.create.crew_key();
             let is_plan = self.create.crew.workflow.tab == 0;
             let heading = t(ui, if is_plan { "Crew plan" } else { "Crew" }).into_owned();
@@ -1715,7 +1725,7 @@ impl Console {
                     );
                 });
             });
-            ui.add_space(8.0);
+            ui.add_space(if compact { 4.0 } else { 8.0 });
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 for (index, label) in [
@@ -1742,9 +1752,19 @@ impl Console {
                     }
                 }
             });
-            ui.add_space(16.0);
+            ui.add_space(if compact { 8.0 } else { 16.0 });
             let footer = self.create.crew.workflow.tab <= 2;
-            let height = (ui.available_height() - if footer { 96.0 } else { 0.0 }).max(60.0);
+            let height = (ui.available_height()
+                - if footer {
+                    if self.create.crew.workflow.tab == 0 {
+                        96.0
+                    } else {
+                        64.0
+                    }
+                } else {
+                    0.0
+                })
+            .max(60.0);
             egui::ScrollArea::vertical().id_salt(("mission-workflow-body", &project, self.create.crew.workflow.tab)).auto_shrink([false,false]).max_height(height).show(ui, |ui| {
                 match self.create.crew.workflow.tab {
                     0 => {
@@ -1906,30 +1926,77 @@ impl Console {
                 }
                 state
             });
-        hint(ui,"Choose affected tasks. Direction stops and replaces their unfinished work and descendants; earlier files remain.");
-        for task in array(&mission["tasks"]) {
-            let task_id = text(task, "taskId").to_owned();
-            let mut selected = control_state.tasks.contains(&task_id);
-            let label = if text(task, "title").is_empty() {
-                text(task, "taskId")
-            } else {
-                text(task, "title")
-            };
-            if ui.checkbox(&mut selected, label).changed() {
-                if selected {
-                    control_state.tasks.insert(task_id);
+        let compact = ui.ctx().viewport_rect().height() < 700.0;
+        let input = ui.scope(|ui| {
+            multiline(
+                ui,
+                "New direction",
+                &mut control_state.instruction,
+                20_000,
+                2,
+            )
+        });
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("workflow-direction-input"),
+                (input.response.rect, ui.clip_rect()),
+            )
+        });
+        #[cfg(not(test))]
+        let _ = input;
+        let warning=ui.add(egui::Label::new(RichText::new(t(ui,"Choose affected tasks. Direction stops and replaces their unfinished work and descendants; earlier files remain.")).size(12.0).color(colors(ui).muted)).wrap());
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("workflow-direction-warning"),
+                (warning.rect, ui.clip_rect()),
+            )
+        });
+        #[cfg(not(test))]
+        let _ = warning;
+        let affected = egui::CollapsingHeader::new(tf(
+            ui,
+            "Affected tasks · {0} selected",
+            &[&control_state.tasks.len().to_string()],
+        ))
+        .id_salt(("crew-affected-tasks", &project, &id))
+        .default_open(!compact)
+        .show(ui, |ui| {
+            for task in array(&mission["tasks"]) {
+                let task_id = text(task, "taskId").to_owned();
+                let mut selected = control_state.tasks.contains(&task_id);
+                let label = if text(task, "title").is_empty() {
+                    text(task, "taskId")
                 } else {
-                    control_state.tasks.remove(&task_id);
+                    text(task, "title")
+                };
+                let checkbox = ui.checkbox(&mut selected, label);
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new(("test-action", "affected-task", task_id.as_str())),
+                        checkbox.rect,
+                    )
+                });
+                if checkbox.changed() {
+                    if selected {
+                        control_state.tasks.insert(task_id);
+                    } else {
+                        control_state.tasks.remove(&task_id);
+                    }
                 }
             }
-        }
-        multiline(
-            ui,
-            "New direction",
-            &mut control_state.instruction,
-            20_000,
-            2,
-        );
+        });
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new(("test-action", "memory_control", "Affected tasks")),
+                affected.header_response.rect,
+            )
+        });
+        #[cfg(not(test))]
+        let _ = affected;
         if !text(&mission["workflow"], "directionStatus").is_empty() {
             status(ui, text(&mission["workflow"], "directionStatus"));
         }
@@ -2044,22 +2111,46 @@ impl Console {
             .iter()
             .find(|recipe| text(recipe, "recipeId") == selected)
         {
-            ui.add_space(16.0);
-            ui.label(studio::title(text(recipe, "name"), 16.0));
-            ui.label(text(recipe, "description"));
-            ui.add_space(12.0);
-            multiline(
-                ui,
-                "New goal (optional)",
-                self.create
-                    .crew
-                    .workflow
-                    .recipe_goal
-                    .entry((project.clone(), text(recipe, "recipeId").into()))
-                    .or_default(),
-                20_000,
-                2,
-            );
+            let compact = ui.ctx().viewport_rect().height() < 700.0;
+            ui.add_space(if compact { 8.0 } else { 16.0 });
+            if !compact {
+                ui.label(studio::title(text(recipe, "name"), 16.0));
+                ui.label(text(recipe, "description"));
+                ui.add_space(12.0);
+            }
+            let input = ui.scope(|ui| {
+                multiline(
+                    ui,
+                    "New goal (optional)",
+                    self.create
+                        .crew
+                        .workflow
+                        .recipe_goal
+                        .entry((project.clone(), text(recipe, "recipeId").into()))
+                        .or_default(),
+                    20_000,
+                    2,
+                )
+            });
+            #[cfg(test)]
+            ui.data_mut(|data| {
+                data.insert_temp(
+                    egui::Id::new("workflow-recipe-input"),
+                    (input.response.rect, ui.clip_rect()),
+                )
+            });
+            #[cfg(not(test))]
+            let _ = input;
+            if compact {
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(text(recipe, "description"))
+                            .size(12.0)
+                            .color(colors(ui).muted),
+                    )
+                    .wrap(),
+                );
+            }
             ui.collapsing(t(ui, "Roster"), |ui| {
                 for member in array(&recipe["members"]) {
                     ui.horizontal_wrapped(|ui| {
@@ -2249,10 +2340,8 @@ impl Console {
                 ("reviews", "Reviews"),
                 ("directions", "Directions"),
             ] {
-                if ui
-                    .selectable_value(&mut state.section, key.into(), t(ui, label))
-                    .clicked()
-                {
+                if studio::section_nav(ui, state.section == key, t(ui, label).as_ref()).clicked() {
+                    state.section = key.into();
                     state.offset = 0;
                 }
             }
@@ -2279,7 +2368,25 @@ impl Console {
         for item in values {
             card(ui, |ui| match section.as_str() {
                 "usage" => {
-                    ui.label(text(item, "missionId"));
+                    let title = missions(snapshot)
+                        .iter()
+                        .find(|mission| {
+                            text(mission, "projectId") == project
+                                && mission["missionId"] == item["missionId"]
+                        })
+                        .map(|mission| text(mission, "title"))
+                        .filter(|title| !title.is_empty());
+                    ui.label(
+                        RichText::new(
+                            title
+                                .map(std::borrow::Cow::Borrowed)
+                                .unwrap_or_else(|| t(ui, "Crew")),
+                        )
+                        .strong(),
+                    );
+                    ui.collapsing(t(ui, "Details"), |ui| {
+                        ui.label(text(item, "missionId"));
+                    });
                     for (key, label) in [
                         ("startedJobs", "Jobs started"),
                         ("elapsedSeconds", "Elapsed seconds"),
@@ -2492,74 +2599,309 @@ mod tests {
     }
     #[test]
     fn direction_and_recipe_have_one_visible_frozen_primary_action_at_minimum_size() {
-        for tab in [1, 2] {
-            let ctx = egui::Context::default();
-            studio::install(&ctx);
-            let mut data = fixture();
-            data["projectCrews"]["missions"][0]["status"] = json!("active");
-            data["projectWorkflows"] = json!({"revision":7,"recipes":[{"recipeId":"recipe:one","projectId":null,"revision":3,"name":"Brief recipe","description":"Prepare reviewed files","members":plan().members,"settings":plan().settings}]});
-            let mut console = console();
-            console.create.crew.workflow.read = Some(("project:one".into(), 7));
-            console.create.select_productive_view(1);
-            console.create.crew.workflow.tab = tab;
-            console.create.crew.workflow.controls.insert(
-                ("project:one".into(), "mission:one".into()),
-                MissionControl {
-                    instruction: "Use the new audience".into(),
-                    tasks: HashSet::from(["task:builder".into()]),
-                    ..Default::default()
-                },
-            );
-            console.create.crew.workflow.recipe_goal.insert(
-                ("project:one".into(), "recipe:one".into()),
-                "Owner recipe goal".into(),
-            );
-            let size = egui::vec2(800.0, 560.0);
-            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
-            let label = if tab == 1 {
-                "Apply direction"
-            } else {
-                "Prepare recipe"
-            };
-            for _ in 0..3 {
-                let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
-                assert!(commands.is_empty());
-                assert_eq!(copy.iter().filter(|line| line.as_str() == label).count(), 1);
-            }
-            let rect = ctx.data(|data| {
-                data.get_temp::<egui::Rect>(egui::Id::new(("test-action", "memory_control", label)))
-                    .unwrap()
-            });
-            let (clip, _) = ctx.data(|data| {
-                data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
-                    "test-action-visibility",
-                    label,
-                )))
-                .unwrap()
-            });
-            assert!(screen.contains_rect(rect) && clip.contains_rect(rect));
-            let commands = click_at_size(
-                &ctx,
-                &mut console,
-                &data,
-                size,
-                false,
-                "memory_control",
-                label,
-            );
-            assert_eq!(commands.len(), 1);
-            assert_eq!(commands[0].payload["projectId"], "project:one");
-            if tab == 1 {
-                assert_eq!(commands[0].payload["expectedMissionRevision"], 4);
-                assert_eq!(
-                    commands[0].payload["affectedTaskIds"],
-                    json!(["task:builder"])
-                );
-            } else {
-                assert_eq!(commands[0].payload["expectedRecipeRevision"], 3);
-                assert_eq!(commands[0].payload["instruction"], "Owner recipe goal");
+        for language in ["en", "tr"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                for tab in [1, 2] {
+                    let ctx = egui::Context::default();
+                    studio::install(&ctx);
+                    ctx.set_theme(theme);
+                    let mut data = fixture();
+                    data["desktopPreferences"]["language"] = json!(language);
+                    data["projectCrews"]["missions"][0]["status"] = json!("active");
+                    data["projectWorkflows"] = json!({"revision":7,"recipes":[{"recipeId":"recipe:one","projectId":null,"revision":3,"name":"Brief recipe","description":"Prepare reviewed files","members":plan().members,"settings":plan().settings}]});
+                    let mut console = console();
+                    console.create.crew.workflow.read = Some(("project:one".into(), 7));
+                    console.create.select_productive_view(1);
+                    console.create.crew.workflow.tab = tab;
+                    console.create.crew.workflow.controls.insert(
+                        ("project:one".into(), "mission:one".into()),
+                        MissionControl {
+                            instruction: "Use the new audience".into(),
+                            tasks: HashSet::from(["task:builder".into()]),
+                            ..Default::default()
+                        },
+                    );
+                    console.create.crew.workflow.recipe_goal.insert(
+                        ("project:one".into(), "recipe:one".into()),
+                        "Owner recipe goal".into(),
+                    );
+                    let size = egui::vec2(800.0, 560.0);
+                    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                    let label = if tab == 1 {
+                        "Apply direction"
+                    } else {
+                        "Prepare recipe"
+                    };
+                    for _ in 0..3 {
+                        let (commands, copy) =
+                            render(&ctx, &mut console, &data, size, false, vec![]);
+                        assert!(commands.is_empty());
+                        let localized = i18n::tr(Language::from_code(language), label);
+                        assert_eq!(
+                            copy.iter()
+                                .filter(|line| line.as_str() == localized.as_ref())
+                                .count(),
+                            1
+                        );
+                    }
+                    let input_id = if tab == 1 {
+                        "workflow-direction-input"
+                    } else {
+                        "workflow-recipe-input"
+                    };
+                    let (input, input_clip) = ctx.data(|data| {
+                        data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new(input_id))
+                            .unwrap()
+                    });
+                    assert!(
+                        screen.contains_rect(input) && input_clip.contains_rect(input),
+                        "{language}/{theme:?}/{tab} input clipped {input:?}/{input_clip:?}"
+                    );
+                    if tab == 1 {
+                        let (warning, clip) = ctx.data(|data| {
+                            data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new(
+                                "workflow-direction-warning",
+                            ))
+                            .unwrap()
+                        });
+                        assert!(
+                            screen.contains_rect(warning)
+                                && clip.contains_rect(warning)
+                                && input.bottom() <= warning.top(),
+                            "replacement warning must remain visible after direction field"
+                        );
+                        console
+                            .create
+                            .crew
+                            .workflow
+                            .controls
+                            .get_mut(&("project:one".into(), "mission:one".into()))
+                            .unwrap()
+                            .tasks
+                            .clear();
+                        assert!(
+                            click_at_size(
+                                &ctx,
+                                &mut console,
+                                &data,
+                                size,
+                                false,
+                                "memory_control",
+                                label
+                            )
+                            .is_empty(),
+                            "a direction requires explicit affected-task selection"
+                        );
+                        assert!(click_at_size(
+                            &ctx,
+                            &mut console,
+                            &data,
+                            size,
+                            false,
+                            "memory_control",
+                            "Affected tasks"
+                        )
+                        .is_empty());
+                        assert!(click_at_size(
+                            &ctx,
+                            &mut console,
+                            &data,
+                            size,
+                            false,
+                            "affected-task",
+                            "task:builder"
+                        )
+                        .is_empty());
+                        assert!(console.create.crew.workflow.controls
+                            [&("project:one".into(), "mission:one".into())]
+                            .tasks
+                            .contains("task:builder"));
+                    }
+                    let rect = ctx.data(|data| {
+                        data.get_temp::<egui::Rect>(egui::Id::new((
+                            "test-action",
+                            "memory_control",
+                            label,
+                        )))
+                        .unwrap()
+                    });
+                    let (clip, _) = ctx.data(|data| {
+                        data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                            "test-action-visibility",
+                            label,
+                        )))
+                        .unwrap()
+                    });
+                    assert!(screen.contains_rect(rect) && clip.contains_rect(rect));
+                    let commands = click_at_size(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        "memory_control",
+                        label,
+                    );
+                    assert_eq!(commands.len(), 1);
+                    assert_eq!(commands[0].payload["projectId"], "project:one");
+                    if tab == 1 {
+                        assert_eq!(commands[0].payload["expectedMissionRevision"], 4);
+                        assert_eq!(
+                            commands[0].payload["affectedTaskIds"],
+                            json!(["task:builder"])
+                        );
+                    } else {
+                        assert_eq!(commands[0].payload["expectedRecipeRevision"], 3);
+                        assert_eq!(commands[0].payload["instruction"], "Owner recipe goal");
+                    }
+                }
             }
         }
+    }
+
+    #[test]
+    fn exact_prepare_success_returns_to_the_selected_mission_and_exposes_explicit_start() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        let mut console = console();
+        let size = egui::vec2(800.0, 560.0);
+        console.create.crew.workflow.read = Some(("project:one".into(), 0));
+        console.create.select_productive_view(1);
+        let prepared = click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            "project_crew_prepare",
+            "Prepare crew",
+        );
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(console.create.productive_view(), 1);
+        data["projectCrewReceipt"] = json!({"commandId":prepared[0].payload["commandId"],"projectId":"project:one","missionId":"mission:one","outcome":"applied"});
+        let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+        assert!(commands
+            .iter()
+            .all(|command| command.action != "project_crew_start"));
+        assert_eq!(console.create.productive_view(), 0);
+        assert!(console.create.crew.panel_open);
+        assert!(!copy.iter().any(|line| line == "Crew plan"));
+        assert!(copy.iter().any(|line| line == "Start crew"));
+        let start = click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            "project_crew_start",
+            "Start crew",
+        );
+        assert_eq!(start.len(), 1);
+        assert_eq!(start[0].payload["missionId"], "mission:one");
+        assert_eq!(start[0].payload["expectedMissionRevision"], 4);
+        for navigated in [false, true] {
+            let mut other = self::console();
+            other.create.crew.workflow.read = Some(("project:one".into(), 0));
+            other.create.select_productive_view(1);
+            let key = other.create.crew_key();
+            other.create.crew.pending = Some(CrewSubmission {
+                command: "prepare:late".into(),
+                key: key.clone(),
+                draft: other.create.draft().clone(),
+                reply: None,
+                plan: plan(),
+            });
+            if navigated {
+                other.create.select_productive_view(2);
+            } else {
+                other.create.draft().goal = "Later unsent goal".into();
+            }
+            data["projectCrewReceipt"] = json!({"commandId":"prepare:late","projectId":"project:one","missionId":"mission:one","outcome":"applied"});
+            other.create.sync(&data);
+            assert_eq!(
+                other.create.productive_view(),
+                if navigated { 2 } else { 1 }
+            );
+            if !navigated {
+                assert_eq!(other.create.draft().goal, "Later unsent goal");
+            }
+        }
+    }
+    #[test]
+    fn saved_completed_plan_exposes_explicit_goal_adoption_before_prepare() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let data = fixture();
+        let mut console = console();
+        console.create.select_productive_view(1);
+        console.create.crew.workflow.read = Some(("project:one".into(), 0));
+        let key = console.create.crew_key();
+        console
+            .create
+            .crew
+            .plans
+            .get_mut(&key)
+            .unwrap()
+            .recommended_for = Some("Saved plan goal".into());
+        console.create.crew.workflow.models.insert(key,ModelPlan{job:json!({"projectId":"project:one","planJobId":"plan:saved","revision":3,"status":"completed","providerId":"codex"}),draft:CreateDraft{title:"Saved plan".into(),goal:"Saved plan goal".into()},reply:None,answers:HashMap::new(),assignments:HashMap::new(),read_revision:Some(3)});
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            assert!(render(&ctx, &mut console, &data, size, false, vec![])
+                .0
+                .is_empty());
+        }
+        assert_eq!(console.create.draft().goal, "Owner goal");
+        let rect = ctx.data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new((
+                "test-action",
+                "memory_control",
+                "Use planned goal",
+            )))
+            .unwrap()
+        });
+        let (clip, _) = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                "test-action-visibility",
+                "Use planned goal",
+            )))
+            .unwrap()
+        });
+        assert!(clip.contains_rect(rect));
+        assert!(click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            "project_crew_prepare",
+            "Prepare crew"
+        )
+        .is_empty());
+        assert!(click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Use planned goal"
+        )
+        .is_empty());
+        assert_eq!(console.create.draft().goal, "Saved plan goal");
+        let commands = click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            "project_crew_prepare",
+            "Prepare crew",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_crew_plan_accept");
+        assert_eq!(commands[0].payload["planJobId"], "plan:saved");
+        assert_eq!(commands[0].payload["expectedPlanRevision"], 3);
     }
 
     #[test]
@@ -2945,6 +3287,11 @@ mod tests {
                         )
                         .1
                         .join("\n");
+                        assert!(copy.contains("Launch deck"));
+                        assert!(
+                            !copy.contains("mission:one"),
+                            "technical identity belongs in Details"
+                        );
                         assert!(copy.contains(if language == "en" {
                             "Unknown"
                         } else {

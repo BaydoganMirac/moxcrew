@@ -196,6 +196,80 @@ fn app_fields(provider: &str) -> (&str, &[(&str, &str)]) {
     }
 }
 
+fn save_connection(
+    ui: &mut Ui,
+    state: &mut StudioState,
+    project: &str,
+    commands: &mut Vec<Command>,
+    primary: bool,
+) {
+    if view_control(
+        ui,
+        "Save connection",
+        valid_input(&state.token, 16_000) && valid_input(&state.label, 80),
+        primary,
+    )
+    .clicked()
+        && commands.is_empty()
+    {
+        let token = std::mem::take(&mut state.token);
+        egui::text_edit::TextEditState::default()
+            .store(ui.ctx(), egui::Id::new("app-access-token"));
+        commands.push(Command::new("project_connection_set",json!({"projectId":project,"providerId":state.connection_provider,"label":state.label,"accessToken":token})));
+    }
+}
+fn connection_fields(
+    ui: &mut Ui,
+    state: &mut StudioState,
+    project: &str,
+    connection: Option<&Value>,
+    commands: &mut Vec<Command>,
+    save_inside: bool,
+) {
+    if save_inside {
+        hint(
+            ui,
+            "Saved app credentials are unverified until an operation succeeds.",
+        );
+        if let Some(connection) = connection {
+            if !text(connection, "label").is_empty() {
+                ui.label(text(connection, "label"));
+            }
+            quiet_action(
+                ui,
+                commands,
+                "Disconnect",
+                "project_connection_remove",
+                connection["connected"] == true,
+                || json!({"projectId":project,"providerId":connection["providerId"]}),
+            );
+        }
+    } else {
+        ui.label(studio::title(t(ui, "Connect account"), 16.0));
+    }
+    field(ui, "Connection label", &mut state.label, 80, false);
+    let token_id = egui::Id::new("app-access-token");
+    ui.label(t(ui, "Access token"));
+    ui.add(
+        egui::TextEdit::singleline(&mut state.token)
+            .id(token_id)
+            .password(true)
+            .desired_width(f32::INFINITY)
+            .char_limit(16_000),
+    );
+    if let Some(mut edit) = egui::text_edit::TextEditState::load(ui.ctx(), token_id) {
+        edit.clear_undoer();
+        edit.store(ui.ctx(), token_id);
+    }
+    hint(
+        ui,
+        "The token stays private on this host. Connecting does not perform a remote operation.",
+    );
+    if save_inside {
+        save_connection(ui, state, project, commands, false);
+    }
+}
+
 impl CreateState {
     pub(crate) fn close_studio(&mut self) {
         self.studio.open = false;
@@ -348,6 +422,7 @@ impl Console {
             ));
         }
         inline_surface(ui, |ui| {
+            let compact = ui.ctx().viewport_rect().height() < 700.0;
             ui.horizontal(|ui| {
                 ui.label(studio::title(t(ui, "Outputs"), 22.0));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -361,7 +436,7 @@ impl Console {
                     );
                 });
             });
-            ui.add_space(8.0);
+            ui.add_space(if compact { 4.0 } else { 8.0 });
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 14.0;
                 for (index, label) in [(0, "Files"), (1, "Resources"), (2, "Tools"), (3, "Apps")] {
@@ -383,7 +458,7 @@ impl Console {
                     }
                 }
             });
-            ui.add_space(16.0);
+            ui.add_space(if compact { 8.0 } else { 16.0 });
             let height = (ui.available_height() - 64.0).max(60.0);
             egui::ScrollArea::vertical()
                 .id_salt(("output-studio-body", &project, self.create.studio.tab))
@@ -806,6 +881,8 @@ impl Console {
                     hint(ui,"Remote outcome is uncertain. Check the connected app before preparing another operation.");
                 }
             }
+        } else if !connected {
+            connection_fields(ui, state, &project, connection, commands, false);
         } else {
             ui.label(studio::title(
                 t(
@@ -842,25 +919,12 @@ impl Console {
                 hint(ui, "Connect this app before previewing an operation.");
             }
         }
-        ui.add_space(20.0);
-        ui.collapsing(t(ui,"Connection settings"),|ui| {
-            hint(ui,"Saved app credentials are unverified until an operation succeeds.");
-            if let Some(connection)=connection {
-                if !text(connection,"label").is_empty(){ui.label(text(connection,"label"));}
-                quiet_action(ui,commands,"Disconnect","project_connection_remove",connected,||json!({"projectId":project,"providerId":connection["providerId"]}));
-            }
-            field(ui,"Connection label",&mut state.label,80,false);
-            let token_id=egui::Id::new("app-access-token");
-            ui.label(t(ui,"Access token"));
-            ui.add(egui::TextEdit::singleline(&mut state.token).id(token_id).password(true).desired_width(f32::INFINITY).char_limit(16_000));
-            if let Some(mut edit)=egui::text_edit::TextEditState::load(ui.ctx(),token_id){edit.clear_undoer();edit.store(ui.ctx(),token_id);}
-            hint(ui,"The token stays private on this host. Connecting does not perform a remote operation.");
-            if view_control(ui,"Save connection",valid_input(&state.token,16_000)&&valid_input(&state.label,80),false).clicked() && commands.is_empty() {
-                let token=std::mem::take(&mut state.token);
-                egui::text_edit::TextEditState::default().store(ui.ctx(),token_id);
-                commands.push(Command::new("project_connection_set",json!({"projectId":project,"providerId":state.connection_provider,"label":state.label,"accessToken":token})));
-            }
-        });
+        if connected {
+            ui.add_space(20.0);
+            ui.collapsing(t(ui, "Connection settings"), |ui| {
+                connection_fields(ui, state, &project, connection, commands, true)
+            });
+        }
     }
     fn studio_app_action(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let project = self.create.project.clone();
@@ -889,6 +953,10 @@ impl Console {
                         && connection["connected"] == true
                 })
             });
+            if !connected {
+                save_connection(ui, state, &project, commands, true);
+                return;
+            }
             let enabled = connected
                 && fields.iter().all(|(key, _)| {
                     state
@@ -942,6 +1010,87 @@ mod tests {
             ..Default::default()
         }
     }
+    #[test]
+    fn disconnected_apps_foreground_private_setup_and_visible_explicit_save_at_minimum_size() {
+        for language in ["en", "tr"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                for provider in ["google_drive", "notion", "google_calendar"] {
+                    let ctx = egui::Context::default();
+                    studio::install(&ctx);
+                    ctx.set_theme(theme);
+                    let mut data = fixture();
+                    data["desktopPreferences"]["language"] = json!(language);
+                    let mut console = console(&data);
+                    console.create.studio.tab = 3;
+                    console.create.studio.connection_project = "project:one".into();
+                    console.create.studio.connection_provider = provider.into();
+                    console.create.studio.label = "Owner connection".into();
+                    console.create.studio.token = "SYNTHETIC-PRIVATE-CANARY".into();
+                    console
+                        .create
+                        .studio
+                        .arguments
+                        .insert("content".into(), "Unsent operation draft".into());
+                    let size = egui::vec2(800.0, 560.0);
+                    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                    for _ in 0..3 {
+                        let (commands, copy) =
+                            render(&ctx, &mut console, &data, size, false, vec![]);
+                        assert!(commands.is_empty());
+                        assert!(copy.iter().any(|line| line
+                            == i18n::tr(Language::from_code(language), "Connect account")
+                                .as_ref()));
+                        assert!(!copy.iter().any(|line| line
+                            == i18n::tr(Language::from_code(language), "Preview operation")
+                                .as_ref()));
+                        assert!(!copy.join("\n").contains("SYNTHETIC-PRIVATE-CANARY"));
+                    }
+                    let rect = ctx.data(|data| {
+                        data.get_temp::<egui::Rect>(egui::Id::new((
+                            "test-action",
+                            "memory_control",
+                            "Save connection",
+                        )))
+                        .unwrap()
+                    });
+                    let (clip, _) = ctx.data(|data| {
+                        data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                            "test-action-visibility",
+                            "Save connection",
+                        )))
+                        .unwrap()
+                    });
+                    assert!(
+                        screen.contains_rect(rect) && clip.contains_rect(rect),
+                        "{language}/{theme:?}/{provider}"
+                    );
+                    let commands = super::super::tests::click_at_size(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        "memory_control",
+                        "Save connection",
+                    );
+                    assert_eq!(commands.len(), 1);
+                    assert_eq!(commands[0].action, "project_connection_set");
+                    assert_eq!(commands[0].payload["projectId"], "project:one");
+                    assert_eq!(commands[0].payload["providerId"], provider);
+                    assert_eq!(
+                        commands[0].payload["accessToken"],
+                        "SYNTHETIC-PRIVATE-CANARY"
+                    );
+                    assert!(console.create.studio.token.is_empty());
+                    assert_eq!(
+                        console.create.studio.arguments["content"],
+                        "Unsent operation draft"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn native_preview_revision_and_export_are_exact_file_hash_and_project_scoped() {
         let ctx = egui::Context::default();

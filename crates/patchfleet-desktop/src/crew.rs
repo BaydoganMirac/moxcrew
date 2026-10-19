@@ -84,7 +84,44 @@ fn role(category: &str) -> &str {
     }
 }
 
+fn role_label(role: &str) -> &str {
+    match role {
+        "research" => "Research",
+        "document" => "Documents",
+        "presentation" => "Presentations",
+        "video" => "Video",
+        "image" => "Images",
+        "audio" => "Audio",
+        "data" => "Data",
+        "web" => "Web",
+        "review" => "Review",
+        _ => "Agent",
+    }
+}
+
 impl CreateState {
+    pub(crate) fn productive_view(&self) -> usize {
+        if self.studio.open {
+            2
+        } else if self.crew.workflow.open {
+            1
+        } else {
+            0
+        }
+    }
+    pub(crate) fn select_productive_view(&mut self, view: usize) {
+        if view != 2 {
+            self.close_studio();
+        } else {
+            self.studio.open = true;
+        }
+        self.crew.workflow.open = view == 1;
+        self.crew.panel_open = false;
+        self.chat.files_open = false;
+        self.chat.details_open = false;
+        self.crew.roster_open = false;
+        self.catalog_open = false;
+    }
     fn crew_key(&self) -> (String, String) {
         (self.project.clone(), self.ability.clone())
     }
@@ -405,10 +442,6 @@ impl Console {
         commands: &mut Vec<Command>,
         shortcut: bool,
     ) {
-        if control(ui, "Mox planner", true).clicked() {
-            self.create.crew.workflow.open = true;
-            self.create.crew.workflow.tab = 0;
-        }
         let goal = self.create.draft().goal.clone();
         let project = array(&snapshot["projectMemory"]["projects"])
             .iter()
@@ -434,6 +467,11 @@ impl Console {
                 draft: self.create.draft().clone(),
             });
             commands.push(command);
+            self.create.select_productive_view(1);
+        }
+        if view_control(ui, "Mox planner", true, false).clicked() {
+            self.create.select_productive_view(1);
+            self.create.crew.workflow.tab = 0;
         }
     }
 
@@ -462,93 +500,142 @@ impl Console {
         }
     }
 
-    fn crew_plan_card(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+    fn crew_prepare_action(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let key = self.create.crew_key();
         let Some(plan) = self.create.crew.plans.get(&key).cloned() else {
             return;
         };
-        ui.add_space(12.0);
-        egui::Frame::new()
-            .fill(colors(ui).surface)
-            .stroke(egui::Stroke::new(1.0, colors(ui).primary))
-            .corner_radius(18)
-            .inner_margin(16)
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(studio::title(t(ui, "Your crew plan"), 20.0));
-                    hint(
-                        ui,
-                        if plan.crew_id.is_some() {
-                            "Saved project crew"
-                        } else if self.create.crew.workflow.models.contains_key(&key) {
-                            "Provider-generated plan"
-                        } else if plan.recommended_for.is_some() {
-                            "Based on bundled guides"
-                        } else {
-                            "Your edited roster"
-                        },
-                    );
-                });
-                ui.label(RichText::new(&plan.name).strong());
-                ui.horizontal_wrapped(|ui| {
-                    for member in &plan.members {
-                        ui.label(RichText::new(text(member, "name")).color(colors(ui).primary));
-                    }
-                });
-                if plan
-                    .recommended_for
-                    .as_ref()
-                    .is_some_and(|goal| goal != &self.create.draft().goal)
-                {
-                    hint(
-                        ui,
-                        "Your goal changed. Plan the crew again before preparing.",
-                    );
-                }
-                ui.horizontal_wrapped(|ui| {
-                    if control(ui, "Edit roster", true).clicked() {
-                        self.create.crew.roster_open = true;
-                        self.create.crew.workflow.open=false;
-                    }
-                    let current_goal=self.create.draft().goal.clone();
-                    let model=self.create.crew.workflow.models.get(&key).cloned();
-                    let payload=self.create.crew_payload(snapshot).filter(|_|model.as_ref().is_none_or(|model|text(&model.job,"status")=="completed" && model.draft.goal==current_goal && model.reply.as_ref()==self.create.chat.replies.get(&key))).map(|mut payload| {
-                        if let Some(model)=&model {
-                            payload["planJobId"]=model.job["planJobId"].clone();
-                            payload["expectedPlanRevision"]=model.job["revision"].clone();
-                            payload["providerAssignments"]=json!(plan.members.iter().enumerate().map(|(index,member)|json!({"memberIndex":index,"providerId":model.assignments.get(text(member,"_uiId")).map(String::as_str).unwrap_or(text(&model.job,"providerId"))})).collect::<Vec<_>>());
-                            for key in ["abilityId","crewId","title","instruction"] {payload.as_object_mut().unwrap().remove(key);}
-                        }
-                        payload
-                    });
-                    let clicked = ui
-                        .add_enabled_ui(
-                            payload.is_some()
-                                && self.create.crew.pending.is_none()
-                                && self.create.pending.is_none(),
-                            |ui| submit(ui, "Prepare crew", "project_crew_prepare"),
-                        )
-                        .inner;
-                    if clicked && commands.is_empty() {
-                        if let Some(payload) = payload {
-                            let command = Command::new(if model.is_some(){"project_crew_plan_accept"}else{"project_crew_prepare"}, payload);
-                            self.create.crew.pending = Some(CrewSubmission {
-                                command: text(&command.payload, "commandId").into(),
-                                key: key.clone(),
-                                draft: self.create.draft().clone(),
-                                reply: self.create.chat.replies.get(&key).cloned(),
-                                plan: plan.clone(),
-                            });
-                            commands.push(command);
-                        }
-                    }
-                });
-                hint(
-                    ui,
-                    "Preparing saves the mission. Agents start only when you choose Start crew.",
+        let current_goal = self.create.draft().goal.clone();
+        let model = self.create.crew.workflow.models.get(&key).cloned();
+        let payload=self.create.crew_payload(snapshot).filter(|_|model.as_ref().is_none_or(|model|text(&model.job,"status")=="completed" && model.draft.goal==current_goal && model.reply.as_ref()==self.create.chat.replies.get(&key))).map(|mut payload| {
+            if let Some(model)=&model {
+                payload["planJobId"]=model.job["planJobId"].clone();
+                payload["expectedPlanRevision"]=model.job["revision"].clone();
+                payload["providerAssignments"]=json!(plan.members.iter().enumerate().map(|(index,member)|json!({"memberIndex":index,"providerId":model.assignments.get(text(member,"_uiId")).map(String::as_str).unwrap_or(text(&model.job,"providerId"))})).collect::<Vec<_>>());
+                for key in ["abilityId","crewId","title","instruction"] {payload.as_object_mut().unwrap().remove(key);}
+            }
+            payload
+        });
+        let clicked = ui
+            .add_enabled_ui(
+                payload.is_some()
+                    && self.create.crew.pending.is_none()
+                    && self.create.pending.is_none(),
+                |ui| submit(ui, "Prepare crew", "project_crew_prepare"),
+            )
+            .inner;
+        if clicked && commands.is_empty() {
+            if let Some(payload) = payload {
+                let command = Command::new(
+                    if model.is_some() {
+                        "project_crew_plan_accept"
+                    } else {
+                        "project_crew_prepare"
+                    },
+                    payload,
                 );
+                self.create.crew.pending = Some(CrewSubmission {
+                    command: text(&command.payload, "commandId").into(),
+                    key: key.clone(),
+                    draft: self.create.draft().clone(),
+                    reply: self.create.chat.replies.get(&key).cloned(),
+                    plan: plan.clone(),
+                });
+                commands.push(command);
+            }
+        }
+    }
+    fn crew_roster_summary(&mut self, ui: &mut Ui, show_title: bool) {
+        let key = self.create.crew_key();
+        let Some(plan) = self.create.crew.plans.get(&key).cloned() else {
+            return;
+        };
+        ui.scope(|ui| {
+            ui.spacing_mut().interact_size.y = 24.0;
+            ui.spacing_mut().button_padding.y = 3.0;
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.add(
+                egui::Label::new(studio::title(
+                    &plan.name,
+                    if show_title { 22.0 } else { 16.0 },
+                ))
+                .wrap(),
+            );
+            hint(
+                ui,
+                if plan.crew_id.is_some() {
+                    "Saved project crew"
+                } else if self.create.crew.workflow.models.contains_key(&key) {
+                    "Provider-generated plan"
+                } else if plan.recommended_for.is_some() {
+                    "Based on bundled guides"
+                } else {
+                    "Your edited roster"
+                },
+            );
+            ui.add_space(12.0);
+            for (index, member) in plan.members.iter().enumerate() {
+                let row = ui.horizontal_top(|ui| {
+                    ui.add_sized(
+                        [28.0, 24.0],
+                        egui::Label::new(
+                            RichText::new(format!("{:02}", index + 1))
+                                .size(11.0)
+                                .color(colors(ui).muted),
+                        ),
+                    );
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new(text(member, "name")).size(16.0).strong());
+                        hint(ui, role_label(text(member, "role")));
+                    });
+                });
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new(("crew-roster-row", index)),
+                        (row.response.rect, ui.clip_rect()),
+                    )
+                });
+                #[cfg(not(test))]
+                let _ = row;
+                ui.add_space(8.0);
+            }
+            ui.collapsing(t(ui, "Agent instructions"), |ui| {
+                for member in &plan.members {
+                    ui.label(RichText::new(text(member, "name")).strong());
+                    ui.add(
+                        egui::Label::new(text(member, "instruction"))
+                            .wrap()
+                            .selectable(true),
+                    );
+                    ui.add_space(8.0);
+                }
             });
-        ui.add_space(12.0);
+        });
+        if plan
+            .recommended_for
+            .as_ref()
+            .is_some_and(|goal| goal != &self.create.draft().goal)
+        {
+            hint(
+                ui,
+                "Your goal changed. Plan the crew again before preparing.",
+            );
+        }
+    }
+    fn crew_plan_card(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        ui.add_space(16.0);
+        self.crew_roster_summary(ui, true);
+        ui.horizontal_wrapped(|ui| {
+            self.crew_prepare_action(ui, snapshot, commands);
+            if view_control(ui, "Edit roster", true, false).clicked() {
+                self.create.crew.roster_open = true;
+            }
+        });
+        hint(
+            ui,
+            "Preparing saves the mission. Agents start only when you choose Start crew.",
+        );
     }
 
     pub(super) fn crew_roster_dialog(&mut self, ui: &mut Ui, snapshot: &Value) {
@@ -1447,102 +1534,134 @@ impl Console {
                 json!({"projectId":key.0,"planJobId":job["planJobId"]}),
             ));
         }
-        card(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(studio::title(t(ui, "Mox planner"), 20.0));
-                status(ui, text(job, "status"));
+        if text(job, "status") == "completed" {
+            ui.collapsing(t(ui, "Planning details"), |ui| {
                 raw_hint(ui, text(job, "providerId"));
-            });
-            hint(
-                ui,
-                "This plan is generated by your selected provider. It does not start the crew.",
-            );
-            if !text(job, "failureReasonCode").is_empty() {
-                hint(ui, text(job, "failureReasonCode"));
-            }
-            if self.create.draft().goal != model.draft.goal
-                && control(ui, "Use planned goal", !model.draft.goal.is_empty()).clicked()
-            {
-                *self.create.draft() = model.draft.clone();
-                if let Some(reply) = &model.reply {
-                    self.create.chat.replies.insert(key.clone(), reply.clone());
-                } else {
-                    self.create.chat.replies.remove(&key);
-                }
-            }
-            let state = self.create.crew.workflow.models.get_mut(&key).unwrap();
-            if text(job, "status") == "needs_input" {
-                for question in array(&job["questions"]) {
-                    field(
-                        ui,
-                        text(question, "question"),
-                        state
-                            .answers
-                            .entry(text(question, "id").into())
-                            .or_default(),
-                        2000,
-                        false,
-                    );
-                }
-                let answers: Vec<_> = array(&job["questions"])
+                ui.add(egui::Label::new(&model.draft.goal).wrap().selectable(true));
+                self.model_use_goal(ui, &key, &model);
+                ui.add_space(8.0);
+                ui.label(RichText::new(t(ui, "Agent providers")).size(13.0).strong());
+                for (index, member) in self
+                    .create
+                    .crew
+                    .plans
+                    .get(&key)
+                    .map(|plan| plan.members.clone())
+                    .unwrap_or_default()
                     .iter()
-                    .filter_map(|question| {
-                        state
-                            .answers
-                            .get(text(question, "id"))
-                            .map(|answer| json!({"id":question["id"],"answer":answer.trim()}))
-                    })
-                    .collect();
-                if control(
-                    ui,
-                    "Send answers & replan",
-                    answers.len() == array(&job["questions"]).len()
-                        && !answers.is_empty()
-                        && answers
-                            .iter()
-                            .all(|answer| valid_input(text(answer, "answer"), 2000)),
-                )
-                .clicked()
+                    .enumerate()
                 {
-                    self.begin_model_plan(snapshot, commands, Some(json!(answers)));
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(text(member, "name"));
+                        provider_picker(
+                            ui,
+                            ("plan-agent-provider", index),
+                            self.create
+                                .crew
+                                .workflow
+                                .models
+                                .get_mut(&key)
+                                .unwrap()
+                                .assignments
+                                .entry(text(member, "_uiId").into())
+                                .or_insert_with(|| text(job, "providerId").into()),
+                        );
+                    });
                 }
-            }
-            if text(job, "status") == "completed" {
-                ui.collapsing(t(ui, "Agent providers"), |ui| {
-                    for (index, member) in self
-                        .create
-                        .crew
-                        .plans
-                        .get(&key)
-                        .map(|plan| plan.members.clone())
-                        .unwrap_or_default()
-                        .iter()
-                        .enumerate()
-                    {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(text(member, "name"));
-                            provider_picker(
-                                ui,
-                                ("plan-agent-provider", index),
-                                self.create
-                                    .crew
-                                    .workflow
-                                    .models
-                                    .get_mut(&key)
-                                    .unwrap()
-                                    .assignments
-                                    .entry(text(member, "_uiId").into())
-                                    .or_insert_with(|| text(job, "providerId").into()),
-                            );
-                        });
-                    }
-                });
-            }
-            ui.horizontal_wrapped(|ui| {
-                action(ui,commands,"Refresh plan","project_crew_plan_read",true,||json!({"projectId":key.0,"planJobId":job["planJobId"]}));
-                action(ui,commands,"Cancel planning","project_crew_plan_cancel",matches!(text(job,"status"),"queued"|"running"),||json!({"projectId":key.0,"planJobId":job["planJobId"],"expectedPlanRevision":job["revision"]}));
+                quiet_action(
+                    ui,
+                    commands,
+                    "Refresh plan",
+                    "project_crew_plan_read",
+                    true,
+                    || json!({"projectId":key.0,"planJobId":job["planJobId"]}),
+                );
             });
+            return;
+        }
+        ui.horizontal_wrapped(|ui| {
+            ui.label(studio::title(
+                t(
+                    ui,
+                    if text(job, "status") == "needs_input" {
+                        "A few details first"
+                    } else {
+                        "Mox planner"
+                    },
+                ),
+                16.0,
+            ));
+            status(ui, text(job, "status"));
         });
+        if !text(job, "failureReasonCode").is_empty() {
+            hint(ui, text(job, "failureReasonCode"));
+        }
+        self.model_use_goal(ui, &key, &model);
+        if text(job, "status") == "needs_input" {
+            let state = self.create.crew.workflow.models.get_mut(&key).unwrap();
+            for question in array(&job["questions"]) {
+                field(
+                    ui,
+                    text(question, "question"),
+                    state
+                        .answers
+                        .entry(text(question, "id").into())
+                        .or_default(),
+                    2000,
+                    false,
+                );
+            }
+            if !self.create.crew.workflow.open {
+                self.model_answer_action(ui, snapshot, commands);
+            }
+        }
+        ui.horizontal_wrapped(|ui| {
+            quiet_action(ui, commands, "Refresh plan", "project_crew_plan_read", true, || json!({"projectId":key.0,"planJobId":job["planJobId"]}));
+            if matches!(text(job, "status"), "queued" | "running") {
+                quiet_action(ui, commands, "Cancel planning", "project_crew_plan_cancel", true, || json!({"projectId":key.0,"planJobId":job["planJobId"],"expectedPlanRevision":job["revision"]}));
+            }
+        });
+    }
+    fn model_use_goal(&mut self, ui: &mut Ui, key: &(String, String), model: &ModelPlan) {
+        if self.create.draft().goal != model.draft.goal
+            && view_control(ui, "Use planned goal", !model.draft.goal.is_empty(), false).clicked()
+        {
+            *self.create.draft() = model.draft.clone();
+            if let Some(reply) = &model.reply {
+                self.create.chat.replies.insert(key.clone(), reply.clone());
+            } else {
+                self.create.chat.replies.remove(key);
+            }
+        }
+    }
+    fn model_answer_action(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        let Some(model) = self
+            .create
+            .crew
+            .workflow
+            .models
+            .get(&self.create.crew_key())
+        else {
+            return;
+        };
+        let questions = array(&model.job["questions"]);
+        let answers: Vec<_> = questions
+            .iter()
+            .filter_map(|question| {
+                model
+                    .answers
+                    .get(text(question, "id"))
+                    .map(|answer| json!({"id":question["id"],"answer":answer.trim()}))
+            })
+            .collect();
+        let enabled = !answers.is_empty()
+            && answers.len() == questions.len()
+            && answers
+                .iter()
+                .all(|answer| valid_input(text(answer, "answer"), 2000));
+        if view_control(ui, "Send answers & replan", enabled, true).clicked() {
+            self.begin_model_plan(snapshot, commands, Some(json!(answers)));
+        }
     }
     pub(super) fn workflow_dialog(
         &mut self,
@@ -1553,15 +1672,14 @@ impl Console {
         if !self.create.crew.workflow.open {
             return;
         }
-        let ready = ui.is_enabled();
         let project = self.create.project.clone();
-        let Some(_project_rev) = output_studio::project_revision(snapshot, &project) else {
+        if output_studio::project_revision(snapshot, &project).is_none() {
             self.create.crew.workflow.open = false;
             return;
-        };
+        }
         let read_key = (project.clone(), revision(&snapshot["projectWorkflows"]));
         if !self.hold_automatic_reads
-            && ready
+            && ui.is_enabled()
             && self.create.crew.workflow.read.as_ref() != Some(&read_key)
             && commands.is_empty()
         {
@@ -1571,105 +1689,187 @@ impl Console {
                 json!({"projectId":project}),
             ));
         }
-        let plan_ready = self.create.crew.workflow.tab == 0
-            && self
-                .create
-                .crew
-                .workflow
-                .models
-                .get(&self.create.crew_key())
-                .is_some_and(|model| text(&model.job, "status") == "completed");
-        let id = egui::Id::new("mission-workflow-controls");
-        let modal=egui::Modal::new(id).area(egui::Modal::default_area(id).fade_in(false)).show(ui.ctx(),|ui| {
-            ui.set_width((ui.ctx().viewport_rect().width()-64.0).clamp(280.0,760.0));
-            ui.add_enabled_ui(ready,|ui| {
-                ui.label(studio::title(t(ui,"Crew workspace"),24.0));
-                ui.horizontal_wrapped(|ui| {
-                    for (index,label) in [(0,"Mox planner"),(1,"Direction & providers"),(2,"Recipes"),(3,"Schedules"),(4,"Activity & usage")] {ui.selectable_value(&mut self.create.crew.workflow.tab,index,t(ui,label));}
+        inline_surface(ui, |ui| {
+            let key = self.create.crew_key();
+            let is_plan = self.create.crew.workflow.tab == 0;
+            let heading = t(ui, if is_plan { "Crew plan" } else { "Crew" }).into_owned();
+            ui.horizontal(|ui| {
+                let title = ui.label(studio::title(heading, 22.0));
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new("workflow-heading"),
+                        (title.rect, ui.clip_rect()),
+                    )
                 });
-                egui::ScrollArea::vertical().id_salt(("mission-workflow-body",&project,self.create.crew.workflow.tab)).auto_shrink([false,false]).stick_to_bottom(plan_ready).max_height((ui.ctx().viewport_rect().height()-220.0).max(120.0)).show(ui,|ui| {
-                    match self.create.crew.workflow.tab {
-                        0=>{
-                            let has_model=self.create.crew.workflow.models.contains_key(&self.create.crew_key());
-                            if has_model{ui.collapsing(t(ui,"Planning request"),|ui|self.workflow_plan_request(ui,snapshot,commands));}else{self.workflow_plan_request(ui,snapshot,commands);}
-                            self.model_plan_card(ui,snapshot,commands);
-                            if self.create.crew.plans.contains_key(&self.create.crew_key()){self.crew_plan_card(ui,snapshot,commands);}
-                            ui.collapsing(t(ui,"Saved plans"),|ui| {
-                                for saved in workflow_values(snapshot,&project,"plans") {
-                                    ui.push_id(text(saved,"planJobId"),|ui| {
-                                        ui.horizontal_wrapped(|ui| {
-                                            ui.label(text(saved,"title"));status(ui,text(saved,"status"));
-                                            if control(ui,"Open plan",true).clicked()&&commands.is_empty(){
-                                                let key=self.create.crew_key();
-                                                self.create.crew.plans.remove(&key);
-                                                self.create.crew.workflow.models.insert(key,ModelPlan{job:saved.clone(),draft:CreateDraft::default(),reply:None,answers:HashMap::new(),assignments:HashMap::new(),read_revision:None});
-                                                commands.push(Command::new("project_crew_plan_read",json!({"projectId":project,"planJobId":saved["planJobId"]})));
-                                            }
-                                        });
-                                    });
-                                }
-                                self.workflow_page_controls(ui,snapshot,commands,"plans");
-                            });
-
-                        },
-                        1=>self.workflow_direction(ui,snapshot,commands),
-                        2=>self.workflow_recipes(ui,snapshot,commands),
-                        3=>self.workflow_schedules(ui,snapshot,commands),
-                        _=>self.workflow_activity(ui,snapshot,commands),
-                    }
-                    let error=&snapshot["projectWorkflowError"];
-                    if text(error,"projectId")==project{hint(ui,text(error,"reasonCode"));}
-                    let receipt=&snapshot["projectWorkflowReceipt"];
-                    if text(receipt,"projectId")==project && !text(receipt,"reasonCode").is_empty(){hint(ui,text(receipt,"reasonCode"));}
-                });
-                ui.add_space(8.0);
-                ui.horizontal_wrapped(|ui| {
-                    action(ui,commands,"Refresh","project_workflows_read",!self.hold_automatic_reads,||json!({"projectId":project}));
-                    if control(ui,"Close",true).clicked(){self.create.crew.workflow.open=false;}
+                #[cfg(not(test))]
+                let _ = title;
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    quiet_action(
+                        ui,
+                        commands,
+                        "Refresh",
+                        "project_workflows_read",
+                        !self.hold_automatic_reads,
+                        || json!({"projectId":project}),
+                    );
                 });
             });
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                for (index, label) in [
+                    (0, "Plan"),
+                    (1, "Direction"),
+                    (2, "Recipes"),
+                    (3, "Schedules"),
+                    (4, "Activity"),
+                ] {
+                    let response = studio::section_nav(
+                        ui,
+                        self.create.crew.workflow.tab == index,
+                        t(ui, label).as_ref(),
+                    );
+                    #[cfg(test)]
+                    ui.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::new(("workflow-view-tab", index)),
+                            (response.rect, ui.clip_rect(), response.id),
+                        )
+                    });
+                    if response.clicked() {
+                        self.create.crew.workflow.tab = index;
+                    }
+                }
+            });
+            ui.add_space(16.0);
+            let footer = self.create.crew.workflow.tab <= 2;
+            let height = (ui.available_height() - if footer { 96.0 } else { 0.0 }).max(60.0);
+            egui::ScrollArea::vertical().id_salt(("mission-workflow-body", &project, self.create.crew.workflow.tab)).auto_shrink([false,false]).max_height(height).show(ui, |ui| {
+                match self.create.crew.workflow.tab {
+                    0 => {
+                        let has_model = self.create.crew.workflow.models.contains_key(&key);
+                        if self.create.crew.plans.contains_key(&key) {
+                            self.crew_roster_summary(ui, false);
+                            self.model_plan_card(ui, snapshot, commands);
+                            ui.collapsing(t(ui,"Planning request"), |ui| {
+                                self.workflow_plan_request(ui,snapshot);
+                                let enabled=valid_input(&self.create.draft().goal,20_000)&&self.create.crew.workflow.request.is_none()&&connect::can_attempt_provider(snapshot,&self.create.crew.workflow.provider);
+                                if view_control(ui,"Generate plan",enabled,false).clicked(){self.begin_model_plan(snapshot,commands,None);}
+                            });
+                        } else if has_model { self.model_plan_card(ui,snapshot,commands); }
+                        else { self.workflow_plan_request(ui,snapshot); }
+                        ui.add_space(12.0);
+                        ui.collapsing(t(ui,"Saved plans"), |ui| {
+                            for saved in workflow_values(snapshot,&project,"plans") {
+                                ui.push_id(text(saved,"planJobId"), |ui| ui.horizontal_wrapped(|ui| {
+                                    ui.label(text(saved,"title")); status(ui,text(saved,"status"));
+                                    if view_control(ui,"Open plan",true,false).clicked() && commands.is_empty() {
+                                        let key=self.create.crew_key(); self.create.crew.plans.remove(&key);
+                                        self.create.crew.workflow.models.insert(key,ModelPlan{job:saved.clone(),draft:CreateDraft::default(),reply:None,answers:HashMap::new(),assignments:HashMap::new(),read_revision:None});
+                                        commands.push(Command::new("project_crew_plan_read",json!({"projectId":project,"planJobId":saved["planJobId"]})));
+                                    }
+                                }));
+                            }
+                            self.workflow_page_controls(ui,snapshot,commands,"plans");
+                        });
+                    },
+                    1=>self.workflow_direction(ui,snapshot,commands), 2=>self.workflow_recipes(ui,snapshot,commands), 3=>self.workflow_schedules(ui,snapshot,commands), _=>self.workflow_activity(ui,snapshot,commands),
+                }
+                let error=&snapshot["projectWorkflowError"];
+                if text(error,"projectId")==project { hint(ui,text(error,"reasonCode")); }
+                let receipt=&snapshot["projectWorkflowReceipt"];
+                if text(receipt,"projectId")==project && !text(receipt,"reasonCode").is_empty() { hint(ui,text(receipt,"reasonCode")); }
+            });
+            if self.create.crew.workflow.tab == 0 {
+                ui.add_space(12.0);
+                ui.horizontal_wrapped(|ui| {
+                    if self.create.crew.plans.contains_key(&key) {
+                        self.crew_prepare_action(ui, snapshot, commands);
+                        if view_control(ui, "Edit roster", true, false).clicked() {
+                            self.create.crew.roster_open = true;
+                        }
+                    } else if self
+                        .create
+                        .crew
+                        .workflow
+                        .models
+                        .get(&key)
+                        .is_some_and(|model| text(&model.job, "status") == "needs_input")
+                    {
+                        self.model_answer_action(ui, snapshot, commands);
+                    } else if !self
+                        .create
+                        .crew
+                        .workflow
+                        .models
+                        .get(&key)
+                        .is_some_and(|model| {
+                            matches!(text(&model.job, "status"), "queued" | "running")
+                        })
+                    {
+                        let enabled = valid_input(&self.create.draft().goal, 20_000)
+                            && self.create.crew.workflow.request.is_none()
+                            && connect::can_attempt_provider(
+                                snapshot,
+                                &self.create.crew.workflow.provider,
+                            );
+                        if view_control(ui, "Generate plan", enabled, true).clicked() {
+                            self.begin_model_plan(snapshot, commands, None);
+                        }
+                    }
+                });
+                let guidance = ui.add(
+                    egui::Label::new(
+                        RichText::new(t(ui, "Prepare now. Start the crew when you’re ready."))
+                            .size(12.0)
+                            .color(colors(ui).muted),
+                    )
+                    .wrap(),
+                );
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new("workflow-footer-guidance"),
+                        (guidance.rect, ui.clip_rect()),
+                    )
+                });
+                #[cfg(not(test))]
+                let _ = guidance;
+            } else if self.create.crew.workflow.tab == 1 {
+                ui.add_space(12.0);
+                self.direction_action(ui, snapshot, commands);
+            } else if self.create.crew.workflow.tab == 2 {
+                ui.add_space(12.0);
+                self.recipe_action(ui, snapshot, commands);
+            }
         });
-        if modal.should_close() {
-            self.create.crew.workflow.open = false;
-        }
     }
-    fn workflow_plan_request(
-        &mut self,
-        ui: &mut Ui,
-        snapshot: &Value,
-        commands: &mut Vec<Command>,
-    ) {
-        hint(ui,"Ask a connected provider to plan this goal, or use the bundled guide planner without inference.");
-        provider_picker(
-            ui,
-            "model-planner-provider",
-            &mut self.create.crew.workflow.provider,
-        );
-        ui.label(t(ui, "Goal"));
-        ui.add(
-            egui::TextEdit::multiline(&mut self.create.draft().goal)
-                .desired_rows(3)
-                .desired_width(f32::INFINITY)
-                .char_limit(20_000),
-        );
+    fn workflow_plan_request(&mut self, ui: &mut Ui, snapshot: &Value) {
+        ui.label(studio::title(t(ui, "Plan your next goal"), 16.0));
+        ui.add_space(8.0);
+        multiline(ui, "Goal", &mut self.create.draft().goal, 20_000, 3);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                RichText::new(t(ui, "Planning provider"))
+                    .size(12.0)
+                    .color(colors(ui).muted),
+            );
+            provider_picker(
+                ui,
+                "model-planner-provider",
+                &mut self.create.crew.workflow.provider,
+            );
+        });
         hint(
             ui,
             "Planning calls the selected provider and can consume your account quota.",
         );
-        let connected =
-            connect::can_attempt_provider(snapshot, &self.create.crew.workflow.provider);
-        if !connected {
+        if !connect::can_attempt_provider(snapshot, &self.create.crew.workflow.provider) {
             hint(ui, "Check the assigned providers before starting.");
-            if control(ui, "Connections", true).clicked() {
+            if view_control(ui, "Connections", true, false).clicked() {
                 self.create.chat.connections_open = true;
-                self.create.crew.workflow.open = false;
             }
-        }
-        let enabled = valid_input(&self.create.draft().goal, 20_000)
-            && self.create.crew.workflow.request.is_none()
-            && connected;
-        if control(ui, "Generate plan", enabled).clicked() {
-            self.begin_model_plan(snapshot, commands, None);
         }
     }
     fn workflow_direction(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -1706,6 +1906,40 @@ impl Console {
                 }
                 state
             });
+        hint(ui,"Choose affected tasks. Direction stops and replaces their unfinished work and descendants; earlier files remain.");
+        for task in array(&mission["tasks"]) {
+            let task_id = text(task, "taskId").to_owned();
+            let mut selected = control_state.tasks.contains(&task_id);
+            let label = if text(task, "title").is_empty() {
+                text(task, "taskId")
+            } else {
+                text(task, "title")
+            };
+            if ui.checkbox(&mut selected, label).changed() {
+                if selected {
+                    control_state.tasks.insert(task_id);
+                } else {
+                    control_state.tasks.remove(&task_id);
+                }
+            }
+        }
+        multiline(
+            ui,
+            "New direction",
+            &mut control_state.instruction,
+            20_000,
+            2,
+        );
+        if !text(&mission["workflow"], "directionStatus").is_empty() {
+            status(ui, text(&mission["workflow"], "directionStatus"));
+        }
+        if let Some(instruction) = mission["workflow"]["currentInstruction"].as_str() {
+            ui.collapsing(t(ui, "Current direction"), |ui| {
+                ui.add(egui::Label::new(instruction).wrap().selectable(true));
+            });
+        }
+        ui.add_space(20.0);
+        ui.collapsing(t(ui,"Providers & limits"), |ui| {
         if let Some(crew) = crews(snapshot)
             .iter()
             .find(|crew| crew["crewId"] == mission["crewId"] && text(crew, "projectId") == project)
@@ -1739,100 +1973,177 @@ impl Console {
             text(&mission, "status") == "prepared" && !assignments.is_empty(),
             || json!({"projectId":project,"missionId":id,"expectedMissionRevision":mission["revision"],"providerAssignments":assignments,"budgets":control_state.budgets}),
         );
-        ui.separator();
-        hint(ui,"Choose affected tasks. Direction stops and replaces their unfinished work and descendants; earlier files remain.");
-        for task in array(&mission["tasks"]) {
-            let task_id = text(task, "taskId").to_owned();
-            let mut selected = control_state.tasks.contains(&task_id);
-            let label = if text(task, "title").is_empty() {
-                text(task, "taskId")
-            } else {
-                text(task, "title")
-            };
-            if ui.checkbox(&mut selected, label).changed() {
-                if selected {
-                    control_state.tasks.insert(task_id);
-                } else {
-                    control_state.tasks.remove(&task_id);
-                }
-            }
-        }
-        multiline(
-            ui,
-            "New direction",
-            &mut control_state.instruction,
-            20_000,
-            2,
+        });
+    }
+    fn direction_action(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        let Some(mission) = self.create.crew_mission(snapshot).or_else(|| {
+            ordered_missions(snapshot, &self.create.project)
+                .into_iter()
+                .next_back()
+        }) else {
+            return;
+        };
+        let key = (
+            self.create.project.clone(),
+            text(mission, "missionId").into(),
         );
-        let mut affected: Vec<_> = control_state.tasks.iter().cloned().collect();
+        let Some(state) = self.create.crew.workflow.controls.get(&key) else {
+            return;
+        };
+        let mut affected: Vec<_> = state.tasks.iter().cloned().collect();
         affected.sort();
-        action(
-            ui,
-            commands,
-            "Apply direction",
-            "project_crew_steer",
-            text(&mission, "status") == "active"
-                && valid_input(&control_state.instruction, 20_000)
-                && !affected.is_empty(),
-            || json!({"projectId":project,"missionId":id,"expectedMissionRevision":mission["revision"],"instruction":control_state.instruction.trim(),"affectedTaskIds":affected}),
-        );
-        if !text(&mission["workflow"], "directionStatus").is_empty() {
-            status(ui, text(&mission["workflow"], "directionStatus"));
-        }
-        if let Some(instruction) = mission["workflow"]["currentInstruction"].as_str() {
-            ui.collapsing(t(ui, "Current direction"), |ui| {
-                ui.add(egui::Label::new(instruction).wrap().selectable(true));
-            });
+        let enabled = text(mission, "status") == "active"
+            && valid_input(&state.instruction, 20_000)
+            && !affected.is_empty();
+        let response = view_control(ui, "Apply direction", enabled, true);
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new(("test-action", "project_crew_steer", "Apply direction")),
+                response.rect,
+            )
+        });
+        if response.clicked() && commands.is_empty() {
+            commands.push(Command::new("project_crew_steer",json!({"projectId":self.create.project,"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"],"instruction":state.instruction.trim(),"affectedTaskIds":affected})));
         }
     }
     fn workflow_recipes(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let project = self.create.project.clone();
-        hint(
-            ui,
-            "Recipes prepare a reusable crew. Starting always remains a separate action.",
-        );
+        let recipes = workflow_values(snapshot, &project, "recipes");
+        let selected = self
+            .create
+            .crew
+            .workflow
+            .recipe
+            .entry(project.clone())
+            .or_default();
+        if selected.is_empty() {
+            if let Some(recipe) = recipes.first() {
+                *selected = text(recipe, "recipeId").into();
+            }
+        }
+        egui::ComboBox::from_id_salt("crew-recipe-picker")
+            .width(ui.available_width().min(440.0))
+            .selected_text(
+                recipes
+                    .iter()
+                    .find(|recipe| text(recipe, "recipeId") == selected)
+                    .map(|recipe| std::borrow::Cow::Borrowed(text(recipe, "name")))
+                    .unwrap_or_else(|| t(ui, "Choose recipe")),
+            )
+            .show_ui(ui, |ui| {
+                for recipe in &recipes {
+                    ui.selectable_value(
+                        selected,
+                        text(recipe, "recipeId").into(),
+                        text(recipe, "name"),
+                    );
+                }
+            });
+        if let Some(recipe) = recipes
+            .iter()
+            .find(|recipe| text(recipe, "recipeId") == selected)
+        {
+            ui.add_space(16.0);
+            ui.label(studio::title(text(recipe, "name"), 16.0));
+            ui.label(text(recipe, "description"));
+            ui.add_space(12.0);
+            multiline(
+                ui,
+                "New goal (optional)",
+                self.create
+                    .crew
+                    .workflow
+                    .recipe_goal
+                    .entry((project.clone(), text(recipe, "recipeId").into()))
+                    .or_default(),
+                20_000,
+                2,
+            );
+            ui.collapsing(t(ui, "Roster"), |ui| {
+                for member in array(&recipe["members"]) {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(text(member, "name"));
+                        hint(ui, role_label(text(member, "role")));
+                    });
+                }
+                for (key, label) in [
+                    ("deliverables", "Deliverables"),
+                    ("toolRequirements", "Required tools"),
+                ] {
+                    if !array(&recipe[key]).is_empty() {
+                        ui.label(RichText::new(t(ui, label)).strong());
+                        for value in array(&recipe[key]) {
+                            if let Some(value) = value.as_str() {
+                                ui.label(value);
+                            } else {
+                                ui.label(value.to_string());
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        ui.add_space(12.0);
+        self.workflow_page_controls(ui, snapshot, commands, "recipes");
         if let Some(mission) = self.create.crew_mission(snapshot).cloned().or_else(|| {
             ordered_missions(snapshot, &project)
                 .into_iter()
                 .next_back()
                 .cloned()
         }) {
-            let state = self
-                .create
-                .crew
-                .workflow
-                .controls
-                .entry((project.clone(), text(&mission, "missionId").into()))
-                .or_default();
-            field(ui, "Recipe name", &mut state.recipe_name, 80, false);
-            action(
-                ui,
-                commands,
-                "Save mission as recipe",
-                "project_recipe_save",
-                valid_input(&state.recipe_name, 80),
-                || json!({"projectId":project,"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"],"name":state.recipe_name.trim()}),
-            );
+            ui.collapsing(t(ui,"Save current crew as recipe"),|ui| {
+                let state=self.create.crew.workflow.controls.entry((project.clone(),text(&mission,"missionId").into())).or_default();
+                field(ui,"Recipe name",&mut state.recipe_name,80,false);
+                action(ui,commands,"Save mission as recipe","project_recipe_save",valid_input(&state.recipe_name,80),||json!({"projectId":project,"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"],"name":state.recipe_name.trim()}));
+            });
         }
-        for recipe in workflow_values(snapshot, &project, "recipes") {
-            ui.push_id(text(recipe,"recipeId"),|ui|card(ui,|ui| {
-                ui.label(studio::title(text(recipe,"name"),18.0));ui.label(text(recipe,"description"));
-                ui.collapsing(t(ui,"Roster"),|ui|{
-                    for member in array(&recipe["members"]){ui.label(text(member,"name"));hint(ui,text(member,"role"));}
-                    for (key,label) in [("deliverables","Deliverables"),("toolRequirements","Required tools")] {
-                        if !array(&recipe[key]).is_empty(){ui.label(RichText::new(t(ui,label)).strong());for value in array(&recipe[key]){if let Some(value)=value.as_str(){ui.label(value);}else{ui.label(value.to_string());}}}
-                    }
-                });
-                let key=(project.clone(),text(recipe,"recipeId").into());
-                let goal=self.create.crew.workflow.recipe_goal.entry(key).or_default();
-                multiline(ui,"New goal (optional)",goal,20_000,2);
-                let mut payload=json!({"projectId":project,"expectedProjectRevision":output_studio::project_revision(snapshot,&project),"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"]});
-                if !goal.trim().is_empty(){payload["instruction"]=json!(goal.trim());}
-                action(ui,commands,"Prepare recipe","project_recipe_run",revision(recipe)>0,||payload);
-                if control(ui,"Schedule recipe",revision(recipe)>0).clicked(){self.create.crew.workflow.recipe.insert(project.clone(),text(recipe,"recipeId").into());self.create.crew.workflow.tab=3;}
-            }));
+    }
+    fn recipe_action(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        let project = self.create.project.clone();
+        let Some(recipe) = workflow_values(snapshot, &project, "recipes")
+            .into_iter()
+            .find(|recipe| {
+                Some(text(recipe, "recipeId"))
+                    == self
+                        .create
+                        .crew
+                        .workflow
+                        .recipe
+                        .get(&project)
+                        .map(String::as_str)
+            })
+        else {
+            return;
+        };
+        let goal = self
+            .create
+            .crew
+            .workflow
+            .recipe_goal
+            .get(&(project.clone(), text(recipe, "recipeId").into()))
+            .map(String::as_str)
+            .unwrap_or("");
+        let mut payload = json!({"projectId":project,"expectedProjectRevision":output_studio::project_revision(snapshot,&project),"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"]});
+        if !goal.trim().is_empty() {
+            payload["instruction"] = json!(goal.trim());
         }
-        self.workflow_page_controls(ui, snapshot, commands, "recipes");
+        ui.horizontal_wrapped(|ui| {
+            let response = view_control(ui, "Prepare recipe", revision(recipe) > 0, true);
+            #[cfg(test)]
+            ui.data_mut(|data| {
+                data.insert_temp(
+                    egui::Id::new(("test-action", "project_recipe_run", "Prepare recipe")),
+                    response.rect,
+                )
+            });
+            if response.clicked() && commands.is_empty() {
+                commands.push(Command::new("project_recipe_run", payload));
+            }
+            if view_control(ui, "Schedule recipe", revision(recipe) > 0, false).clicked() {
+                self.create.crew.workflow.tab = 3;
+            }
+        });
     }
     fn workflow_page_controls(
         &self,
@@ -2117,6 +2428,141 @@ mod tests {
     }
 
     #[test]
+    fn teams_inline_plan_keeps_prepare_and_return_visible_at_minimum_size() {
+        for language in ["en", "tr"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"]["language"] = json!(language);
+                let mut console = console();
+                console.tab = Tab::Teams;
+                console.create.crew.workflow.read = Some(("project:one".into(), 0));
+                console.create.select_productive_view(1);
+                let size = egui::vec2(800.0, 560.0);
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                for _ in 0..3 {
+                    let commands = render(&ctx, &mut console, &data, size, false, vec![]).0;
+                    assert!(commands.is_empty(), "{commands:?}");
+                }
+                let (enabled, rect, clip) = ctx.data(|data| {
+                    data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                        "test-action-state",
+                        "project_crew_prepare",
+                        "Prepare crew",
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    enabled && screen.contains_rect(rect) && clip.contains_rect(rect),
+                    "{language}/{theme:?} {rect:?}/{clip:?}"
+                );
+                let commands = click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    size,
+                    false,
+                    "project_crew_prepare",
+                    "Prepare crew",
+                );
+                assert_eq!(commands.len(), 1);
+                assert_eq!(commands[0].payload["projectId"], "project:one");
+                assert!(click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    size,
+                    false,
+                    "memory_control",
+                    "Back to crews"
+                )
+                .is_empty());
+                assert_eq!(console.create.productive_view(), 0);
+                assert!(console.tab == Tab::Teams);
+                assert_eq!(console.create.draft().goal, "Owner goal");
+                assert!(console
+                    .create
+                    .crew
+                    .plans
+                    .contains_key(&console.create.crew_key()));
+            }
+        }
+    }
+    #[test]
+    fn direction_and_recipe_have_one_visible_frozen_primary_action_at_minimum_size() {
+        for tab in [1, 2] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut data = fixture();
+            data["projectCrews"]["missions"][0]["status"] = json!("active");
+            data["projectWorkflows"] = json!({"revision":7,"recipes":[{"recipeId":"recipe:one","projectId":null,"revision":3,"name":"Brief recipe","description":"Prepare reviewed files","members":plan().members,"settings":plan().settings}]});
+            let mut console = console();
+            console.create.crew.workflow.read = Some(("project:one".into(), 7));
+            console.create.select_productive_view(1);
+            console.create.crew.workflow.tab = tab;
+            console.create.crew.workflow.controls.insert(
+                ("project:one".into(), "mission:one".into()),
+                MissionControl {
+                    instruction: "Use the new audience".into(),
+                    tasks: HashSet::from(["task:builder".into()]),
+                    ..Default::default()
+                },
+            );
+            console.create.crew.workflow.recipe_goal.insert(
+                ("project:one".into(), "recipe:one".into()),
+                "Owner recipe goal".into(),
+            );
+            let size = egui::vec2(800.0, 560.0);
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let label = if tab == 1 {
+                "Apply direction"
+            } else {
+                "Prepare recipe"
+            };
+            for _ in 0..3 {
+                let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+                assert!(commands.is_empty());
+                assert_eq!(copy.iter().filter(|line| line.as_str() == label).count(), 1);
+            }
+            let rect = ctx.data(|data| {
+                data.get_temp::<egui::Rect>(egui::Id::new(("test-action", "memory_control", label)))
+                    .unwrap()
+            });
+            let (clip, _) = ctx.data(|data| {
+                data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                    "test-action-visibility",
+                    label,
+                )))
+                .unwrap()
+            });
+            assert!(screen.contains_rect(rect) && clip.contains_rect(rect));
+            let commands = click_at_size(
+                &ctx,
+                &mut console,
+                &data,
+                size,
+                false,
+                "memory_control",
+                label,
+            );
+            assert_eq!(commands.len(), 1);
+            assert_eq!(commands[0].payload["projectId"], "project:one");
+            if tab == 1 {
+                assert_eq!(commands[0].payload["expectedMissionRevision"], 4);
+                assert_eq!(
+                    commands[0].payload["affectedTaskIds"],
+                    json!(["task:builder"])
+                );
+            } else {
+                assert_eq!(commands[0].payload["expectedRecipeRevision"], 3);
+                assert_eq!(commands[0].payload["instruction"], "Owner recipe goal");
+            }
+        }
+    }
+
+    #[test]
     fn model_planning_acceptance_preserves_async_scope_answers_and_manual_member_providers() {
         let mut data = fixture();
         let ctx = egui::Context::default();
@@ -2322,10 +2768,60 @@ mod tests {
                     if needs_input {
                         console.create.crew.plans.clear();
                     }
+                    if !needs_input {
+                        let key = console.create.crew_key();
+                        let plan = console.create.crew.plans.get_mut(&key).unwrap();
+                        plan.name="Research the audience and prepare a launch presentation for a global community".into();
+                        plan.members.push(json!({"name":"Final reviewer","role":"review","abilityId":"P1","instruction":"Review the deliverable."}));
+                    }
                     for _ in 0..4 {
                         assert!(render(&ctx, &mut console, &data, size, false, vec![])
                             .0
                             .is_empty());
+                    }
+                    let (guidance, clip) = ctx.data(|data| {
+                        data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new(
+                            "workflow-footer-guidance",
+                        ))
+                        .unwrap()
+                    });
+                    assert!(
+                        screen.contains_rect(guidance) && clip.contains_rect(guidance),
+                        "footer hint clipped {language}/{theme:?} {guidance:?}/{clip:?}"
+                    );
+                    let (heading, heading_clip) = ctx.data(|data| {
+                        data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new("workflow-heading"))
+                            .unwrap()
+                    });
+                    let refresh = ctx.data(|data| {
+                        data.get_temp::<egui::Rect>(egui::Id::new((
+                            "test-action",
+                            "project_workflows_read",
+                            "Refresh",
+                        )))
+                        .unwrap()
+                    });
+                    assert!(
+                        screen.contains_rect(heading)
+                            && heading_clip.contains_rect(heading)
+                            && !heading.intersects(refresh)
+                    );
+                    if !needs_input {
+                        let (row, clip) = ctx.data(|data| {
+                            data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new((
+                                "crew-roster-row",
+                                2usize,
+                            )))
+                            .unwrap()
+                        });
+                        assert!(
+                            screen.contains_rect(row) && clip.contains_rect(row),
+                            "third role clipped: {language}/{theme:?} {row:?}/{clip:?}"
+                        );
+                    }
+                    if !needs_input {
+                        let copy = render(&ctx, &mut console, &data, size, false, vec![]).1;
+                        assert!(!copy.iter().any(|line|line=="Generate plan"||line=="Mox planner"||line=="completed"),"completed plan must present one roster and next action, not duplicate planner cards");
                     }
                     let (action_name, label) = if needs_input {
                         ("memory_control", "Send answers & replan")
@@ -2384,7 +2880,7 @@ mod tests {
     }
 
     #[test]
-    fn workflow_schedules_usage_and_minimum_modal_are_explicit_truthful_and_accessible() {
+    fn inline_workflow_navigation_schedules_and_usage_are_explicit_and_accessible() {
         for language in ["en", "tr"] {
             for theme in [egui::Theme::Light, egui::Theme::Dark] {
                 for tab in 0..5 {
@@ -2405,18 +2901,11 @@ mod tests {
                             .0
                             .is_empty());
                     }
-                    let rect = ctx.data(|data| {
-                        data.get_temp::<egui::Rect>(egui::Id::new((
-                            "test-action",
-                            "memory_control",
-                            "Close",
-                        )))
-                        .unwrap()
-                    });
-                    let (clip, _) = ctx.data(|data| {
-                        data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
-                            "test-action-visibility",
-                            "Close",
+                    let next = (tab + 1) % 5;
+                    let (rect, clip, id) = ctx.data(|data| {
+                        data.get_temp::<(egui::Rect, egui::Rect, egui::Id)>(egui::Id::new((
+                            "workflow-view-tab",
+                            next,
                         )))
                         .unwrap()
                     });
@@ -2424,6 +2913,27 @@ mod tests {
                         screen.contains_rect(rect) && clip.contains_rect(rect),
                         "{language}/{theme:?}/{tab} {rect:?} {clip:?}"
                     );
+                    ctx.memory_mut(|memory| memory.request_focus(id));
+                    let (commands, copy) = render(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        vec![egui::Event::Key {
+                            key: egui::Key::Enter,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::default(),
+                        }],
+                    );
+                    assert!(commands.is_empty());
+                    assert_eq!(console.create.crew.workflow.tab, next);
+                    assert!(!copy
+                        .iter()
+                        .any(|line| line == "Crew workspace" || line == "Close"));
+                    console.create.crew.workflow.tab = tab;
                     if tab == 4 {
                         let copy = render(
                             &ctx,

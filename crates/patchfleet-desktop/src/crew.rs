@@ -351,6 +351,7 @@ impl Console {
                     | "productive-apps"
                     | "productive-app-preview"
                     | "productive-tools"
+                    | "productive-delivery"
             )
         {
             self.create.studio.open = true;
@@ -365,6 +366,9 @@ impl Console {
                 output_studio::project_revision(snapshot, &project).unwrap_or(0),
             ));
             self.studio_select_first(snapshot);
+            if scene == "productive-delivery" {
+                self.delivery_smoke(snapshot);
+            }
             if scene == "productive-app-preview" {
                 self.studio_prepare_smoke(snapshot);
             }

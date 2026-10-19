@@ -38,7 +38,8 @@ fn productive_key(action: &str) -> Option<&'static str> {
         | "project_recipe_run"
         | "project_schedule_save"
         | "project_schedule_set_enabled" => "projectWorkflowReceipt",
-        "project_artifact_revise"
+        "project_delivery_export"
+        | "project_artifact_revise"
         | "project_resource_import"
         | "project_resource_remove"
         | "project_tool_configure"
@@ -97,6 +98,7 @@ enum Message {
     Outcome(Command, Result<Value, String>, Result<Value, String>),
     Folder(folder::Target, Option<folder::Selection>),
     CreateExport(crate::ui::CreateExportRequest, Option<PathBuf>),
+    DeliveryExport(crate::ui::DeliveryExportRequest, Option<PathBuf>),
     StudioPath(crate::ui::StudioPathRequest, Option<PathBuf>),
     Account(u64, Command, Value, Result<Value, String>),
     Closed,
@@ -774,6 +776,29 @@ impl Bridge {
                         if let Some(command) = crate::ui::Console::create_export_command(
                             request,
                             selection.and_then(|p| p.to_str().map(str::to_owned)),
+                        ) {
+                            self.submit(command);
+                        }
+                    }
+                }
+                Message::DeliveryExport(request, selection) => {
+                    self.picking_folder = false;
+                    self.picker = None;
+                    if !self.closing {
+                        let current_epoch = self
+                            .snapshot
+                            .as_ref()
+                            .map(|snapshot| &snapshot["hostEpoch"])
+                            .unwrap_or(&Value::Null);
+                        if request.host_epoch != *current_epoch && selection.is_some() {
+                            self.feedback = Some(Notice::error(
+                                "project_delivery_export",
+                                "PROJECT_DELIVERY_HOST_CHANGED",
+                            ));
+                        } else if let Some(command) = crate::ui::Console::delivery_export_command(
+                            request,
+                            selection.and_then(|path| path.to_str().map(str::to_owned)),
+                            current_epoch,
                         ) {
                             self.submit(command);
                         }
@@ -1563,6 +1588,29 @@ impl Bridge {
         let output = self.output.clone();
         self.picker = Some(self.runtime.spawn(async move {
             notify(&ctx, &output, Message::CreateExport(request, choice.await)).await;
+        }));
+    }
+
+    pub fn choose_delivery_export(
+        &mut self,
+        ctx: egui::Context,
+        request: crate::ui::DeliveryExportRequest,
+        choice: impl std::future::Future<Output = Option<PathBuf>> + Send + 'static,
+    ) {
+        if self.busy || self.closing || self.picking_folder || self.error.is_some() {
+            return;
+        }
+        self.dismiss_feedback();
+        self.picking_folder = true;
+        ctx.request_repaint();
+        let output = self.output.clone();
+        self.picker = Some(self.runtime.spawn(async move {
+            notify(
+                &ctx,
+                &output,
+                Message::DeliveryExport(request, choice.await),
+            )
+            .await;
         }));
     }
 

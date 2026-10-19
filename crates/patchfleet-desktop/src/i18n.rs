@@ -52,6 +52,22 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
     let translated = match text {
+        "Delivery package" => "Teslim paketi",
+        "Create package" => "Paket oluştur",
+        "Export package" => "Paketi dışa aktar",
+        "Search outputs…" => "Çıktılarda ara…",
+        "All files" => "Tüm dosyalar",
+        "Other files" => "Diğer dosyalar",
+        "No matching outputs." => "Eşleşen çıktı yok.",
+        "Select up to 32 files, 64 MiB total. The ZIP includes a source and version manifest." => "En fazla 32 dosya, toplam 64 MiB seçebilirsin. ZIP, kaynak ve sürüm listesini de içerir.",
+        "Review selection ({0})" => "Seçilenleri incele ({0})",
+        "Changed or unavailable" => "Değişmiş veya mevcut değil",
+        "Remove from package" => "Paketten çıkar",
+        "Select shown" => "Görünenleri seç",
+        "Clear selection" => "Seçimi temizle",
+        "{0} files selected" => "{0} dosya seçildi",
+        "Review changed files or package limits." => "Değişen dosyaları veya paket sınırlarını kontrol et.",
+        "Back to files" => "Dosyalara dön",
         "End time" => "Bitiş zamanı",
         "Start time" => "Başlangıç zamanı",
         "Size (bytes)" => "Boyut (bayt)",
@@ -840,6 +856,11 @@ pub fn format(language: Language, key: &str, args: &[&str]) -> String {
 
 fn reason(code: &str) -> Option<(&'static str, &'static str)> {
     Some(match code {
+        "PROJECT_DELIVERY_EXPORTED" => ("Delivery ZIP exported with its source and version manifest.","Teslim ZIP'i kaynak ve sürüm listesiyle dışa aktarıldı."),
+        "PROJECT_DELIVERY_DUPLICATE" => ("The package contains the same output more than once. Review the selection.","Paket aynı çıktıyı birden fazla kez içeriyor. Seçimi kontrol et."),
+        "PROJECT_DELIVERY_LIMIT_EXCEEDED" => ("Choose up to 32 files, at most 25 MiB each and 64 MiB total.","En fazla 32 dosya seç: dosya başına 25 MiB, toplam 64 MiB."),
+        "PROJECT_DELIVERY_INVALID" => ("The package selection is invalid. Refresh and select the current output versions.","Paket seçimi geçersiz. Yenileyip çıktıların güncel sürümlerini seç."),
+        "PROJECT_DELIVERY_HOST_CHANGED" => ("The local session changed while the save dialog was open. Review the outputs and export again.","Kaydetme penceresi açıkken yerel oturum değişti. Çıktıları kontrol edip yeniden dışa aktar."),
         "WAITING_FOR_DEPENDENCIES" => ("Waiting for earlier tasks to finish.","Önceki işlerin bitmesi bekleniyor."),
         "PRODUCTION_TOOL_AVAILABLE" => ("Installed tool passed its local version check.","Kurulu araç yerel sürüm kontrolünü geçti."),
         "PRODUCTION_TOOL_SETUP_REQUIRED" => ("Choose a compatible installed executable or open the official setup guide.","Uyumlu, kurulu bir program seç veya resmi kurulum rehberini aç."),

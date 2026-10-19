@@ -1,6 +1,6 @@
 # Task0045: Native task hierarchy
 
-Status: Owner-requested, implementing
+Status: Complete; independently reviewed and locally verified
 
 Updated: 2026-10-19
 
@@ -38,3 +38,12 @@ primary actions, preservation of draft/scope/token behavior, narrow layout and
 explicit approval. Run the affected desktop suite, formatting and strict Clippy;
 core runtime remains unchanged. Inspect real native captures before declaring the
 visual result complete. Build a separate feature-off macOS development package.
+
+## Completion
+
+The native implementation, three independent review corrections, 158 passing
+all-feature desktop tests, strict workspace Clippy/formatting, 52 final captures
+and a verified feature-off macOS development package are recorded in the
+[hierarchy state](../state/native-task-hierarchy.md). Core schemas and Cloud
+contracts remain unchanged. Public release and other-platform verification are
+outside this UI correction.

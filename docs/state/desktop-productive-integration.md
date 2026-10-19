@@ -24,14 +24,16 @@ create/enable action and disclose host-awake execution. Handoffs, reviewer
 reported checks, real starts/elapsed time and nullable usage measurements are
 read from scoped records. Missing token/cost measurements remain unknown.
 
-Output Studio opens from Chat, without another primary navigation route. Its
+Task0045 replaces the large productive overlays with Project Chat / Crew /
+Outputs views inside the native shell. See the [hierarchy state](native-task-hierarchy.md)
+for current visual evidence and package validation. Output Studio's
 artifact/version picker binds previews, selected-section revisions and export to
 one Project, work ID, path and SHA-256. A revision prepares a new task; originals
 remain intact. Office pages are text outlines, media is metadata/thumbnail, and
 unsupported formats keep export available. PNG headers/dimensions are bounded
 before native decoding.
 
-Outputs, Resources, Tools and Apps use four internal tabs so connection setup is
+Files, Resources, Tools and Apps use four internal tabs so connection setup is
 reachable without traversing tool cards. Resources use a frozen native file-picker request. Tool executable selection is
 explicit and labelled host-global, including optional PDF text support. App
 credentials use a private password widget with no retained undo history. Drive
@@ -43,7 +45,8 @@ remote write is visible and has no automatic retry.
 
 Bridge pages match the original command, Project and target identity; newer
 requests reject older responses. Project switches/removal and Host epoch changes
-clear productive overlays. Unsent owner text remains separate from transient
+clear productive scopes. Ordinary view changes preserve scoped prepared actions
+and pending receipts; credential input still clears. Unsent owner text remains separate from transient
 plan, file and credential scopes. Async preparation clears only the exact frozen
 goal, roster and prior-file selection acknowledged by a real mission.
 
@@ -91,3 +94,8 @@ the prepared action identity and explicit approval are unchanged. Usage waiting
 reasons now read the actual `{taskId, reasonCode}` bottleneck shape. The final
 all-feature desktop suite passes 151/151, including seven Output Studio tests,
 minimum-window approval controls and actual-object bottleneck rendering.
+
+Task0045 supersedes this milestone's large overlay layout with inline Project
+views. Its final all-feature desktop suite passes 158/158; 52 current native
+captures and the separate development package are documented in
+[native task hierarchy](native-task-hierarchy.md).

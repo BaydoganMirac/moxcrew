@@ -6,6 +6,10 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
+#[path = "create.rs"]
+mod create;
+pub use create::CreateExportRequest;
+
 macro_rules! localized_format {
     ($ui:expr,$key:literal,$($value:expr),+ $(,)?) => {
         tf($ui,$key,&[$(&$value.to_string()),+])
@@ -14,6 +18,7 @@ macro_rules! localized_format {
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 enum Tab {
+    Create,
     #[default]
     Projects,
     Memory,
@@ -26,7 +31,8 @@ enum Tab {
 }
 impl Tab {
     #[cfg(test)]
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
+        Self::Create,
         Self::Projects,
         Self::Memory,
         Self::Decisions,
@@ -38,6 +44,7 @@ impl Tab {
     ];
     fn name(self) -> &'static str {
         match self {
+            Self::Create => "Create",
             Self::Projects => "Projects",
             Self::Memory => "Memory",
             Self::Decisions => "Decisions",
@@ -50,13 +57,14 @@ impl Tab {
     }
     fn group(self) -> &'static str {
         match self {
-            Self::Projects | Self::Work | Self::Teams => "WORKSPACE",
+            Self::Create | Self::Projects | Self::Work | Self::Teams => "YOUR WORK",
             Self::Memory | Self::Decisions => "KNOWLEDGE",
             Self::Agents | Self::Providers | Self::Cloud => "SYSTEM",
         }
     }
     fn summary(self) -> &'static str {
         match self {
+            Self::Create => "Turn an idea into project work. Review what your agent creates.",
             Self::Projects => "Your projects, local folders and shared memory.",
             Self::Memory => "Keep project context, sources and decision drafts together.",
             Self::Decisions => "Sourced local decisions. Acceptance stays in your hands.",
@@ -126,10 +134,7 @@ struct QuickStart {
 impl QuickStart {
     fn sync(&mut self, snapshot: &Value) {
         let projects = array(&snapshot["projectMemory"]["projects"]);
-        if !self.initialized {
-            self.initialized = true;
-            self.open = projects.is_empty();
-        }
+        self.initialized = true;
         if self.project.is_empty() && projects.len() == 1 {
             self.project = text(&projects[0], "projectId").to_owned();
         }
@@ -719,6 +724,7 @@ impl ExtractionPanel {
 #[derive(Default)]
 pub struct Console {
     tab: Tab,
+    create: create::CreateState,
     quick_start: QuickStart,
     navigation_tab: Option<Tab>,
     new_project_name: String,
@@ -775,6 +781,7 @@ impl Console {
     #[cfg(feature = "ui-smoke")]
     pub fn studio_smoke(&mut self, scene: &str, snapshot: &Value) {
         self.tab = match scene {
+            "studio-create" => Tab::Create,
             "studio-memory" => Tab::Memory,
             "studio-work" => Tab::Work,
             "studio-teams" => Tab::Teams,
@@ -909,7 +916,23 @@ impl Console {
         notice: Option<&Notice>,
         can_retry: bool,
     ) -> Vec<Command> {
+        if !self.quick_start.initialized
+            && self.navigation_tab.is_none()
+            && self.tab == Tab::Projects
+            && !self.quick_start.open
+            && array(&snapshot["projectMemory"]["projects"]).is_empty()
+            && items(&snapshot["workspaces"]).is_empty()
+            && items(&snapshot["work"]).is_empty()
+            && items(&snapshot["teams"]).is_empty()
+            && self.work.is_empty()
+            && self.new_project_name.is_empty()
+            && !self.new_project_open
+            && !self.registration_open
+        {
+            self.tab = Tab::Create;
+        }
         self.quick_start.sync(snapshot);
+        self.create.sync(snapshot);
         self.open_login_browser(ui.ctx(), snapshot);
         if let Some(project) = &self.registration_project {
             if let Some(workspace) = items(&snapshot["workspaces"])
@@ -985,7 +1008,10 @@ impl Console {
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         for (group, tabs) in [
-                            ("WORKSPACE", &[Tab::Projects, Tab::Work, Tab::Teams][..]),
+                            (
+                                "YOUR WORK",
+                                &[Tab::Create, Tab::Projects, Tab::Work, Tab::Teams][..],
+                            ),
                             ("KNOWLEDGE", &[Tab::Memory, Tab::Decisions][..]),
                             ("SYSTEM", &[Tab::Agents, Tab::Providers, Tab::Cloud][..]),
                         ] {
@@ -1117,62 +1143,66 @@ impl Console {
                         }
                     });
                 });
-                ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
-                    6.0
-                } else {
-                    18.0
-                });
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(studio::title(
-                        t(ui, self.tab.name()),
-                        if ui.ctx().viewport_rect().height() < 700.0 {
-                            25.0
-                        } else {
-                            30.0
-                        },
-                    ));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if self.tab == Tab::Projects {
-                            if control(ui, "Quick start", !busy).clicked() {
-                                self.quick_start.open = true;
-                            }
-                            if !array(&snapshot["projectMemory"]["projects"]).is_empty()
-                                && control(ui, "New project", !busy).clicked()
-                            {
-                                self.new_project_open = true;
-                                self.form_error = None;
-                            }
-                            if control(ui, "Add folder", !busy).clicked() {
-                                self.registration_project = None;
-                                self.folder_request = Some(folder::Target::Registration);
-                                self.form_error = None;
-                            }
-                        }
-                        if matches!(self.tab, Tab::Providers | Tab::Work | Tab::Teams) {
-                            action(
-                                ui,
-                                &mut commands,
-                                "Refresh providers",
-                                "observe",
-                                !busy,
-                                || json!({}),
-                            );
-                        }
+                if self.tab != Tab::Create {
+                    ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
+                        6.0
+                    } else {
+                        18.0
                     });
-                });
-                ui.add_space(3.0);
-                ui.label(
-                    RichText::new(i18n::tr_for_snapshot(snapshot, self.tab.summary()))
-                        .size(12.0)
-                        .color(colors(ui).muted),
-                );
-                ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
-                    8.0
-                } else {
-                    18.0
-                });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(studio::title(
+                            t(ui, self.tab.name()),
+                            if ui.ctx().viewport_rect().height() < 700.0 {
+                                25.0
+                            } else {
+                                30.0
+                            },
+                        ));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if self.tab == Tab::Projects {
+                                if control(ui, "Quick start", !busy).clicked() {
+                                    self.quick_start.open = true;
+                                }
+                                if !array(&snapshot["projectMemory"]["projects"]).is_empty()
+                                    && control(ui, "New project", !busy).clicked()
+                                {
+                                    self.new_project_open = true;
+                                    self.form_error = None;
+                                }
+                                if control(ui, "Add folder", !busy).clicked() {
+                                    self.registration_project = None;
+                                    self.folder_request = Some(folder::Target::Registration);
+                                    self.form_error = None;
+                                }
+                            }
+                            if matches!(self.tab, Tab::Providers | Tab::Work | Tab::Teams) {
+                                action(
+                                    ui,
+                                    &mut commands,
+                                    "Refresh providers",
+                                    "observe",
+                                    !busy,
+                                    || json!({}),
+                                );
+                            }
+                        });
+                    });
+                    ui.add_space(3.0);
+                    ui.label(
+                        RichText::new(i18n::tr_for_snapshot(snapshot, self.tab.summary()))
+                            .size(12.0)
+                            .color(colors(ui).muted),
+                    );
+                    ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
+                        8.0
+                    } else {
+                        18.0
+                    });
+                }
                 ui.separator();
-                ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
+                ui.add_space(if self.tab == Tab::Create {
+                    8.0
+                } else if ui.ctx().viewport_rect().height() < 700.0 {
                     12.0
                 } else {
                     20.0
@@ -1224,6 +1254,7 @@ impl Console {
                             ui.add_space(12.0);
                         }
                         ui.add_enabled_ui(!busy, |ui| match self.tab {
+                            Tab::Create => self.create_studio(ui, snapshot, &mut commands),
                             Tab::Projects => self.projects(ui, snapshot, &mut commands),
                             Tab::Memory => self.project_memory(ui, snapshot, &mut commands),
                             Tab::Decisions => self.decision_panel(ui, snapshot, &mut commands),
@@ -3791,7 +3822,10 @@ impl Console {
             ui.push_id(text(item,"workItemId"), |ui| card(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {ui.strong(text(item,"title"));status(ui,text(item,"status"));});
                 let workspace = items(&snapshot["workspaces"]).iter().find(|w| w["workingDirectory"]==item["workingDirectory"]);
-                if let Some(workspace)=workspace {raw_hint(ui,text(workspace,"displayName"));} else {hint(ui,"Unregistered worktree");}
+                if let Some(workspace)=workspace {raw_hint(ui,text(workspace,"displayName"));}
+                else if let Some(project)=array(&snapshot["projectMemory"]["projects"]).iter().find(|project|create::job_belongs(snapshot,text(project,"projectId"),text(item,"workItemId"))) {
+                    raw_hint(ui,text(project,"name")); hint(ui,"Project creation");
+                } else {hint(ui,"Unregistered worktree");}
                 let run = array(&work["runs"]).iter().rev().find(|r|r["workItemId"]==item["workItemId"]);
                 if let Some(memory) = array(&snapshot["agentMemory"]["contexts"]).iter().rev().find(|r|r["workItemId"]==item["workItemId"]) {
                     hint(ui,&localized_format!(ui,"Project memory · start {0} · current {1}",memory["decisionRevision"].as_u64().unwrap_or(0),memory["currentDecisionRevision"].as_u64().unwrap_or(0)));
@@ -5385,7 +5419,11 @@ fn submit(ui: &mut Ui, label: &str, action: &str) -> bool {
     );
     #[cfg(test)]
     ui.data_mut(|data| {
-        data.insert_temp(egui::Id::new(("test-action", action, label)), response.rect)
+        data.insert_temp(egui::Id::new(("test-action", action, label)), response.rect);
+        data.insert_temp(
+            egui::Id::new(("test-action-state", action, label)),
+            (response.enabled(), response.rect, ui.clip_rect()),
+        );
     });
     let _ = action;
     response.clicked()
@@ -5551,6 +5589,16 @@ fn draw_icon(painter: &egui::Painter, rect: egui::Rect, tab: Tab, color: Color32
         painter.line_segment([p(a.0, a.1), p(b.0, b.1)], stroke);
     };
     match tab {
+        Tab::Create => {
+            line((12.0, 2.0), (14.5, 9.5));
+            line((14.5, 9.5), (22.0, 12.0));
+            line((22.0, 12.0), (14.5, 14.5));
+            line((14.5, 14.5), (12.0, 22.0));
+            line((12.0, 22.0), (9.5, 14.5));
+            line((9.5, 14.5), (2.0, 12.0));
+            line((2.0, 12.0), (9.5, 9.5));
+            line((9.5, 9.5), (12.0, 2.0));
+        }
         Tab::Projects => {
             painter.rect_stroke(
                 egui::Rect::from_min_max(p(2.0, 8.0), p(22.0, 20.0)),
@@ -8257,12 +8305,12 @@ mod tests {
     }
 
     #[test]
-    fn first_project_action_is_visible_in_both_themes_and_languages_at_minimum_size() {
+    fn explicit_coding_guide_project_action_is_visible_at_minimum_size() {
         for theme in [egui::Theme::Light, egui::Theme::Dark] {
             for code in ["tr", "en"] {
                 let ctx = test_context();
                 ctx.set_theme(theme);
-                let mut console = Console::default();
+                let mut console = quick_console();
                 let data = json!({"desktopPreferences":{"language":code,"error":false}});
                 let mut commands = vec![];
                 let output = ctx.run_ui(

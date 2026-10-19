@@ -28,6 +28,8 @@ fn memory_read(action: &str) -> bool {
             | "memory_cloud_decision_read"
             | "project_decision_search"
             | "memory_cloud_search"
+            | "project_results_read"
+            | "project_result_read"
     )
 }
 
@@ -40,6 +42,7 @@ enum Message {
     Snapshot(Result<Value, String>),
     Outcome(Command, Result<Value, String>, Result<Value, String>),
     Folder(folder::Target, Option<folder::Selection>),
+    CreateExport(crate::ui::CreateExportRequest, Option<PathBuf>),
     Account(u64, Command, Value, Result<Value, String>),
     Closed,
 }
@@ -76,6 +79,9 @@ pub struct Bridge {
     decision_search: Option<Value>,
     shared_search: Option<Value>,
     shared_search_connection: Option<Value>,
+    project_work_receipt: Option<Value>,
+    project_results: Option<Value>,
+    project_result: Option<Value>,
     pub error: Option<String>,
     pub feedback: Option<Notice>,
     pub picking_folder: bool,
@@ -122,6 +128,32 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 }
 
 impl Bridge {
+    #[cfg(feature = "ui-smoke")]
+    pub fn create_smoke(&mut self) {
+        let job = self.snapshot.as_ref().unwrap()["projectJobs"][0].clone();
+        self.submit(Command::new(
+            "project_results_read",
+            serde_json::json!({"projectId":job["projectId"],"workItemId":job["workItemId"]}),
+        ));
+        for _ in 0..400 {
+            self.poll();
+            if !self.busy {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let path = self.snapshot.as_ref().unwrap()["projectResults"]["items"][0]["path"].clone();
+        self.submit(Command::new("project_result_read", serde_json::json!({"projectId":job["projectId"],"workItemId":job["workItemId"],"path":path})));
+        for _ in 0..400 {
+            self.poll();
+            if !self.busy {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(self.snapshot.as_ref().unwrap()["projectResult"]["text"].is_string());
+    }
+
     #[cfg(feature = "ui-smoke")]
     pub fn account_smoke(&mut self, cloud_url: Option<&str>) {
         if let Some(url) = cloud_url {
@@ -380,6 +412,9 @@ impl Bridge {
             decision_search: None,
             shared_search: None,
             shared_search_connection: None,
+            project_work_receipt: None,
+            project_results: None,
+            project_result: None,
             error: None,
             feedback: None,
             picking_folder: false,
@@ -411,6 +446,18 @@ impl Bridge {
                     match result {
                         Ok(receipt) => {
                             match command.action {
+                                "project_work_enqueue" => {
+                                    let mut scoped = receipt.clone();
+                                    scoped["commandId"] = command.payload["commandId"].clone();
+                                    scoped["projectId"] = command.payload["projectId"].clone();
+                                    self.project_work_receipt = Some(scoped);
+                                }
+                                "project_results_read" => {
+                                    self.project_results = Some(receipt.clone())
+                                }
+                                "project_result_read" => {
+                                    self.project_result = Some(receipt.clone())
+                                }
                                 "project_memory_read" => self.memory_page = Some(receipt.clone()),
                                 "project_decisions_read" => {
                                     self.decision_page = Some(receipt.clone())
@@ -435,12 +482,29 @@ impl Bridge {
                                 .then(|| Notice::receipt(command.action, &receipt));
                         }
                         Err(error) => {
+                            if command.action == "project_work_enqueue" {
+                                self.project_work_receipt = Some(
+                                    serde_json::json!({"commandId":command.payload["commandId"],"projectId":command.payload["projectId"],"outcome":"failed","reasonCode":safe_error(&error)}),
+                                );
+                            }
                             self.feedback = Some(Notice::error(command.action, &error));
                             self.pending = Some(command);
                         }
                     }
                     self.apply_delivered_snapshot(snapshot);
                     self.busy = false;
+                }
+                Message::CreateExport(request, selection) => {
+                    self.picking_folder = false;
+                    self.picker = None;
+                    if !self.closing {
+                        if let Some(command) = crate::ui::Console::create_export_command(
+                            request,
+                            selection.and_then(|p| p.to_str().map(str::to_owned)),
+                        ) {
+                            self.submit(command);
+                        }
+                    }
                 }
                 Message::Folder(target, selection) => {
                     self.picking_folder = false;
@@ -773,6 +837,23 @@ impl Bridge {
                     self.shared_search = None;
                 }
                 snapshot["sharedSearch"] = self.shared_search.clone().unwrap_or(Value::Null);
+                for cached in [&mut self.project_results, &mut self.project_result] {
+                    if cached.as_ref().is_some_and(|page| {
+                        !snapshot["projectJobs"].as_array().is_some_and(|jobs| {
+                            jobs.iter().any(|job| {
+                                job["projectId"] == page["projectId"]
+                                    && job["workItemId"] == page["workItemId"]
+                                    && job["runtimeIssue"].is_null()
+                            })
+                        })
+                    }) {
+                        *cached = None;
+                    }
+                }
+                snapshot["projectWorkReceipt"] =
+                    self.project_work_receipt.clone().unwrap_or(Value::Null);
+                snapshot["projectResults"] = self.project_results.clone().unwrap_or(Value::Null);
+                snapshot["projectResult"] = self.project_result.clone().unwrap_or(Value::Null);
                 self.snapshot = Some(snapshot);
                 self.account_overlays();
                 self.error = None;
@@ -804,6 +885,22 @@ impl Bridge {
         }
         match self.requests.try_send(Request::Action(command.clone())) {
             Ok(()) => {
+                match command.action {
+                    "project_work_enqueue" => self.project_work_receipt = None,
+                    "project_results_read" => {
+                        self.project_results = None;
+                        self.project_result = None;
+                    }
+                    "project_result_read" => self.project_result = None,
+                    _ => (),
+                }
+                if let Some(snapshot) = self.snapshot.as_mut() {
+                    snapshot["projectWorkReceipt"] =
+                        self.project_work_receipt.clone().unwrap_or(Value::Null);
+                    snapshot["projectResults"] =
+                        self.project_results.clone().unwrap_or(Value::Null);
+                    snapshot["projectResult"] = self.project_result.clone().unwrap_or(Value::Null);
+                }
                 for (result, key) in [
                     (&mut self.decision_search, "decisionSearch"),
                     (&mut self.shared_search, "sharedSearch"),
@@ -915,6 +1012,24 @@ impl Bridge {
                 None => None,
             };
             notify(&ctx, &output, Message::Folder(target, selection)).await;
+        }));
+    }
+
+    pub fn choose_create_export(
+        &mut self,
+        ctx: egui::Context,
+        request: crate::ui::CreateExportRequest,
+        choice: impl std::future::Future<Output = Option<PathBuf>> + Send + 'static,
+    ) {
+        if self.busy || self.closing || self.picking_folder || self.error.is_some() {
+            return;
+        }
+        self.dismiss_feedback();
+        self.picking_folder = true;
+        ctx.request_repaint();
+        let output = self.output.clone();
+        self.picker = Some(self.runtime.spawn(async move {
+            notify(&ctx, &output, Message::CreateExport(request, choice.await)).await;
         }));
     }
 
@@ -1856,6 +1971,109 @@ mod tests {
     }
 
     #[test]
+    fn create_job_results_and_native_export_keep_the_original_scope() {
+        let directory = tempfile::tempdir().unwrap();
+        let data = directory.path().join("local");
+        let mut bridge = Bridge::new(egui::Context::default(), data, false);
+        await_idle(&mut bridge);
+        bridge.submit(Command::new(
+            "project_create",
+            json!({"name":"Create bridge proof"}),
+        ));
+        await_idle(&mut bridge);
+        let snapshot = bridge.snapshot.as_ref().unwrap();
+        let project = snapshot["projectMemory"]["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "Create bridge proof")
+            .unwrap()
+            .clone();
+        let queued = Command::new(
+            "project_work_enqueue",
+            json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],"abilityId":"D3","title":"Real brief","instruction":"Prepare a brief from these notes."}),
+        );
+        bridge.submit(queued.clone());
+        await_idle(&mut bridge);
+        let snapshot = bridge.snapshot.as_ref().unwrap();
+        let receipt = snapshot["projectWorkReceipt"].clone();
+        assert_eq!(receipt["commandId"], queued.payload["commandId"]);
+        assert_eq!(receipt["projectId"], project["projectId"]);
+        assert_eq!(receipt["outcome"], "applied");
+        let work = snapshot["work"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["workItemId"] == receipt["workItemId"])
+            .unwrap();
+        assert_eq!(work["status"], "queued");
+        let file =
+            PathBuf::from(work["workingDirectory"].as_str().unwrap()).join("outputs/brief.md");
+        std::fs::write(&file, "# Scoped brief\nActual output").unwrap();
+        let selection =
+            json!({"projectId":project["projectId"],"workItemId":receipt["workItemId"]});
+        bridge.submit(Command::new("project_results_read", selection.clone()));
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectResults"]["items"][0]["path"],
+            "outputs/brief.md"
+        );
+        let mut read = selection;
+        read["path"] = json!("outputs/brief.md");
+        bridge.submit(Command::new("project_result_read", read));
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectResult"]["text"],
+            "# Scoped brief\nActual output"
+        );
+
+        let request = crate::ui::CreateExportRequest {
+            project_id: project["projectId"].as_str().unwrap().into(),
+            work_item_id: receipt["workItemId"].as_str().unwrap().into(),
+            path: "outputs/brief.md".into(),
+            name: "brief.md".into(),
+        };
+        bridge.choose_create_export(egui::Context::default(), request.clone(), async { None });
+        for _ in 0..400 {
+            bridge.poll();
+            if !bridge.picking_folder {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(!bridge.picking_folder && !bridge.busy);
+        let destination = directory.path().join("exported.md");
+        let chosen = destination.clone();
+        bridge.choose_create_export(
+            egui::Context::default(),
+            request,
+            async move { Some(chosen) },
+        );
+        for _ in 0..400 {
+            bridge.poll();
+            if !bridge.picking_folder && !bridge.busy {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            std::fs::read_to_string(destination).unwrap(),
+            "# Scoped brief\nActual output"
+        );
+        let mut changed = bridge.snapshot.clone().unwrap();
+        changed["projectJobs"][0]["runtimeIssue"] = json!("PROJECT_JOB_DIRECTORY_UNAVAILABLE");
+        bridge.apply_snapshot(Ok(changed));
+        assert!(bridge.snapshot.as_ref().unwrap()["projectResult"].is_null());
+        assert!(bridge.snapshot.as_ref().unwrap()["projectResults"].is_null());
+        let mut changed = bridge.snapshot.clone().unwrap();
+        changed["projectJobs"] = json!([]);
+        bridge.apply_snapshot(Ok(changed));
+        assert!(bridge.snapshot.as_ref().unwrap()["projectResult"].is_null());
+        assert!(bridge.snapshot.as_ref().unwrap()["projectResults"].is_null());
+        bridge.shutdown();
+    }
+
+    #[test]
     fn late_search_outcome_never_replaces_failed_owner_retry() {
         let directory = tempfile::tempdir().unwrap();
         let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
@@ -1884,6 +2102,39 @@ mod tests {
             assert_eq!(bridge.feedback.as_ref().unwrap().action, owner.action);
             assert_eq!(bridge.feedback.as_ref().unwrap().code, "HOST_ACTION_FAILED");
             assert_eq!(bridge.snapshot, before);
+        }
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn late_create_read_never_replaces_a_failed_owner_retry() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        let owner = Command::new("project_work_enqueue", json!({"title":"Keep draft"}));
+        for action in ["project_results_read", "project_result_read"] {
+            for outcome in [
+                Ok(json!({"text":"FOREIGN_CANARY"})),
+                Err("HOST_ACTION_FAILED".into()),
+            ] {
+                bridge.pending = Some(owner.clone());
+                bridge.feedback = Some(Notice::error(owner.action, "HOST_ACTION_FAILED"));
+                let before = bridge.snapshot.clone();
+                bridge
+                    .output
+                    .blocking_send(Message::Outcome(
+                        Command::new(
+                            action,
+                            json!({"projectId":"foreign","workItemId":"foreign"}),
+                        ),
+                        outcome,
+                        before.clone().ok_or_else(|| "NO_SNAPSHOT".into()),
+                    ))
+                    .unwrap();
+                bridge.poll();
+                assert_eq!(bridge.pending.as_ref().unwrap().payload, owner.payload);
+                assert_eq!(bridge.snapshot, before);
+            }
         }
         bridge.shutdown();
     }

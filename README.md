@@ -13,8 +13,11 @@ research, writing, analysis, planning, personal work and software development.
 Project is the main product concept; a separate Workspace hierarchy is not
 required. See the [product direction](docs/decisions/0038-general-purpose-projects.md).
 
-Talk to Mox in a Project, inspect and edit its plan, then explicitly start a
-crew. Supported local Codex, Claude Code and Gemini CLI providers can be assigned
+Write a request to Mox, select Codex, Claude Code or Gemini CLI, and send it.
+No Project, ability or roster setup is required first. Answer Mox's clarification
+questions or revise the plan in the same composer; prepare and explicitly start
+the crew when ready. A first request creates its local Project before planning.
+Supported local providers can also be assigned
 per member. Crews exchange scoped messages and checked file deliveries; owner
 direction can replace affected work while preserving existing outputs. Reviewers
 accept checked results or request bounded corrections. Saved recipes and local
@@ -33,13 +36,16 @@ See [Output Studio state](docs/state/output-studio.md).
 
 Chat is the Project's primary surface. Crew and Outputs open one context beside
 the conversation at normal/wide desktop widths; narrow windows keep a readable
-detail view with Back to chat. A new conversation groups the request composer
-and capability choices. Crew presents the goal, role cards and explicit Prepare/
+detail view with Back to chat. A new conversation opens one composer with a
+visible provider selector; Skills and configuration are optional. Crew presents
+the goal, role cards and explicit Prepare/
 Start controls; Outputs keeps real previews and delivery packages available.
 Shared native buttons, input fields, cards and spacing follow the
 [Moxcrew UI kit](design/moxcrew/UI-KIT.md) across all nine native destinations
 and their dialogs. See [screen migration](docs/state/ui-kit-screen-migration.md) and
 [chat-centered studio state](docs/state/chat-centered-ui-kit.md).
+See [conversation flow and provider diagnosis](docs/state/conversation-first-orchestration.md)
+for the current entry flow and NVM discovery support.
 
 Find outputs by name/path or file type, then choose **Create package** to select
 up to 32 files from the current Project. Review the selection and export one ZIP
@@ -69,8 +75,8 @@ decisions. Project cards open their own context; creating a task from a project
 selects its local folder while preserving any existing unsent draft. Bundled UI
 fonts, Mox mascot and the vector Moxcrew mark work offline. Both light and dark
 themes follow the system preference. The brand source is in [design/moxcrew](design/moxcrew/README.txt).
-The refreshed studio groups Mox, the composer and eight capability choices,
-with ink/cobalt surfaces and an adaptive file panel. See the
+The studio groups Mox and the conversation composer, with optional Skills,
+ink/cobalt surfaces and an adaptive file panel. See the
 [native studio evidence](docs/state/futuristic-native-studio.md).
 
 The native interface supports Turkish and English. Change the language in the
@@ -78,8 +84,8 @@ sidebar; the owner Host saves it locally for the next launch. Source messages,
 work instructions, code and custom user content retain their original language.
 
 The application opens Chat with the Project conversation and one composer.
-It suggests a task type from explicit goal terms, with manual selection and an
-inspectable catalog. Chat, Projects, Teams and Tasks are the primary navigation;
+Mox chooses the plan and appropriate abilities from the request; manual choices
+and an inspectable catalog remain available. Chat, Projects, Teams and Tasks are the primary navigation;
 other tools remain available under More. Connections separates installation,
 saved sign-in and supported task control for the three local CLIs. Setup guides
 open by deliberate action. Saved credentials do not establish model access.

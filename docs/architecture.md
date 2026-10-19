@@ -130,6 +130,13 @@ tool-dependent abilities and resource ingestion remain separate work.
 
 ## Managed Project jobs
 
+The conversation-first UI reuses the V11 selected-provider planner and its
+bounded clarification arguments. The first explicit Send may create a Project;
+the desktop bridge exposes the actual creation receipt before the UI can dispatch
+the dependent frozen plan. Unknown creation outcomes retain the exact retry
+identity. This adds no canonical event format or Cloud surface. Prepare and
+Start remain separate owner actions. See [ADR0048](decisions/0048-conversation-first-orchestration.md).
+
 The native Project conversation submits `project_chat_send` with a current
 project revision and an inspectable recipe; earlier `project_work_enqueue`
 jobs remain readable. The Host creates an exact private

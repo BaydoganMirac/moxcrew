@@ -78,6 +78,22 @@ impl Patchfleet {
                     if scene.starts_with("studio-") {
                         console.studio_smoke(&scene, bridge.snapshot.as_ref().unwrap());
                     }
+                    if scene.starts_with("conversation-") {
+                        if matches!(
+                            scene.as_str(),
+                            "conversation-plan" | "conversation-questions"
+                        ) {
+                            bridge.productive_smoke(if scene == "conversation-questions" {
+                                "productive-questions"
+                            } else {
+                                "productive-plan"
+                            });
+                        } else {
+                            bridge.chat_smoke(false);
+                        }
+                        bridge.smoke_provider_connections(scene != "conversation-offline");
+                        console.conversation_smoke(bridge.snapshot.as_ref().unwrap(), &scene);
+                    }
                     if scene.starts_with("create-") {
                         let results = scene == "create-results";
                         if results {
@@ -183,6 +199,9 @@ impl Patchfleet {
                 }
                 assert!(!bridge.picking_folder, "Native folder check did not finish");
             }
+            if !observe {
+                bridge.smoke_provider_connections(false);
+            }
             console
         };
         Self {
@@ -250,13 +269,17 @@ fn seed_create_scene(directory: &std::path::Path) {
         if std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en") {
             host.action("desktop_language", command::Command::new("desktop_language", serde_json::json!({"language":"en"})).payload).await.unwrap();
         }
-        if matches!(std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(), Ok("create-empty" | "chat-empty")) {
+        if matches!(std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(), Ok("create-empty" | "chat-empty" | "conversation-empty")) {
             assert_eq!(host.snapshot().unwrap()["projectMemory"]["projects"], serde_json::json!([]));
             host.shutdown().await;
             return;
         }
         let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
         let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":if english {"Product launch"} else {"Ürün lansmanı"}})).payload).await.unwrap();
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| scene.starts_with("conversation-")) {
+            host.shutdown().await;
+            return;
+        }
         if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| (scene.starts_with("crew-") || scene.starts_with("productive-")) && !matches!(scene.as_str(),"productive-output"|"productive-resources"|"productive-apps"|"productive-delivery")) {
             let goal = if english { "Research the audience and create a launch presentation backed by sources." } else { "Hedef kitleyi araştır ve kaynaklarla desteklenen bir lansman sunumu hazırla." };
             let plan = host.action("project_crew_plan", serde_json::json!({"projectId":created["projectId"],"instruction":goal,"abilityId":"P1"})).await.unwrap();
@@ -724,6 +747,7 @@ fn main() {
         #[cfg(feature = "ui-smoke")]
         if let Ok(scene) = std::env::var("PATCHFLEET_SMOKE_SCENE") {
             if scene.starts_with("create-")
+                || scene.starts_with("conversation-")
                 || scene.starts_with("chat-")
                 || scene.starts_with("crew-")
                 || scene.starts_with("productive-")

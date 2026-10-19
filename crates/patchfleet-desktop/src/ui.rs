@@ -8478,7 +8478,7 @@ mod tests {
     }
 
     #[test]
-    fn native_tabs_render_fresh_and_populated_snapshots_without_side_effects() {
+    fn native_tabs_render_without_mutation_and_chat_reads_connections_once() {
         for (snapshot, theme) in [snapshot(), json!({})].into_iter().flat_map(|snapshot| {
             [egui::Theme::Light, egui::Theme::Dark]
                 .into_iter()
@@ -8492,7 +8492,15 @@ mod tests {
                     ..Default::default()
                 };
                 let (commands, shapes) = render(&ctx, &mut console, &snapshot, false, vec![]);
-                assert!(commands.is_empty());
+                if tab == Tab::Create {
+                    assert_eq!(commands.len(), 1);
+                    assert_eq!(commands[0].action, "provider_connections_read");
+                    assert!(render(&ctx, &mut console, &snapshot, false, vec![])
+                        .0
+                        .is_empty());
+                } else {
+                    assert!(commands.is_empty());
+                }
                 assert!(shapes > 10, "{} should paint a usable frame", tab.name());
             }
         }

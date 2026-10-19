@@ -51,3 +51,4 @@ supersedes the old one.
 | [0045](0045-productive-crews-and-explicit-tools.md) | Accepted; Task0044 | Productive crews, explicit local production tools and checked app operations |
 | [0046](0046-project-delivery-archives.md) | Accepted; Task0047 | Explicit hash-pinned Project output ZIP archives with provenance |
 | [0047](0047-chat-centered-project-context.md) | Accepted; Task0048 | Chat as the primary Project surface with responsive Crew/Outputs context |
+| [0048](0048-conversation-first-orchestration.md) | Accepted; Task0050 | One conversation composer, visible provider choice and exact first-request Project creation |

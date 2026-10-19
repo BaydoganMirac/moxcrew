@@ -181,7 +181,7 @@ impl Console {
                 egui::ComboBox::from_id_salt("create-project-picker")
                     .selected_text(name)
                     .truncate()
-                    .width((ui.available_width() - 190.0).clamp(130.0, 260.0))
+                    .width((ui.available_width() - 330.0).clamp(100.0, 220.0))
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.create.project, String::new(), t(ui, "None"));
                         for project in projects {
@@ -196,6 +196,7 @@ impl Console {
                 ui.label(studio::title(t(ui, "Your studio"), 16.0).color(colors(ui).muted));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.studio_button(ui);
                 if control(ui, "Connections", true).clicked() {
                     self.create.chat.connections_open = true;
                 }

@@ -5,6 +5,9 @@ mod chat;
 mod connect;
 #[path = "crew.rs"]
 mod crew;
+#[path = "output_studio.rs"]
+mod output_studio;
+pub use output_studio::{StudioPathKind, StudioPathRequest};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CreateExportRequest {
@@ -12,6 +15,7 @@ pub struct CreateExportRequest {
     pub work_item_id: String,
     pub path: String,
     pub name: String,
+    pub expected_sha256: Option<String>,
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -59,13 +63,30 @@ pub(super) struct CreateState {
     result_path: String,
     chat: ChatState,
     crew: crew::CrewState,
+    studio: output_studio::StudioState,
     pending: Option<Submission>,
     export_request: Option<CreateExportRequest>,
+    host_epoch: Option<Value>,
 }
 
 impl CreateState {
     pub(super) fn sync(&mut self, snapshot: &Value) {
+        if !snapshot["hostEpoch"].is_null() {
+            if self
+                .host_epoch
+                .as_ref()
+                .is_some_and(|epoch| *epoch != snapshot["hostEpoch"])
+            {
+                self.crew = Default::default();
+                self.studio = Default::default();
+                self.chat = Default::default();
+                self.pending = None;
+                self.export_request = None;
+            }
+            self.host_epoch = Some(snapshot["hostEpoch"].clone());
+        }
         self.sync_crew(snapshot);
+        self.sync_studio(snapshot);
         let Some(pending) = &self.pending else { return };
         let receipt = &snapshot["projectWorkReceipt"];
         if text(receipt, "commandId") != pending.command_id
@@ -323,11 +344,11 @@ impl Console {
         destination: Option<String>,
     ) -> Option<Command> {
         let destination = destination.filter(|value| !value.is_empty())?;
-        Some(Command::new(
-            "project_result_export",
-            json!({"projectId":request.project_id,
-            "workItemId":request.work_item_id,"path":request.path,"targetPath":destination}),
-        ))
+        let mut payload = json!({"projectId":request.project_id, "workItemId":request.work_item_id,"path":request.path,"targetPath":destination});
+        if let Some(hash) = request.expected_sha256 {
+            payload["expectedSha256"] = json!(hash);
+        }
+        Some(Command::new("project_result_export", payload))
     }
 
     pub(super) fn create_studio(
@@ -339,11 +360,15 @@ impl Console {
         self.chat_studio(ui, snapshot, commands);
         self.crew_roster_dialog(ui, snapshot);
         self.create_catalog_dialog(ui, snapshot);
+        self.output_studio(ui, snapshot, commands);
+        self.workflow_dialog(ui, snapshot, commands);
         self.connection_dialog(ui, snapshot, commands);
     }
 
     pub(super) fn crew_hub(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         self.crew_hub_view(ui, snapshot, commands);
+        self.output_studio(ui, snapshot, commands);
+        self.workflow_dialog(ui, snapshot, commands);
         self.connection_dialog(ui, snapshot, commands);
     }
 
@@ -623,7 +648,7 @@ impl Console {
                         } else { hint(ui, "Export to open in its app."); }
                         if control(ui, "Export copy…", self.create.export_request.is_none()).clicked() {
                             self.create.export_request = Some(CreateExportRequest { project_id: self.create.project.clone(),
-                                work_item_id: text(work, "workItemId").into(), path: text(result, "path").into(), name: text(result, "name").into() });
+                                work_item_id: text(work, "workItemId").into(), path: text(result, "path").into(), name: text(result, "name").into(), expected_sha256: None });
                         }
                     });
                 });
@@ -924,8 +949,7 @@ mod tests {
                 }
                 let (_, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
                 assert!(copy.iter().any(|text| text
-                    == i18n::tr(Language::from_code(language), "Install or update Codex")
-                        .as_ref()));
+                    == i18n::tr(Language::from_code(language), "Install or update CLI").as_ref()));
                 let close = ctx.data(|data| {
                     data.get_temp::<egui::Rect>(egui::Id::new((
                         "test-action",
@@ -2258,6 +2282,7 @@ mod tests {
             work_item_id: "work:one".into(),
             path: "outputs/report.md".into(),
             name: "report.md".into(),
+            expected_sha256: None,
         };
         assert!(Console::create_export_command(request.clone(), None).is_none());
         assert!(Console::create_export_command(request.clone(), Some(String::new())).is_none());

@@ -13,6 +13,52 @@ use std::{
 };
 use tokio::{runtime::Runtime, sync::mpsc, task::JoinHandle};
 
+const PRODUCTIVE_KEYS: [&str; 8] = [
+    "projectStudio",
+    "projectArtifact",
+    "projectStudioReceipt",
+    "projectStudioError",
+    "projectWorkflowRead",
+    "projectWorkflowReceipt",
+    "projectWorkflowError",
+    "projectCrewPlanJob",
+];
+fn productive_key(action: &str) -> Option<&'static str> {
+    Some(match action {
+        "project_studio_read" => "projectStudio",
+        "project_artifact_read" => "projectArtifact",
+        "project_workflows_read" => "projectWorkflowRead",
+        "project_crew_plan_read" => "projectCrewPlanJob",
+        "project_crew_plan_start"
+        | "project_crew_plan_cancel"
+        | "project_crew_plan_accept"
+        | "project_crew_configure"
+        | "project_crew_steer"
+        | "project_recipe_save"
+        | "project_recipe_run"
+        | "project_schedule_save"
+        | "project_schedule_set_enabled" => "projectWorkflowReceipt",
+        "project_artifact_revise"
+        | "project_resource_import"
+        | "project_resource_remove"
+        | "project_tool_configure"
+        | "project_connection_set"
+        | "project_connection_remove"
+        | "project_connection_prepare"
+        | "project_connection_execute" => "projectStudioReceipt",
+        _ => return None,
+    })
+}
+fn private_command(command: &Command) -> Command {
+    let mut command = command.clone();
+    if command.action == "project_connection_set" {
+        if let Some(payload) = command.payload.as_object_mut() {
+            payload.remove("accessToken");
+        }
+    }
+    command
+}
+
 enum Request {
     Action(Command),
     Close,
@@ -34,6 +80,10 @@ fn memory_read(action: &str) -> bool {
             | "project_crew_plan"
             | "project_crew_messages_read"
             | "provider_connections_read"
+            | "project_studio_read"
+            | "project_artifact_read"
+            | "project_workflows_read"
+            | "project_crew_plan_read"
     )
 }
 
@@ -47,6 +97,7 @@ enum Message {
     Outcome(Command, Result<Value, String>, Result<Value, String>),
     Folder(folder::Target, Option<folder::Selection>),
     CreateExport(crate::ui::CreateExportRequest, Option<PathBuf>),
+    StudioPath(crate::ui::StudioPathRequest, Option<PathBuf>),
     Account(u64, Command, Value, Result<Value, String>),
     Closed,
 }
@@ -92,6 +143,9 @@ pub struct Bridge {
     project_crew_messages: Option<Value>,
     project_crew_error: Option<Value>,
     provider_connections: Option<Value>,
+    productive_pages: std::collections::HashMap<&'static str, Value>,
+    productive_project: Option<Value>,
+    productive_requests: std::collections::HashMap<&'static str, String>,
     pub error: Option<String>,
     pub feedback: Option<Notice>,
     pub picking_folder: bool,
@@ -123,7 +177,18 @@ fn poll_delay(snapshot: &Value) -> Duration {
                 || p["counts"]["running"].as_u64().unwrap_or(0) > 0
         });
     Duration::from_secs(
-        if active_work || active_team || extraction || snapshot["cloud"]["paired"] == true {
+        if active_work
+            || active_team
+            || extraction
+            || snapshot["projectWorkflows"]["plans"]
+                .as_array()
+                .is_some_and(|plans| {
+                    plans
+                        .iter()
+                        .any(|plan| matches!(plan["status"].as_str(), Some("queued" | "running")))
+                })
+            || snapshot["cloud"]["paired"] == true
+        {
             5
         } else {
             60
@@ -138,6 +203,51 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 }
 
 impl Bridge {
+    #[cfg(feature = "ui-smoke")]
+    pub fn productive_smoke(&mut self, scene: &str) {
+        let snapshot = self.snapshot.clone().unwrap();
+        let project = snapshot["projectMemory"]["projects"][0]["projectId"].clone();
+        self.productive_project = Some(project.clone());
+        let host = self.host.lock().unwrap().as_ref().cloned().unwrap();
+        let page = self
+            .runtime
+            .block_on(host.action(
+                "project_studio_read",
+                serde_json::json!({"projectId":project}),
+            ))
+            .unwrap();
+        self.productive_pages.insert("projectStudio", page.clone());
+        if scene == "productive-app-preview" {
+            self.productive_pages.get_mut("projectStudio").unwrap()["connections"] = serde_json::json!([{"providerId":"notion","label":"Rendering fixture · no account","connected":true,"authentication":"unverified","operations":["notion_page"]}]);
+            self.productive_pages.insert("projectStudioReceipt",serde_json::json!({"projectId":project,"commandId":"cmd:rendering-preview","outcome":"applied","reasonCode":"PROJECT_CONNECTION_PREPARED","preparedActionId":"connection-action:rendering-fixture","revision":1,"providerId":"notion","operation":"notion_page","arguments":{"parentPageId":"rendering-fixture-parent","title":"Launch brief · UI fixture","content":"Disposable preview. No account is connected and no remote action has been performed."}}));
+        }
+
+        if let Some(artifact) = page["artifacts"].as_array().and_then(|rows| rows.first()) {
+            let preview=self.runtime.block_on(host.action("project_artifact_read",serde_json::json!({"projectId":project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]}))).unwrap();
+            self.productive_pages.insert("projectArtifact", preview);
+        }
+        let workflows = self
+            .runtime
+            .block_on(host.action(
+                "project_workflows_read",
+                serde_json::json!({"projectId":project}),
+            ))
+            .unwrap();
+        self.productive_pages
+            .insert("projectWorkflowRead", workflows);
+        if matches!(scene, "productive-plan" | "productive-questions") {
+            let goal = snapshot["projectCrews"]["missions"][0]["instruction"].clone();
+            let plan = self
+                .runtime
+                .block_on(host.action(
+                    "project_crew_plan",
+                    serde_json::json!({"projectId":project,"abilityId":"P1","instruction":goal}),
+                ))
+                .unwrap();
+            self.productive_pages.insert("projectCrewPlanJob",serde_json::json!({"reasonCode":"PROJECT_CREW_PLAN_READ","projectId":project,"planJobId":"plan:rendering-fixture","revision":3,"status":if scene=="productive-questions"{"needs_input"}else{"completed"},"providerId":"codex","title":"Illustrative launch plan · no provider run","instruction":goal,"plan":if scene=="productive-questions"{Value::Null}else{serde_json::json!({"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})},"questions":if scene=="productive-questions"{serde_json::json!([{"id":"audience","question":"Who should this launch reach?"},{"id":"format","question":"Which deliverable should the crew prioritize?"}])}else{serde_json::json!([])}}));
+        }
+        self.apply_snapshot(Ok(snapshot));
+    }
     #[cfg(feature = "ui-smoke")]
     pub fn chat_smoke(&mut self, show_connections: bool) {
         let project =
@@ -451,7 +561,7 @@ impl Bridge {
                             let result = host.action(command.action, command.payload.clone()).await.map_err(safe_error);
                             if command.action == "observe" { last_observation = Some(tokio::time::Instant::now()); }
                             snapshot = host.snapshot().map_err(safe_error);
-                            if !notify(&ctx, &output, Message::Outcome(command, result, snapshot.clone())).await { break; }
+                            if !notify(&ctx, &output, Message::Outcome(private_command(&command), result, snapshot.clone())).await { break; }
                             let delay = snapshot.as_ref().map(poll_delay).unwrap_or(Duration::from_secs(60));
                             timer.as_mut().reset(tokio::time::Instant::now() + delay);
                         }
@@ -513,6 +623,9 @@ impl Bridge {
             project_crew_messages: None,
             project_crew_error: None,
             provider_connections: None,
+            productive_pages: Default::default(),
+            productive_project: None,
+            productive_requests: Default::default(),
             error: None,
             feedback: None,
             picking_folder: false,
@@ -543,6 +656,7 @@ impl Bridge {
                     }
                     match result {
                         Ok(receipt) => {
+                            self.productive_outcome(&command, Ok(&receipt));
                             match command.action {
                                 "project_work_enqueue" | "project_chat_send" => {
                                     let mut scoped = receipt.clone();
@@ -611,7 +725,10 @@ impl Bridge {
                                 .then(|| Notice::receipt(command.action, &receipt));
                         }
                         Err(error) => {
-                            if command.action.starts_with("project_crew_") {
+                            self.productive_outcome(&command, Err(&error));
+                            if command.action.starts_with("project_crew_")
+                                && productive_key(command.action).is_none()
+                            {
                                 let scoped = serde_json::json!({"action":command.action,"commandId":command.payload["commandId"],"projectId":command.payload["projectId"],"missionId":command.payload["missionId"],"outcome":"rejected","reasonCode":safe_error(&error)});
                                 if memory_read(command.action) {
                                     self.project_crew_error = Some(scoped);
@@ -628,11 +745,27 @@ impl Bridge {
                                 );
                             }
                             self.feedback = Some(Notice::error(command.action, &error));
-                            self.pending = Some(command);
+                            self.pending = (!matches!(
+                                command.action,
+                                "project_connection_set" | "project_connection_execute"
+                            ))
+                            .then_some(command);
                         }
                     }
                     self.apply_delivered_snapshot(snapshot);
                     self.busy = false;
+                }
+                Message::StudioPath(request, selection) => {
+                    self.picking_folder = false;
+                    self.picker = None;
+                    if !self.closing {
+                        if let Some(command) = crate::ui::Console::studio_path_command(
+                            request,
+                            selection.and_then(|path| path.to_str().map(str::to_owned)),
+                        ) {
+                            self.submit(command);
+                        }
+                    }
                 }
                 Message::CreateExport(request, selection) => {
                     self.picking_folder = false;
@@ -1050,6 +1183,7 @@ impl Bridge {
                 snapshot["projectChat"] = self.project_chat.clone().unwrap_or(Value::Null);
                 snapshot["providerConnections"] =
                     self.provider_connections.clone().unwrap_or(Value::Null);
+                self.productive_overlay(&mut snapshot);
                 self.snapshot = Some(snapshot);
                 self.account_overlays();
                 self.error = None;
@@ -1081,6 +1215,7 @@ impl Bridge {
         }
         match self.requests.try_send(Request::Action(command.clone())) {
             Ok(()) => {
+                self.productive_submit(&command);
                 match command.action {
                     "project_work_enqueue" | "project_chat_send" => {
                         self.project_work_receipt = None
@@ -1212,7 +1347,7 @@ impl Bridge {
                     }
                 }
                 self.busy = true;
-                self.pending = Some(command);
+                self.pending = Some(private_command(&command));
                 self.feedback = None;
             }
             Err(_) => self.feedback = Some(Notice::error(command.action, "HOST_BUSY")),
@@ -1238,6 +1373,178 @@ impl Bridge {
                 None => None,
             };
             notify(&ctx, &output, Message::Folder(target, selection)).await;
+        }));
+    }
+
+    fn productive_submit(&mut self, command: &Command) {
+        if command.payload["projectId"].is_string()
+            && self.productive_project.as_ref() != Some(&command.payload["projectId"])
+        {
+            self.productive_pages.clear();
+            self.productive_requests.clear();
+            self.productive_project = Some(command.payload["projectId"].clone());
+            if let Some(snapshot) = self.snapshot.as_mut() {
+                for key in PRODUCTIVE_KEYS {
+                    snapshot[key] = Value::Null;
+                }
+            }
+        }
+        let Some(key) = productive_key(command.action) else {
+            return;
+        };
+        if self.productive_project.as_ref() != Some(&command.payload["projectId"]) {
+            self.productive_pages.clear();
+            self.productive_requests.clear();
+            self.productive_project = Some(command.payload["projectId"].clone());
+        }
+        self.productive_requests.insert(
+            key,
+            command.payload["commandId"].as_str().unwrap_or("").into(),
+        );
+        self.productive_pages.remove(key);
+        self.productive_pages.remove(
+            if key.starts_with("projectWorkflow") || key == "projectCrewPlanJob" {
+                "projectWorkflowError"
+            } else {
+                "projectStudioError"
+            },
+        );
+        if let Some(snapshot) = self.snapshot.as_mut() {
+            for key in PRODUCTIVE_KEYS {
+                snapshot[key] = self
+                    .productive_pages
+                    .get(key)
+                    .cloned()
+                    .unwrap_or(Value::Null);
+            }
+        }
+    }
+    fn productive_outcome(&mut self, command: &Command, result: Result<&Value, &str>) {
+        let Some(key) = productive_key(command.action) else {
+            return;
+        };
+        if self.productive_project.as_ref() != Some(&command.payload["projectId"])
+            || self.productive_requests.get(key).map(String::as_str)
+                != command.payload["commandId"].as_str()
+        {
+            return;
+        }
+        if let Ok(receipt) = result {
+            for field in [
+                "projectId",
+                "commandId",
+                "missionId",
+                "planJobId",
+                "workItemId",
+                "path",
+                "section",
+                "offset",
+            ] {
+                if !command.payload[field].is_null()
+                    && !receipt[field].is_null()
+                    && command.payload[field] != receipt[field]
+                {
+                    return;
+                }
+            }
+        }
+        if result.is_ok_and(|receipt| {
+            !command.payload["expectedSha256"].is_null()
+                && !receipt["sha256"].is_null()
+                && receipt["sha256"] != command.payload["expectedSha256"]
+        }) {
+            return;
+        }
+        let mut scoped = match result {
+            Ok(value) => value.clone(),
+            Err(code) => serde_json::json!({"outcome":"rejected","reasonCode":safe_error(code)}),
+        };
+        for identity in [
+            "commandId",
+            "projectId",
+            "missionId",
+            "planJobId",
+            "workItemId",
+            "path",
+            "section",
+            "offset",
+        ] {
+            if !command.payload[identity].is_null() && scoped[identity].is_null() {
+                scoped[identity] = command.payload[identity].clone();
+            }
+        }
+        scoped["action"] = Value::from(command.action);
+        if key == "projectCrewPlanJob" && result.is_ok() {
+            scoped["reasonCode"] = Value::from("PROJECT_CREW_PLAN_READ");
+        }
+        let error_key = if key.starts_with("projectWorkflow") || key == "projectCrewPlanJob" {
+            "projectWorkflowError"
+        } else {
+            "projectStudioError"
+        };
+        if result.is_err() {
+            self.productive_pages.insert(error_key, scoped.clone());
+        }
+        if result.is_ok() || !memory_read(command.action) {
+            self.productive_pages.insert(key, scoped.clone());
+        }
+        if command.action == "project_artifact_revise" && result.is_ok() {
+            self.project_work_receipt = Some(scoped);
+            self.project_chat = None;
+        }
+        if key == "projectWorkflowReceipt" {
+            self.productive_pages.remove("projectWorkflowRead");
+        }
+        if matches!(
+            command.action,
+            "project_resource_import"
+                | "project_resource_remove"
+                | "project_tool_configure"
+                | "project_connection_set"
+                | "project_connection_remove"
+                | "project_artifact_revise"
+        ) {
+            self.productive_pages.remove("projectStudio");
+        }
+    }
+    fn productive_overlay(&mut self, snapshot: &mut Value) {
+        let changed = self
+            .snapshot
+            .as_ref()
+            .is_some_and(|old| old["hostEpoch"] != snapshot["hostEpoch"]);
+        let removed = self.productive_project.as_ref().is_some_and(|id| {
+            !snapshot["projectMemory"]["projects"]
+                .as_array()
+                .is_some_and(|projects| projects.iter().any(|project| project["projectId"] == *id))
+        });
+        if changed || removed {
+            self.productive_pages.clear();
+            self.productive_requests.clear();
+            self.productive_project = None;
+        }
+        for key in PRODUCTIVE_KEYS {
+            snapshot[key] = self
+                .productive_pages
+                .get(key)
+                .cloned()
+                .unwrap_or(Value::Null);
+        }
+    }
+    pub fn choose_studio_path(
+        &mut self,
+        ctx: egui::Context,
+        request: crate::ui::StudioPathRequest,
+        choice: impl std::future::Future<Output = Option<PathBuf>> + Send + 'static,
+    ) {
+        if self.busy || self.closing || self.picking_folder || self.error.is_some() {
+            return;
+        }
+        self.dismiss_feedback();
+        self.picking_folder = true;
+        ctx.request_repaint();
+        let output = self.output.clone();
+        self.picker = Some(self.runtime.spawn(async move {
+            notify(&ctx, &output, Message::StudioPath(request, choice.await)).await;
         }));
     }
 
@@ -1385,6 +1692,72 @@ mod tests {
         }
         assert!(failed.error.is_some());
         failed.shutdown();
+    }
+
+    #[test]
+    fn productive_responses_are_exact_request_project_epoch_scoped_and_tokens_are_not_retryable() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        bridge.submit(Command::new(
+            "project_create",
+            json!({"name":"Studio scope"}),
+        ));
+        await_idle(&mut bridge);
+        let project =
+            bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0]["projectId"].clone();
+        let old = Command::new(
+            "project_artifact_read",
+            json!({"projectId":project,"workItemId":"work:old","path":"outputs/old.txt","expectedSha256":"hash-old"}),
+        );
+        let current = Command::new(
+            "project_artifact_read",
+            json!({"projectId":project,"workItemId":"work:new","path":"outputs/new.txt","expectedSha256":"hash-new"}),
+        );
+        bridge.productive_submit(&old);
+        bridge.productive_submit(&current);
+        bridge.productive_outcome(&old,Ok(&json!({"reasonCode":"PROJECT_ARTIFACT_READ","projectId":project,"workItemId":"work:old","path":"outputs/old.txt","sha256":"hash-old"})));
+        assert!(!bridge.productive_pages.contains_key("projectArtifact"));
+        bridge.productive_outcome(&current,Ok(&json!({"reasonCode":"PROJECT_ARTIFACT_READ","projectId":"project:foreign","workItemId":"work:new","path":"outputs/new.txt"})));
+        assert!(!bridge.productive_pages.contains_key("projectArtifact"));
+        bridge.productive_outcome(&current,Ok(&json!({"reasonCode":"PROJECT_ARTIFACT_READ","projectId":project,"workItemId":"work:new","path":"outputs/new.txt","sha256":"hash-new","preview":{"kind":"text","text":"Scoped actual preview"}})));
+        let snapshot = bridge.snapshot.clone().unwrap();
+        bridge.apply_snapshot(Ok(snapshot));
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectArtifact"]["path"],
+            "outputs/new.txt"
+        );
+        let mut epoch = bridge.snapshot.clone().unwrap();
+        epoch["hostEpoch"] = json!("epoch:changed");
+        bridge.apply_snapshot(Ok(epoch));
+        assert!(bridge.snapshot.as_ref().unwrap()["projectArtifact"].is_null());
+        let secret = Command::new(
+            "project_connection_set",
+            json!({"projectId":project,"providerId":"notion","label":"My Notion","accessToken":"PRIVATE-TOKEN-CANARY"}),
+        );
+        assert!(!format!("{:?}", private_command(&secret)).contains("PRIVATE-TOKEN-CANARY"));
+        // Rejected credentials must require explicit entry again, never expose a retry payload.
+        bridge.productive_submit(&secret);
+        bridge.pending = Some(private_command(&secret));
+        bridge.busy = true;
+        let snapshot = bridge.snapshot.clone().unwrap();
+        bridge
+            .output
+            .blocking_send(Message::Outcome(
+                private_command(&secret),
+                Err("PROJECT_CONNECTION_REJECTED".into()),
+                Ok(snapshot),
+            ))
+            .unwrap();
+        bridge.poll();
+        assert!(bridge.pending.is_none());
+        assert!(!bridge
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .to_string()
+            .contains("PRIVATE-TOKEN-CANARY"));
+        bridge.shutdown();
     }
 
     fn await_idle(bridge: &mut Bridge) {
@@ -2258,6 +2631,7 @@ mod tests {
             work_item_id: receipt["workItemId"].as_str().unwrap().into(),
             path: "outputs/brief.md".into(),
             name: "brief.md".into(),
+            expected_sha256: None,
         };
         bridge.choose_create_export(egui::Context::default(), request.clone(), async { None });
         for _ in 0..400 {

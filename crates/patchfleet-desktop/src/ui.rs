@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 #[path = "create.rs"]
 mod create;
-pub use create::CreateExportRequest;
+pub use create::{CreateExportRequest, StudioPathKind, StudioPathRequest};
 
 macro_rules! localized_format {
     ($ui:expr,$key:literal,$($value:expr),+ $(,)?) => {
@@ -926,6 +926,9 @@ impl Console {
     ) -> Vec<Command> {
         self.quick_start.sync(snapshot);
         self.create.sync(snapshot);
+        if !matches!(self.tab, Tab::Create | Tab::Teams) {
+            self.create.close_studio();
+        }
         self.open_login_browser(ui.ctx(), snapshot);
         if let Some(project) = &self.registration_project {
             if let Some(workspace) = items(&snapshot["workspaces"])
@@ -5455,6 +5458,10 @@ fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
             response.rect,
         );
         data.insert_temp(egui::Id::new(("test-action-visibility", label)), visibility);
+        data.insert_temp(
+            egui::Id::new(("test-action-id", "memory_control", label)),
+            response.id,
+        );
     });
     response
 }

@@ -93,6 +93,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Plan your next goal" => "Bir sonraki hedefini planla",
         "Planning provider" => "Planlama sağlayıcısı",
         "Back to crews" => "Ekiplere dön",
+        "Back to chat" => "Sohbete dön",
         "Providers & limits" => "Sağlayıcılar ve sınırlar",
         "Agent instructions" => "Ajan talimatları",
         "Revise this output" => "Bu çıktıyı düzenle",

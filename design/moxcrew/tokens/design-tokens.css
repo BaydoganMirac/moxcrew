@@ -56,6 +56,15 @@
   --moxcrew-control-height: 44px;
   --moxcrew-control-compact: 36px;
   --moxcrew-touch-target: 44px;
+  --moxcrew-button-padding-x: 16px;
+  --moxcrew-input-padding-x: 12px;
+  --moxcrew-input-padding-y: 10px;
+  --moxcrew-control-gap: 8px;
+  --moxcrew-group-gap: 12px;
+  --moxcrew-section-gap: 24px;
+  --moxcrew-card-padding: 16px;
+  --moxcrew-page-padding: 24px;
+  --moxcrew-narrow-page-padding: 16px;
   --moxcrew-focus-width: 2px;
   --moxcrew-motion-fast: 160ms;
   --moxcrew-motion-normal: 220ms;

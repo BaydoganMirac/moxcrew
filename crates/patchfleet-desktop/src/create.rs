@@ -11,28 +11,16 @@ pub use output_studio::{DeliveryExportRequest, StudioPathKind, StudioPathRequest
 
 // Inline project views share quiet secondary actions and a single accent action.
 fn view_control(ui: &mut Ui, label: &str, enabled: bool, primary: bool) -> egui::Response {
-    let response = ui
-        .add_enabled_ui(enabled, |ui| {
-            if primary {
-                let response = ui.add(
-                    egui::Button::new(
-                        RichText::new(t(ui, label))
-                            .size(13.0)
-                            .strong()
-                            .color(colors(ui).on_primary),
-                    )
-                    .fill(colors(ui).primary)
-                    .stroke(egui::Stroke::NONE)
-                    .corner_radius(10)
-                    .min_size(egui::vec2(128.0, 40.0)),
-                );
-                keyboard_focus(ui, &response, 10);
-                response
-            } else {
-                studio::quiet_button(ui, t(ui, label).as_ref())
-            }
-        })
-        .inner;
+    let response = studio::button(
+        ui,
+        t(ui, label).as_ref(),
+        if primary {
+            studio::ButtonKind::Primary
+        } else {
+            studio::ButtonKind::Ghost
+        },
+        enabled,
+    );
     #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(
@@ -81,7 +69,7 @@ fn inline_surface(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
         ui.vertical(|ui| {
             ui.set_width(width);
             if ui.ctx().viewport_rect().height() < 700.0 {
-                ui.spacing_mut().item_spacing.y = 4.0;
+                ui.spacing_mut().item_spacing.y = studio::metrics::GAP;
             }
             content(ui);
         });

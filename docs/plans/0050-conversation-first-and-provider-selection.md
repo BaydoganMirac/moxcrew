@@ -1,6 +1,6 @@
 # Task0050: Conversation first and visible provider selection
 
-Status: Owner-approved, investigating and implementing
+Status: Complete; independently reviewed, native captures and macOS development package verified
 
 Updated: 2026-10-19
 
@@ -43,3 +43,9 @@ no implicit crew start, and narrow TR/EN light/dark control reachability. Run th
 complete affected desktop suite and provider tests for changed discovery/readiness,
 strict formatting/Clippy, native captures of actual simplified conversation states,
 and a smoke-free macOS development package. Record platform/live-provider limits.
+
+## Completion
+
+Implemented and verified locally. See [feature state](../state/conversation-first-orchestration.md)
+for exact tests, independent review, accepted native screenshots, Codex discovery
+proof, package hashes and platform/live-provider limits. No push or installation.

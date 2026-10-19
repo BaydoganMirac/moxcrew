@@ -17,6 +17,7 @@ tokens/design-tokens.json is the color/spacing/type contract. Semantic revision 
 adds ink/cobalt native studio surfaces and a cooler light canvas; Mox and the
 core identity colors are unchanged. Static ambient light and orbital accents
 provide depth, while animation remains tied to real work.
+Revision 1.2 records shared control insets and layout padding; colors are unchanged.
 Normal text pairs in tokens/contrast-checks.json meet 4.5:1 in both themes.
 Control/focus boundaries meet 3:1; card borders remain decorative.
 The portable CSS export includes the local WOFF2 and its OFL license in fonts/.

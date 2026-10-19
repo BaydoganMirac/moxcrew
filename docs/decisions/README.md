@@ -50,3 +50,4 @@ supersedes the old one.
 | [0044](0044-project-crews-and-scoped-communication.md) | Accepted; Task0043 | Reusable Project crews, explicit missions and scoped attributable agent messages over the existing local runner |
 | [0045](0045-productive-crews-and-explicit-tools.md) | Accepted; Task0044 | Productive crews, explicit local production tools and checked app operations |
 | [0046](0046-project-delivery-archives.md) | Accepted; Task0047 | Explicit hash-pinned Project output ZIP archives with provenance |
+| [0047](0047-chat-centered-project-context.md) | Accepted; Task0048 | Chat as the primary Project surface with responsive Crew/Outputs context |

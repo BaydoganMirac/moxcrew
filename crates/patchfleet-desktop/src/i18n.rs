@@ -520,7 +520,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Decisions belong to a project and cite its local sources." => "Kararlar bir projeye aittir ve yerel kaynaklarına dayanır.",
         "Choose a project to review its decisions." => "Kararlarını incelemek için bir proje seçin.",
         "Free · Local" => "Ücretsiz · Yerel",
-        "Your account" => "Hesabınız", "Sign in · optional" => "Giriş yap · isteğe bağlı", "Connected" => "Bağlı",
+        "Your account" => "Hesabınız", "Sign in · optional" => "Giriş · isteğe bağlı", "Connected" => "Bağlı",
         "Local is free and works without an account. Sign in for optional subscription Cloud services." => "Yerel kullanım ücretsizdir ve hesap gerektirmez. İsteğe bağlı abonelikli Bulut hizmetleri için giriş yapın.",
         "Account status could not be verified. Local work and downloaded decisions remain available." => "Hesap durumu doğrulanamadı. Yerel işler ve indirilmiş kararlar kullanılabilir.",
         "Signed out on this device. Cloud could not confirm revocation; sign out this installation from Cloud when online." => "Bu cihazdaki oturum kapatıldı. Bulut erişimin iptalini doğrulayamadı; çevrimiçi olduğunuzda bu kurulumun erişimini Buluttan kapatın.",

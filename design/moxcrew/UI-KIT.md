@@ -76,8 +76,8 @@ and portable CSS colors remain available for other surfaces.
 | Account / Cloud | Optional sign-in/pairing forms, account cards and shared search |
 | Crew / Outputs context | Plan/revision forms, file filters, delivery rows, private setup and frozen approval |
 
-Forms use 44 px controls and 36 px popup options. Long project names wrap within
-the width remaining after the measured action. A short viewport scrolls content
+Forms use 44 px controls and 36 px popup options. Long project names truncate
+with hover text within the width remaining after the measured action. A short viewport scrolls content
 without shrinking controls. Native evidence and acceptance results are recorded
 in [screen migration state](../../docs/state/ui-kit-screen-migration.md).
 

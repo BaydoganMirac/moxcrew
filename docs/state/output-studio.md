@@ -11,6 +11,13 @@ Original outputs are retained. Images render natively; PPTX/DOCX previews expose
 their real text structure, and media exposes checked metadata and a thumbnail.
 This is not a full Office renderer, video editor timeline or inline media player.
 
+Task0047 adds name/path search, file-type filtering and inspectable multi-file
+selection. **Create package** opens a dedicated selection view; **Export package**
+saves one standard ZIP and provenance manifest using checked original bytes.
+Limits are 32 files, 25 MiB per file and 64 MiB total. Search does not discard
+hidden selections, and stale versions require review rather than silent removal.
+See [delivery packages](delivery-packages.md) for the native flow and verification.
+
 Owner-imported resources are frozen in private per-Project storage. Active agents
 can list/read only their bound Project's resources. Binary material is consumed
 through typed production inputs; resources.extract handles Office/PDF text.

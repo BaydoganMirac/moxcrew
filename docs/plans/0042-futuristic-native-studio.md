@@ -1,6 +1,6 @@
 # Task 0042: Futuristic native studio
 
-Status: Approved, implementing
+Status: Complete; independently reviewed and locally verified
 
 Updated: 2026-10-19
 
@@ -39,3 +39,12 @@ record evidence, commit locally and provide a preview and runnable macOS build.
 
 No provider login/inference, API keys, package download, Cloud runtime changes,
 push, publication, deployment or user-data migration is part of this task.
+
+## Evidence
+
+The integrated interface and keyboard-focus correction were independently
+accepted at `78ddc1b`. All 128 desktop tests, formatting, strict desktop Clippy
+and the feature-off build pass. Thirty-five native frames verify the visual
+composition; 44 semantic contrast pairs pass. See the
+[state and native previews](../state/futuristic-native-studio.md) for package
+evidence and remaining platform/provider limits.

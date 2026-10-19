@@ -13,7 +13,7 @@ Fonts and SIL OFL are in crates/patchfleet-desktop/assets/fonts.
 The original ImageGen prompts are preserved verbatim in source/; reusedBy records
 this new identity. The master is not claimed to have been generated again.
 
-tokens/design-tokens.json is the color/spacing/type contract. Semantic revision1.1
+tokens/design-tokens.json is the color/spacing/type contract. Semantic revision 1.1
 adds ink/cobalt native studio surfaces and a cooler light canvas; Mox and the
 core identity colors are unchanged. Static ambient light and orbital accents
 provide depth, while animation remains tied to real work.

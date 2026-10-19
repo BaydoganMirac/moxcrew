@@ -33,6 +33,8 @@ commitments.
 
 - Preserve the completed [Moxcrew identity and native interface](state/dobbly-brand-interface.md),
   with Mox as the mascot and compatible existing installation/data identities.
+  [Task0042](state/futuristic-native-studio.md) refines the native conversation
+  into an ink/cobalt studio with a centered Mox welcome and adaptive cards.
 
 - Preserve the owner-approved [studio interface](plans/0036-product-studio-interface.md)
   with native TR/EN, adaptive project/team/knowledge screens and the existing

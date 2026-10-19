@@ -54,6 +54,8 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
     let translated = match text {
         "Create" => "Üret",
         "Chat" => "Sohbet",
+        "Your studio" => "Stüdyon",
+        "One idea. Start with a direction." => "Bir fikir. Önce bir yön seç.",
         "Mox · Your project crew" => "Mox · Proje ekibin",
         "Connections" => "Bağlantılar",
         "Connect your crew" => "Ekibini bağla",

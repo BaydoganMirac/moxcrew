@@ -762,6 +762,105 @@ mod tests {
     }
 
     #[test]
+    fn welcome_cards_fit_the_minimum_viewport_and_keyboard_selection_only_changes_the_draft() {
+        let size = egui::vec2(800.0, 560.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                for key in [egui::Key::Enter, egui::Key::Space] {
+                    let ctx = egui::Context::default();
+                    studio::install(&ctx);
+                    ctx.set_theme(theme);
+                    let mut console = Console {
+                        tab: Tab::Create,
+                        create: state(),
+                        ..Default::default()
+                    };
+                    let mut data = snapshot();
+                    data["desktopPreferences"] = json!({"language":language});
+                    data["abilities"] = patchfleet_core::abilities::catalog();
+                    for _ in 0..3 {
+                        assert!(render(&ctx, &mut console, &data, size, false, vec![])
+                            .0
+                            .is_empty());
+                    }
+                    let (_, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+                    assert!(!copy.iter().any(|text| text == "Previous messages"
+                        || text == "Önceki mesajlar"
+                        || text == "Refresh conversation"
+                        || text == "Sohbeti yenile"));
+                    let mut rectangles = Vec::new();
+                    for category in [
+                        "presentations",
+                        "video",
+                        "images",
+                        "audio",
+                        "research",
+                        "documents",
+                        "data",
+                        "web",
+                    ] {
+                        let (enabled, selected, rect, clip) = ctx.data(|data| {
+                            data.get_temp::<(bool, bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                                "test-category-state",
+                                category,
+                            )))
+                            .unwrap()
+                        });
+                        assert!(enabled);
+                        assert_eq!(selected, category == "presentations");
+                        assert!(
+                            screen.contains_rect(rect) && clip.contains_rect(rect),
+                            "{language} {theme:?} {category} clipped {rect:?} {clip:?}"
+                        );
+                        rectangles.push(rect);
+                    }
+                    assert!((rectangles[0].top() - rectangles[3].top()).abs() < 1.0);
+                    assert!((rectangles[4].top() - rectangles[7].top()).abs() < 1.0);
+                    assert!(rectangles[4].top() > rectangles[0].bottom());
+                    for row in rectangles.chunks(4) {
+                        for pair in row.windows(2) {
+                            assert!(
+                                (pair[1].left() - pair[0].right() - 10.0).abs() < 1.0,
+                                "grid cells must not allocate extra icon columns"
+                            );
+                        }
+                    }
+                    let focus = ctx.data(|data| {
+                        data.get_temp::<egui::Id>(egui::Id::new(("test-category-id", "video")))
+                            .unwrap()
+                    });
+                    ctx.memory_mut(|memory| memory.request_focus(focus));
+                    let (commands, _) = render(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        vec![egui::Event::Key {
+                            key,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::default(),
+                        }],
+                    );
+                    assert!(
+                        commands.is_empty(),
+                        "a capability selection must not prepare or execute work"
+                    );
+                    assert_eq!(console.create.ability, "V1");
+                    assert_eq!(
+                        console.create.drafts[&("project:one".into(), "P1".into())].goal,
+                        "Owner goal"
+                    );
+                    assert!(console.create.draft().goal.is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
     fn connections_dialog_fits_minimum_viewport_and_only_runs_explicit_local_actions() {
         let size = egui::vec2(800.0, 560.0);
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);

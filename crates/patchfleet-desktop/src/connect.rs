@@ -48,58 +48,73 @@ impl Console {
         }
         let ready = ui.is_enabled();
         let id = egui::Id::new("provider-connections");
-        let modal=egui::Modal::new(id).area(egui::Modal::default_area(id).fade_in(false)).show(ui.ctx(),|ui| {
-            ui.set_width((ui.ctx().viewport_rect().width()-64.0).clamp(280.0,640.0));
-            ui.label(studio::title(t(ui,"Connect your crew"),24.0));
-            hint(ui,"One supported connection is enough. Your existing provider account stays yours.");
-            hint(ui,"After installing or updating a provider CLI, restart Moxcrew and check connections again.");
-            ui.add_enabled_ui(ready,|ui| {
-                action(ui,commands,"Check connections","provider_connections_read",!self.hold_automatic_reads,||json!({}));
-            });
-            egui::ScrollArea::vertical().id_salt("connection-cards").max_height((ui.ctx().viewport_rect().height()-320.0).max(120.0)).show(ui,|ui| {
-                for (id,name) in [("codex","Codex"),("claude","Claude Code"),("gemini","Gemini CLI")] {
-                    ui.push_id(id,|ui|card(ui,|ui| {
-                        ui.label(RichText::new(name).strong().size(17.0));
-                        let provider=connections(snapshot).iter().find(|provider|text(provider,"id")==id);
-                        ui.horizontal_wrapped(|ui| {
-                            hint(ui,"Installation");
-                            status(ui,match provider {Some(provider) if provider["installed"]==true=>"Installed",Some(_)=>"Not installed",None=>"Not checked"});
-                            if let Some(version)=provider.and_then(|provider|provider["version"].as_str()) {raw_hint(ui,version);}
-                        });
-                        ui.horizontal_wrapped(|ui| {
-                            hint(ui,"Sign-in");
-                            status(ui,match provider.map(|provider|text(provider,"authentication")) {
-                                Some("present")=>"Saved sign-in found",Some("missing")=>"Sign-in needed",_=>"Unknown",
+        let modal = egui::Modal::new(id)
+            .area(egui::Modal::default_area(id).fade_in(false))
+            .show(ui.ctx(), |ui| {
+                ui.set_width((ui.ctx().viewport_rect().width()-64.0).clamp(280.0,680.0));
+                ui.label(studio::title(t(ui,"Connect your crew"),28.0));
+                hint(ui,"One supported connection is enough. Your existing provider account stays yours.");
+                hint(ui,"After installing or updating a provider CLI, restart Moxcrew and check connections again.");
+                ui.add_space(8.0);
+                egui::ScrollArea::vertical().id_salt("connection-cards")
+                    .max_height((ui.ctx().viewport_rect().height()-365.0).max(110.0))
+                    .show(ui,|ui| {
+                        for (id,name) in [("codex","Codex"),("claude","Claude Code"),("gemini","Gemini CLI")] {
+                            let provider=connections(snapshot).iter().find(|provider|text(provider,"id")==id);
+                            ui.push_id(id,|ui| {
+                                egui::Frame::new().fill(colors(ui).raised).corner_radius(14).inner_margin(14).show(ui,|ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(studio::title(name,18.0));
+                                        if let Some(version)=provider.and_then(|provider|provider["version"].as_str()) {raw_hint(ui,version);}
+                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
+                                            if let Some(url)=setup_url(id) {
+                                                if ui.add_enabled(ready,egui::Link::new(t(ui,"Official setup guide"))).clicked() {ui.ctx().open_url(egui::OpenUrl::new_tab(url));}
+                                            }
+                                        });
+                                    });
+                                    ui.add_space(8.0);
+                                    ui.columns(3,|columns| {
+                                        for (column,label,value) in [
+                                            (0,"Installation",match provider {Some(provider) if provider["installed"]==true=>"Installed",Some(_)=>"Not installed",None=>"Not checked"}),
+                                            (1,"Sign-in",match provider.map(|provider|text(provider,"authentication")) {Some("present")=>"Saved sign-in found",Some("missing")=>"Sign-in needed",_=>"Unknown"}),
+                                            (2,"Task control",if id!="codex" {"Not supported yet"} else if provider.is_some_and(|provider|provider["controlSupported"]==true) {"Supported"} else {"Install or update Codex"}),
+                                        ] {
+                                            let ui=&mut columns[column];
+                                            ui.label(RichText::new(t(ui,label)).size(11.0).color(colors(ui).muted));
+                                            ui.label(RichText::new(t(ui,value)).size(13.0).strong());
+                                        }
+                                    });
+                                    if let Some(provider)=provider {
+                                        ui.collapsing(t(ui,"Diagnostic details"),|ui| {
+                                            ui.monospace(text(provider,"reasonCode"));
+                                            if id!="codex" {hint(ui,"Task execution for this provider is not available yet.");}
+                                        });
+                                    }
+                                });
                             });
-                        });
-                        ui.horizontal_wrapped(|ui| {
-                            hint(ui,"Task control");
-                            status(ui,if id!="codex" {"Not supported yet"} else if provider.is_some_and(|provider|provider["controlSupported"]==true) {"Supported"} else {"Install or update Codex"});
-                        });
-                        if id!="codex" {hint(ui,"Task execution for this provider is not available yet.");}
-                        if let Some(url)=setup_url(id) {
-                            if control(ui,"Official setup guide",ready).clicked() {ui.ctx().open_url(egui::OpenUrl::new_tab(url));}
+                            ui.add_space(10.0);
                         }
-                        if let Some(provider)=provider {
-                            ui.collapsing(t(ui,"Diagnostic details"),|ui| {ui.monospace(text(provider,"reasonCode"));});
-                        }
-                    }));
-                    ui.add_space(10.0);
-                }
-            });
-            hint(ui,"Saved sign-in does not verify model access or available quota. Checking never logs you in.");
-            ui.horizontal_wrapped(|ui| {
-                let mut reduced=snapshot["desktopPreferences"]["reduceMotion"].as_bool().unwrap_or(false);
-                let response=ui.add_enabled(ready,egui::Checkbox::new(&mut reduced,t(ui,"Reduce motion")));
-                #[cfg(test)]
-                ui.data_mut(|data| {
-                    data.insert_temp(egui::Id::new(("test-action","desktop_motion","Reduce motion")),response.rect);
-                    data.insert_temp(egui::Id::new(("test-action-state","desktop_motion","Reduce motion")),(response.enabled(),response.rect,ui.clip_rect()));
+                    });
+                ui.add_space(6.0);
+                hint(ui,"Saved sign-in does not verify model access or available quota. Checking never logs you in.");
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.add_enabled_ui(ready,|ui| {
+                        action(ui,commands,"Check connections","provider_connections_read",!self.hold_automatic_reads,||json!({}));
+                    });
+                    let mut reduced=snapshot["desktopPreferences"]["reduceMotion"].as_bool().unwrap_or(false);
+                    let response=ui.add_enabled(ready,egui::Checkbox::new(&mut reduced,t(ui,"Reduce motion")));
+                    #[cfg(test)]
+                    ui.data_mut(|data| {
+                        data.insert_temp(egui::Id::new(("test-action","desktop_motion","Reduce motion")),response.rect);
+                        data.insert_temp(egui::Id::new(("test-action-state","desktop_motion","Reduce motion")),(response.enabled(),response.rect,ui.clip_rect()));
+                    });
+                    if response.changed() && commands.is_empty() {commands.push(Command::new("desktop_motion",json!({"reduceMotion":reduced})));}
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
+                        if control(ui,"Close",true).clicked() {self.create.chat.connections_open=false;}
+                    });
                 });
-                if response.changed() && commands.is_empty() {commands.push(Command::new("desktop_motion",json!({"reduceMotion":reduced})));}
-                if control(ui,"Close",true).clicked() {self.create.chat.connections_open=false;}
             });
-        });
         if modal.should_close() {
             self.create.chat.connections_open = false;
         }

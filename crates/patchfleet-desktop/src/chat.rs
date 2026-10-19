@@ -4,6 +4,17 @@ fn terminal(status: &str) -> bool {
     matches!(status, "completed" | "failed" | "interrupted")
 }
 
+fn centered(ui: &mut Ui, width: f32, contents: impl FnOnce(&mut Ui)) {
+    let width = ui.available_width().min(width);
+    ui.vertical_centered(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(width, 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            contents,
+        );
+    });
+}
+
 fn suggestion(goal: &str) -> Option<&'static str> {
     let words = goal.to_lowercase();
     let groups = [
@@ -153,45 +164,72 @@ impl Console {
         if self.create.project.is_empty() && projects.len() == 1 {
             self.create.project = text(&projects[0], "projectId").into();
         }
-        let active = jobs(snapshot).iter().any(|job| {
-            text(job, "projectId") == self.create.project
-                && items(&snapshot["work"]).iter().any(|work| {
-                    work["workItemId"] == job["workItemId"]
-                        && matches!(text(work, "status"), "launching" | "running" | "cancelling")
-                })
-        });
-        ui.horizontal_wrapped(|ui| {
-            crate::motion::mox(
-                ui,
-                32.0,
-                active,
-                snapshot["desktopPreferences"]["reduceMotion"] == true,
-            );
-            ui.label(studio::title(t(ui, "Mox · Your project crew"), 21.0));
-            if control(ui, "Connections", true).clicked() {
-                self.create.chat.connections_open = true;
+        let compact = ui.ctx().viewport_rect().height() < 700.0;
+        let previous = self.create.project.clone();
+        ui.horizontal(|ui| {
+            if !projects.is_empty() {
+                ui.label(
+                    RichText::new(t(ui, "Project"))
+                        .size(12.0)
+                        .color(colors(ui).muted),
+                );
+                let name = projects
+                    .iter()
+                    .find(|project| text(project, "projectId") == self.create.project)
+                    .map(|project| std::borrow::Cow::Borrowed(text(project, "name")))
+                    .unwrap_or_else(|| t(ui, "Choose…"));
+                egui::ComboBox::from_id_salt("create-project-picker")
+                    .selected_text(name)
+                    .truncate()
+                    .width((ui.available_width() - 190.0).clamp(130.0, 260.0))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.create.project, String::new(), t(ui, "None"));
+                        for project in projects {
+                            ui.selectable_value(
+                                &mut self.create.project,
+                                text(project, "projectId").into(),
+                                text(project, "name"),
+                            );
+                        }
+                    });
+            } else {
+                ui.label(studio::title(t(ui, "Your studio"), 16.0).color(colors(ui).muted));
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if control(ui, "Connections", true).clicked() {
+                    self.create.chat.connections_open = true;
+                }
+            });
         });
+        ui.add_space(if compact { 8.0 } else { 18.0 });
         if projects.is_empty() {
-            ui.add_space(18.0);
-            ui.label(studio::title(t(ui, "What would you like to make?"), 24.0));
-            hint(
-                ui,
-                "Create a project to keep your work together. No folder setup needed.",
-            );
-            ui.add_space(12.0);
-            if submit(ui, "Create project", "create-project") {
-                self.new_project_open = true;
-            }
+            centered(ui, 820.0, |ui| {
+                ui.add_space(if compact { 18.0 } else { 60.0 });
+                ui.vertical_centered(|ui| {
+                    crate::motion::mox(
+                        ui,
+                        if compact { 120.0 } else { 180.0 },
+                        false,
+                        snapshot["desktopPreferences"]["reduceMotion"] == true,
+                    );
+                    ui.add_space(14.0);
+                    ui.label(studio::title(
+                        t(ui, "What would you like to make?"),
+                        if compact { 32.0 } else { 36.0 },
+                    ));
+                    ui.add_space(8.0);
+                    hint(
+                        ui,
+                        "Create a project to keep your work together. No folder setup needed.",
+                    );
+                    ui.add_space(24.0);
+                    if submit(ui, "Create project", "create-project") {
+                        self.new_project_open = true;
+                    }
+                });
+            });
             return;
         }
-        let previous = self.create.project.clone();
-        project_switcher(
-            ui,
-            "create-project-picker",
-            &mut self.create.project,
-            projects,
-        );
         if previous != self.create.project {
             self.create.result_path.clear();
             self.create.chat.files_open = false;
@@ -209,7 +247,12 @@ impl Console {
                 .resizable(true)
                 .default_size(320.0)
                 .min_size(270.0)
-                .frame(egui::Frame::new().fill(colors(ui).raised).inner_margin(12))
+                .frame(
+                    egui::Frame::new()
+                        .fill(colors(ui).surface)
+                        .inner_margin(16)
+                        .corner_radius(18),
+                )
                 .show(ui, |ui| {
                     self.chat_files(ui, snapshot, commands);
                 });
@@ -221,24 +264,54 @@ impl Console {
             .contains_key(&(self.create.project.clone(), self.create.ability.clone()));
         egui::Panel::bottom("conversation-composer")
             .resizable(false)
+            .show_separator_line(false)
             .exact_size(if has_reply { 194.0 } else { 158.0 })
-            .frame(
-                egui::Frame::new()
-                    .fill(colors(ui).surface)
-                    .stroke(egui::Stroke::new(1.0, colors(ui).border))
-                    .corner_radius(12)
-                    .inner_margin(12),
-            )
-            .show(ui, |ui| self.chat_composer(ui, snapshot, commands));
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                centered(ui, 820.0, |ui| {
+                    let focused = ui.memory(|memory| {
+                        memory.has_focus(egui::Id::new((
+                            "chat-goal",
+                            &self.create.project,
+                            &self.create.ability,
+                        )))
+                    });
+                    egui::Frame::new()
+                        .fill(colors(ui).surface)
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            if focused {
+                                colors(ui).primary
+                            } else {
+                                colors(ui).control_border
+                            },
+                        ))
+                        .corner_radius(22)
+                        .inner_margin(14)
+                        .shadow(egui::epaint::Shadow {
+                            offset: [0, 6],
+                            blur: 24,
+                            spread: 0,
+                            color: colors(ui).primary.gamma_multiply(0.10),
+                        })
+                        .show(ui, |ui| self.chat_composer(ui, snapshot, commands));
+                });
+            });
+        let welcome = self
+            .create
+            .chat_page(snapshot)
+            .is_some_and(|page| array(&page["items"]).is_empty());
         egui::ScrollArea::vertical()
             .id_salt((
                 "project-conversation",
                 &self.create.project,
                 self.create.chat.offset,
             ))
-            .stick_to_bottom(true)
+            .stick_to_bottom(!welcome)
             .auto_shrink([false, false])
-            .show(ui, |ui| self.chat_history(ui, snapshot, commands));
+            .show(ui, |ui| {
+                centered(ui, 820.0, |ui| self.chat_history(ui, snapshot, commands))
+            });
         if self.create.chat.files_open && !wide {
             let id = egui::Id::new("conversation-files-dialog");
             let modal = egui::Modal::new(id)
@@ -288,8 +361,11 @@ impl Console {
                 }
             });
         }
+        let goal_id = egui::Id::new(("chat-goal", &self.create.project, &self.create.ability));
         let response = ui.add(
             egui::TextEdit::multiline(&mut self.create.draft().goal)
+                .id(goal_id)
+                .frame(egui::Frame::NONE)
                 .hint_text(t(ui, "Describe your idea or ask for a change…"))
                 .desired_width(f32::INFINITY)
                 .desired_rows(2)
@@ -350,7 +426,7 @@ impl Console {
             ui.add(
                 egui::Label::new(
                     RichText::new(ability_text(selected, "name", language))
-                        .size(11.0)
+                        .size(12.0)
                         .color(colors(ui).muted),
                 )
                 .truncate(),
@@ -380,39 +456,129 @@ impl Console {
 
     fn chat_history(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let page = self.create.chat_page(snapshot);
-        ui.horizontal_wrapped(|ui| {
-            if control(ui, "Refresh conversation", !self.hold_automatic_reads).clicked() {
-                self.create.chat.refresh = true;
-            }
-            if control(
-                ui,
-                "Previous messages",
-                self.create.chat.offset > 0 && !self.hold_automatic_reads,
-            )
-            .clicked()
-            {
-                self.create.chat.offset = self.create.chat.offset.saturating_sub(20);
-            }
-            if let Some(next) = page.and_then(|page| page["nextOffset"].as_u64()) {
-                if control(ui, "Next messages", !self.hold_automatic_reads).clicked() {
-                    self.create.chat.offset = next as usize;
+        if page.is_none_or(|page| !array(&page["items"]).is_empty()) || self.create.chat.offset > 0
+        {
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add_enabled(
+                        !self.hold_automatic_reads,
+                        egui::Button::new(
+                            RichText::new(t(ui, "Refresh conversation"))
+                                .size(12.0)
+                                .color(colors(ui).muted),
+                        )
+                        .frame(false)
+                        .small(),
+                    )
+                    .clicked()
+                {
+                    self.create.chat.refresh = true;
                 }
-            }
-        });
+                if self.create.chat.offset > 0
+                    && control(
+                        ui,
+                        "Previous messages",
+                        self.create.chat.offset > 0 && !self.hold_automatic_reads,
+                    )
+                    .clicked()
+                {
+                    self.create.chat.offset = self.create.chat.offset.saturating_sub(20);
+                }
+                if let Some(next) = page.and_then(|page| page["nextOffset"].as_u64()) {
+                    if control(ui, "Next messages", !self.hold_automatic_reads).clicked() {
+                        self.create.chat.offset = next as usize;
+                    }
+                }
+            });
+        }
         let Some(page) = self.create.chat_page(snapshot) else {
             hint(ui, "Loading this project's conversation…");
             return;
         };
         if array(&page["items"]).is_empty() {
-            ui.add_space(12.0);
-            ui.label(studio::title(t(ui, "What would you like to make?"), 24.0));
-            hint(
+            self.chat_welcome(ui, snapshot);
+            return;
+        }
+        let project = self.create.project.clone();
+        for entry in array(&page["items"])
+            .iter()
+            .filter(|entry| job_belongs(snapshot, &project, text(entry, "workItemId")))
+        {
+            ui.push_id(text(entry, "workItemId"), |ui| {
+                ui.add_space(18.0);
+                let owner_width = ui.available_width() * 0.86;
+                ui.horizontal(|ui| {
+                    ui.add_space(
+                        (ui.available_width() - owner_width - ui.spacing().item_spacing.x).max(0.0),
+                    );
+                    egui::Frame::new()
+                        .fill(colors(ui).info_surface)
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            colors(ui).primary.gamma_multiply(0.18),
+                        ))
+                        .corner_radius(18)
+                        .inner_margin(16)
+                        .show(ui, |ui| {
+                            ui.set_max_width((owner_width - 32.0).max(100.0));
+                            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                                ui.label(
+                                    RichText::new(t(ui, "You"))
+                                        .size(11.0)
+                                        .color(colors(ui).primary),
+                                );
+                                ui.add(
+                                    egui::Label::new(text(entry, "goal"))
+                                        .wrap()
+                                        .selectable(true),
+                                );
+                                if entry["replyToWorkItemId"].is_string() {
+                                    hint(ui, "Follow-up request");
+                                }
+                            });
+                        });
+                });
+                ui.add_space(12.0);
+                self.chat_work_card(ui, snapshot, entry, commands);
+                ui.add_space(12.0);
+            });
+        }
+    }
+
+    fn chat_welcome(&mut self, ui: &mut Ui, snapshot: &Value) {
+        let compact = ui.ctx().viewport_rect().height() < 700.0;
+        ui.add_space(if compact { 0.0 } else { 40.0 });
+        ui.vertical_centered(|ui| {
+            crate::motion::mox(
                 ui,
-                "Tell Mox your goal. Prepare it, then decide when to start.",
+                if compact { 96.0 } else { 170.0 },
+                false,
+                snapshot["desktopPreferences"]["reduceMotion"] == true,
             );
-            ui.add_space(10.0);
-            ui.horizontal_wrapped(|ui| {
-                for category in [
+            ui.add_space(if compact { 4.0 } else { 12.0 });
+            ui.label(studio::title(
+                t(ui, "What would you like to make?"),
+                if compact { 32.0 } else { 36.0 },
+            ));
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(t(ui, "One idea. Start with a direction."))
+                    .size(if compact { 13.0 } else { 15.0 })
+                    .color(colors(ui).muted),
+            );
+        });
+        ui.add_space(if compact { 14.0 } else { 24.0 });
+        let columns = if ui.available_width() >= 500.0 { 4 } else { 2 };
+        let width = (ui.available_width() - 10.0 * (columns - 1) as f32) / columns as f32;
+        let selected_category = array(&snapshot["abilities"])
+            .iter()
+            .find(|ability| text(ability, "id") == self.create.ability)
+            .map(|ability| text(ability, "category"));
+        egui::Grid::new("conversation-categories")
+            .num_columns(columns)
+            .spacing(egui::vec2(10.0, 10.0))
+            .show(ui, |ui| {
+                for (index, category) in [
                     "presentations",
                     "video",
                     "images",
@@ -421,62 +587,124 @@ impl Console {
                     "documents",
                     "data",
                     "web",
-                ] {
-                    let label = if category == "web" {
-                        "Web"
-                    } else {
-                        category_name(category)
-                    };
-                    let response = ui.selectable_label(false, t(ui, label));
+                ]
+                .iter()
+                .enumerate()
+                {
+                    let available = array(&snapshot["abilities"])
+                        .iter()
+                        .find(|ability| text(ability, "category") == *category);
+                    let selected = selected_category == Some(category);
+                    let label = t(
+                        ui,
+                        if *category == "web" {
+                            "Web"
+                        } else {
+                            category_name(category)
+                        },
+                    );
+                    let response = ui
+                        .add_enabled_ui(available.is_some(), |ui| {
+                            ui.allocate_exact_size(
+                                egui::vec2(width, if compact { 58.0 } else { 82.0 }),
+                                egui::Sense::click(),
+                            )
+                            .1
+                        })
+                        .inner
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    response.widget_info(|| {
+                        egui::WidgetInfo::selected(
+                            egui::WidgetType::Button,
+                            response.enabled(),
+                            selected,
+                            &label,
+                        )
+                    });
+                    let p = colors(ui);
+                    let focused = response.has_focus() || response.hovered();
+                    ui.painter().rect(
+                        response.rect,
+                        14,
+                        if selected {
+                            p.info_surface
+                        } else if focused {
+                            p.raised
+                        } else {
+                            p.surface
+                        },
+                        egui::Stroke::new(
+                            1.0,
+                            if selected || focused {
+                                p.primary
+                            } else {
+                                p.border
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                    let icon_size = if compact { 18.0 } else { 24.0 };
+                    let icon_rect = egui::Rect::from_center_size(
+                        egui::pos2(
+                            response.rect.center().x,
+                            response.rect.top() + if compact { 16.0 } else { 25.0 },
+                        ),
+                        egui::vec2(icon_size, icon_size),
+                    );
+                    let mut icon_ui = ui.new_child(egui::UiBuilder::new().max_rect(icon_rect));
+                    studio::icon(
+                        &mut icon_ui,
+                        category,
+                        icon_size,
+                        if selected { p.primary } else { p.text },
+                    );
+                    ui.painter().text(
+                        egui::pos2(
+                            response.rect.center().x,
+                            response.rect.bottom() - if compact { 14.0 } else { 20.0 },
+                        ),
+                        egui::Align2::CENTER_CENTER,
+                        &label,
+                        egui::FontId::new(
+                            if compact { 13.0 } else { 15.0 },
+                            egui::FontFamily::Name("studio-display".into()),
+                        ),
+                        if response.enabled() { p.text } else { p.muted },
+                    );
                     #[cfg(test)]
                     ui.data_mut(|data| {
                         data.insert_temp(
                             egui::Id::new(("test-action", "category", category)),
                             response.rect,
-                        )
+                        );
+                        data.insert_temp(
+                            egui::Id::new(("test-category-state", category)),
+                            (response.enabled(), selected, response.rect, ui.clip_rect()),
+                        );
+                        data.insert_temp(
+                            egui::Id::new(("test-category-id", category)),
+                            response.id,
+                        );
                     });
-                    if response.clicked() {
-                        if let Some(ability) = array(&snapshot["abilities"])
-                            .iter()
-                            .find(|ability| text(ability, "category") == category)
-                        {
+                    if response.enabled()
+                        && (response.clicked()
+                            || (response.has_focus()
+                                && ui.input(|input| {
+                                    input.key_pressed(egui::Key::Enter)
+                                        || input.key_pressed(egui::Key::Space)
+                                })))
+                    {
+                        if let Some(ability) = available {
                             self.create.select_ability(text(ability, "id"));
-                            self.create.category = category.into();
+                            self.create.category = (*category).into();
                         }
+                    }
+                    if (index + 1) % columns == 0 {
+                        ui.end_row();
                     }
                 }
             });
-        }
-        let project = self.create.project.clone();
-        for entry in array(&page["items"])
-            .iter()
-            .filter(|entry| job_belongs(snapshot, &project, text(entry, "workItemId")))
-        {
-            ui.push_id(text(entry, "workItemId"), |ui| {
-                ui.add_space(12.0);
-                egui::Frame::new()
-                    .fill(colors(ui).info_surface)
-                    .corner_radius(12)
-                    .inner_margin(14)
-                    .show(ui, |ui| {
-                        ui.label(
-                            RichText::new(t(ui, "You"))
-                                .size(10.0)
-                                .color(colors(ui).primary),
-                        );
-                        ui.add(
-                            egui::Label::new(text(entry, "goal"))
-                                .wrap()
-                                .selectable(true),
-                        );
-                        if entry["replyToWorkItemId"].is_string() {
-                            hint(ui, "Follow-up request");
-                        }
-                    });
-                ui.add_space(8.0);
-                self.chat_work_card(ui, snapshot, entry, commands);
-            });
-        }
+        ui.add_space(16.0);
     }
 
     fn chat_work_card(
@@ -492,36 +720,52 @@ impl Console {
         else {
             return;
         };
-        egui::Frame::new().fill(colors(ui).surface).stroke(egui::Stroke::new(1.0,colors(ui).border)).corner_radius(12).inner_margin(12).show(ui,|ui| {
-            ui.horizontal_wrapped(|ui| {ui.strong("Mox");hint(ui,"Work status");status(ui,text(work,"status"));});
-            hint(ui,match text(work,"status") {"queued"=>"Prepared. Start when you're ready.","running"=>"Working in this project.","completed"=>"Work finished. Review the actual files.",_=>"Work stopped or needs attention. Review its status and files."});
-            let issue=job_issue(snapshot,&self.create.project,text(work,"workItemId"));
-            if let Some(issue)=issue {hint(ui,issue);}
-            ui.horizontal_wrapped(|ui| {
-                if text(work,"status")=="queued" {
-                    action(ui,commands,"Start task","work_start",connect::can_start(snapshot) && issue.is_none() && revision(work)>0,
-                        ||json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
+        egui::Frame::new()
+            .fill(colors(ui).surface)
+            .stroke(egui::Stroke::new(1.0, colors(ui).border))
+            .corner_radius(18)
+            .inner_margin(16)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    crate::motion::mox(ui,36.0,matches!(text(work,"status"),"launching"|"running"|"cancelling"),snapshot["desktopPreferences"]["reduceMotion"]==true);
+                    ui.vertical(|ui| {
+                        ui.label(studio::title("Mox",16.0));
+                        ui.label(RichText::new(t(ui,"Work status")).size(11.0).color(colors(ui).muted));
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| status(ui,text(work,"status")));
+                });
+                ui.add_space(6.0);
+                hint(ui,match text(work,"status") {"queued"=>"Prepared. Start when you're ready.","launching"|"running"|"cancelling"=>"Working in this project.","completed"=>"Work finished. Review the actual files.",_=>"Work stopped or needs attention. Review its status and files."});
+                let issue=job_issue(snapshot,&self.create.project,text(work,"workItemId"));
+                if let Some(issue)=issue {hint(ui,issue);}
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    if text(work,"status")=="queued" {
+                        action(ui,commands,"Start task","work_start",connect::can_start(snapshot) && issue.is_none() && revision(work)>0,
+                            ||json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
+                    }
+                    if matches!(text(work,"status"),"failed"|"interrupted"|"blocked") {
+                        action(ui,commands,"Queue retry","work_retry",revision(work)>0,||json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
+                    }
+                    if let Some(run)=array(&snapshot["work"]["runs"]).iter().rev().find(|run|run["workItemId"]==work["workItemId"] && text(run,"status")=="running") {
+                        action(ui,commands,"Cancel run","work_cancel",run["ownerEpoch"]==snapshot["hostEpoch"] && revision(run)>0,
+                            ||json!({"runId":run["runId"],"expectedRunRevision":run["revision"]}));
+                    }
+                    let before=commands.len();
+                    action(ui,commands,"Files","project_results_read",issue.is_none() && !cfg!(target_os="windows"),
+                        ||json!({"projectId":self.create.project,"workItemId":work["workItemId"]}));
+                    if commands.len()>before {
+                        self.create.selected_work.insert(self.create.project.clone(),text(work,"workItemId").into());
+                        self.create.result_path.clear();self.create.chat.files_open=true;
+                    }
+                    if control(ui,"Follow up",terminal(text(work,"status"))).clicked() {self.begin_chat_reply(snapshot,work);}
+                });
+                if text(work,"status")=="queued" && !connect::can_start(snapshot) {
+                    ui.add_space(4.0);
+                    ui.horizontal_wrapped(|ui| {hint(ui,"Connect a supported Codex account to start.");if control(ui,"Set up Codex",true).clicked() {self.create.chat.connections_open=true;}});
                 }
-                if matches!(text(work,"status"),"failed"|"interrupted"|"blocked") {
-                    action(ui,commands,"Queue retry","work_retry",revision(work)>0,||json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
-                }
-                if let Some(run)=array(&snapshot["work"]["runs"]).iter().rev().find(|run|run["workItemId"]==work["workItemId"] && text(run,"status")=="running") {
-                    action(ui,commands,"Cancel run","work_cancel",run["ownerEpoch"]==snapshot["hostEpoch"] && revision(run)>0,
-                        ||json!({"runId":run["runId"],"expectedRunRevision":run["revision"]}));
-                }
-                let before=commands.len();
-                action(ui,commands,"Files","project_results_read",issue.is_none() && !cfg!(target_os="windows"),
-                    ||json!({"projectId":self.create.project,"workItemId":work["workItemId"]}));
-                if commands.len()>before {
-                    self.create.selected_work.insert(self.create.project.clone(),text(work,"workItemId").into());
-                    self.create.result_path.clear();self.create.chat.files_open=true;
-                }
-                if control(ui,"Follow up",terminal(text(work,"status"))).clicked() {self.begin_chat_reply(snapshot,work);}
             });
-            if text(work,"status")=="queued" && !connect::can_start(snapshot) {
-                ui.horizontal_wrapped(|ui| {hint(ui,"Connect a supported Codex account to start.");if control(ui,"Set up Codex",true).clicked() {self.create.chat.connections_open=true;}});
-            }
-        });
     }
 
     fn chat_files(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {

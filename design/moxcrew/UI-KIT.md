@@ -77,8 +77,8 @@ and portable CSS colors remain available for other surfaces.
 | Crew / Outputs context | Plan/revision forms, file filters, delivery rows, private setup and frozen approval |
 
 Forms use 44 px controls and 36 px popup options. Long project names truncate
-with hover text within the width remaining after the measured action. A short viewport scrolls content
-without shrinking controls. Native evidence and acceptance results are recorded
+with hover text within the width remaining after the measured action. A short
+viewport scrolls content without shrinking controls. Native evidence and acceptance results are recorded
 in [screen migration state](../../docs/state/ui-kit-screen-migration.md).
 
 The unframed chat editor retains its measured 8/6 px inset inside the 16 px

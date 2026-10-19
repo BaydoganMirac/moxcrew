@@ -466,3 +466,175 @@ async fn generation_input_and_capability_boundaries_fail_before_dispatch() {
     failed["provider"]["version"] = json!("0.42.0");
     assert!(!supports_control(&failed));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn failed_managed_revision_retry_keeps_provider_schema_and_frozen_inputs() {
+    use sha2::{Digest, Sha256};
+
+    fn owner(mut value: Value) -> Value {
+        value["commandId"] = json!(format!("cmd:{}", uuid::Uuid::new_v4()));
+        let now = chrono::Utc::now();
+        value["createdAt"] = json!(now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+        value["expiresAt"] = json!((now + chrono::Duration::minutes(5))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+        value
+    }
+
+    for provider in ["claude", "gemini"] {
+        let (_fixture, programs) = peer(provider, "bad-exit");
+        let temporary = tempfile::tempdir().unwrap();
+        let data = temporary.path().join("data");
+        let host =
+            crate::Host::open_with_controller(data.clone(), Controller::with_programs(programs))
+                .unwrap();
+        host.store
+            .append(vec![crate::event(
+                "provider.observed",
+                json!({
+                    "providerId":provider,"state":"available",
+                    "version":if provider == "claude" {"2.1.170"} else {"0.43.0"},
+                    "capabilities":{"recentObservation":true,"explicitLiveStatus":true},
+                    "observedAt":crate::now(),"sessionIds":[]
+                }),
+            )])
+            .unwrap();
+        let project = host
+            .action("project_create", owner(json!({"name":"Revision retry"})))
+            .await
+            .unwrap()["projectId"]
+            .clone();
+        let original = host
+            .action(
+                "project_work_enqueue",
+                owner(json!({
+                    "projectId":project,"expectedProjectRevision":1,"abilityId":"D1",
+                    "title":"Original document","instruction":"Prepare the source document"
+                })),
+            )
+            .await
+            .unwrap();
+        let (source_root, _) = host
+            .creation_scope(&json!({
+                "projectId":project,"workItemId":original["workItemId"]
+            }))
+            .unwrap();
+        let source = b"The exact frozen reference for this revision.";
+        std::fs::write(source_root.join("outputs/source.md"), source).unwrap();
+        let revision = host.snapshot().unwrap()["projectMemory"]["projects"][0]["revision"].clone();
+        let queued = host.action("project_artifact_revise", owner(json!({
+            "projectId":project,"expectedProjectRevision":revision,
+            "workItemId":original["workItemId"],"path":"outputs/source.md",
+            "expectedSha256":format!("{:x}",Sha256::digest(source)),
+            "instruction":"SOURCE_BODY_CANARY: make this document shorter","providerId":provider
+        }))).await.unwrap();
+        assert_eq!(queued["outcome"], "applied", "{queued}");
+        let (revision_root, item) = host
+            .creation_scope(&json!({
+                "projectId":project,"workItemId":queued["workItemId"]
+            }))
+            .unwrap();
+        assert_eq!(item["schemaVersion"], 13);
+        assert_eq!(item["providerId"], provider);
+        let manifest = std::fs::read(revision_root.join("inputs/manifest.json")).unwrap();
+        let started = host
+            .action(
+                "work_start",
+                owner(json!({
+                    "workItemId":queued["workItemId"],"expectedItemRevision":item["revision"]
+                })),
+            )
+            .await
+            .unwrap();
+        assert_eq!(started["outcome"], "applied", "{started}");
+        let failed = timeout(Duration::from_secs(5), async {
+            loop {
+                host.background_tick(false).await.unwrap();
+                let (_, item) = host
+                    .creation_scope(&json!({
+                        "projectId":project,"workItemId":queued["workItemId"]
+                    }))
+                    .unwrap();
+                if item["status"] == "failed" {
+                    break item;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let state = host.snapshot().unwrap();
+        let run = state["work"]["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["workItemId"] == queued["workItemId"])
+            .unwrap();
+        assert_eq!(run["schemaVersion"], 13);
+        assert_eq!(run["providerId"], provider);
+        assert_eq!(run["status"], "failed");
+        // Retry must use the first revision's durable manifest, not reread a changed parent.
+        std::fs::write(
+            source_root.join("outputs/source.md"),
+            b"Changed parent output",
+        )
+        .unwrap();
+        let request = owner(json!({
+            "workItemId":queued["workItemId"],"expectedItemRevision":failed["revision"]
+        }));
+        let retried = host.action("work_retry", request.clone()).await.unwrap();
+        assert_eq!(retried["outcome"], "applied", "{retried}");
+        let (retry_root, retry) = host
+            .creation_scope(&json!({
+                "projectId":project,"workItemId":retried["workItemId"]
+            }))
+            .unwrap();
+        assert_eq!(retry["schemaVersion"], 13);
+        assert_eq!(retry["providerId"], provider);
+        assert_eq!(retry["instruction"], failed["instruction"]);
+        assert_eq!(retry["status"], "queued");
+        assert_eq!(
+            std::fs::read(retry_root.join("inputs/reference-01.md")).unwrap(),
+            source
+        );
+        assert_eq!(
+            std::fs::read(retry_root.join("inputs/manifest.json")).unwrap(),
+            manifest
+        );
+        let conversation = host
+            .action("project_chat_read", json!({"projectId":project}))
+            .await
+            .unwrap();
+        for id in [&queued["workItemId"], &retried["workItemId"]] {
+            assert!(conversation["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| &item["workItemId"] == id));
+        }
+        // A separately requested retry cannot accept modified frozen bytes.
+        std::fs::write(
+            revision_root.join("inputs/reference-01.md"),
+            b"Tampered frozen input",
+        )
+        .unwrap();
+        let rejected = host
+            .action(
+                "work_retry",
+                owner(json!({
+                    "workItemId":queued["workItemId"],"expectedItemRevision":failed["revision"]
+                })),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(rejected.0, "PROJECT_INPUT_CHANGED");
+        host.shutdown().await;
+        drop(host);
+        let recovered = crate::Host::open(data).unwrap();
+        assert_eq!(
+            recovered.action("work_retry", request).await.unwrap(),
+            retried
+        );
+        recovered.shutdown().await;
+    }
+}

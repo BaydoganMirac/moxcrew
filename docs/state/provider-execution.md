@@ -85,6 +85,12 @@ checks are unchanged.
   Two additional typed-worker tests cover stream/exit validation, inherited
   stdout, deadline, explicit cancellation and dropped-caller cleanup. Final
   integrated totals and independent review belong to the task state.
+- Integrated Host regression runs both native CLI peers through a managed
+  artifact revision, an actual failed process and owner retry. It verifies V13
+  and provider identity, original frozen bytes/manifest despite changed parent
+  output, conversation visibility, tamper rejection and durable retry receipts
+  after reopening the Host. This focused check passes with the local MCP
+  listener permitted; it uses no real account or model call.
 
 ## Limits
 

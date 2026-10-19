@@ -255,7 +255,7 @@ fn seed_create_scene(directory: &std::path::Path) {
         }
         let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
         let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":if english {"Product launch"} else {"Ürün lansmanı"}})).payload).await.unwrap();
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| (scene.starts_with("crew-") || scene.starts_with("productive-")) && !matches!(scene.as_str(),"productive-output"|"productive-resources"|"productive-apps")) {
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| (scene.starts_with("crew-") || scene.starts_with("productive-")) && !matches!(scene.as_str(),"productive-output"|"productive-resources"|"productive-apps"|"productive-delivery")) {
             let goal = if english { "Research the audience and create a launch presentation backed by sources." } else { "Hedef kitleyi araştır ve kaynaklarla desteklenen bir lansman sunumu hazırla." };
             let plan = host.action("project_crew_plan", serde_json::json!({"projectId":created["projectId"],"instruction":goal,"abilityId":"P1"})).await.unwrap();
             let prepared = host.action("project_crew_prepare", command::Command::new("project_crew_prepare", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":1,"title":if english {"Launch crew"} else {"Lansman ekibi"},"instruction":goal,"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})).payload).await.unwrap();
@@ -618,6 +618,20 @@ impl eframe::App for Patchfleet {
                         .save_file();
                     self.bridge
                         .choose_create_export(ctx.clone(), request, async move {
+                            choice.await.map(|file| file.path().to_owned())
+                        });
+                }
+            }
+            if let Some(request) = self.console.take_delivery_export_request() {
+                if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
+                    let choice = rfd::AsyncFileDialog::new()
+                        .set_title(i18n::tr(language, "Export package").into_owned())
+                        .set_file_name(&request.name)
+                        .add_filter("ZIP", &["zip"])
+                        .set_parent(frame)
+                        .save_file();
+                    self.bridge
+                        .choose_delivery_export(ctx.clone(), request, async move {
                             choice.await.map(|file| file.path().to_owned())
                         });
                 }

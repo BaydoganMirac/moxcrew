@@ -7,7 +7,7 @@ mod connect;
 mod crew;
 #[path = "output_studio.rs"]
 mod output_studio;
-pub use output_studio::{StudioPathKind, StudioPathRequest};
+pub use output_studio::{DeliveryExportRequest, StudioPathKind, StudioPathRequest};
 
 // Inline project views share quiet secondary actions and a single accent action.
 fn view_control(ui: &mut Ui, label: &str, enabled: bool, primary: bool) -> egui::Response {

@@ -1,4 +1,7 @@
 use super::*;
+#[path = "delivery.rs"]
+mod delivery;
+pub use delivery::DeliveryExportRequest;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StudioPathKind {
@@ -31,6 +34,12 @@ pub(super) struct StudioState {
     pending_prepare: Option<(String, String)>,
     executing: Option<(String, String)>,
     observed_receipt: String,
+    files_project: String,
+    query: String,
+    file_type: usize,
+    package_mode: bool,
+    packages: HashMap<String, std::collections::BTreeSet<(String, String, String)>>,
+    delivery_request: Option<DeliveryExportRequest>,
 }
 
 fn studio_page<'a>(snapshot: &'a Value, project: &str) -> Option<&'a Value> {
@@ -277,6 +286,16 @@ impl CreateState {
     }
 
     pub(super) fn sync_studio(&mut self, snapshot: &Value) {
+        if self.studio.files_project != self.project {
+            self.studio.files_project = self.project.clone();
+            self.studio.query.clear();
+            self.studio.file_type = 0;
+            self.studio.package_mode = false;
+            self.studio.delivery_request = None;
+        }
+        self.studio
+            .packages
+            .retain(|project, _| project_revision(snapshot, project).is_some());
         if project_revision(snapshot, &self.project).is_none() {
             self.studio.open = false;
             self.studio.token.clear();
@@ -424,7 +443,17 @@ impl Console {
         inline_surface(ui, |ui| {
             let compact = ui.ctx().viewport_rect().height() < 700.0;
             ui.horizontal(|ui| {
-                ui.label(studio::title(t(ui, "Outputs"), 22.0));
+                ui.label(studio::title(
+                    t(
+                        ui,
+                        if self.create.studio.tab == 0 && self.create.studio.package_mode {
+                            "Delivery package"
+                        } else {
+                            "Outputs"
+                        },
+                    ),
+                    22.0,
+                ));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let before = self.create.studio.tab;
                     let labels = ["Files", "Resources", "Tools", "Apps"];
@@ -472,7 +501,13 @@ impl Console {
                 });
             });
             ui.add_space(if compact { 16.0 } else { 24.0 });
-            let height = (ui.available_height() - 64.0).max(60.0);
+            let height = (ui.available_height()
+                - if self.create.studio.tab == 0 && self.create.studio.package_mode {
+                    96.0
+                } else {
+                    64.0
+                })
+            .max(60.0);
             egui::ScrollArea::vertical()
                 .id_salt(("output-studio-body", &project, self.create.studio.tab))
                 .auto_shrink([false, false])
@@ -483,6 +518,9 @@ impl Console {
                             1 => self.studio_resources(ui, snapshot, page, commands),
                             2 => self.studio_tools(ui, snapshot, page, commands),
                             3 => self.studio_apps(ui, snapshot, page, commands),
+                            _ if self.create.studio.package_mode => {
+                                self.studio_delivery(ui, snapshot, page)
+                            }
                             _ => self.studio_artifacts(ui, snapshot, page, commands),
                         }
                     } else {
@@ -500,18 +538,25 @@ impl Console {
     fn studio_footer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         match self.create.studio.tab {
             0 => {
-                if let Some(artifact) = selected_artifact(&self.create, snapshot).cloned() {
-                    ui.horizontal_wrapped(|ui| {
-                        if artifact_preview(&self.create,snapshot,&artifact).is_none() {
+                if self.create.studio.package_mode {
+                    self.studio_delivery_footer(ui, snapshot);
+                    return;
+                }
+                ui.horizontal_wrapped(|ui| {
+                    if let Some(artifact) = selected_artifact(&self.create, snapshot).cloned() {
+                        let has_preview = artifact_preview(&self.create, snapshot, &artifact).is_some();
+                        if !has_preview {
                             let response=view_control(ui,"Preview",!cfg!(target_os="windows"),true);
-                            #[cfg(test)] ui.data_mut(|data|data.insert_temp(egui::Id::new(("test-action","project_artifact_read","Preview")),response.rect));
-                            if response.clicked() && commands.is_empty() {commands.push(Command::new("project_artifact_read",json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]})));}
+                            #[cfg(test)]
+                            ui.data_mut(|data|data.insert_temp(egui::Id::new(("test-action","project_artifact_read","Preview")),response.rect));
+                            if response.clicked() && commands.is_empty() { commands.push(Command::new("project_artifact_read",json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]}))); }
                         }
-                        if view_control(ui,"Export copy",!cfg!(target_os="windows"),artifact_preview(&self.create,snapshot,&artifact).is_some()).clicked() {
+                        if view_control(ui,"Export copy",!cfg!(target_os="windows"),has_preview).clicked() {
                             self.create.export_request=Some(CreateExportRequest{project_id:self.create.project.clone(),work_item_id:text(&artifact,"workItemId").into(),path:text(&artifact,"path").into(),name:text(&artifact,"name").into(),expected_sha256:Some(text(&artifact,"sha256").into())});
                         }
-                    });
-                }
+                    }
+                    if view_control(ui,"Create package",studio_page(snapshot,&self.create.project).is_some_and(|page|!array(&page["artifacts"]).is_empty()),false).clicked() { self.create.studio.package_mode=true; }
+                });
             }
             1 => {
                 if view_control(ui, "Import resource", true, true).clicked() {
@@ -559,7 +604,16 @@ impl Console {
             .width(ui.available_width().min(540.0))
             .height(220.0)
             .show_ui(ui, |ui| {
-                for artifact in artifacts {
+                delivery::file_filters(ui, &mut self.create.studio);
+                let mut count = 0;
+                for artifact in artifacts.iter().filter(|artifact| {
+                    delivery::matches_file(
+                        artifact,
+                        &self.create.studio.query,
+                        self.create.studio.file_type,
+                    )
+                }) {
+                    count += 1;
                     let key = artifact_key(artifact);
                     let selected =
                         self.create.studio.selected.get(&self.create.project) == Some(&key);
@@ -586,6 +640,9 @@ impl Console {
                         self.create.studio.page = 0;
                         self.create.studio.section.clear();
                     }
+                }
+                if count == 0 {
+                    hint(ui, "No matching outputs.");
                 }
             });
         let Some(artifact) = selected_artifact(&self.create, snapshot).cloned() else {

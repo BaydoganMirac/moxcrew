@@ -31,6 +31,12 @@ exportable. These bounded operations do not imply arbitrary format compatibility
 full document rendering, media playback or forty verified end-to-end abilities.
 See [Output Studio state](docs/state/output-studio.md).
 
+Each Project has Chat, Crew and Outputs views inside the same native window.
+Chat keeps the request and conversation central; Crew leads with the current plan
+and its next action. Outputs gives files and previews their own space. Detailed
+provider, budget and setup controls open when needed, without covering the whole
+application with a second control panel.
+
 Google Drive blob import, Notion page creation and Google Calendar event creation
 use private, manually configured access tokens. Each action has a concrete preview
 and a separate explicit execution command; uncertain remote writes are never retried

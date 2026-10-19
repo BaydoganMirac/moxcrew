@@ -2,7 +2,7 @@
 
 Updated: 2026-10-19. Task0044; integrated tests and independent review passed.
 
-The native Chat file panel opens Project-scoped Output Studio. It lists actual
+The native Project Outputs view opens Project-scoped Output Studio. It lists actual
 files, SHA-256 versions and revision parents. A selected revision freezes the
 source bytes and selected section into a new queued job; starting it remains
 explicit. Retrying a failed revision validates the same frozen manifest and

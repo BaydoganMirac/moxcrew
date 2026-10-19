@@ -75,7 +75,7 @@ fn quiet_action(
     }
 }
 fn inline_surface(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
-    let width = ui.available_width().min(840.0);
+    let width = ui.available_width().min(980.0);
     ui.horizontal_top(|ui| {
         ui.add_space(((ui.available_width() - width) * 0.5).max(0.0));
         ui.vertical(|ui| {
@@ -86,6 +86,18 @@ fn inline_surface(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
             content(ui);
         });
     });
+}
+
+fn short_copy(ui: &mut Ui, text: &str, size: f32, color: Color32, rows: usize) -> egui::Response {
+    let mut job = egui::text::LayoutJob::simple(
+        text.into(),
+        egui::FontId::proportional(size),
+        color,
+        ui.available_width(),
+    );
+    job.wrap.max_rows = rows;
+    job.wrap.overflow_character = Some('…');
+    ui.add(egui::Label::new(job)).on_hover_text(text)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

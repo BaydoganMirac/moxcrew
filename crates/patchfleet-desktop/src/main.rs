@@ -53,7 +53,7 @@ impl Patchfleet {
                 "Native smoke host failed to open"
             );
         }
-        let console = ui::Console::default();
+        let console = ui::Console::launch();
         #[cfg(feature = "ui-smoke")]
         let console = {
             let mut console = console;

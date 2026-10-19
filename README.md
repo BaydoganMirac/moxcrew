@@ -31,13 +31,14 @@ exportable. These bounded operations do not imply arbitrary format compatibility
 full document rendering, media playback or forty verified end-to-end abilities.
 See [Output Studio state](docs/state/output-studio.md).
 
-Each Project has one compact Chat / Crew / Outputs switch inside the native
-window. A new conversation groups the request composer and capability choices.
-Crew presents the goal, agent cards and a clearly framed preparation action;
-contextual controls keep direction, recipes, schedules and activity available.
-Outputs gives previews their own space. Provider, budget and setup details open
-when needed. The navigation becomes a compact rail in smaller Studio windows.
-See [native product design](docs/state/product-crew-design.md).
+Chat is the Project's primary surface. Crew and Outputs open one context beside
+the conversation at normal/wide desktop widths; narrow windows keep a readable
+detail view with Back to chat. A new conversation groups the request composer
+and capability choices. Crew presents the goal, role cards and explicit Prepare/
+Start controls; Outputs keeps real previews and delivery packages available.
+Shared native buttons, input fields, cards and spacing follow the
+[Moxcrew UI kit](design/moxcrew/UI-KIT.md). See
+[chat-centered studio state](docs/state/chat-centered-ui-kit.md).
 
 Find outputs by name/path or file type, then choose **Create package** to select
 up to 32 files from the current Project. Review the selection and export one ZIP
@@ -67,8 +68,8 @@ decisions. Project cards open their own context; creating a task from a project
 selects its local folder while preserving any existing unsent draft. Bundled UI
 fonts, Mox mascot and the vector Moxcrew mark work offline. Both light and dark
 themes follow the system preference. The brand source is in [design/moxcrew](design/moxcrew/README.txt).
-The refreshed studio centers Mox and eight capability cards above a focused
-composer, with ink/cobalt surfaces and an adaptive file panel. See the
+The refreshed studio groups Mox, the composer and eight capability choices,
+with ink/cobalt surfaces and an adaptive file panel. See the
 [native studio evidence](docs/state/futuristic-native-studio.md).
 
 The native interface supports Turkish and English. Change the language in the

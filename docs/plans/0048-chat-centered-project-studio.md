@@ -1,6 +1,6 @@
 # Task0048: Shared UI kit and chat-centered Project studio
 
-Status: Owner-selected direction, implementing
+Status: Complete; independently reviewed and macOS development package verified
 
 Updated: 2026-10-19
 
@@ -49,3 +49,13 @@ resize interactions, visible composer beside Crew/Outputs, reachable primary
 actions and frozen Project/file/approval scope. Run the complete desktop suite,
 strict Clippy/format checks, actual native captures and a separate feature-off
 macOS development package. Document platform/live-provider limits honestly.
+
+## Completion
+
+Shared controls/tokens, real component gallery and responsive conversation
+context are implemented at `85c0805`. The all-feature desktop suite passed169
+tests; the final responsive inset correction passed its expanded affected
+resize regression. Strict workspace Clippy/formatting,42native captures,
+independent source/visual review and the separate feature-off macOS development
+package pass. See [UI kit state](../state/chat-centered-ui-kit.md) for exact
+evidence, hashes and remaining platform/live-provider limits.

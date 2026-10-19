@@ -6,6 +6,9 @@ existing brand measurements to production helpers and Project work surfaces.
 
 ## Measurements
 
+Sizes are logical UI pixels; native Retina captures can contain twice as many
+physical pixels on each axis.
+
 | Element | Rule |
 |---|---|
 | Spacing | 4, 8, 12, 16, 24, 32, 48 px |

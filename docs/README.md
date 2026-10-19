@@ -22,6 +22,11 @@ and trust boundaries come before implementation details.
 
 ## Current product focus
 
+[General-purpose Projects](decisions/0038-general-purpose-projects.md) is the
+owner-selected product direction: work beyond software development, with
+Project as the primary scope. See [state](state/general-purpose-projects.md)
+for the explicit gap between this direction and current Git/Codex execution.
+
 [Moxcrew identity and interface](state/dobbly-brand-interface.md) records the
 Mox mascot, system themes, native package and completed local verification.
 Technical installation/data identifiers remain compatible with earlier releases.

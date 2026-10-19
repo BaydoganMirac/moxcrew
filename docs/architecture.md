@@ -102,7 +102,8 @@ The normalized model starts small:
   capabilities.
 - Workspace: an opaque local registration for one canonical Git worktree; its
   absolute path never enters the Cloud projection.
-- Project: a stable local identity linking multiple registered workspaces.
+- Project: a stable local goal/context identity that can link multiple
+  registered workspaces; a repository is not its identity.
 - ProjectSource: revisioned owner context with identity and canonical provenance.
 - AgentPack: a versioned declarative local role, capability, permission, limit,
   expected-output, and provenance contract.
@@ -120,6 +121,12 @@ The normalized model starts small:
 Provider-native fields may be retained in a local namespaced extension. They do
 not enter the shared contract or Cloud projection until a concrete product use
 case and data classification exist.
+
+[ADR 0038](decisions/0038-general-purpose-projects.md) broadens the intended
+audience and retains Project as the main product concept. Workspace above
+describes the existing Git execution registry, not a required user-facing
+hierarchy. General-purpose execution needs separate capability/resource
+contracts; this document records the current narrower runtime.
 
 ## Project memory boundary
 

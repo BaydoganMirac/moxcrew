@@ -9,6 +9,11 @@ commitments.
 
 ## Now
 
+- Apply the owner-selected [general-purpose Project direction](decisions/0038-general-purpose-projects.md)
+  to future product work. Keep Project as the main container; research, content,
+  analysis and planning belong in the target audience alongside coding. Current
+  Git/Codex execution and Quick start are a narrower delivered implementation.
+
 - Preserve the completed [Moxcrew identity and native interface](state/dobbly-brand-interface.md),
   with Mox as the mascot and compatible existing installation/data identities.
 
@@ -41,6 +46,11 @@ commitments.
   remote action receipt, retention, billing, email, and rollback checks.
 
 ## Next
+
+- Define one complete non-coding project outcome and its required resources,
+  capabilities, consent, result review and onboarding in a separate bounded
+  card. The first workflow is not selected; do not claim generic execution or
+  remove existing Git validation before a replacement contract is approved.
 
 - Run the native desktop build/runtime matrix and signing evidence for
   [Task 0023](plans/0023-rust-desktop-migration.md). The macOS development

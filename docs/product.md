@@ -6,17 +6,40 @@ Updated: 2026-10-19
 
 ## One-line promise
 
-Moxcrew gives serious builders one local command center to form, direct,
-supervise, and recover teams of coding agents, with an optional Cloud view for
-safe remote decisions.
+Moxcrew helps people turn goals into outcomes with AI agents, keeping the work,
+context and decisions together in projects.
+
+## Audience and project model
+
+The owner selected a general-purpose product on 2026-10-19 under
+[ADR 0038](decisions/0038-general-purpose-projects.md). Research, writing,
+analysis, planning, personal work and software development are example uses;
+developer status is not a product requirement.
+
+A Project is a durable goal or body of work, with its context/resources, tasks,
+agent work, results and accepted decisions. Project is the main user-facing
+container; a separate Workspace hierarchy is not part of the selected basic
+flow. A repository or working folder is a resource, not the project's identity.
+Decisions include ordinary choices about a project's audience, evidence or
+delivery, not only software architecture. Notes and generated suggestions remain
+context until explicitly accepted. Decisions stay scoped to their project.
+
+This is the product direction, not a claim of universal execution today. The
+current task/team runner and Quick start still require Git worktrees and
+supported Codex control. General-purpose execution, resource ingestion and
+onboarding need concrete approved slices before they can be advertised as
+delivered. Current internal workspace/schema identifiers retain their meaning.
 
 ## Jobs to be done
 
-When several coding agents are active, the customer needs to:
+Across supported workflows, a customer needs to:
 
+- describe a goal, relevant context and what a useful result looks like;
+- inspect a proposed plan and the access required before work starts;
+- review and use the result rather than only monitor agent activity;
 - know what is running, waiting, failed, or finished;
 - understand which provider, project, and work item owns each run;
-- enqueue or revise work without switching between terminal windows;
+- enqueue or revise work in the project rather than repeating its context;
 - answer a blocking question and cancel unsafe or stale work;
 - recover useful state after the UI or host restarts;
 - check status and issue safe commands while away from the machine;
@@ -42,8 +65,9 @@ execution authority.
 
 ### Agent packs and teams
 
-Ready agent packs are inspectable local data, not executable plugins. An owner
-selects a workspace, an orchestrator, roles, and limits. The local scheduler
+Ready agent packs are inspectable local data, not executable plugins. In the
+current coding implementation an owner selects a registered Git folder, an
+orchestrator, roles, and limits. The local scheduler
 coordinates bounded provider runs and keeps task ownership, decisions, retries,
 questions, and receipts durable. Cloud receives only the sanitized operational
 projection and allowlisted expiring intents.
@@ -95,6 +119,10 @@ Service deployment and the broader existing-customer commercial transition
 remain separate release work.
 
 ## V0 promise
+
+The following is the implemented coding-control milestone and its release
+evidence contract. It is not the limit of the general-purpose product direction
+or proof that non-coding execution already works.
 
 V0 is complete when one user can:
 

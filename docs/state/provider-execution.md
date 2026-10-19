@@ -111,3 +111,37 @@ claim that a recipe or connected provider guarantees a valid artifact.
 - [Gemini configuration](https://geminicli.com/docs/reference/configuration/)
 - [Gemini MCP configuration](https://geminicli.com/docs/tools/mcp-server/)
 - [Codex app-server](https://learn.chatgpt.com/docs/app-server)
+
+## Task0050: desktop NVM discovery
+
+- Confirmed the installed Codex npm shim was available in a terminal's NVM PATH
+  but absent from the adapter's previous standard desktop search directories.
+  Calling that shim by absolute path with a minimal desktop PATH also failed
+  because `/usr/bin/env node` could not find its runtime.
+- On Unix, existing PATH and standard install-directory precedence is retained.
+  Discovery now additionally checks an absolute `NVM_DIR`, or the standard
+  `HOME/.nvm`, under `versions/node`. It accepts stable numeric `vMAJOR.MINOR.PATCH`
+  directory names, requires an executable sibling Node and provider file, and
+  tries versions newest first. Enumeration is limited to 128 entries; an
+  oversized or unreadable directory is ignored instead of selecting a random
+  partial result. Shell profiles and NVM scripts are never evaluated.
+- For an absolute executable provider with a verified executable sibling Node,
+  only the child's PATH gains that containing directory. The parent's environment,
+  selected executable and arguments remain unchanged. Injected `Programs`,
+  authentication checks, version gates, deadlines and process cleanup retain
+  their existing contracts. There is no executable picker or automatic install.
+- Deterministic discovery tests cover numeric precedence, PATH precedence,
+  malformed/missing/oversized directories, non-executable candidates, child-only
+  PATH changes and an npm-style shim requiring Node under a minimal PATH.
+- A disposable executable linked to the current compiled core was launched with
+  `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and no `NVM_DIR`. `Programs::default` found
+  Codex in the standard NVM directory; its real bounded connection check returned
+  Codex **0.163.0**, `authentication: present` and `CODEX_CREDENTIALS_PRESENT`.
+  Only `--version` and `login status` were invoked; other providers were disabled
+  for this check. Output retained only normalized fields, never account details.
+  An earlier standalone version probe reached its five-second deadline once;
+  subsequent checks succeeded. The deadline remains unchanged.
+- This evidence establishes local discovery and reported credential presence,
+  not model access, quota, account entitlement or successful execution. No live
+  inference, login, installation or credential-file inspection occurred. Native
+  Windows/Linux behavior and other Node version managers remain unverified.

@@ -25,6 +25,7 @@
 | Moxcrew native interface | Complete; independently reviewed and locally verified | 2026-10-19 | [dobbly-brand-interface.md](dobbly-brand-interface.md) |
 | Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
 | First-task quick start | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [first-task-quick-start.md](first-task-quick-start.md) |
+| General-purpose Project direction | Accepted; broader execution pending | 2026-10-19 | [general-purpose-projects.md](general-purpose-projects.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

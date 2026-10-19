@@ -92,6 +92,42 @@ pub fn quiet_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     response
 }
 
+pub fn view_switch(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
+    let p = palette(ui.ctx());
+    let response = ui.add(
+        egui::Button::new(RichText::new(label).size(12.0).color(if selected {
+            p.text
+        } else {
+            p.muted
+        }))
+        .fill(if selected {
+            p.raised
+        } else {
+            Color32::TRANSPARENT
+        })
+        .stroke(egui::Stroke::NONE)
+        .corner_radius(7)
+        .min_size(egui::vec2(66.0, 30.0)),
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::SelectableLabel,
+            response.enabled(),
+            selected,
+            label,
+        )
+    });
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            7,
+            egui::Stroke::new(2.0, p.focus),
+            egui::StrokeKind::Inside,
+        );
+    }
+    response
+}
+
 pub fn install(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     for (name, bytes) in [
@@ -306,6 +342,11 @@ pub fn icon(ui: &mut egui::Ui, key: &str, size: f32, color: Color32) -> egui::Re
                     .collect(),
                 stroke,
             ));
+        }
+        "review" => {
+            painter.circle_stroke(p(12.0, 12.0), size * 0.4, stroke);
+            line((7.0, 12.0), (10.5, 15.5));
+            line((10.5, 15.5), (17.0, 8.0));
         }
         "connections" => {
             for (x, y) in [(5.0, 6.0), (19.0, 6.0), (12.0, 19.0)] {

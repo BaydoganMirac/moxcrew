@@ -167,30 +167,62 @@ impl Console {
         let compact = ui.ctx().viewport_rect().height() < 700.0;
         let previous = self.create.project.clone();
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
             if !projects.is_empty() {
-                ui.label(
-                    RichText::new(t(ui, "Project"))
-                        .size(12.0)
-                        .color(colors(ui).muted),
-                );
                 let name = projects
                     .iter()
                     .find(|project| text(project, "projectId") == self.create.project)
                     .map(|project| std::borrow::Cow::Borrowed(text(project, "name")))
                     .unwrap_or_else(|| t(ui, "Choose…"));
-                egui::ComboBox::from_id_salt("create-project-picker")
-                    .selected_text(name)
-                    .truncate()
-                    .width((ui.available_width() - 150.0).clamp(100.0, 260.0))
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.create.project, String::new(), t(ui, "None"));
-                        for project in projects {
+                ui.scope(|ui| {
+                    ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                    ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+                    egui::ComboBox::from_id_salt("create-project-picker")
+                        .selected_text(name)
+                        .truncate()
+                        .width((ui.available_width() - 340.0).clamp(110.0, 240.0))
+                        .show_ui(ui, |ui| {
                             ui.selectable_value(
                                 &mut self.create.project,
-                                text(project, "projectId").into(),
-                                text(project, "name"),
+                                String::new(),
+                                t(ui, "None"),
                             );
-                        }
+                            for project in projects {
+                                ui.selectable_value(
+                                    &mut self.create.project,
+                                    text(project, "projectId").into(),
+                                    text(project, "name"),
+                                );
+                            }
+                        });
+                });
+                ui.add_space(8.0);
+                egui::Frame::new()
+                    .fill(colors(ui).surface)
+                    .stroke(egui::Stroke::new(1.0, colors(ui).border))
+                    .corner_radius(10)
+                    .inner_margin(3)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 2.0;
+                            for (view, label) in [(0usize, "Chat"), (1, "Crew"), (2, "Outputs")] {
+                                let response = studio::view_switch(
+                                    ui,
+                                    self.create.productive_view() == view,
+                                    t(ui, label).as_ref(),
+                                );
+                                #[cfg(test)]
+                                ui.data_mut(|data| {
+                                    data.insert_temp(
+                                        egui::Id::new(("project-view-tab", view)),
+                                        response.rect,
+                                    )
+                                });
+                                if response.clicked() {
+                                    self.create.select_productive_view(view);
+                                }
+                            }
+                        });
                     });
             } else {
                 ui.label(studio::title(t(ui, "Your studio"), 16.0).color(colors(ui).muted));
@@ -201,7 +233,7 @@ impl Console {
                 }
             });
         });
-        ui.add_space(if compact { 8.0 } else { 18.0 });
+        ui.add_space(if compact { 12.0 } else { 24.0 });
         if projects.is_empty() {
             centered(ui, 820.0, |ui| {
                 ui.add_space(if compact { 18.0 } else { 60.0 });
@@ -241,30 +273,6 @@ impl Console {
         {
             hint(ui, "Choose the project for this idea.");
             return;
-        }
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 18.0;
-            for (view, label) in [(0, "Chat"), (1, "Crew"), (2, "Outputs")] {
-                let response = studio::section_nav(
-                    ui,
-                    self.create.productive_view() == view,
-                    t(ui, label).as_ref(),
-                );
-                #[cfg(test)]
-                ui.data_mut(|data| {
-                    data.insert_temp(egui::Id::new(("project-view-tab", view)), response.rect);
-                });
-                if response.clicked() {
-                    self.create.select_productive_view(view);
-                }
-            }
-        });
-        if compact {
-            ui.add_space(4.0);
-        } else {
-            ui.add_space(6.0);
-            ui.separator();
-            ui.add_space(22.0);
         }
         match self.create.productive_view() {
             1 => {
@@ -306,51 +314,28 @@ impl Console {
                     self.chat_files(ui, snapshot, commands);
                 });
         }
-        let has_reply = self
-            .create
-            .chat
-            .replies
-            .contains_key(&(self.create.project.clone(), self.create.ability.clone()));
-        egui::Panel::bottom("conversation-composer")
-            .resizable(false)
-            .show_separator_line(false)
-            .exact_size(if has_reply { 194.0 } else { 158.0 })
-            .frame(egui::Frame::NONE)
-            .show(ui, |ui| {
-                centered(ui, 820.0, |ui| {
-                    let focused = ui.memory(|memory| {
-                        memory.has_focus(egui::Id::new((
-                            "chat-goal",
-                            &self.create.project,
-                            &self.create.ability,
-                        )))
-                    });
-                    egui::Frame::new()
-                        .fill(colors(ui).surface)
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            if focused {
-                                colors(ui).primary
-                            } else {
-                                colors(ui).control_border
-                            },
-                        ))
-                        .corner_radius(22)
-                        .inner_margin(14)
-                        .shadow(egui::epaint::Shadow {
-                            offset: [0, 6],
-                            blur: 24,
-                            spread: 0,
-                            color: colors(ui).primary.gamma_multiply(0.10),
-                        })
-                        .show(ui, |ui| self.chat_composer(ui, snapshot, commands));
-                });
-            });
         let welcome = self
             .create
             .chat_page(snapshot)
             .is_some_and(|page| array(&page["items"]).is_empty())
             && !self.create.crew_has_history(snapshot);
+        if !welcome {
+            let has_reply = self
+                .create
+                .chat
+                .replies
+                .contains_key(&(self.create.project.clone(), self.create.ability.clone()));
+            egui::Panel::bottom("conversation-composer")
+                .resizable(false)
+                .show_separator_line(false)
+                .exact_size(if has_reply { 194.0 } else { 158.0 })
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| {
+                    centered(ui, 820.0, |ui| {
+                        self.chat_composer_frame(ui, snapshot, commands)
+                    });
+                });
+        }
         egui::ScrollArea::vertical()
             .id_salt((
                 "project-conversation",
@@ -387,6 +372,35 @@ impl Console {
                 commands.push(command);
             }
         }
+    }
+
+    fn chat_composer_frame(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        let focused = ui.memory(|memory| {
+            memory.has_focus(egui::Id::new((
+                "chat-goal",
+                &self.create.project,
+                &self.create.ability,
+            )))
+        });
+        egui::Frame::new()
+            .fill(colors(ui).surface)
+            .stroke(egui::Stroke::new(
+                1.0,
+                if focused {
+                    colors(ui).primary
+                } else {
+                    colors(ui).control_border
+                },
+            ))
+            .corner_radius(22)
+            .inner_margin(14)
+            .shadow(egui::epaint::Shadow {
+                offset: [0, 6],
+                blur: 24,
+                spread: 0,
+                color: colors(ui).primary.gamma_multiply(0.10),
+            })
+            .show(ui, |ui| self.chat_composer(ui, snapshot, commands));
     }
 
     fn chat_composer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -575,7 +589,7 @@ impl Console {
             return;
         };
         if array(&page["items"]).is_empty() && !self.create.crew_has_history(snapshot) {
-            self.chat_welcome(ui, snapshot);
+            self.chat_welcome(ui, snapshot, commands);
             return;
         }
         let project = self.create.project.clone();
@@ -625,13 +639,13 @@ impl Console {
         self.crew_chat_content(ui, snapshot, commands);
     }
 
-    fn chat_welcome(&mut self, ui: &mut Ui, snapshot: &Value) {
+    fn chat_welcome(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let compact = ui.ctx().viewport_rect().height() < 700.0;
-        ui.add_space(if compact { 0.0 } else { 40.0 });
+        ui.add_space(if compact { 0.0 } else { 24.0 });
         ui.vertical_centered(|ui| {
             crate::motion::mox(
                 ui,
-                if compact { 48.0 } else { 112.0 },
+                if compact { 40.0 } else { 80.0 },
                 false,
                 snapshot["desktopPreferences"]["reduceMotion"] == true,
             );
@@ -647,7 +661,9 @@ impl Console {
                     .color(colors(ui).muted),
             );
         });
-        ui.add_space(if compact { 4.0 } else { 24.0 });
+        ui.add_space(if compact { 12.0 } else { 24.0 });
+        self.chat_composer_frame(ui, snapshot, commands);
+        ui.add_space(if compact { 12.0 } else { 20.0 });
         let columns = if ui.available_width() >= 500.0 { 4 } else { 2 };
         let width = (ui.available_width() - 10.0 * (columns - 1) as f32) / columns as f32;
         let selected_category = array(&snapshot["abilities"])
@@ -1026,44 +1042,70 @@ mod tests {
                     create: draft(),
                     ..Default::default()
                 };
-                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 560.0));
-                let frame = |console: &mut Console, events: Vec<egui::Event>| {
-                    ctx.run_ui(
-                        egui::RawInput {
-                            screen_rect: Some(screen),
-                            events,
-                            ..Default::default()
-                        },
-                        |ui| {
-                            let _ = console.show(ui, &snapshot, false, None, false);
-                        },
-                    )
-                    .drop_without_applying_deltas();
-                };
-                for view in [1usize, 2, 0] {
-                    frame(&mut console, vec![]);
-                    frame(&mut console, vec![]);
-                    let rect = ctx.data(|data| {
-                        data.get_temp::<egui::Rect>(egui::Id::new(("project-view-tab", view)))
+                for width in [1280.0, 800.0, 1280.0] {
+                    let screen =
+                        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 560.0));
+                    let frame = |console: &mut Console, events: Vec<egui::Event>| {
+                        ctx.run_ui(
+                            egui::RawInput {
+                                screen_rect: Some(screen),
+                                events,
+                                ..Default::default()
+                            },
+                            |ui| {
+                                let _ = console.show(ui, &snapshot, false, None, false);
+                            },
+                        )
+                        .drop_without_applying_deltas();
+                    };
+                    for view in [1usize, 2, 0] {
+                        frame(&mut console, vec![]);
+                        frame(&mut console, vec![]);
+                        let rect = ctx.data(|data| {
+                            data.get_temp::<egui::Rect>(egui::Id::new(("project-view-tab", view)))
+                                .unwrap()
+                        });
+                        assert!(screen.contains_rect(rect), "{language}/{theme:?}/{view}");
+                        let other = ctx.data(|data| {
+                            data.get_temp::<egui::Rect>(egui::Id::new((
+                                "project-view-tab",
+                                (view + 1) % 3,
+                            )))
                             .unwrap()
-                    });
-                    assert!(screen.contains_rect(rect), "{language}/{theme:?}/{view}");
-                    for pressed in [true, false] {
-                        frame(
-                            &mut console,
-                            vec![
-                                egui::Event::PointerMoved(rect.center()),
-                                egui::Event::PointerButton {
-                                    pos: rect.center(),
-                                    button: egui::PointerButton::Primary,
-                                    pressed,
-                                    modifiers: egui::Modifiers::default(),
-                                },
-                            ],
+                        });
+                        assert!(
+                            (rect.top() - other.top()).abs() < 1.0,
+                            "Project views share one header row"
                         );
+                        let navigation = ctx.data(|data| {
+                            data.get_temp::<egui::Rect>(egui::Id::new((
+                                "test-action",
+                                "navigation",
+                                "Chat",
+                            )))
+                            .unwrap()
+                        });
+                        assert!(screen.contains_rect(navigation));
+                        if width < 1000.0 {
+                            assert!(navigation.width() < 60.0, "Resizing releases content width");
+                        }
+                        for pressed in [true, false] {
+                            frame(
+                                &mut console,
+                                vec![
+                                    egui::Event::PointerMoved(rect.center()),
+                                    egui::Event::PointerButton {
+                                        pos: rect.center(),
+                                        button: egui::PointerButton::Primary,
+                                        pressed,
+                                        modifiers: egui::Modifiers::default(),
+                                    },
+                                ],
+                            );
+                        }
+                        assert_eq!(console.create.productive_view(), view);
+                        assert_eq!(console.create.draft().goal, "Revise the introduction");
                     }
-                    assert_eq!(console.create.productive_view(), view);
-                    assert_eq!(console.create.draft().goal, "Revise the introduction");
                 }
             }
         }

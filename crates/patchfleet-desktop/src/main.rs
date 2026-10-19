@@ -253,11 +253,12 @@ fn seed_create_scene(directory: &std::path::Path) {
             host.shutdown().await;
             return;
         }
-        let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":"Launch idea · UI fixture"})).payload).await.unwrap();
+        let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+        let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":if english {"Product launch"} else {"Ürün lansmanı"}})).payload).await.unwrap();
         if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| (scene.starts_with("crew-") || scene.starts_with("productive-")) && !matches!(scene.as_str(),"productive-output"|"productive-resources"|"productive-apps")) {
-            let goal = "Research the audience and prepare a launch presentation with sources. Disposable UI fixture; no provider was run.";
+            let goal = if english { "Research the audience and create a launch presentation backed by sources." } else { "Hedef kitleyi araştır ve kaynaklarla desteklenen bir lansman sunumu hazırla." };
             let plan = host.action("project_crew_plan", serde_json::json!({"projectId":created["projectId"],"instruction":goal,"abilityId":"P1"})).await.unwrap();
-            let prepared = host.action("project_crew_prepare", command::Command::new("project_crew_prepare", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":1,"title":"Launch crew · UI fixture","instruction":goal,"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})).payload).await.unwrap();
+            let prepared = host.action("project_crew_prepare", command::Command::new("project_crew_prepare", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":1,"title":if english {"Launch crew"} else {"Lansman ekibi"},"instruction":goal,"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})).payload).await.unwrap();
             assert_eq!(prepared["outcome"],"applied");
             host.shutdown().await;
             return;

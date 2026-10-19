@@ -1,6 +1,6 @@
 use super::*;
 
-fn connections(snapshot: &Value) -> &[Value] {
+pub(super) fn connections(snapshot: &Value) -> &[Value] {
     let diagnostic = &snapshot["providerConnections"];
     if text(diagnostic, "reasonCode") != "PROVIDER_CONNECTIONS_READ" {
         return &[];
@@ -8,22 +8,47 @@ fn connections(snapshot: &Value) -> &[Value] {
     array(&diagnostic["providers"])
 }
 
+pub(super) fn selection_status(snapshot: &Value, id: &str) -> &'static str {
+    match connections(snapshot)
+        .iter()
+        .find(|provider| text(provider, "id") == id)
+    {
+        None => "Checking provider availability…",
+        Some(provider) if provider["installed"] != true => {
+            "Install the selected provider CLI, then restart Moxcrew."
+        }
+        Some(provider)
+            if provider["controlSupported"] != true
+                || (id == "codex" && !codex_project_version(provider)) =>
+        {
+            "Update the selected provider CLI, then restart Moxcrew."
+        }
+        Some(provider) if provider["authentication"] == "missing" => {
+            "Sign in to the selected provider CLI, then check connections."
+        }
+        Some(_) => "Planning uses your selected provider. Execution needs your approval.",
+    }
+}
+
+fn codex_project_version(provider: &Value) -> bool {
+    let version: Option<Vec<u64>> = text(provider, "version")
+        .split('+')
+        .next()
+        .unwrap_or("")
+        .split('.')
+        .map(|part| part.parse().ok())
+        .collect();
+    version
+        .is_some_and(|version| version.len() == 3 && version.as_slice() >= [0, 155, 1].as_slice())
+}
+
 pub(super) fn can_start(snapshot: &Value) -> bool {
     connections(snapshot).iter().any(|provider| {
-        let version: Option<Vec<u64>> = text(provider, "version")
-            .split('+')
-            .next()
-            .unwrap_or("")
-            .split('.')
-            .map(|part| part.parse().ok())
-            .collect();
         text(provider, "id") == "codex"
             && provider["installed"] == true
             && provider["authentication"] == "present"
             && provider["controlSupported"] == true
-            && version.is_some_and(|version| {
-                version.len() == 3 && version.as_slice() >= [0, 155, 1].as_slice()
-            })
+            && codex_project_version(provider)
     })
 }
 
@@ -32,6 +57,7 @@ pub(super) fn can_attempt_provider(snapshot: &Value, id: &str) -> bool {
         text(provider, "id") == id
             && provider["installed"] == true
             && provider["controlSupported"] == true
+            && (id != "codex" || codex_project_version(provider))
             && matches!(text(provider, "authentication"), "present" | "unknown")
     })
 }
@@ -159,17 +185,21 @@ mod tests {
         let mut snapshot = json!({"providerConnections":{"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[
             {"id":"claude","installed":true,"authentication":"present","controlSupported":true,"version":"9.0.0"}]}});
         assert!(!can_start(&snapshot));
+        assert!(!can_attempt_provider(&snapshot, "codex"));
         snapshot["providerConnections"]["providers"][0]["id"] = json!("codex");
         snapshot["providerConnections"]["providers"][0]["version"] = json!("0.155.0");
         assert!(!can_start(&snapshot));
         snapshot["providerConnections"]["providers"][0]["version"] = json!("0.155.1");
         assert!(can_start(&snapshot));
+        assert!(can_attempt_provider(&snapshot, "codex"));
         snapshot["providerConnections"]["providers"][0]["version"] = json!("0.bad.155.1");
         assert!(!can_start(&snapshot));
+        assert!(!can_attempt_provider(&snapshot, "codex"));
         snapshot["providerConnections"]["providers"][0]["version"] = json!("0.155.1");
         for auth in ["missing", "unknown"] {
             snapshot["providerConnections"]["providers"][0]["authentication"] = json!(auth);
             assert!(!can_start(&snapshot));
+            assert_eq!(can_attempt_provider(&snapshot, "codex"), auth == "unknown");
         }
         assert!(setup_url("foreign").is_none());
         assert!(setup_url("codex")

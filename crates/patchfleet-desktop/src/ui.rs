@@ -44,7 +44,7 @@ impl Tab {
     ];
     fn name(self) -> &'static str {
         match self {
-            Self::Create => "Create",
+            Self::Create => "Chat",
             Self::Projects => "Projects",
             Self::Memory => "Memory",
             Self::Decisions => "Decisions",
@@ -1218,36 +1218,44 @@ impl Console {
                     hint(ui, "Retry or dismiss the failed action before refreshing.");
                     ui.add_space(8.0);
                 }
-                egui::ScrollArea::vertical()
-                    .id_salt(("console-body", self.tab.name()))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.set_max_width(ui.available_width().min(if self.tab == Tab::Memory {
-                            980.0
-                        } else {
-                            1180.0
-                        }));
-                        if self.quick_start.open && matches!(self.tab, Tab::Work | Tab::Providers) {
-                            ui.horizontal_wrapped(|ui| {
-                                hint(ui, "Quick start is open. Return for your next step.");
-                                if control(ui, "Back to quick start", !busy).clicked() {
-                                    self.tab = Tab::Projects;
-                                }
+                if self.tab == Tab::Create {
+                    ui.add_enabled_ui(!busy, |ui| self.create_studio(ui, snapshot, &mut commands));
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt(("console-body", self.tab.name()))
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width().min(
+                                if self.tab == Tab::Memory {
+                                    980.0
+                                } else {
+                                    1180.0
+                                },
+                            ));
+                            if self.quick_start.open
+                                && matches!(self.tab, Tab::Work | Tab::Providers)
+                            {
+                                ui.horizontal_wrapped(|ui| {
+                                    hint(ui, "Quick start is open. Return for your next step.");
+                                    if control(ui, "Back to quick start", !busy).clicked() {
+                                        self.tab = Tab::Projects;
+                                    }
+                                });
+                                ui.add_space(12.0);
+                            }
+                            ui.add_enabled_ui(!busy, |ui| match self.tab {
+                                Tab::Create => self.create_studio(ui, snapshot, &mut commands),
+                                Tab::Projects => self.projects(ui, snapshot, &mut commands),
+                                Tab::Memory => self.project_memory(ui, snapshot, &mut commands),
+                                Tab::Decisions => self.decision_panel(ui, snapshot, &mut commands),
+                                Tab::Work => self.work_panel(ui, snapshot, &mut commands),
+                                Tab::Teams => self.teams(ui, snapshot, &mut commands),
+                                Tab::Agents => self.agents(ui, snapshot, &mut commands),
+                                Tab::Providers => self.providers(ui, snapshot),
+                                Tab::Cloud => self.cloud(ui, snapshot, &mut commands),
                             });
-                            ui.add_space(12.0);
-                        }
-                        ui.add_enabled_ui(!busy, |ui| match self.tab {
-                            Tab::Create => self.create_studio(ui, snapshot, &mut commands),
-                            Tab::Projects => self.projects(ui, snapshot, &mut commands),
-                            Tab::Memory => self.project_memory(ui, snapshot, &mut commands),
-                            Tab::Decisions => self.decision_panel(ui, snapshot, &mut commands),
-                            Tab::Work => self.work_panel(ui, snapshot, &mut commands),
-                            Tab::Teams => self.teams(ui, snapshot, &mut commands),
-                            Tab::Agents => self.agents(ui, snapshot, &mut commands),
-                            Tab::Providers => self.providers(ui, snapshot),
-                            Tab::Cloud => self.cloud(ui, snapshot, &mut commands),
                         });
-                    });
+                }
             });
         if self.registration_open {
             let id = egui::Id::new("register-folder");

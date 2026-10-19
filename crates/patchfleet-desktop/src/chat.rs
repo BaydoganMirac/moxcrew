@@ -1,0 +1,785 @@
+use super::*;
+
+fn terminal(status: &str) -> bool {
+    matches!(status, "completed" | "failed" | "interrupted")
+}
+
+fn suggestion(goal: &str) -> Option<&'static str> {
+    let words = goal.to_lowercase();
+    let groups = [
+        (
+            "P1",
+            &[
+                "presentation",
+                "slides",
+                "slide deck",
+                "pptx",
+                "sunum",
+                "slayt",
+            ][..],
+        ),
+        ("V1", &["video", "clip", "subtitle", "altyazı", "kurgu"][..]),
+        (
+            "I1",
+            &["image", "picture", "poster", "görsel", "resim", "afiş"][..],
+        ),
+        (
+            "A1",
+            &[
+                "audio",
+                "podcast",
+                "transcribe",
+                "transcript",
+                "ses kaydı",
+                "seslendir",
+            ][..],
+        ),
+        ("R1", &["research", "compare", "araştır", "karşılaştır"][..]),
+        (
+            "D1",
+            &[
+                "document", "word", "report", "proposal", "belge", "rapor", "teklif",
+            ][..],
+        ),
+        (
+            "T1",
+            &[
+                "csv",
+                "excel",
+                "spreadsheet",
+                "tablo analizi",
+                "veri analizi",
+            ][..],
+        ),
+        (
+            "W1",
+            &[
+                "website",
+                "web site",
+                "landing page",
+                "web sitesi",
+                "uygulama",
+            ][..],
+        ),
+    ];
+    let found: Vec<_> = groups
+        .iter()
+        .filter(|(_, terms)| terms.iter().any(|term| words.contains(term)))
+        .collect();
+    (found.len() == 1).then(|| found[0].0)
+}
+
+impl CreateState {
+    fn chat_page<'a>(&self, snapshot: &'a Value) -> Option<&'a Value> {
+        let page = &snapshot["projectChat"];
+        (text(page, "reasonCode") == "PROJECT_CHAT_READ"
+            && text(page, "projectId") == self.project
+            && (!page["workRevision"].is_number()
+                || page["workRevision"] == snapshot["work"]["revision"])
+            && page["offset"].as_u64().unwrap_or(0) == self.chat.offset as u64)
+            .then_some(page)
+    }
+
+    fn chat_payload(&self, snapshot: &Value) -> Option<Value> {
+        let draft = self
+            .drafts
+            .get(&(self.project.clone(), self.ability.clone()))?;
+        if !valid_input(&draft.goal, 20_000) {
+            return None;
+        }
+        let mut payload = self.payload(snapshot)?;
+        if let Some(reply) = self
+            .chat
+            .replies
+            .get(&(self.project.clone(), self.ability.clone()))
+        {
+            if !job_belongs(snapshot, &self.project, &reply.parent) || reply.references.len() > 8 {
+                return None;
+            }
+            let parent = items(&snapshot["work"])
+                .iter()
+                .find(|work| text(work, "workItemId") == reply.parent)?;
+            if !terminal(text(parent, "status")) {
+                return None;
+            }
+            let mut references: Vec<_> = reply.references.iter().cloned().collect();
+            references.sort();
+            payload["replyToWorkItemId"] = json!(reply.parent);
+            payload["referencePaths"] = json!(references);
+        }
+        Some(payload)
+    }
+
+    fn next_chat_read(&mut self, snapshot: &Value, busy: bool) -> Option<Command> {
+        if self.chat.project != self.project {
+            self.chat.project = self.project.clone();
+            self.chat.offset = 0;
+            self.chat.requested = None;
+        }
+        let project = array(&snapshot["projectMemory"]["projects"])
+            .iter()
+            .find(|project| text(project, "projectId") == self.project)?;
+        let key = (
+            self.project.clone(),
+            revision(project),
+            revision(&snapshot["work"]),
+            self.chat.offset,
+        );
+        if self.chat.requested.is_none() && self.chat_page(snapshot).is_some() && !self.chat.refresh
+        {
+            self.chat.requested = Some(key);
+            return None;
+        }
+        if busy || (!self.chat.refresh && self.chat.requested.as_ref() == Some(&key)) {
+            return None;
+        }
+        self.chat.refresh = false;
+        self.chat.requested = Some(key);
+        Some(Command::new(
+            "project_chat_read",
+            json!({"projectId":self.project,"offset":self.chat.offset,"limit":20}),
+        ))
+    }
+}
+
+impl Console {
+    pub(super) fn chat_studio(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let projects = array(&snapshot["projectMemory"]["projects"]);
+        if self.create.project.is_empty() && projects.len() == 1 {
+            self.create.project = text(&projects[0], "projectId").into();
+        }
+        let active = jobs(snapshot).iter().any(|job| {
+            text(job, "projectId") == self.create.project
+                && items(&snapshot["work"]).iter().any(|work| {
+                    work["workItemId"] == job["workItemId"]
+                        && matches!(text(work, "status"), "launching" | "running" | "cancelling")
+                })
+        });
+        ui.horizontal_wrapped(|ui| {
+            crate::motion::mox(
+                ui,
+                32.0,
+                active,
+                snapshot["desktopPreferences"]["reduceMotion"] == true,
+            );
+            ui.label(studio::title(t(ui, "Mox · Your project crew"), 21.0));
+            if control(ui, "Connections", true).clicked() {
+                self.create.chat.connections_open = true;
+            }
+        });
+        if projects.is_empty() {
+            ui.add_space(18.0);
+            ui.label(studio::title(t(ui, "What would you like to make?"), 24.0));
+            hint(
+                ui,
+                "Create a project to keep your work together. No folder setup needed.",
+            );
+            ui.add_space(12.0);
+            if submit(ui, "Create project", "create-project") {
+                self.new_project_open = true;
+            }
+            return;
+        }
+        let previous = self.create.project.clone();
+        project_switcher(
+            ui,
+            "create-project-picker",
+            &mut self.create.project,
+            projects,
+        );
+        if previous != self.create.project {
+            self.create.result_path.clear();
+            self.create.chat.files_open = false;
+        }
+        if !projects
+            .iter()
+            .any(|project| text(project, "projectId") == self.create.project)
+        {
+            hint(ui, "Choose the project for this idea.");
+            return;
+        }
+        let wide = ui.available_width() >= 850.0;
+        if wide && self.create.chat.files_open {
+            egui::Panel::right("conversation-files")
+                .resizable(true)
+                .default_size(320.0)
+                .min_size(270.0)
+                .frame(egui::Frame::new().fill(colors(ui).raised).inner_margin(12))
+                .show(ui, |ui| {
+                    self.chat_files(ui, snapshot, commands);
+                });
+        }
+        let has_reply = self
+            .create
+            .chat
+            .replies
+            .contains_key(&(self.create.project.clone(), self.create.ability.clone()));
+        egui::Panel::bottom("conversation-composer")
+            .resizable(false)
+            .exact_size(if has_reply { 194.0 } else { 158.0 })
+            .frame(
+                egui::Frame::new()
+                    .fill(colors(ui).surface)
+                    .stroke(egui::Stroke::new(1.0, colors(ui).border))
+                    .corner_radius(12)
+                    .inner_margin(12),
+            )
+            .show(ui, |ui| self.chat_composer(ui, snapshot, commands));
+        egui::ScrollArea::vertical()
+            .id_salt((
+                "project-conversation",
+                &self.create.project,
+                self.create.chat.offset,
+            ))
+            .stick_to_bottom(true)
+            .auto_shrink([false, false])
+            .show(ui, |ui| self.chat_history(ui, snapshot, commands));
+        if self.create.chat.files_open && !wide {
+            let id = egui::Id::new("conversation-files-dialog");
+            let modal = egui::Modal::new(id)
+                .area(egui::Modal::default_area(id).fade_in(false))
+                .show(ui.ctx(), |ui| {
+                    ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 620.0));
+                    self.chat_files(ui, snapshot, commands);
+                });
+            if modal.should_close() {
+                self.create.chat.files_open = false;
+            }
+        }
+        self.chat_details(ui, snapshot);
+        if commands.is_empty() {
+            if let Some(command) = self
+                .create
+                .next_chat_read(snapshot, !ui.is_enabled() || self.hold_automatic_reads)
+            {
+                commands.push(command);
+            }
+        }
+    }
+
+    fn chat_composer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        let language = Language::from_snapshot(snapshot);
+        if let Some(reply) = self
+            .create
+            .chat
+            .replies
+            .get(&(self.create.project.clone(), self.create.ability.clone()))
+            .cloned()
+        {
+            ui.horizontal_wrapped(|ui| {
+                hint(
+                    ui,
+                    &tf(
+                        ui,
+                        "Follow-up · {0} selected files",
+                        &[&reply.references.len().to_string()],
+                    ),
+                );
+                if control(ui, "Clear follow-up", true).clicked() {
+                    self.create
+                        .chat
+                        .replies
+                        .remove(&(self.create.project.clone(), self.create.ability.clone()));
+                }
+            });
+        }
+        let response = ui.add(
+            egui::TextEdit::multiline(&mut self.create.draft().goal)
+                .hint_text(t(ui, "Describe your idea or ask for a change…"))
+                .desired_width(f32::INFINITY)
+                .desired_rows(2)
+                .char_limit(20_000)
+                .margin(egui::Margin::symmetric(8, 6)),
+        );
+        let shortcut = response.has_focus()
+            && ui.input(|input| input.modifiers.command && input.key_pressed(egui::Key::Enter));
+        #[cfg(test)]
+        ui.data_mut(|data| data.insert_temp(egui::Id::new("create-goal-prompt"), response.rect));
+        ui.add_space(6.0);
+        let goal = self.create.draft().goal.clone();
+        let suggested = suggestion(&goal).filter(|id| {
+            array(&snapshot["abilities"])
+                .iter()
+                .any(|ability| text(ability, "id") == *id)
+        });
+        let payload = self.create.chat_payload(snapshot);
+        ui.horizontal_wrapped(|ui| {
+            let enabled = payload.is_some() && self.create.pending.is_none();
+            let clicked = ui
+                .add_enabled_ui(enabled, |ui| {
+                    submit(ui, "Prepare task", "project_chat_send")
+                })
+                .inner;
+            if (clicked || (shortcut && enabled)) && commands.is_empty() {
+                if let Some(payload) = payload {
+                    let command = Command::new("project_chat_send", payload);
+                    let command_id = text(&command.payload, "commandId").to_owned();
+                    self.create.chat.pending_reply = Some((
+                        command_id.clone(),
+                        self.create
+                            .chat
+                            .replies
+                            .get(&(self.create.project.clone(), self.create.ability.clone()))
+                            .cloned(),
+                    ));
+                    self.create.pending = Some(Submission {
+                        command_id,
+                        project: self.create.project.clone(),
+                        ability: self.create.ability.clone(),
+                        draft: self.create.draft().clone(),
+                    });
+                    commands.push(command);
+                }
+            }
+            if control(ui, "Skills", true).clicked() {
+                self.create.catalog_open = true;
+            }
+            if control(ui, "Details", true).clicked() {
+                self.create.chat.details_open = true;
+            }
+        });
+        if let Some(selected) = array(&snapshot["abilities"])
+            .iter()
+            .find(|ability| text(ability, "id") == self.create.ability)
+        {
+            ui.add(
+                egui::Label::new(
+                    RichText::new(ability_text(selected, "name", language))
+                        .size(11.0)
+                        .color(colors(ui).muted),
+                )
+                .truncate(),
+            );
+        } else if let Some(suggested) = suggested.and_then(|id| {
+            array(&snapshot["abilities"])
+                .iter()
+                .find(|ability| text(ability, "id") == id)
+        }) {
+            if control(
+                ui,
+                &tf(
+                    ui,
+                    "Suggested · {0}",
+                    &[ability_text(suggested, "name", language)],
+                ),
+                true,
+            )
+            .clicked()
+            {
+                self.create.select_ability(text(suggested, "id"));
+            }
+        } else {
+            hint(ui, "Choose a type");
+        }
+    }
+
+    fn chat_history(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        let page = self.create.chat_page(snapshot);
+        ui.horizontal_wrapped(|ui| {
+            if control(ui, "Refresh conversation", !self.hold_automatic_reads).clicked() {
+                self.create.chat.refresh = true;
+            }
+            if control(
+                ui,
+                "Previous messages",
+                self.create.chat.offset > 0 && !self.hold_automatic_reads,
+            )
+            .clicked()
+            {
+                self.create.chat.offset = self.create.chat.offset.saturating_sub(20);
+            }
+            if let Some(next) = page.and_then(|page| page["nextOffset"].as_u64()) {
+                if control(ui, "Next messages", !self.hold_automatic_reads).clicked() {
+                    self.create.chat.offset = next as usize;
+                }
+            }
+        });
+        let Some(page) = self.create.chat_page(snapshot) else {
+            hint(ui, "Loading this project's conversation…");
+            return;
+        };
+        if array(&page["items"]).is_empty() {
+            ui.add_space(12.0);
+            ui.label(studio::title(t(ui, "What would you like to make?"), 24.0));
+            hint(
+                ui,
+                "Tell Mox your goal. Prepare it, then decide when to start.",
+            );
+            ui.add_space(10.0);
+            ui.horizontal_wrapped(|ui| {
+                for category in [
+                    "presentations",
+                    "video",
+                    "images",
+                    "audio",
+                    "research",
+                    "documents",
+                    "data",
+                    "web",
+                ] {
+                    let label = if category == "web" {
+                        "Web"
+                    } else {
+                        category_name(category)
+                    };
+                    let response = ui.selectable_label(false, t(ui, label));
+                    #[cfg(test)]
+                    ui.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::new(("test-action", "category", category)),
+                            response.rect,
+                        )
+                    });
+                    if response.clicked() {
+                        if let Some(ability) = array(&snapshot["abilities"])
+                            .iter()
+                            .find(|ability| text(ability, "category") == category)
+                        {
+                            self.create.select_ability(text(ability, "id"));
+                            self.create.category = category.into();
+                        }
+                    }
+                }
+            });
+        }
+        let project = self.create.project.clone();
+        for entry in array(&page["items"])
+            .iter()
+            .filter(|entry| job_belongs(snapshot, &project, text(entry, "workItemId")))
+        {
+            ui.push_id(text(entry, "workItemId"), |ui| {
+                ui.add_space(12.0);
+                egui::Frame::new()
+                    .fill(colors(ui).info_surface)
+                    .corner_radius(12)
+                    .inner_margin(14)
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new(t(ui, "You"))
+                                .size(10.0)
+                                .color(colors(ui).primary),
+                        );
+                        ui.add(
+                            egui::Label::new(text(entry, "goal"))
+                                .wrap()
+                                .selectable(true),
+                        );
+                        if entry["replyToWorkItemId"].is_string() {
+                            hint(ui, "Follow-up request");
+                        }
+                    });
+                ui.add_space(8.0);
+                self.chat_work_card(ui, snapshot, entry, commands);
+            });
+        }
+    }
+
+    fn chat_work_card(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        entry: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let Some(work) = items(&snapshot["work"])
+            .iter()
+            .find(|work| work["workItemId"] == entry["workItemId"])
+        else {
+            return;
+        };
+        egui::Frame::new().fill(colors(ui).surface).stroke(egui::Stroke::new(1.0,colors(ui).border)).corner_radius(12).inner_margin(12).show(ui,|ui| {
+            ui.horizontal_wrapped(|ui| {ui.strong("Mox");hint(ui,"Work status");status(ui,text(work,"status"));});
+            hint(ui,match text(work,"status") {"queued"=>"Prepared. Start when you're ready.","running"=>"Working in this project.","completed"=>"Work finished. Review the actual files.",_=>"Work stopped or needs attention. Review its status and files."});
+            let issue=job_issue(snapshot,&self.create.project,text(work,"workItemId"));
+            if let Some(issue)=issue {hint(ui,issue);}
+            ui.horizontal_wrapped(|ui| {
+                if text(work,"status")=="queued" {
+                    action(ui,commands,"Start task","work_start",connect::can_start(snapshot) && issue.is_none() && revision(work)>0,
+                        ||json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
+                }
+                if matches!(text(work,"status"),"failed"|"interrupted"|"blocked") {
+                    action(ui,commands,"Queue retry","work_retry",revision(work)>0,||json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
+                }
+                if let Some(run)=array(&snapshot["work"]["runs"]).iter().rev().find(|run|run["workItemId"]==work["workItemId"] && text(run,"status")=="running") {
+                    action(ui,commands,"Cancel run","work_cancel",run["ownerEpoch"]==snapshot["hostEpoch"] && revision(run)>0,
+                        ||json!({"runId":run["runId"],"expectedRunRevision":run["revision"]}));
+                }
+                let before=commands.len();
+                action(ui,commands,"Files","project_results_read",issue.is_none() && !cfg!(target_os="windows"),
+                    ||json!({"projectId":self.create.project,"workItemId":work["workItemId"]}));
+                if commands.len()>before {
+                    self.create.selected_work.insert(self.create.project.clone(),text(work,"workItemId").into());
+                    self.create.result_path.clear();self.create.chat.files_open=true;
+                }
+                if control(ui,"Follow up",terminal(text(work,"status"))).clicked() {self.begin_chat_reply(snapshot,work);}
+            });
+            if text(work,"status")=="queued" && !connect::can_start(snapshot) {
+                ui.horizontal_wrapped(|ui| {hint(ui,"Connect a supported Codex account to start.");if control(ui,"Set up Codex",true).clicked() {self.create.chat.connections_open=true;}});
+            }
+        });
+    }
+
+    fn chat_files(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(studio::title(t(ui, "Project files"), 20.0));
+            if control(ui, "Close files", true).clicked() {
+                self.create.chat.files_open = false;
+            }
+        });
+        egui::ScrollArea::vertical()
+            .id_salt("conversation-file-list")
+            .max_height((ui.ctx().viewport_rect().height() - 150.0).max(160.0))
+            .show(ui, |ui| self.create_jobs(ui, snapshot, commands));
+    }
+
+    fn begin_chat_reply(&mut self, snapshot: &Value, work: &Value) {
+        if !job_belongs(snapshot, &self.create.project, text(work, "workItemId"))
+            || !terminal(text(work, "status"))
+        {
+            return;
+        }
+        if let Some(ability) = self
+            .create
+            .chat_page(snapshot)
+            .and_then(|page| {
+                array(&page["items"])
+                    .iter()
+                    .find(|entry| entry["workItemId"] == work["workItemId"])
+            })
+            .map(|entry| text(entry, "abilityId"))
+            .filter(|id| {
+                array(&snapshot["abilities"])
+                    .iter()
+                    .any(|ability| text(ability, "id") == *id)
+            })
+        {
+            self.create.select_ability(ability);
+        }
+        let reply = self
+            .create
+            .chat
+            .replies
+            .entry((self.create.project.clone(), self.create.ability.clone()))
+            .or_default();
+        if reply.parent != text(work, "workItemId") {
+            reply.parent = text(work, "workItemId").into();
+            reply.references.clear();
+        }
+    }
+
+    pub(super) fn chat_reference_choice(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        work: &Value,
+        result: &Value,
+    ) {
+        if !terminal(text(work, "status")) {
+            return;
+        }
+        let key = (self.create.project.clone(), self.create.ability.clone());
+        let mut selected = self.create.chat.replies.get(&key).is_some_and(|reply| {
+            reply.parent == text(work, "workItemId")
+                && reply.references.contains(text(result, "path"))
+        });
+        let count = self
+            .create
+            .chat
+            .replies
+            .get(&key)
+            .map(|reply| reply.references.len())
+            .unwrap_or(0);
+        let response = ui.add_enabled(
+            selected || count < 8,
+            egui::Checkbox::new(&mut selected, t(ui, "Use in follow-up")),
+        );
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new(("test-action", "reference", text(result, "path"))),
+                response.rect,
+            )
+        });
+        if response.changed() {
+            self.begin_chat_reply(snapshot, work);
+            let reply = self
+                .create
+                .chat
+                .replies
+                .entry((self.create.project.clone(), self.create.ability.clone()))
+                .or_default();
+            if selected {
+                reply.references.insert(text(result, "path").into());
+            } else {
+                reply.references.remove(text(result, "path"));
+            }
+        }
+    }
+
+    fn chat_details(&mut self, ui: &mut Ui, snapshot: &Value) {
+        if !self.create.chat.details_open {
+            return;
+        }
+        let id = egui::Id::new("chat-task-details");
+        let modal=egui::Modal::new(id).area(egui::Modal::default_area(id).fade_in(false)).show(ui.ctx(),|ui| {
+            ui.set_width((ui.ctx().viewport_rect().width()-64.0).clamp(280.0,600.0));
+            ui.label(studio::title(t(ui,"Task details"),22.0));
+            field(ui,"Task name (optional)",&mut self.create.draft().title,160,false);
+            egui::ScrollArea::vertical().id_salt("chat-details-body").max_height((ui.ctx().viewport_rect().height()-260.0).max(100.0)).show(ui,|ui| {
+                if let Some(ability)=array(&snapshot["abilities"]).iter().find(|ability|text(ability,"id")==self.create.ability) {
+                    ui.strong(ability_text(ability,"name",Language::from_snapshot(snapshot)));
+                    ui.label(text(ability,"instruction"));
+                }
+                hint(ui,"Task recipes guide your agent. Results depend on available tools and access.");
+                hint(ui,"Your provider may receive this goal and the accepted decisions for this project when you start.");
+            });
+            if control(ui,"Close",true).clicked() {self.create.chat.details_open=false;}
+        });
+        if modal.should_close() {
+            self.create.chat.details_open = false;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn suggestions_are_goal_based_and_ambiguity_never_silently_selects() {
+        assert_eq!(
+            suggestion("Make a presentation about our launch"),
+            Some("P1")
+        );
+        assert_eq!(suggestion("Bu videoya altyazı ekle"), Some("V1"));
+        assert_eq!(suggestion("Build a presentation and video"), None);
+        assert_eq!(suggestion("Help me with my project"), None);
+        assert!(!terminal("blocked"));
+    }
+
+    fn fixture() -> Value {
+        json!({"projectMemory":{"projects":[{"projectId":"project:one","revision":2},{"projectId":"project:two","revision":3}]},
+            "abilities":[{"id":"P1"}],"work":{"revision":4,"items":[{"workItemId":"work:old","status":"completed"}]},
+            "projectJobs":[{"projectId":"project:one","workItemId":"work:old"}]})
+    }
+    fn draft() -> CreateState {
+        let mut state = CreateState {
+            project: "project:one".into(),
+            ability: "P1".into(),
+            ..Default::default()
+        };
+        state.draft().goal = "Revise the introduction".into();
+        state
+    }
+
+    #[test]
+    fn chat_read_is_bounded_scope_checked_and_never_retries_itself() {
+        let mut state = draft();
+        let mut snapshot = fixture();
+        assert!(state.next_chat_read(&snapshot, true).is_none());
+        let read = state.next_chat_read(&snapshot, false).unwrap();
+        assert_eq!(read.action, "project_chat_read");
+        assert_eq!(read.payload["projectId"], "project:one");
+        assert_eq!(read.payload["limit"], 20);
+        assert!(
+            state.next_chat_read(&snapshot, false).is_none(),
+            "failed/unavailable response must not spin"
+        );
+        snapshot["projectChat"] = json!({"reasonCode":"PROJECT_CHAT_READ","projectId":"project:two","offset":0,"workRevision":4,"items":[{"goal":"FOREIGN_GOAL"}]});
+        assert!(state.chat_page(&snapshot).is_none());
+        snapshot["projectChat"]["projectId"] = json!("project:one");
+        assert!(state.chat_page(&snapshot).is_some());
+        snapshot["work"]["revision"] = json!(5);
+        assert!(state.chat_page(&snapshot).is_none());
+        assert!(state.next_chat_read(&snapshot, true).is_none());
+        assert!(state.next_chat_read(&snapshot, false).is_some());
+        state.chat.offset = 20;
+        assert_eq!(
+            state.next_chat_read(&snapshot, false).unwrap().payload["offset"],
+            20
+        );
+        state.project = "project:two".into();
+        let read = state.next_chat_read(&snapshot, false).unwrap();
+        assert_eq!(read.payload["projectId"], "project:two");
+        assert_eq!(read.payload["offset"], 0);
+    }
+
+    #[test]
+    fn follow_up_payload_freezes_one_terminal_parent_and_sorted_references() {
+        let mut state = draft();
+        let mut snapshot = fixture();
+        state.chat.replies.insert(
+            ("project:one".into(), "P1".into()),
+            ReplyDraft {
+                parent: "work:old".into(),
+                references: HashSet::from(["outputs/b.md".into(), "outputs/a.md".into()]),
+            },
+        );
+        let payload = state.chat_payload(&snapshot).unwrap();
+        assert_eq!(payload["replyToWorkItemId"], "work:old");
+        assert_eq!(
+            payload["referencePaths"],
+            json!(["outputs/a.md", "outputs/b.md"])
+        );
+        let command = Command::new("project_chat_send", payload);
+        state.project = "project:two".into();
+        assert!(state.chat_payload(&snapshot).is_none());
+        assert_eq!(command.payload["projectId"], "project:one");
+        state.project = "project:one".into();
+        for status in ["running", "queued", "blocked"] {
+            snapshot["work"]["items"][0]["status"] = json!(status);
+            assert!(
+                state.chat_payload(&snapshot).is_none(),
+                "{status} is not a safe reference parent"
+            );
+        }
+        snapshot["work"]["items"][0]["status"] = json!("interrupted");
+        assert!(state.chat_payload(&snapshot).is_some());
+        state
+            .chat
+            .replies
+            .get_mut(&("project:one".into(), "P1".into()))
+            .unwrap()
+            .references = (0..9).map(|n| format!("outputs/{n}.md")).collect();
+        assert!(state.chat_payload(&snapshot).is_none());
+        state.chat.replies.clear();
+        state.draft().goal = "😀".repeat(10_001);
+        assert!(state.chat_payload(&snapshot).is_none());
+        state.draft().goal = "😀".repeat(10_000);
+        assert!(state.chat_payload(&snapshot).is_some());
+    }
+
+    #[test]
+    fn applied_chat_receipt_does_not_clear_a_changed_reference_draft() {
+        let mut state = draft();
+        let mut snapshot = fixture();
+        let key = ("project:one".to_string(), "P1".to_string());
+        let original = ReplyDraft {
+            parent: "work:old".into(),
+            references: HashSet::from(["outputs/a.md".into()]),
+        };
+        state.chat.replies.insert(key.clone(), original.clone());
+        state.pending = Some(Submission {
+            command_id: "cmd:chat".into(),
+            project: "project:one".into(),
+            ability: "P1".into(),
+            draft: state.draft().clone(),
+        });
+        state.chat.pending_reply = Some(("cmd:chat".into(), Some(original)));
+        state
+            .chat
+            .replies
+            .get_mut(&key)
+            .unwrap()
+            .references
+            .insert("outputs/b.md".into());
+        snapshot["projectWorkReceipt"] = json!({"commandId":"cmd:chat","projectId":"project:one","workItemId":"work:old","outcome":"applied"});
+        state.sync(&snapshot);
+        assert_eq!(state.draft().goal, "Revise the introduction");
+        assert_eq!(state.chat.replies[&key].references.len(), 2);
+    }
+}

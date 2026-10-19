@@ -181,7 +181,7 @@ impl Console {
                 egui::ComboBox::from_id_salt("create-project-picker")
                     .selected_text(name)
                     .truncate()
-                    .width((ui.available_width() - 330.0).clamp(100.0, 220.0))
+                    .width((ui.available_width() - 150.0).clamp(100.0, 260.0))
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.create.project, String::new(), t(ui, "None"));
                         for project in projects {
@@ -196,17 +196,8 @@ impl Console {
                 ui.label(studio::title(t(ui, "Your studio"), 16.0).color(colors(ui).muted));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.studio_button(ui);
-                if control(ui, "Connections", true).clicked() {
+                if studio::quiet_button(ui, t(ui, "Connections").as_ref()).clicked() {
                     self.create.chat.connections_open = true;
-                }
-                if array(&snapshot["projectCrews"]["missions"])
-                    .iter()
-                    .any(|mission| text(mission, "projectId") == self.create.project)
-                    && control(ui, "Crew", true).clicked()
-                {
-                    self.create.crew.panel_open = !self.create.crew.panel_open;
-                    self.create.chat.files_open = false;
                 }
             });
         });
@@ -242,6 +233,7 @@ impl Console {
         if previous != self.create.project {
             self.create.result_path.clear();
             self.create.chat.files_open = false;
+            self.create.select_productive_view(0);
         }
         if !projects
             .iter()
@@ -249,6 +241,37 @@ impl Console {
         {
             hint(ui, "Choose the project for this idea.");
             return;
+        }
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 18.0;
+            for (view, label) in [(0, "Chat"), (1, "Crew"), (2, "Outputs")] {
+                let response = studio::section_nav(
+                    ui,
+                    self.create.productive_view() == view,
+                    t(ui, label).as_ref(),
+                );
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(egui::Id::new(("project-view-tab", view)), response.rect);
+                });
+                if response.clicked() {
+                    self.create.select_productive_view(view);
+                }
+            }
+        });
+        ui.add_space(6.0);
+        ui.separator();
+        ui.add_space(if compact { 14.0 } else { 22.0 });
+        match self.create.productive_view() {
+            1 => {
+                self.workflow_dialog(ui, snapshot, commands);
+                return;
+            }
+            2 => {
+                self.output_studio(ui, snapshot, commands);
+                return;
+            }
+            _ => {}
         }
         let wide = ui.available_width() >= 850.0;
         if wide && self.create.crew.panel_open {
@@ -443,11 +466,11 @@ impl Console {
             } else {
                 self.crew_plan_button(ui, snapshot, commands, shortcut);
             }
-            if control(ui, "Skills", true).clicked() {
+            if view_control(ui, "Skills", true, false).clicked() {
                 self.create.crew.catalog_target = None;
                 self.create.catalog_open = true;
             }
-            if control(ui, "Details", true).clicked() {
+            if view_control(ui, "Details", true, false).clicked() {
                 self.create.chat.details_open = true;
             }
             egui::ComboBox::from_id_salt("conversation-work-mode")
@@ -604,14 +627,14 @@ impl Console {
         ui.vertical_centered(|ui| {
             crate::motion::mox(
                 ui,
-                if compact { 96.0 } else { 170.0 },
+                if compact { 48.0 } else { 112.0 },
                 false,
                 snapshot["desktopPreferences"]["reduceMotion"] == true,
             );
             ui.add_space(if compact { 4.0 } else { 12.0 });
             ui.label(studio::title(
                 t(ui, "What would you like to make?"),
-                if compact { 32.0 } else { 36.0 },
+                if compact { 26.0 } else { 32.0 },
             ));
             ui.add_space(4.0);
             ui.label(
@@ -620,7 +643,7 @@ impl Console {
                     .color(colors(ui).muted),
             );
         });
-        ui.add_space(if compact { 14.0 } else { 24.0 });
+        ui.add_space(if compact { 4.0 } else { 24.0 });
         let columns = if ui.available_width() >= 500.0 { 4 } else { 2 };
         let width = (ui.available_width() - 10.0 * (columns - 1) as f32) / columns as f32;
         let selected_category = array(&snapshot["abilities"])
@@ -659,7 +682,7 @@ impl Console {
                     let response = ui
                         .add_enabled_ui(available.is_some(), |ui| {
                             ui.allocate_exact_size(
-                                egui::vec2(width, if compact { 58.0 } else { 82.0 }),
+                                egui::vec2(width, if compact { 48.0 } else { 64.0 }),
                                 egui::Sense::click(),
                             )
                             .1
@@ -678,29 +701,29 @@ impl Console {
                     let focused = response.has_focus() || response.hovered();
                     ui.painter().rect(
                         response.rect,
-                        14,
+                        10,
                         if selected {
                             p.info_surface
                         } else if focused {
                             p.raised
                         } else {
-                            p.surface
+                            egui::Color32::TRANSPARENT
                         },
                         egui::Stroke::new(
                             1.0,
                             if selected || focused {
                                 p.primary
                             } else {
-                                p.border
+                                egui::Color32::TRANSPARENT
                             },
                         ),
                         egui::StrokeKind::Inside,
                     );
-                    let icon_size = if compact { 18.0 } else { 24.0 };
+                    let icon_size = if compact { 16.0 } else { 20.0 };
                     let icon_rect = egui::Rect::from_center_size(
                         egui::pos2(
                             response.rect.center().x,
-                            response.rect.top() + if compact { 16.0 } else { 25.0 },
+                            response.rect.top() + if compact { 13.0 } else { 20.0 },
                         ),
                         egui::vec2(icon_size, icon_size),
                     );
@@ -709,20 +732,20 @@ impl Console {
                         &mut icon_ui,
                         category,
                         icon_size,
-                        if selected { p.primary } else { p.text },
+                        if selected { p.primary } else { p.muted },
                     );
                     ui.painter().text(
                         egui::pos2(
                             response.rect.center().x,
-                            response.rect.bottom() - if compact { 14.0 } else { 20.0 },
+                            response.rect.bottom() - if compact { 11.0 } else { 15.0 },
                         ),
                         egui::Align2::CENTER_CENTER,
                         &label,
                         egui::FontId::new(
-                            if compact { 13.0 } else { 15.0 },
+                            if compact { 12.0 } else { 13.0 },
                             egui::FontFamily::Name("studio-display".into()),
                         ),
-                        if response.enabled() { p.text } else { p.muted },
+                        if selected { p.text } else { p.muted },
                     );
                     #[cfg(test)]
                     ui.data_mut(|data| {
@@ -982,6 +1005,64 @@ mod tests {
         };
         state.draft().goal = "Revise the introduction".into();
         state
+    }
+
+    #[test]
+    fn project_view_navigation_fits_minimum_window_and_preserves_the_unsent_goal() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut snapshot = fixture();
+                snapshot["desktopPreferences"] = json!({"language":language,"reduceMotion":true});
+                snapshot["projectMemory"]["projects"][0]["name"] = json!("Launch project");
+                let mut console = Console {
+                    tab: Tab::Create,
+                    create: draft(),
+                    ..Default::default()
+                };
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 560.0));
+                let frame = |console: &mut Console, events: Vec<egui::Event>| {
+                    ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(screen),
+                            events,
+                            ..Default::default()
+                        },
+                        |ui| {
+                            let _ = console.show(ui, &snapshot, false, None, false);
+                        },
+                    )
+                    .drop_without_applying_deltas();
+                };
+                for view in [1usize, 2, 0] {
+                    frame(&mut console, vec![]);
+                    frame(&mut console, vec![]);
+                    let rect = ctx.data(|data| {
+                        data.get_temp::<egui::Rect>(egui::Id::new(("project-view-tab", view)))
+                            .unwrap()
+                    });
+                    assert!(screen.contains_rect(rect), "{language}/{theme:?}/{view}");
+                    for pressed in [true, false] {
+                        frame(
+                            &mut console,
+                            vec![
+                                egui::Event::PointerMoved(rect.center()),
+                                egui::Event::PointerButton {
+                                    pos: rect.center(),
+                                    button: egui::PointerButton::Primary,
+                                    pressed,
+                                    modifiers: egui::Modifiers::default(),
+                                },
+                            ],
+                        );
+                    }
+                    assert_eq!(console.create.productive_view(), view);
+                    assert_eq!(console.create.draft().goal, "Revise the introduction");
+                }
+            }
+        }
     }
 
     #[test]

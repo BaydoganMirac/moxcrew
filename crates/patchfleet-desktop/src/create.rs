@@ -1,4 +1,8 @@
 use super::*;
+#[path = "chat.rs"]
+mod chat;
+#[path = "connect.rs"]
+mod connect;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CreateExportRequest {
@@ -21,6 +25,26 @@ struct Submission {
     draft: CreateDraft,
 }
 
+#[derive(Clone, Default, PartialEq, Eq)]
+struct ReplyDraft {
+    parent: String,
+    references: HashSet<String>,
+}
+
+#[derive(Default)]
+struct ChatState {
+    project: String,
+    offset: usize,
+    requested: Option<(String, u64, u64, usize)>,
+    refresh: bool,
+    files_open: bool,
+    connections_open: bool,
+    connection_requested: bool,
+    details_open: bool,
+    replies: HashMap<(String, String), ReplyDraft>,
+    pending_reply: Option<(String, Option<ReplyDraft>)>,
+}
+
 #[derive(Default)]
 pub(super) struct CreateState {
     project: String,
@@ -31,7 +55,7 @@ pub(super) struct CreateState {
     drafts: HashMap<(String, String), CreateDraft>,
     selected_work: HashMap<String, String>,
     result_path: String,
-    view_results: bool,
+    chat: ChatState,
     pending: Option<Submission>,
     export_request: Option<CreateExportRequest>,
 }
@@ -54,14 +78,37 @@ impl CreateState {
                 .insert(pending.project.clone(), work.into());
             let key = (pending.project.clone(), pending.ability.clone());
             // Only the exact acknowledged draft may be cleared after an async receipt.
-            if self.drafts.get(&key) == Some(&pending.draft) {
+            let same_reply = self
+                .chat
+                .pending_reply
+                .as_ref()
+                .filter(|(command, _)| command == &pending.command_id)
+                .is_none_or(|(_, reply)| reply.as_ref() == self.chat.replies.get(&key));
+            if self.drafts.get(&key) == Some(&pending.draft) && same_reply {
                 self.drafts.remove(&key);
+                if self
+                    .chat
+                    .pending_reply
+                    .as_ref()
+                    .is_some_and(|(command, reply)| {
+                        command == &pending.command_id
+                            && reply.as_ref() == self.chat.replies.get(&key)
+                    })
+                {
+                    self.chat.replies.remove(&key);
+                }
             }
             if self.project == pending.project {
                 self.result_path.clear();
-                self.view_results = true;
+                let total = jobs(snapshot)
+                    .iter()
+                    .filter(|job| text(job, "projectId") == self.project)
+                    .count();
+                self.chat.offset = total.saturating_sub(1) / 20 * 20;
+                self.chat.refresh = true;
             }
         }
+        self.chat.pending_reply = None;
         self.pending = None;
     }
 
@@ -81,6 +128,17 @@ impl CreateState {
                 self.drafts
                     .entry((self.project.clone(), ability.to_owned()))
                     .or_insert(initial);
+            }
+            if let Some(reply) = self
+                .chat
+                .replies
+                .get(&(self.project.clone(), String::new()))
+                .cloned()
+            {
+                self.chat
+                    .replies
+                    .entry((self.project.clone(), ability.to_owned()))
+                    .or_insert(reply);
             }
         }
         self.ability = ability.into();
@@ -214,6 +272,12 @@ fn matches_ability(ability: &Value, category: &str, query: &str, language: Langu
 
 impl Console {
     #[cfg(feature = "ui-smoke")]
+    pub fn chat_smoke(&mut self, snapshot: &Value, show_files: bool, show_connections: bool) {
+        self.create_smoke(snapshot, show_files);
+        self.create.chat.connections_open = show_connections;
+    }
+
+    #[cfg(feature = "ui-smoke")]
     pub fn create_smoke(&mut self, snapshot: &Value, show_results: bool) {
         self.tab = Tab::Create;
         self.create.project = array(&snapshot["projectMemory"]["projects"])
@@ -221,7 +285,7 @@ impl Console {
             .map(|project| text(project, "projectId").to_owned())
             .unwrap_or_default();
         self.create.ability = "P1".into();
-        self.create.view_results = show_results;
+        self.create.chat.files_open = show_results;
         self.create.result_path = text(&snapshot["projectResult"], "path").into();
         if let Some(ability) = array(&snapshot["abilities"])
             .iter()
@@ -265,104 +329,39 @@ impl Console {
         snapshot: &Value,
         commands: &mut Vec<Command>,
     ) {
-        let projects = array(&snapshot["projectMemory"]["projects"]);
-        if self.create.project.is_empty() && projects.len() == 1 {
-            self.create.project = text(&projects[0], "projectId").into();
-        }
-        ui.horizontal_wrapped(|ui| {
-            ui.label(studio::title(
-                t(
-                    ui,
-                    if self.create.view_results {
-                        "Project creations"
-                    } else {
-                        "What would you like to make?"
-                    },
-                ),
-                26.0,
-            ));
-            if self.create.view_results {
-                if control(ui, "New creation", true).clicked() {
-                    self.create.view_results = false;
-                }
-            } else if jobs(snapshot)
-                .iter()
-                .any(|job| text(job, "projectId") == self.create.project)
-                && control(ui, "View results", true).clicked()
-            {
-                self.create.view_results = true;
-            }
-        });
-        ui.add_space(12.0);
-        if projects.is_empty() {
-            hint(
-                ui,
-                "Create a project to keep your work together. No folder setup needed.",
-            );
-            ui.add_space(12.0);
-            if submit(ui, "Create project", "create-project") {
-                self.new_project_open = true;
-            }
+        self.chat_studio(ui, snapshot, commands);
+        self.create_catalog_dialog(ui, snapshot);
+        self.connection_dialog(ui, snapshot, commands);
+    }
+
+    fn create_catalog_dialog(&mut self, ui: &mut Ui, snapshot: &Value) {
+        if !self.create.catalog_open {
             return;
         }
-        let previous = self.create.project.clone();
-        project_switcher(
-            ui,
-            "create-project-picker",
-            &mut self.create.project,
-            projects,
-        );
-        if previous != self.create.project {
-            self.create.result_path.clear();
-        }
-        if !projects
-            .iter()
-            .any(|project| text(project, "projectId") == self.create.project)
-        {
-            hint(ui, "Choose the project for this idea.");
-            return;
-        }
-        if self.create.view_results {
-            self.create_jobs(ui, snapshot, commands);
-            return;
-        }
-        let abilities = array(&snapshot["abilities"]);
-        if abilities.is_empty() {
-            empty(
-                ui,
-                "Ability catalog unavailable",
-                "Refresh the local host to load the built-in task recipes.",
-            );
-            action(ui, commands, "Refresh", "observe", true, || json!({}));
-            return;
-        }
-        self.create_composer(ui, snapshot, commands);
-        if self.create.catalog_open {
-            let ready = ui.is_enabled();
-            let id = egui::Id::new("create-ability-catalog");
-            let modal = egui::Modal::new(id)
-                .area(egui::Modal::default_area(id).fade_in(false))
-                .show(ui.ctx(), |ui| {
-                    ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 680.0));
-                    egui::ScrollArea::vertical()
-                        .id_salt("create-catalog-dialog")
-                        .max_height((ui.ctx().viewport_rect().height() - 150.0).max(120.0))
-                        .show(ui, |ui| {
-                            ui.add_enabled_ui(ready, |ui| {
-                                self.create_catalog(
-                                    ui,
-                                    abilities,
-                                    Language::from_snapshot(snapshot),
-                                )
-                            });
+        let ready = ui.is_enabled();
+        let id = egui::Id::new("create-ability-catalog");
+        let modal = egui::Modal::new(id)
+            .area(egui::Modal::default_area(id).fade_in(false))
+            .show(ui.ctx(), |ui| {
+                ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 680.0));
+                egui::ScrollArea::vertical()
+                    .id_salt("create-catalog-dialog")
+                    .max_height((ui.ctx().viewport_rect().height() - 150.0).max(120.0))
+                    .show(ui, |ui| {
+                        ui.add_enabled_ui(ready, |ui| {
+                            self.create_catalog(
+                                ui,
+                                array(&snapshot["abilities"]),
+                                Language::from_snapshot(snapshot),
+                            )
                         });
-                    if control(ui, "Close", true).clicked() {
-                        self.create.catalog_open = false;
-                    }
-                });
-            if modal.should_close() {
-                self.create.catalog_open = false;
-            }
+                    });
+                if control(ui, "Close", true).clicked() {
+                    self.create.catalog_open = false;
+                }
+            });
+        if modal.should_close() {
+            self.create.catalog_open = false;
         }
     }
 
@@ -451,131 +450,6 @@ impl Console {
         });
     }
 
-    fn create_composer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
-        let language = Language::from_snapshot(snapshot);
-        let abilities = array(&snapshot["abilities"]);
-        let selected = abilities
-            .iter()
-            .find(|ability| text(ability, "id") == self.create.ability);
-        card(ui, |ui| {
-            let placeholder = selected
-                .map(|ability| {
-                    std::borrow::Cow::Borrowed(ability_text(ability, "starter", language))
-                })
-                .unwrap_or_else(|| {
-                    i18n::tr(
-                        language,
-                        "Describe your idea and what a useful result looks like.",
-                    )
-                });
-            let rows = if ui.ctx().viewport_rect().height() < 700.0 {
-                3
-            } else {
-                5
-            };
-            let response = ui.add(
-                egui::TextEdit::multiline(&mut self.create.draft().goal)
-                    .hint_text(placeholder)
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(rows)
-                    .char_limit(50_000)
-                    .font(egui::TextStyle::Body)
-                    .margin(egui::Margin::symmetric(12, 10)),
-            );
-            #[cfg(test)]
-            ui.data_mut(|data| {
-                data.insert_temp(egui::Id::new("create-goal-prompt"), response.rect)
-            });
-            let _ = response;
-            ui.add_space(10.0);
-            ui.horizontal_wrapped(|ui| {
-                for category in [
-                    "presentations",
-                    "video",
-                    "images",
-                    "audio",
-                    "research",
-                    "documents",
-                    "data",
-                    "web",
-                ] {
-                    let active =
-                        selected.is_some_and(|ability| text(ability, "category") == category);
-                    let label = if category == "web" {
-                        "Web"
-                    } else {
-                        category_name(category)
-                    };
-                    let response = ui.selectable_label(active, t(ui, label));
-                    #[cfg(test)]
-                    ui.data_mut(|data| {
-                        data.insert_temp(
-                            egui::Id::new(("test-action", "category", category)),
-                            response.rect,
-                        )
-                    });
-                    if response.clicked() {
-                        if let Some(ability) = abilities
-                            .iter()
-                            .find(|ability| text(ability, "category") == category)
-                        {
-                            self.create.select_ability(text(ability, "id"));
-                            self.create.category = category.into();
-                        }
-                    }
-                }
-            });
-            ui.add_space(8.0);
-            ui.horizontal_wrapped(|ui| {
-                if let Some(ability) = abilities
-                    .iter()
-                    .find(|ability| text(ability, "id") == self.create.ability)
-                {
-                    ui.label(RichText::new(ability_text(ability, "name", language)).strong());
-                } else {
-                    hint(ui, "Choose a type");
-                }
-                if control(ui, "Explore abilities", true).clicked() {
-                    self.create.catalog_open = true;
-                }
-            });
-            ui.add_space(12.0);
-            let payload = self.create.payload(snapshot);
-            ui.add_enabled_ui(payload.is_some() && self.create.pending.is_none(), |ui| {
-                if submit(ui, "Prepare task", "project_work_enqueue") && commands.is_empty() {
-                    if let Some(payload) = payload {
-                        let command = Command::new("project_work_enqueue", payload);
-                        self.create.pending = Some(Submission {
-                            command_id: text(&command.payload, "commandId").into(),
-                            project: self.create.project.clone(),
-                            ability: self.create.ability.clone(),
-                            draft: self.create.draft().clone(),
-                        });
-                        commands.push(command);
-                    }
-                }
-            });
-            ui.add_space(6.0);
-            hint(ui, "You will review and start the task next.");
-            ui.add_space(6.0);
-            egui::CollapsingHeader::new(t(ui,"Details")).id_salt("create-task-details").default_open(false).show(ui,|ui| {
-                field(ui,"Task name (optional)",&mut self.create.draft().title,160,false);
-                if let Some(ability)=abilities.iter().find(|ability|text(ability,"id")==self.create.ability) {
-                    raw_hint(ui,ability_text(ability,"description",language));
-                    if control(ui,"Use example",true).clicked() { self.create.draft().goal=ability_text(ability,"starter",language).into(); }
-                    ui.label(RichText::new(t(ui,"Recipe instructions")).strong());
-                    ui.label(text(ability,"instruction"));
-                }
-                hint(ui,"Task recipes guide your agent. Results depend on available tools and access.");
-                hint(ui,"Your provider may receive this goal and the accepted decisions for this project when you start.");
-                if !quick_codex_ready(snapshot) {
-                    hint(ui,"Starting project tasks requires supported Codex access. Your draft can be queued first.");
-                    if control(ui,"Open providers",true).clicked() { self.tab=Tab::Providers; }
-                }
-            });
-        });
-    }
-
     fn create_jobs(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let project_jobs: Vec<_> = items(&snapshot["work"])
             .iter()
@@ -645,7 +519,7 @@ impl Console {
             hint(ui, "PROJECT_RESULTS_UNSUPPORTED_PLATFORM");
             ui.horizontal_wrapped(|ui| {
                 if text(work, "status") == "queued" {
-                    action(ui, commands, "Start task", "work_start", runtime_issue.is_none() && quick_codex_ready(snapshot) && revision(work) > 0,
+                    action(ui, commands, "Start task", "work_start", runtime_issue.is_none() && connect::can_start(snapshot) && revision(work) > 0,
                         || json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
                 }
                 if matches!(text(work, "status"), "failed" | "interrupted" | "blocked") {
@@ -662,13 +536,13 @@ impl Console {
                     || json!({"projectId":self.create.project,"workItemId":work["workItemId"]}));
             });
             if text(work, "status") == "queued" {
-                if quick_codex_ready(snapshot) {
+                if connect::can_start(snapshot) {
                     hint(ui, "Prepared. Start when you're ready.");
                 } else {
                     ui.horizontal_wrapped(|ui| {
                         hint(ui, "Codex is not ready.");
                         if control(ui, "Set up Codex", true).clicked() {
-                            self.tab = Tab::Providers;
+                            self.create.chat.connections_open = true;
                         }
                     });
                 }
@@ -701,6 +575,7 @@ impl Console {
                     ui.separator();
                     ui.label(RichText::new(text(result, "name")).strong());
                     raw_hint(ui, &format!("{} · {} B", text(result, "path"), result["bytes"].as_u64().unwrap_or(0)));
+                    self.chat_reference_choice(ui,snapshot,work,result);
                     ui.horizontal_wrapped(|ui| {
                         if result["textPreview"] == true {
                             let before = commands.len();
@@ -758,7 +633,13 @@ mod tests {
                 "description":{"en":"Build a deck","tr":"Sunum hazırlayın"},"starter":{"en":"Present my idea","tr":"Fikrimi sun"},"instruction":"Prepare useful files."},
                 {"id":"V1","category":"video","name":{"en":"Edit video","tr":"Video düzenle"},"description":{"en":"Trim a recording","tr":"Kaydı kesin"}}],
             "projectJobs":[{"projectId":"project:one","workItemId":"work:one"}],
-            "work":{"items":[{"workItemId":"work:one","title":"Existing work","revision":2,"status":"queued"}]}})
+            "work":{"items":[{"workItemId":"work:one","title":"Existing work","revision":2,"status":"queued"}]},"projectChat":{"reasonCode":"PROJECT_CHAT_READ","projectId":"project:one","offset":0,"nextOffset":null,"total":0,"items":[]}})
+    }
+
+    fn chat_entry(data: &mut Value, status: &str) {
+        data["work"]["items"][0]["status"] = json!(status);
+        data["projectChat"]["total"] = json!(1);
+        data["projectChat"]["items"] = json!([{"workItemId":"work:one","abilityId":"P1","goal":"Owner request retained","status":status,"revision":2,"replyToWorkItemId":null}]);
     }
 
     fn state() -> CreateState {
@@ -819,7 +700,26 @@ mod tests {
         action: &str,
         label: &str,
     ) -> Vec<Command> {
-        let size = egui::vec2(1280.0, 2200.0);
+        click_at_size(
+            ctx,
+            console,
+            data,
+            egui::vec2(1280.0, 2200.0),
+            busy,
+            action,
+            label,
+        )
+    }
+
+    fn click_at_size(
+        ctx: &egui::Context,
+        console: &mut Console,
+        data: &Value,
+        size: egui::Vec2,
+        busy: bool,
+        action: &str,
+        label: &str,
+    ) -> Vec<Command> {
         render(ctx, console, data, size, busy, vec![]);
         let rect = ctx.data(|d| {
             d.get_temp::<egui::Rect>(egui::Id::new(("test-action", action, label)))
@@ -856,6 +756,172 @@ mod tests {
             }],
         )
         .0
+    }
+
+    #[test]
+    fn connections_dialog_fits_minimum_viewport_and_only_runs_explicit_local_actions() {
+        let size = egui::vec2(800.0, 560.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        for language in ["en", "tr"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut console = Console {
+                    tab: Tab::Create,
+                    create: state(),
+                    ..Default::default()
+                };
+                console.create.chat.connections_open = true;
+                let mut data = snapshot();
+                data["desktopPreferences"] = json!({"language":language,"reduceMotion":false});
+                data["providerConnections"] = json!({"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[
+                    {"id":"codex","installed":false,"authentication":"missing","controlSupported":false},
+                    {"id":"claude","installed":true,"authentication":"present","controlSupported":false},
+                    {"id":"gemini","installed":false,"authentication":"unknown","controlSupported":false}]});
+                for _ in 0..3 {
+                    assert!(render(&ctx, &mut console, &data, size, false, vec![])
+                        .0
+                        .is_empty());
+                }
+                let (_, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+                assert!(copy.iter().any(|text| text
+                    == i18n::tr(Language::from_code(language), "Install or update Codex")
+                        .as_ref()));
+                let close = ctx.data(|data| {
+                    data.get_temp::<egui::Rect>(egui::Id::new((
+                        "test-action",
+                        "memory_control",
+                        "Close",
+                    )))
+                    .unwrap()
+                });
+                let (close_clip, visible) = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Close",
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    visible && screen.contains_rect(close) && close_clip.contains_rect(close),
+                    "{language} {theme:?} close clipped: {close:?} {close_clip:?}"
+                );
+                for (action, label) in [
+                    ("provider_connections_read", "Check connections"),
+                    ("desktop_motion", "Reduce motion"),
+                ] {
+                    render(&ctx, &mut console, &data, size, false, vec![]);
+                    let (enabled, rect, clip) = ctx.data(|data| {
+                        data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                            "test-action-state",
+                            action,
+                            label,
+                        )))
+                        .unwrap()
+                    });
+                    assert!(
+                        enabled && screen.contains_rect(rect) && clip.contains_rect(rect),
+                        "{language} {theme:?} {label} clipped: {rect:?} {clip:?}"
+                    );
+                    let commands =
+                        click_at_size(&ctx, &mut console, &data, size, false, action, label);
+                    assert_eq!(commands.len(), 1);
+                    assert_eq!(commands[0].action, action);
+                    if action == "desktop_motion" {
+                        assert_eq!(commands[0].payload["reduceMotion"], true);
+                    }
+                    assert!(
+                        click_at_size(&ctx, &mut console, &data, size, true, action, label)
+                            .is_empty()
+                    );
+                }
+                assert!(click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    size,
+                    false,
+                    "memory_control",
+                    "Close"
+                )
+                .is_empty());
+                assert!(
+                    !console.create.chat.connections_open,
+                    "visible close must receive a real click"
+                );
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn file_checkbox_prepares_scoped_follow_up_without_mutating_source_or_starting() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut console = Console {
+            tab: Tab::Create,
+            create: state(),
+            ..Default::default()
+        };
+        let mut data = snapshot();
+        data["desktopPreferences"] = json!({"language":"en"});
+        chat_entry(&mut data, "completed");
+        data["projectResults"] = json!({"reasonCode":"PROJECT_RESULTS_READ","projectId":"project:one","workItemId":"work:one",
+            "items":[{"path":"outputs/report.md","name":"Original report.md","bytes":12,"textPreview":true}]});
+        let source = data["projectResults"].clone();
+        console
+            .create
+            .selected_work
+            .insert("project:one".into(), "work:one".into());
+        console.create.chat.files_open = true;
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "reference",
+            "outputs/report.md"
+        )
+        .is_empty());
+        let key = ("project:one".into(), "P1".into());
+        assert_eq!(console.create.chat.replies[&key].parent, "work:one");
+        assert!(console.create.chat.replies[&key]
+            .references
+            .contains("outputs/report.md"));
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Close files"
+        )
+        .is_empty());
+        console.create.draft().goal = "Revise the introduction using the selected report".into();
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_chat_send",
+            "Prepare task",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_chat_send");
+        assert_eq!(commands[0].payload["projectId"], "project:one");
+        assert_eq!(commands[0].payload["abilityId"], "P1");
+        assert_eq!(commands[0].payload["replyToWorkItemId"], "work:one");
+        assert_eq!(
+            commands[0].payload["referencePaths"],
+            json!(["outputs/report.md"])
+        );
+        assert_eq!(data["projectResults"], source);
+        assert_eq!(
+            console.create.chat.replies[&key].references.len(),
+            1,
+            "references survive until a matching durable receipt"
+        );
     }
 
     #[test]
@@ -913,7 +979,7 @@ mod tests {
             let enabled = ctx.data(|data| {
                 data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
                     "test-action-state",
-                    "project_work_enqueue",
+                    "project_chat_send",
                     "Prepare task",
                 )))
                 .unwrap()
@@ -950,15 +1016,7 @@ mod tests {
             } else {
                 "Create a presentation"
             }));
-            assert!(click(
-                &ctx,
-                &mut console,
-                &data,
-                false,
-                "memory_control",
-                "Explore abilities"
-            )
-            .is_empty());
+            assert!(click(&ctx, &mut console, &data, false, "memory_control", "Skills").is_empty());
             assert!(console.create.catalog_open);
             console.create.category.clear();
             console.create.search = "V1".into();
@@ -1053,7 +1111,7 @@ mod tests {
             let commands = click(&ctx, &mut console, &data, false, "navigation", tab.name());
             assert!(commands.iter().all(|command| !matches!(
                 command.action,
-                "work_start" | "work_enqueue" | "project_work_enqueue"
+                "work_start" | "work_enqueue" | "project_chat_send"
             )));
             assert!(
                 console.tab == tab,
@@ -1083,11 +1141,22 @@ mod tests {
         };
         let mut data = snapshot();
         data["desktopPreferences"] = json!({"language":"en"});
-        console.create.view_results = true;
+        console.create.chat.files_open = false;
+        chat_entry(&mut data, "queued");
         console
             .create
             .selected_work
             .insert("project:one".into(), "work:one".into());
+        for _ in 0..3 {
+            render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(800.0, 560.0),
+                false,
+                vec![],
+            );
+        }
         let copy = render(
             &ctx,
             &mut console,
@@ -1098,7 +1167,7 @@ mod tests {
         )
         .1
         .join("\n");
-        assert!(copy.contains("Codex is not ready."));
+        assert!(copy.contains("Connect a supported Codex account to start."));
         assert!(click(
             &ctx,
             &mut console,
@@ -1117,8 +1186,9 @@ mod tests {
             "memory_control",
             "Set up Codex"
         )
-        .is_empty());
-        assert!(console.tab == Tab::Providers);
+        .iter()
+        .all(|command| command.action == "provider_connections_read"));
+        assert!(console.create.chat.connections_open);
     }
 
     #[test]
@@ -1150,7 +1220,7 @@ mod tests {
             &mut console,
             &data,
             true,
-            "project_work_enqueue",
+            "project_chat_send",
             "Prepare task",
         );
         assert!(commands.is_empty());
@@ -1160,11 +1230,11 @@ mod tests {
             &mut console,
             &data,
             false,
-            "project_work_enqueue",
+            "project_chat_send",
             "Prepare task",
         );
         assert_eq!(commands.len(), 1);
-        assert_eq!(commands[0].action, "project_work_enqueue");
+        assert_eq!(commands[0].action, "project_chat_send");
         assert_eq!(commands[0].payload["projectId"], "project:one");
         assert!(commands[0].payload["workingDirectory"].is_null());
         assert!(commands
@@ -1180,7 +1250,7 @@ mod tests {
             &mut console,
             &data,
             false,
-            "project_work_enqueue",
+            "project_chat_send",
             "Prepare task"
         )
         .is_empty());
@@ -1207,7 +1277,7 @@ mod tests {
                 data["observation"] = json!({"observations":[{"provider":{"id":"codex","state":"available","version":"0.155.1",
                     "capabilities":{"recentObservation":true,"explicitLiveStatus":true}},"sessions":[]}]});
                 assert!(quick_codex_ready(&data));
-                console.create.view_results = true;
+                console.create.chat.files_open = true;
                 console
                     .create
                     .selected_work
@@ -1272,7 +1342,7 @@ mod tests {
         };
         let mut data = snapshot();
         data["desktopPreferences"] = json!({"language":"en"});
-        console.create.view_results = true;
+        console.create.chat.files_open = true;
         console
             .create
             .selected_work
@@ -1318,7 +1388,7 @@ mod tests {
             .create
             .selected_work
             .insert("project:one".into(), "work:one".into());
-        console.create.view_results = true;
+        console.create.chat.files_open = true;
         data["projectResults"] = json!({"reasonCode":"PROJECT_RESULTS_READ","projectId":"project:two","workItemId":"work:one",
             "items":[{"path":"outputs/report.md","name":"FOREIGN_RESULT_CANARY","bytes":12,"textPreview":true}]});
         let copy = render(
@@ -1416,7 +1486,7 @@ mod tests {
                 for (provider_ready, busy) in [(true, false), (false, false), (true, true)] {
                     for (action, label) in [
                         ("work_start", "Start task"),
-                        ("project_results_read", "Refresh outputs"),
+                        ("project_results_read", "Files"),
                     ] {
                         let ctx = egui::Context::default();
                         studio::install(&ctx);
@@ -1432,11 +1502,16 @@ mod tests {
                             json!("Launch presentation · UI fixture");
                         data["observation"] = json!({"observations":[{"provider":{"id":"codex","state":if provider_ready {"available"} else {"unavailable"},"version":"0.155.1",
                             "capabilities":{"recentObservation":true,"explicitLiveStatus":true}},"sessions":[]}]});
-                        console.create.view_results = true;
+                        console.create.chat.files_open = false;
+                        chat_entry(&mut data, "queued");
+                        data["providerConnections"] = json!({"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[{"id":"codex","installed":true,"version":"0.155.1","authentication":if provider_ready {"present"} else {"missing"},"controlSupported":true}]});
                         console
                             .create
                             .selected_work
                             .insert("project:one".into(), "work:one".into());
+                        for _ in 0..3 {
+                            render(&ctx, &mut console, &data, size, busy, vec![]);
+                        }
                         let (commands, copy) =
                             render(&ctx, &mut console, &data, size, busy, vec![]);
                         assert!(commands.is_empty());
@@ -1544,7 +1619,7 @@ mod tests {
                 let (enabled, rect, clip) = ctx.data(|data| {
                     data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
                         "test-action-state",
-                        "project_work_enqueue",
+                        "project_chat_send",
                         "Prepare task",
                     )))
                     .unwrap()
@@ -1593,7 +1668,7 @@ mod tests {
                     1,
                     "visible action must receive a real click"
                 );
-                assert_eq!(commands[0].action, "project_work_enqueue");
+                assert_eq!(commands[0].action, "project_chat_send");
                 assert_eq!(commands[0].payload["instruction"], "Owner goal");
                 assert_eq!(console.create.draft().goal, "Owner goal");
             }
@@ -1751,7 +1826,8 @@ mod tests {
                 vec![]
             )
             .0
-            .is_empty());
+            .iter()
+            .all(|command| command.action == "project_chat_read"));
             assert!(
                 console.tab == expected,
                 "{existing} must preserve the existing default or requested view"

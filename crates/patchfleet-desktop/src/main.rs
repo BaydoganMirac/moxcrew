@@ -4,6 +4,7 @@ mod bridge;
 mod command;
 mod folder;
 mod i18n;
+mod motion;
 mod studio;
 mod ui;
 
@@ -81,6 +82,15 @@ impl Patchfleet {
                             bridge.create_smoke();
                         }
                         console.create_smoke(bridge.snapshot.as_ref().unwrap(), results);
+                    }
+                    if scene.starts_with("chat-") {
+                        let files = scene == "chat-results";
+                        let connections = scene == "chat-connections";
+                        if files {
+                            bridge.create_smoke();
+                        }
+                        bridge.chat_smoke(connections);
+                        console.chat_smoke(bridge.snapshot.as_ref().unwrap(), files, connections);
                     }
                 }
             }
@@ -230,12 +240,19 @@ fn seed_create_scene(directory: &std::path::Path) {
         if std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en") {
             host.action("desktop_language", command::Command::new("desktop_language", serde_json::json!({"language":"en"})).payload).await.unwrap();
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("create-empty") {
+        if matches!(std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(), Ok("create-empty" | "chat-empty")) {
             assert_eq!(host.snapshot().unwrap()["projectMemory"]["projects"], serde_json::json!([]));
             host.shutdown().await;
             return;
         }
         let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":"Launch idea · UI fixture"})).payload).await.unwrap();
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("chat-compose") {
+            host.shutdown().await;
+            return;
+        }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("chat-reduced") {
+            host.action("desktop_motion", command::Command::new("desktop_motion", serde_json::json!({"reduceMotion":true})).payload).await.unwrap();
+        }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
         let queued = host.action("project_work_enqueue", command::Command::new("project_work_enqueue", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"abilityId":"P1","title":"Launch presentation · UI fixture","instruction":"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."})).payload).await.unwrap();
@@ -645,7 +662,7 @@ fn main() {
         );
         #[cfg(feature = "ui-smoke")]
         if let Ok(scene) = std::env::var("PATCHFLEET_SMOKE_SCENE") {
-            if scene.starts_with("create-") {
+            if scene.starts_with("create-") || scene.starts_with("chat-") {
                 seed_create_scene(&directory);
             }
             if scene.starts_with("quick-") {

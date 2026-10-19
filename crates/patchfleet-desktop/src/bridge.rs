@@ -30,6 +30,8 @@ fn memory_read(action: &str) -> bool {
             | "memory_cloud_search"
             | "project_results_read"
             | "project_result_read"
+            | "project_chat_read"
+            | "provider_connections_read"
     )
 }
 
@@ -82,6 +84,8 @@ pub struct Bridge {
     project_work_receipt: Option<Value>,
     project_results: Option<Value>,
     project_result: Option<Value>,
+    project_chat: Option<Value>,
+    provider_connections: Option<Value>,
     pub error: Option<String>,
     pub feedback: Option<Notice>,
     pub picking_folder: bool,
@@ -128,6 +132,39 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 }
 
 impl Bridge {
+    #[cfg(feature = "ui-smoke")]
+    pub fn chat_smoke(&mut self, show_connections: bool) {
+        let project =
+            self.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0]["projectId"].clone();
+        if project.is_string() {
+            self.submit(Command::new(
+                "project_chat_read",
+                serde_json::json!({"projectId":project}),
+            ));
+            for _ in 0..400 {
+                self.poll();
+                if !self.busy {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            assert_eq!(
+                self.snapshot.as_ref().unwrap()["projectChat"]["reasonCode"],
+                "PROJECT_CHAT_READ"
+            );
+        }
+        if show_connections {
+            // Rendering fixture only: never probe an installed CLI from a smoke scene.
+            self.provider_connections = Some(
+                serde_json::json!({"schemaVersion":1,"reasonCode":"PROVIDER_CONNECTIONS_READ","observedAt":"2026-10-19T00:00:00.000Z","providers":[
+                {"id":"codex","installed":false,"version":null,"authentication":"unknown","controlSupported":false,"reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"},
+                {"id":"claude","installed":false,"version":null,"authentication":"unknown","controlSupported":false,"reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"},
+                {"id":"gemini","installed":false,"version":null,"authentication":"unknown","controlSupported":false,"reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"}]}),
+            );
+            self.apply_snapshot(Ok(self.snapshot.clone().unwrap()));
+        }
+    }
+
     #[cfg(feature = "ui-smoke")]
     pub fn create_smoke(&mut self) {
         let job = self.snapshot.as_ref().unwrap()["projectJobs"][0].clone();
@@ -415,6 +452,8 @@ impl Bridge {
             project_work_receipt: None,
             project_results: None,
             project_result: None,
+            project_chat: None,
+            provider_connections: None,
             error: None,
             feedback: None,
             picking_folder: false,
@@ -446,11 +485,16 @@ impl Bridge {
                     match result {
                         Ok(receipt) => {
                             match command.action {
-                                "project_work_enqueue" => {
+                                "project_work_enqueue" | "project_chat_send" => {
                                     let mut scoped = receipt.clone();
                                     scoped["commandId"] = command.payload["commandId"].clone();
                                     scoped["projectId"] = command.payload["projectId"].clone();
                                     self.project_work_receipt = Some(scoped);
+                                    self.project_chat = None;
+                                }
+                                "project_chat_read" => self.project_chat = Some(receipt.clone()),
+                                "provider_connections_read" => {
+                                    self.provider_connections = Some(receipt.clone())
                                 }
                                 "project_results_read" => {
                                     self.project_results = Some(receipt.clone())
@@ -482,7 +526,10 @@ impl Bridge {
                                 .then(|| Notice::receipt(command.action, &receipt));
                         }
                         Err(error) => {
-                            if command.action == "project_work_enqueue" {
+                            if matches!(
+                                command.action,
+                                "project_work_enqueue" | "project_chat_send"
+                            ) {
                                 self.project_work_receipt = Some(
                                     serde_json::json!({"commandId":command.payload["commandId"],"projectId":command.payload["projectId"],"outcome":"failed","reasonCode":safe_error(&error)}),
                                 );
@@ -854,6 +901,28 @@ impl Bridge {
                     self.project_work_receipt.clone().unwrap_or(Value::Null);
                 snapshot["projectResults"] = self.project_results.clone().unwrap_or(Value::Null);
                 snapshot["projectResult"] = self.project_result.clone().unwrap_or(Value::Null);
+                if self
+                    .snapshot
+                    .as_ref()
+                    .is_some_and(|old| old["hostEpoch"] != snapshot["hostEpoch"])
+                {
+                    self.project_chat = None;
+                    self.provider_connections = None;
+                }
+                if self.project_chat.as_ref().is_some_and(|page| {
+                    !snapshot["projectMemory"]["projects"]
+                        .as_array()
+                        .is_some_and(|projects| {
+                            projects
+                                .iter()
+                                .any(|project| project["projectId"] == page["projectId"])
+                        })
+                }) {
+                    self.project_chat = None;
+                }
+                snapshot["projectChat"] = self.project_chat.clone().unwrap_or(Value::Null);
+                snapshot["providerConnections"] =
+                    self.provider_connections.clone().unwrap_or(Value::Null);
                 self.snapshot = Some(snapshot);
                 self.account_overlays();
                 self.error = None;
@@ -886,7 +955,11 @@ impl Bridge {
         match self.requests.try_send(Request::Action(command.clone())) {
             Ok(()) => {
                 match command.action {
-                    "project_work_enqueue" => self.project_work_receipt = None,
+                    "project_work_enqueue" | "project_chat_send" => {
+                        self.project_work_receipt = None
+                    }
+                    "project_chat_read" => self.project_chat = None,
+                    "provider_connections_read" => self.provider_connections = None,
                     "project_results_read" => {
                         self.project_results = None;
                         self.project_result = None;
@@ -900,6 +973,9 @@ impl Bridge {
                     snapshot["projectResults"] =
                         self.project_results.clone().unwrap_or(Value::Null);
                     snapshot["projectResult"] = self.project_result.clone().unwrap_or(Value::Null);
+                    snapshot["projectChat"] = self.project_chat.clone().unwrap_or(Value::Null);
+                    snapshot["providerConnections"] =
+                        self.provider_connections.clone().unwrap_or(Value::Null);
                 }
                 for (result, key) in [
                     (&mut self.decision_search, "decisionSearch"),
@@ -2074,6 +2150,67 @@ mod tests {
     }
 
     #[test]
+    fn conversation_bridge_keeps_exact_receipts_and_durable_project_history() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        bridge.submit(Command::new(
+            "project_create",
+            json!({"name":"Conversation proof"}),
+        ));
+        await_idle(&mut bridge);
+        let project = bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0].clone();
+        let send = Command::new(
+            "project_chat_send",
+            json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],"abilityId":"D3","title":"Owner goal","instruction":"Create an editable brief from my notes."}),
+        );
+        bridge.submit(send.clone());
+        await_idle(&mut bridge);
+        let receipt = bridge.snapshot.as_ref().unwrap()["projectWorkReceipt"].clone();
+        assert_eq!(receipt["commandId"], send.payload["commandId"]);
+        assert_eq!(receipt["projectId"], project["projectId"]);
+        assert_eq!(receipt["outcome"], "applied");
+        for _ in 0..2 {
+            bridge.submit(send.clone());
+            await_idle(&mut bridge);
+            assert_eq!(
+                bridge.snapshot.as_ref().unwrap()["projectWorkReceipt"],
+                receipt
+            );
+        }
+        bridge.submit(Command::new(
+            "project_chat_read",
+            json!({"projectId":project["projectId"],"limit":1}),
+        ));
+        await_idle(&mut bridge);
+        let history = bridge.snapshot.as_ref().unwrap()["projectChat"].clone();
+        assert_eq!(history["total"], 1);
+        assert_eq!(history["items"][0]["goal"], send.payload["instruction"]);
+        assert_eq!(history["items"][0]["workItemId"], receipt["workItemId"]);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectWorkReceipt"],
+            receipt
+        );
+        bridge.shutdown();
+        let mut reopened =
+            Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut reopened);
+        reopened.submit(Command::new(
+            "project_chat_read",
+            json!({"projectId":project["projectId"],"limit":1}),
+        ));
+        await_idle(&mut reopened);
+        assert_eq!(reopened.snapshot.as_ref().unwrap()["projectChat"], history);
+        reopened.provider_connections = Some(json!({"providers":[]}));
+        let mut replacement = reopened.snapshot.clone().unwrap();
+        replacement["hostEpoch"] = json!("changed-host");
+        reopened.apply_snapshot(Ok(replacement));
+        assert!(reopened.snapshot.as_ref().unwrap()["projectChat"].is_null());
+        assert!(reopened.snapshot.as_ref().unwrap()["providerConnections"].is_null());
+        reopened.shutdown();
+    }
+
+    #[test]
     fn late_search_outcome_never_replaces_failed_owner_retry() {
         let directory = tempfile::tempdir().unwrap();
         let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
@@ -2112,7 +2249,12 @@ mod tests {
         let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
         await_idle(&mut bridge);
         let owner = Command::new("project_work_enqueue", json!({"title":"Keep draft"}));
-        for action in ["project_results_read", "project_result_read"] {
+        for action in [
+            "project_results_read",
+            "project_result_read",
+            "project_chat_read",
+            "provider_connections_read",
+        ] {
             for outcome in [
                 Ok(json!({"text":"FOREIGN_CANARY"})),
                 Err("HOST_ACTION_FAILED".into()),

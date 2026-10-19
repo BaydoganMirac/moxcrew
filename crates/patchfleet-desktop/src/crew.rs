@@ -1862,7 +1862,7 @@ impl Console {
                 1 | 2 => 64.0,
                 _ => 0.0,
             };
-            egui::ScrollArea::vertical().id_salt(("mission-workflow-body",&project,self.create.crew.workflow.tab)).auto_shrink([false,false]).max_height((ui.available_height()-reserve).max(60.0)).show(ui,|ui| {
+            egui::ScrollArea::vertical().id_salt(("mission-workflow-body",&project,self.create.crew.workflow.tab)).auto_shrink([false,self.create.crew.workflow.tab==0]).max_height((ui.available_height()-reserve).max(60.0)).show(ui,|ui| {
                 match self.create.crew.workflow.tab {
                     0=>{
                         let ready=self.create.crew.plans.contains_key(&key);
@@ -1904,7 +1904,7 @@ impl Console {
             });
             ui.add_space(12.0);
             if self.create.crew.workflow.tab == 0 {
-                egui::Frame::new()
+                let preparation = egui::Frame::new()
                     .fill(colors(ui).raised)
                     .stroke(egui::Stroke::new(1.0, colors(ui).border))
                     .corner_radius(14)
@@ -2001,6 +2001,15 @@ impl Console {
                             );
                         });
                     });
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new("crew-preparation-bar"),
+                        (preparation.response.rect, ui.clip_rect()),
+                    )
+                });
+                #[cfg(not(test))]
+                let _ = preparation;
             } else if self.create.crew.workflow.tab == 1 {
                 self.direction_action(ui, snapshot, commands);
             } else if self.create.crew.workflow.tab == 2 {
@@ -3268,6 +3277,78 @@ mod tests {
         );
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].payload["offset"], 0);
+    }
+
+    #[test]
+    fn normal_plan_preparation_bar_follows_details_and_stays_bounded_when_expanded() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let data = fixture();
+        let mut console = console();
+        console.create.crew.workflow.read = Some(("project:one".into(), 0));
+        console.create.select_productive_view(1);
+        let key = console.create.crew_key();
+        console.create.crew.plans.get_mut(&key).unwrap().members.push(json!({"name":"Researcher","role":"research","abilityId":"R1","instruction":"Research the requested sources."}));
+        let size = egui::vec2(1280.0, 880.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        for _ in 0..3 {
+            assert!(render(&ctx, &mut console, &data, size, false, vec![])
+                .0
+                .is_empty());
+        }
+        let details = ctx.data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new((
+                "test-action",
+                "memory_control",
+                "Plan details",
+            )))
+            .unwrap()
+        });
+        let (bar, clip) = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new("crew-preparation-bar"))
+                .unwrap()
+        });
+        let gap = bar.top() - details.bottom();
+        assert!(
+            (0.0..=24.0).contains(&gap),
+            "preparation detached from plan: gap={gap}, bar={bar:?}, details={details:?}"
+        );
+        assert!(screen.contains_rect(bar) && clip.contains_rect(bar));
+        for member in &mut console.create.crew.plans.get_mut(&key).unwrap().members {
+            member["instruction"] = json!("Actual agent guidance. ".repeat(90));
+        }
+        assert!(click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Plan details"
+        )
+        .is_empty());
+        for _ in 0..3 {
+            assert!(render(&ctx, &mut console, &data, size, false, vec![])
+                .0
+                .is_empty());
+        }
+        let (bar, clip) = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new("crew-preparation-bar"))
+                .unwrap()
+        });
+        assert!(
+            screen.contains_rect(bar) && clip.contains_rect(bar),
+            "expanded details must remain scrollable above the preparation bar"
+        );
+        let (enabled, button, clip) = ctx.data(|data| {
+            data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                "test-action-state",
+                "project_crew_prepare",
+                "Prepare crew",
+            )))
+            .unwrap()
+        });
+        assert!(enabled && screen.contains_rect(button) && clip.contains_rect(button));
     }
 
     #[test]

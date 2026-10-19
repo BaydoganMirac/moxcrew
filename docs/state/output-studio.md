@@ -1,6 +1,6 @@
 # Output Studio and local production
 
-Updated: 2026-10-19. Task0044; integration verification in progress.
+Updated: 2026-10-19. Task0044; integrated tests and independent review passed.
 
 The native Chat file panel opens Project-scoped Output Studio. It lists actual
 files, SHA-256 versions and revision parents. A selected revision freezes the

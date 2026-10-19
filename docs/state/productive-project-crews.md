@@ -41,11 +41,26 @@ an active canonical log.
 
 ## Verification
 
-Final workspace totals, native captures and package evidence are recorded here
-after the integrated pass. Focused evidence already includes protocol-peer
-lifecycle, production cancellation, immutable revisions, exact recovery,
-cross-Project denial, uncertain remote-write recovery, secret canaries and old
-projection parity.
+`cargo test --workspace --all-features --offline --locked -- --test-threads=1`
+passes: **406 tests, zero failures, five opt-in tests skipped**. The skipped
+network-playlist test was run separately with explicit media tools and passed.
+The other opt-in cases require private PostgreSQL fixtures, an isolated installed
+Codex wrapper or the manual large-log timing probe. Final desktop-only verification
+also passes all 151 tests. Strict workspace/all-target/all-feature Clippy and
+`cargo fmt --all --check` pass.
+
+The tests cover protocol-peer lifecycle, production cancellation, immutable
+revisions, exact recovery, cross-Project denial, uncertain remote-write recovery,
+secret canaries and old projection parity. A real HTTP MCP test produces and
+hash-checks a DOCX; delivered and existing frozen inputs with colliding names
+retain their distinct bytes through actual extraction.
+
+Native fixture verification covers 43 captures: ten scenes in TR/EN and both
+themes at the 800x560 minimum, plus three normal windows. Nine final app/prepared
+action captures verify the readable frozen fields and friendly provider labels.
+Fixture windows make no provider/account call. Actual-click UI tests verify
+Prepare, Schedule and explicit action approval at the minimum size. Package
+evidence follows the final feature-off release build below.
 
 Real output proof uses system Python 3.9 and FFmpeg/FFprobe 7.1.1. LibreOffice
 opens generated PPTX, DOCX and XLSX files. Synthetic video/audio tests exercise
@@ -53,6 +68,18 @@ real clip edits, captions, metadata, thumbnail and cleanup; a targeted slide
 revision preserves other slides. A disguised HLS playlist with an MP4 extension
 is rejected without contacting a loopback server. The latter is an opt-in test
 requiring explicit media-tool executable paths.
+
+The real-file proof produced an editable 2,268-byte PPTX, 908-byte DOCX,
+1,447-byte XLSX, 281,174-byte edited MP4 and 96,334-byte cleaned WAV. The video
+probe confirms 640x360 output and 1.021333 seconds; a real 185,528-byte PNG
+thumbnail and a 9,554-byte resized PNG were also read back. These are disposable
+fixtures, not a claim about model-generated design quality.
+
+Independent integration review closed issues in V11 message allocation, timezone
+handling, replay authorization for schedules and correction rounds, edited plan
+fields, native provider retries, usage ingestion, V12 receipt recovery and
+colliding production source aliases. The fixes have focused regression evidence.
+Shared integration is in `e44a1df`; workflow review fixes are in `f5c70a7`.
 
 ## Boundaries
 

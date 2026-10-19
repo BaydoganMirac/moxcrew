@@ -362,7 +362,9 @@ impl Host {
                         Some(10) => {
                             crate::project_crews::recovered_owner_result(events, &e["payload"])
                         }
-                        Some(12) => crate::project_studio::recovered_owner_result(events,&e["payload"]),
+                        Some(12) => {
+                            crate::project_studio::recovered_owner_result(events, &e["payload"])
+                        }
                         Some(8 | 9) => {
                             crate::creation::recovered_owner_result(events, &e["payload"])
                         }

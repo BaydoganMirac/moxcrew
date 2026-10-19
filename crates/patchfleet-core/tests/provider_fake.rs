@@ -159,7 +159,7 @@ fn main() {
         } else if line.contains("\"mcpServerStatus/list\"") && mode.contains("managed") {
             send(
                 &id,
-                r#"{"data":[{"name":"patchfleet_memory","runtimeStatus":"connected","toolsError":null,"tools":{"project_context":{"name":"project_context"},"memory_search":{"name":"memory_search"},"decision_read":{"name":"decision_read"},"crew_context":{"name":"crew_context"},"crew_messages":{"name":"crew_messages"},"crew_message":{"name":"crew_message"}}}],"nextCursor":null}"#,
+                r#"{"data":[{"name":"patchfleet_memory","runtimeStatus":"connected","toolsError":null,"tools":{"project_context":{"name":"project_context"},"memory_search":{"name":"memory_search"},"decision_read":{"name":"decision_read"},"crew_context":{"name":"crew_context"},"crew_messages":{"name":"crew_messages"},"crew_message":{"name":"crew_message"},"crew_task_offer":{"name":"crew_task_offer"},"crew_task_accept":{"name":"crew_task_accept"},"crew_task_deliver":{"name":"crew_task_deliver"},"crew_review":{"name":"crew_review"},"production_run":{"name":"production_run"},"production_read":{"name":"production_read"},"project_resources":{"name":"project_resources"}}}],"nextCursor":null}"#,
             );
         } else if line.contains("\"mcpServer/tool/call\"") && mode.contains("managed") {
             send(

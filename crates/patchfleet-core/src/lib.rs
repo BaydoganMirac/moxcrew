@@ -1,5 +1,6 @@
 pub mod abilities;
 pub mod agent_memory;
+mod app_connections;
 pub mod cloud;
 mod conversation;
 mod creation;
@@ -9,8 +10,11 @@ mod desktop_preferences;
 pub mod domain;
 pub mod extraction;
 mod host;
+mod production;
 mod project_crews;
 pub mod project_memory;
+mod project_studio;
+mod project_workflows;
 pub mod providers;
 pub mod retrieval;
 pub mod shared_memory;

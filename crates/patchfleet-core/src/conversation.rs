@@ -24,7 +24,7 @@ fn origin<'a>(events: &'a [Value], work_id: &str) -> Option<&'a Value> {
         })?["payload"];
         if matches!(
             request["action"].as_str(),
-            Some("project_work_enqueue" | "project_chat_send")
+            Some("project_work_enqueue" | "project_chat_send" | "project_artifact_revise")
         ) {
             return Some(request);
         }
@@ -81,6 +81,9 @@ pub(crate) fn retry_inputs(
 ) -> Result<Option<FrozenInputs>> {
     let owner = origin(events, text(work, "workItemId")?)
         .ok_or_else(|| invalid("PROJECT_JOB_SCOPE_INVALID"))?;
+    if owner["action"] == "project_artifact_revise" {
+        return crate::project_studio::retry_inputs(events, owner, directory, project).map(Some);
+    }
     let references = owner["payload"]
         .get("referencePaths")
         .and_then(Value::as_array);

@@ -176,13 +176,21 @@ pub fn build_projection(
         .as_array()
         .unwrap_or(&empty)
         .iter()
-        .filter(|w| !terminal(w))
+        .filter(|w| {
+            !terminal(w)
+                && !(w["schemaVersion"] == 13
+                    && matches!(w["providerId"].as_str(), Some("claude" | "gemini")))
+        })
         .collect();
     let runs: Vec<_> = bundle["work"]["runs"]
         .as_array()
         .unwrap_or(&empty)
         .iter()
-        .filter(|w| !terminal(w))
+        .filter(|w| {
+            !terminal(w)
+                && !(w["schemaVersion"] == 13
+                    && matches!(w["providerId"].as_str(), Some("claude" | "gemini")))
+        })
         .collect();
     let mut work_items = vec![];
     for (position, w) in works.iter().take(32).enumerate() {

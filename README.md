@@ -13,19 +13,28 @@ research, writing, analysis, planning, personal work and software development.
 Project is the main product concept; a separate Workspace hierarchy is not
 required. See the [product direction](docs/decisions/0038-general-purpose-projects.md).
 
-Talk to Mox in a Project, inspect its crew recommendation, adjust the members,
-then prepare and explicitly start supported Codex work without a Git folder.
-Saved crews can take another goal in the same Project. Their tasks exchange
-scoped messages and pass checked output files to dependent agents. The crew
-panel shows real task states, inbox delivery and actual files; Single task keeps
-the direct workflow. See [crew state](docs/state/project-crew-orchestration.md).
- Durable request history, honest work cards and an
-on-demand file panel keep goals and actual outputs together. A follow-up can
-copy selected files from a finished job into a fresh task. Forty inspectable
-recipes and eight bundled skill guides support this flow; they do not install
-renderers or establish forty verified end-to-end abilities. Existing coding
-tasks and teams retain their Git-folder workflow. See
-[conversation state](docs/state/connected-project-conversation.md) for evidence and limits.
+Talk to Mox in a Project, inspect and edit its plan, then explicitly start a
+crew. Supported local Codex, Claude Code and Gemini CLI providers can be assigned
+per member. Crews exchange scoped messages and checked file deliveries; owner
+direction can replace affected work while preserving existing outputs. Reviewers
+accept checked results or request bounded corrections. Saved recipes and local
+schedules reuse this workflow. See [workflow state](docs/state/workflow-controls.md)
+and [provider execution](docs/state/provider-execution.md).
+
+Output Studio keeps files, versions, imported Project resources, tool setup and
+app actions beside Chat. Typed local tools create editable PPTX/DOCX/XLSX files,
+clean and analyze CSV, resize images, edit short videos and clean audio. Office/data
+tools require Python 3.9+; media operations require owner-installed FFmpeg/FFprobe.
+PDF text extraction additionally uses Poppler. Native Office previews show extracted
+structure; media previews show metadata and a thumbnail. Original files remain
+exportable. These bounded operations do not imply arbitrary format compatibility,
+full document rendering, media playback or forty verified end-to-end abilities.
+See [Output Studio state](docs/state/output-studio.md).
+
+Google Drive blob import, Notion page creation and Google Calendar event creation
+use private, manually configured access tokens. Each action has a concrete preview
+and a separate explicit execution command; uncertain remote writes are never retried
+automatically. See [app connections](docs/state/app-connections.md).
 
 The approved [1.0.0 release target](docs/plans/0039-version-one-release.md)
 covers eight capability areas, forty abilities and ten composed project workflows,
@@ -67,9 +76,9 @@ Local remains free and works without an account. See [account state](docs/state/
 Create stable projects, link multiple Git worktrees, keep project messages and
 owner task/team sources in local Project Memory. Create sourced ADR drafts in
 Decisions, explicitly accept/reject them and replace an accepted decision while
-preserving its evidence and history. Queue and control supported Codex work, configure twelve
+preserving its evidence and history. Queue and control supported local provider work, configure twelve
 agent packs and six bounded team templates, answer owner gates, and inspect
-provider status. Claude Code and Gemini CLI remain observation-only. Provider
+provider status. Provider
 CLIs and their own model/account/runtime requirements are installed separately.
 
 Rendering reacts to input and state changes. Owned run signals are checked
@@ -115,14 +124,15 @@ build/runtime evidence and remaining signing/platform checks are recorded in
 Read [installation and recovery](docs/install.md), [architecture](docs/architecture.md)
 and [release checks](docs/release.md). Create/retry/export commands write V8 local
 events; chat-send and motion preferences add V9 audit facts. Project crews add
-V10 local mission and communication facts. Older builds need
+V10 local mission and communication facts. Productive crews add V11 workflow,
+V12 resource/artifact/action and V13 multi-provider execution/usage facts. Older builds need
 an unchanged pre-upgrade backup for rollback.
 [Project Memory](docs/state/project-memory.md)
 supports durable sources, message revisions, sourced ADR lifecycle and scoped
 keyword reads. The optional subscription Cloud memory service supports explicit
 publication and exact cross-device reads; see the [memory protocol](docs/memory-protocol.md).
 Explicit Cloud semantic search and free Local ranked keyword retrieval are implemented; see [search state](docs/state/project-memory-search.md). Scoped Local agent tools and optional consented automatic ADR drafts are implemented; see [draft state](docs/state/automatic-drafts.md). Only
-owner acceptance makes an ADR active; agent context injection is not enabled yet.
+owner acceptance makes an ADR active; active agents read it through scoped memory tools.
 Local memory remains free. Cloud service deployment is a separate release step.
 
 ## Product boundaries

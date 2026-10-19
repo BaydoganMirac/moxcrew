@@ -163,7 +163,12 @@ pub fn validate_work_item(v: &Value) -> Result<()> {
         ],
     )?;
     require(
-        v["schemaVersion"] == 1 && v["providerId"] == "codex",
+        (v["schemaVersion"] == 1 && v["providerId"] == "codex")
+            || (v["schemaVersion"] == 13
+                && matches!(
+                    v["providerId"].as_str(),
+                    Some("codex" | "claude" | "gemini")
+                )),
         "invalid work version/provider",
     )?;
     opaque(&v["workItemId"])?;
@@ -193,7 +198,12 @@ pub fn validate_run(v: &Value) -> Result<()> {
         ],
     )?;
     require(
-        v["schemaVersion"] == 1 && v["providerId"] == "codex",
+        (v["schemaVersion"] == 1 && v["providerId"] == "codex")
+            || (v["schemaVersion"] == 13
+                && matches!(
+                    v["providerId"].as_str(),
+                    Some("codex" | "claude" | "gemini")
+                )),
         "invalid run version/provider",
     )?;
     for k in [
@@ -240,7 +250,10 @@ pub fn validate_command_intent(v: &Value) -> Result<()> {
             "payload",
         ],
     )?;
-    require(v["schemaVersion"] == 1, "unsupported command version")?;
+    require(
+        v["schemaVersion"] == 1 || (v["schemaVersion"] == 13 && v["type"] == "enqueue_work"),
+        "unsupported command version",
+    )?;
     one_of(&v["type"], COMMANDS)?;
     for k in ["intentId", "idempotencyKey", "actorId"] {
         opaque(&v[k])?;
@@ -255,6 +268,10 @@ pub fn validate_command_intent(v: &Value) -> Result<()> {
     match string(&v["type"])? {
         "enqueue_work" => {
             exact(p, &["workItem"])?;
+            require(
+                p["workItem"]["schemaVersion"] == v["schemaVersion"],
+                "work/command version mismatch",
+            )?;
             validate_work_item(&p["workItem"])?;
             require(
                 p["workItem"]["status"] == "queued" && p["workItem"]["revision"] == 1,
@@ -837,6 +854,101 @@ pub fn validate_event(v: &Value) -> Result<()> {
     let p = &v["payload"];
     let kind = string(&v["type"])?;
     object(p)?;
+    if v["schemaVersion"] == 12 {
+        return crate::project_studio::validate_event(v);
+    }
+    if v["schemaVersion"] == 11 {
+        match kind {
+            "owner.command.requested" => {
+                exact(p, &["commandId", "action", "payload"])?;
+                opaque(&p["commandId"])?;
+                require(
+                    crate::project_workflows::action_fields(string(&p["action"])?).is_some()
+                        && !crate::project_workflows::is_read(string(&p["action"])?),
+                    "unsupported workflow action",
+                )?;
+                bounded_object(&p["payload"])?;
+            }
+            "owner.command.receipted" => {
+                exact(p, &["commandId", "result"])?;
+                opaque(&p["commandId"])?;
+                bounded_object(&p["result"])?;
+            }
+            _ => crate::project_workflows::validate_event(v)?,
+        }
+        return Ok(());
+    }
+    if v["schemaVersion"] == 13 {
+        // V13 reuses lifecycle shapes, while V1 keeps its original Codex-only meaning.
+        let mut legacy = v.clone();
+        legacy["schemaVersion"] = json!(1);
+        match kind {
+            "command.requested" => {
+                require(
+                    p["intent"]["schemaVersion"] == 13,
+                    "execution command version mismatch",
+                )?;
+                validate_command_intent(&p["intent"])?;
+                legacy["payload"]["intent"]["schemaVersion"] = json!(1);
+                legacy["payload"]["intent"]["payload"]["workItem"]["schemaVersion"] = json!(1);
+                legacy["payload"]["intent"]["payload"]["workItem"]["providerId"] = json!("codex");
+            }
+            "work.enqueued" => {
+                require(
+                    p["workItem"]["schemaVersion"] == 13,
+                    "execution item version mismatch",
+                )?;
+                validate_work_item(&p["workItem"])?;
+                legacy["payload"]["workItem"]["schemaVersion"] = json!(1);
+                legacy["payload"]["workItem"]["providerId"] = json!("codex");
+            }
+            "run.prepared" => {
+                one_of(&p["providerId"], &["codex", "claude", "gemini"])?;
+                legacy["payload"]["providerId"] = json!("codex");
+            }
+            "run.started" => {
+                require(
+                    p["run"]["schemaVersion"] == 13,
+                    "execution run version mismatch",
+                )?;
+                validate_run(&p["run"])?;
+                legacy["payload"]["run"]["schemaVersion"] = json!(1);
+                legacy["payload"]["run"]["providerId"] = json!("codex");
+            }
+            "provider.usage.reported" => {
+                exact(
+                    p,
+                    &[
+                        "runId",
+                        "providerId",
+                        "providerSessionId",
+                        "inputTokens",
+                        "outputTokens",
+                        "costMicros",
+                        "currency",
+                    ],
+                )?;
+                opaque(&p["runId"])?;
+                opaque(&p["providerSessionId"])?;
+                one_of(&p["providerId"], &["codex", "claude", "gemini"])?;
+                for key in ["inputTokens", "outputTokens", "costMicros"] {
+                    if !p[key].is_null() {
+                        revision(&p[key], 0)?;
+                    }
+                }
+                require(
+                    (p["currency"].is_null() && p["costMicros"].is_null())
+                        || (p["currency"].as_str().is_some_and(|s| {
+                            s.len() == 3 && s.bytes().all(|c| c.is_ascii_uppercase())
+                        }) && !p["costMicros"].is_null()),
+                    "usage currency mismatch",
+                )?;
+                return Ok(());
+            }
+            _ => return Err(fail("unsupported V13 execution event")),
+        }
+        return validate_event(&legacy);
+    }
     if v["schemaVersion"] == 10 {
         match kind {
             "owner.command.requested" => {
@@ -975,6 +1087,7 @@ pub fn validate_event(v: &Value) -> Result<()> {
         }
         "command.requested" => {
             exact(p, &["intent"])?;
+            require(p["intent"]["schemaVersion"] == 1, "V1 command required")?;
             validate_command_intent(&p["intent"])?;
         }
         "command.receipted" => {
@@ -988,6 +1101,7 @@ pub fn validate_event(v: &Value) -> Result<()> {
         "work.enqueued" => {
             exact(p, &["intentId", "workItem"])?;
             opaque(&p["intentId"])?;
+            require(p["workItem"]["schemaVersion"] == 1, "V1 work required")?;
             validate_work_item(&p["workItem"])?;
         }
         "work.removed" | "run.launching" | "run.start_unknown" => {
@@ -1042,6 +1156,7 @@ pub fn validate_event(v: &Value) -> Result<()> {
             )?;
             opaque(&p["intentId"])?;
             opaque(&p["ownerEpoch"])?;
+            require(p["run"]["schemaVersion"] == 1, "V1 run required")?;
             validate_run(&p["run"])?;
             revision(&p["expectedItemRevision"], 1)?;
         }
@@ -1316,7 +1431,7 @@ fn changed(mut v: Value, status: &str, terminal_at: Option<&Value>) -> Value {
     }
     v
 }
-fn project_work(events: &[Value]) -> Result<Value> {
+pub(crate) fn project_work(events: &[Value]) -> Result<Value> {
     let mut intents = Values::new();
     let mut keys = HashSet::new();
     let mut items = Values::new();
@@ -1335,12 +1450,24 @@ fn project_work(events: &[Value]) -> Result<Value> {
     for e in events {
         let kind = string(&e["type"])?;
         let p = &e["payload"];
+        if kind == "provider.usage.reported" {
+            let run = runs
+                .get(&id(p, "runId"))
+                .ok_or_else(|| fail("usage has no owned run"))?;
+            require(
+                run["providerId"] == p["providerId"]
+                    && run["providerSessionId"] == p["providerSessionId"],
+                "usage scope mismatch",
+            )?;
+            continue;
+        }
         if kind == "session.observed" || kind == "session.terminal" {
-            if p["providerId"] != "codex" {
-                continue;
-            }
             let run = sessions
-                .get(&id(p, "providerSessionId"))
+                .get(&format!(
+                    "{}:{}",
+                    id(p, "providerId"),
+                    id(p, "providerSessionId")
+                ))
                 .and_then(|key| runs.get(key))
                 .cloned();
             let Some(run) = run else {
@@ -1468,7 +1595,9 @@ fn project_work(events: &[Value]) -> Result<Value> {
                     )?;
                     if kind == "run.prepared" {
                         require(
-                            !preparations.contains_key(&intent_id),
+                            !preparations.contains_key(&intent_id)
+                                && p["providerId"] == item["providerId"]
+                                && e["schemaVersion"] == item["schemaVersion"],
                             "duplicate run preparation",
                         )?;
                         preparations.insert(intent_id, p.clone());
@@ -1487,9 +1616,15 @@ fn project_work(events: &[Value]) -> Result<Value> {
                                 .get(&intent_id)
                                 .ok_or_else(|| fail("start has no turn request"))?;
                             let run_id = id(run, "runId");
-                            let session = id(run, "providerSessionId");
+                            let session = format!(
+                                "{}:{}",
+                                id(run, "providerId"),
+                                id(run, "providerSessionId")
+                            );
                             require(
                                 run_id == format!("run:{intent_id}")
+                                    && run["providerId"] == item["providerId"]
+                                    && run["schemaVersion"] == item["schemaVersion"]
                                     && preparation["ownerEpoch"] == p["ownerEpoch"]
                                     && turn["ownerEpoch"] == p["ownerEpoch"]
                                     && run["ownerEpoch"] == p["ownerEpoch"]
@@ -2349,6 +2484,15 @@ pub fn project_events(events: &[Value]) -> Result<Value> {
     let crews = crate::project_crews::project(events, &bundle["work"])?;
     if crews["revision"].as_u64().unwrap_or(0) > 0 {
         bundle["projectCrews"] = crews;
+    }
+    let workflows =
+        crate::project_workflows::project(events, &bundle["projectCrews"], &bundle["work"])?;
+    if workflows["revision"].as_u64().unwrap_or(0) > 0 {
+        bundle["projectWorkflows"] = workflows;
+    }
+    let studio = crate::project_studio::project(events)?;
+    if studio["revision"].as_u64().unwrap_or(0) > 0 {
+        bundle["projectStudio"] = studio;
     }
     let memory = crate::agent_memory::project(events)?;
     if !memory.is_null() {

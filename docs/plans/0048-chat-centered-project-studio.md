@@ -1,0 +1,41 @@
+# Task0048: Chat-centered Project studio
+
+Status: Owner-selected direction, implementing
+
+Updated: 2026-10-19
+
+Authorization: the owner selected “Chat centered + lightly futuristic” and the
+recommended approach where files open beside the conversation. Preserve the
+accepted visual system, agent orchestration and newly delivered ZIP workflow.
+
+## Observable result
+
+- Chat is the Project's primary work surface. Crew and Outputs become contextual
+  toggles rather than three equal destinations; clicking an active toggle closes
+  it and returns focus to the conversation. Project switching closes the context.
+- At normal/wide desktop widths, Crew/Outputs open in one bounded right panel
+  with the conversation and composer still present. Reuse the actual workflow
+  and Output Studio controls, not a second reduced implementation.
+- At narrow widths, show a readable full-width context with an explicit Back to
+  chat action. Resizing preserves unsent text, focused controls, file selections
+  and frozen approvals without creating a second source of state.
+- Keep the current native ink/cobalt surfaces, restrained ambient/focus accents,
+  Mox and reduced motion. No extra decorative animation or fabricated activity.
+- Existing legacy crew/file panels, Teams hub, provider setup, resources/tools/
+  apps, scoped preview/revision, export and delivery packages remain reachable.
+- Scope, hash/version, late receipt, private-token clearing, explicit Prepare/
+  Start and external-action approvals retain their current checks.
+
+## Ownership and acceptance
+
+Coordinator owns chat.rs, create.rs, ui.rs, i18n.rs, task/shared docs and fixture
+capture/package integration. Builder owns crew.rs, output_studio.rs and delivery.rs
+only for bounded right-panel fitting and related tests. Reviewer is read-only
+after stable source and actual native captures exist. No core/runtime/Cloud change,
+dependency, schema, inference, external account write, push or public release.
+
+Verify TR/EN and both themes at800x560 and1280x820, real toggle/close/keyboard and
+resize interactions, visible composer beside Crew/Outputs, reachable primary
+actions and frozen Project/file/approval scope. Run the complete desktop suite,
+strict Clippy/format checks, actual native captures and a separate feature-off
+macOS development package. Document platform/live-provider limits honestly.

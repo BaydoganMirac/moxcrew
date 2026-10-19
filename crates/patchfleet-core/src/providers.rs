@@ -817,6 +817,20 @@ fn discover(name: &str) -> PathBuf {
             dirs.push(PathBuf::from(home).join(".local/bin"));
         }
     }
+    #[cfg(unix)]
+    {
+        let root = std::env::var_os("NVM_DIR")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".nvm")));
+        if let Some(root) = root {
+            dirs.extend(nvm_bins(&root));
+        }
+    }
+    discover_in(name, &dirs)
+}
+
+fn discover_in(name: &str, dirs: &[PathBuf]) -> PathBuf {
     for dir in dirs {
         for ext in if cfg!(windows) {
             &[".exe", ".cmd", ".bat", ""][..]
@@ -824,13 +838,79 @@ fn discover(name: &str) -> PathBuf {
             &[""][..]
         } {
             let p = dir.join(format!("{name}{ext}"));
-            if p.is_file() {
+            if executable_file(&p) {
                 return p;
             }
         }
     }
     PathBuf::from(name)
 }
+
+fn executable_file(path: &Path) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o111 == 0 {
+            return false;
+        }
+    }
+    metadata.is_file()
+}
+
+#[cfg(unix)]
+fn nvm_bins(root: &Path) -> Vec<PathBuf> {
+    const MAX_ENTRIES: usize = 128;
+    let Ok(entries) = std::fs::read_dir(root.join("versions/node")) else {
+        return vec![];
+    };
+    let Ok(entries) = entries
+        .take(MAX_ENTRIES + 1)
+        .collect::<std::io::Result<Vec<_>>>()
+    else {
+        return vec![];
+    };
+    // Reject an oversized directory rather than choose from a filesystem-order subset.
+    if entries.len() > MAX_ENTRIES {
+        return vec![];
+    }
+    let mut versions = vec![];
+    for entry in entries {
+        let name = entry.file_name();
+        let Some(version) = name.to_str().and_then(|name| name.strip_prefix('v')) else {
+            continue;
+        };
+        let parts: Option<Vec<u64>> = version.split('.').map(|part| part.parse().ok()).collect();
+        let Some(parts) = parts.filter(|parts| parts.len() == 3 && semver(version)) else {
+            continue;
+        };
+        let bin = entry.path().join("bin");
+        if entry.file_type().is_ok_and(|kind| kind.is_dir()) && executable_file(&bin.join("node")) {
+            versions.push((parts, bin));
+        }
+    }
+    versions.sort_unstable_by(|left, right| right.0.cmp(&left.0));
+    versions.into_iter().map(|(_, bin)| bin).collect()
+}
+
+#[cfg(unix)]
+fn sibling_node_path(program: &Path, inherited: &std::ffi::OsStr) -> Option<std::ffi::OsString> {
+    let bin = program.parent().filter(|path| path.is_absolute())?;
+    if !executable_file(program) || !executable_file(&bin.join("node")) {
+        return None;
+    }
+    // npm shims use /usr/bin/env node; Finder does not inherit shell-manager PATH setup.
+    std::env::join_paths(std::iter::once(bin.to_path_buf()).chain(
+        std::env::split_paths(inherited).filter(|path| !path.as_os_str().is_empty() && path != bin),
+    ))
+    .ok()
+}
+
+#[cfg(all(test, unix))]
+#[path = "provider_discovery_tests.rs"]
+mod discovery_tests;
 
 fn command(program: &Path, args: &[&str]) -> Result<Command> {
     #[cfg(windows)]
@@ -873,6 +953,11 @@ fn command(program: &Path, args: &[&str]) -> Result<Command> {
     };
     #[cfg(unix)]
     {
+        if let Some(path) =
+            sibling_node_path(program, &std::env::var_os("PATH").unwrap_or_default())
+        {
+            cmd.env("PATH", path);
+        }
         cmd.as_std_mut().process_group(0);
     }
     #[cfg(windows)]

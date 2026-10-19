@@ -1,6 +1,6 @@
 # Task 0044: Productive Project crews
 
-Status: Owner-approved, implementing
+Status: Complete; independently reviewed, integrated tests and macOS development package verified
 
 Updated: 2026-10-19
 
@@ -95,3 +95,6 @@ macOS development artifact. Record provider/platform/tool/account limits honestl
 No live inference, provider login, API key creation, third-party account mutation,
 Cloud deployment, Git push or public signing is needed to implement and validate
 this card. Missing external credentials do not block local fixtures and UI work.
+
+Final evidence and remaining platform/account/1.0.0 boundaries are recorded in
+[productive Project crews state](../state/productive-project-crews.md).

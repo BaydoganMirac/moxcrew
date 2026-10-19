@@ -2,7 +2,7 @@
 
 Updated: 2026-10-19. Task0044, version 0.12.0.
 
-Status: Implementation complete; final integrated verification in progress.
+Status: Complete; independently reviewed, integrated tests and macOS development package verified.
 
 ## Delivered scope
 
@@ -59,8 +59,7 @@ Native fixture verification covers 43 captures: ten scenes in TR/EN and both
 themes at the 800x560 minimum, plus three normal windows. Nine final app/prepared
 action captures verify the readable frozen fields and friendly provider labels.
 Fixture windows make no provider/account call. Actual-click UI tests verify
-Prepare, Schedule and explicit action approval at the minimum size. Package
-evidence follows the final feature-off release build below.
+Prepare, Schedule and explicit action approval at the minimum size.
 
 Real output proof uses system Python 3.9 and FFmpeg/FFprobe 7.1.1. LibreOffice
 opens generated PPTX, DOCX and XLSX files. Synthetic video/audio tests exercise
@@ -80,6 +79,21 @@ handling, replay authorization for schedules and correction rounds, edited plan
 fields, native provider retries, usage ingestion, V12 receipt recovery and
 colliding production source aliases. The fixes have focused regression evidence.
 Shared integration is in `e44a1df`; workflow review fixes are in `f5c70a7`.
+
+## macOS development package
+
+The release build at `20728e8ee6cb4994dc1bd716d8df3982252cd2f3` excludes
+`ui-smoke`. `dist/native/productive-crews/` contains Moxcrew.app, the DMG and
+`qa.json`. The app's identifier/version and required license resources were
+verified, as were the ad-hoc signature and absence of smoke entry points. A real
+NSWorkspace launch with disposable data and unavailable-provider stubs opened a
+native window, closed normally and released the writer lock. No inference or
+existing user data was used. `hdiutil verify` passes for the DMG.
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| App executable | 16,406,768 | `ef9d8fd561f2123ebd7748e47eff58137c1936f8a986d0e776463c1194a46667` |
+| Moxcrew_0.12.0_productive-crews_aarch64.dmg | 8,442,213 | `9a026964a614f4177be9d3117aed1410343df066493245d56bb6a6fa5af75161` |
 
 ## Boundaries
 

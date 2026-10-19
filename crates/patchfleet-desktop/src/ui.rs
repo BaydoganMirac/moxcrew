@@ -5435,6 +5435,7 @@ fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
         .fill(colors(ui).raised)
         .stroke(egui::Stroke::NONE),
     );
+    keyboard_focus(ui, &response, 12);
     #[cfg(test)]
     let visibility = (ui.clip_rect(), ui.is_visible());
     #[cfg(test)]
@@ -5446,6 +5447,16 @@ fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
         data.insert_temp(egui::Id::new(("test-action-visibility", label)), visibility);
     });
     response
+}
+fn keyboard_focus(ui: &Ui, response: &egui::Response, radius: u8) {
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect.expand(3.0),
+            radius,
+            egui::Stroke::new(2.0, colors(ui).focus),
+            egui::StrokeKind::Inside,
+        );
+    }
 }
 fn submit(ui: &mut Ui, label: &str, action: &str) -> bool {
     let response = ui.add(
@@ -5460,6 +5471,7 @@ fn submit(ui: &mut Ui, label: &str, action: &str) -> bool {
         .corner_radius(12)
         .min_size(egui::vec2(128.0, 44.0)),
     );
+    keyboard_focus(ui, &response, 12);
     #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(egui::Id::new(("test-action", action, label)), response.rect);
@@ -5491,6 +5503,7 @@ fn action(
         .corner_radius(8)
         .min_size(egui::vec2(74.0, 36.0)),
     );
+    keyboard_focus(ui, &response, 8);
     #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(egui::Id::new(("test-action", name, label)), response.rect);
@@ -5754,6 +5767,49 @@ mod tests {
 
     use super::*;
     use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
+
+    #[test]
+    fn shared_controls_show_keyboard_focus_without_activating() {
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let ctx = test_context();
+            ctx.set_theme(theme);
+            let mut clicked = false;
+            let mut rect = Rect::NOTHING;
+            for frame in 0..3 {
+                let output = ctx.run_ui(RawInput::default(), |ui| {
+                    let response = control(ui, "Connections", true);
+                    rect = response.rect;
+                    clicked |= response.clicked();
+                    if frame == 0 {
+                        response.request_focus();
+                    }
+                });
+                if frame == 2 {
+                    assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
+                        egui::Shape::Rect(outline) if outline.rect == rect.expand(3.0)
+                            && outline.stroke == egui::Stroke::new(2.0, studio::palette(&ctx).focus)
+                    )), "{theme:?}: focused control must have a visible outline");
+                    assert!(!clicked, "focus alone must never activate a control");
+                }
+                output.drop_without_applying_deltas();
+            }
+            let output = ctx.run_ui(
+                RawInput {
+                    events: vec![Event::Key {
+                        key: egui::Key::Enter,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: Modifiers::NONE,
+                    }],
+                    ..Default::default()
+                },
+                |ui| clicked |= control(ui, "Connections", true).clicked(),
+            );
+            output.drop_without_applying_deltas();
+            assert!(clicked, "Enter activates the focused control");
+        }
+    }
 
     fn extraction_snapshot(enabled: bool) -> Value {
         let mut data = decision_snapshot("proposed");

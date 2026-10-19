@@ -58,6 +58,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Connections" => "Bağlantılar",
         "Connect your crew" => "Ekibini bağla",
         "One supported connection is enough. Your existing provider account stays yours." => "Desteklenen tek bağlantı yeterli. Mevcut sağlayıcı hesabını kullanırsın.",
+        "After installing or updating a provider CLI, restart Moxcrew and check connections again." => "Sağlayıcı CLI’sini kurduktan veya güncelledikten sonra Moxcrew’ü yeniden başlatıp bağlantıları tekrar kontrol et.",
         "Check connections" => "Bağlantıları kontrol et",
         "Installation" => "Kurulum",
         "Installed" => "Kurulu",

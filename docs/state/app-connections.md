@@ -1,6 +1,6 @@
 # Explicit Project app connections
 
-Status: Adapter implemented; Host integration and review in progress
+Status: Implemented, integrated and independently reviewed; real-account evidence remains separate
 
 Updated: 2026-10-19
 

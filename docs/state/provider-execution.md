@@ -1,6 +1,6 @@
 # Selected-provider execution
 
-Status: Implemented adapter boundary; integrated review in progress
+Status: Implemented, integrated and independently reviewed; live-provider evidence remains separate
 
 Updated: 2026-10-19
 

@@ -65,16 +65,16 @@ events and UI snapshots. Uncertain remote writes are not automatically repeated.
 
 - Coordinator: shared Host/domain/store/work/creation/conversation/MCP contracts,
   new project_studio/resources/production/connections modules and curated tool
-  scripts, bridge/navigation, ADRs/docs, integration and packaging.
+  scripts, ADRs/docs, integration and packaging.
 - Provider builder: providers.rs, provider_connections.rs, optional cli_control.rs,
   provider-specific tests/state. Real CLI protocol discovery, scoped MCP adapters,
   bounded structured generation and actual usage observations.
 - Workflow builder: project_crews.rs and new project_workflows.rs plus their tests
   and feature state. V11 planning/lifecycle/steering/delegation/review/recipes/
   scheduling/budgets. Root supplies V13 queue and V12 resource/tool integration.
-- UI builder: chat.rs/create.rs/crew.rs/i18n.rs and new output_studio.rs plus
-  embedded tests/state. Existing chat, crew and output surfaces cover all twelve
-  features. Root owns bridge.rs/ui.rs/main.rs.
+- UI builder: chat.rs/create.rs/crew.rs/i18n.rs, bridge.rs/ui.rs/main.rs and new
+  output_studio.rs plus embedded tests/state. Existing chat, crew and output
+  surfaces cover all twelve features; shared Host contracts remain root-owned.
 - Independent reviewer: stable integrated commits and real acceptance evidence;
   no implementation ownership, push or publication.
 

@@ -58,14 +58,15 @@ pub(super) fn matches_file(artifact: &Value, query: &str, kind: usize) -> bool {
 
 pub(super) fn file_filters(ui: &mut Ui, state: &mut StudioState) {
     ui.horizontal(|ui| {
+        ui.spacing_mut().interact_size.y = studio::metrics::CONTROL_HEIGHT;
         let width = (ui.available_width() - 160.0).max(80.0);
         let query = ui.add_sized(
-            egui::vec2(width, 36.0),
+            egui::vec2(width, studio::metrics::CONTROL_HEIGHT),
             egui::TextEdit::singleline(&mut state.query)
                 .id_salt("output-file-query")
                 .hint_text(t(ui, "Search outputs…"))
                 .char_limit(200)
-                .margin(egui::Margin::symmetric(10, 7))
+                .margin(studio::metrics::INPUT_MARGIN)
                 .desired_width(width),
         );
         #[cfg(test)]
@@ -79,6 +80,7 @@ pub(super) fn file_filters(ui: &mut Ui, state: &mut StudioState) {
             .height(360.0)
             .selected_text(t(ui, TYPES[state.file_type.min(TYPES.len() - 1)]))
             .show_ui(ui, |ui| {
+                ui.spacing_mut().interact_size.y = studio::metrics::COMPACT_HEIGHT;
                 for (index, label) in TYPES.iter().enumerate() {
                     let response = ui.selectable_value(&mut state.file_type, index, t(ui, label));
                     if response.clicked() {
@@ -302,8 +304,8 @@ impl Console {
             let row = egui::Frame::new()
                 .fill(colors(ui).surface)
                 .stroke(egui::Stroke::new(1.0, colors(ui).border))
-                .corner_radius(10)
-                .inner_margin(10)
+                .corner_radius(studio::metrics::CARD_RADIUS)
+                .inner_margin(studio::metrics::PADDING)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     let response = ui.add_enabled(
@@ -354,14 +356,35 @@ impl Console {
         } else {
             tf(ui, "{0} files selected", &[&count.to_string()])
         };
-        egui::Frame::new()
+        let footer = egui::Frame::new()
             .fill(colors(ui).raised)
             .stroke(egui::Stroke::new(1.0, colors(ui).border))
-            .corner_radius(14)
-            .inner_margin(12)
+            .corner_radius(studio::metrics::CARD_RADIUS)
+            .inner_margin(studio::metrics::PADDING)
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if view_control(
+                        ui,
+                        "Export package",
+                        selected.is_some() && !cfg!(target_os = "windows"),
+                        true,
+                    )
+                    .clicked()
+                    {
+                        let (files, _) = selected.clone().unwrap();
+                        self.create.studio.delivery_request = Some(DeliveryExportRequest {
+                            project_id: self.create.project.clone(),
+                            name: "moxcrew-delivery.zip".into(),
+                            files,
+                            host_epoch: snapshot["hostEpoch"].clone(),
+                        });
+                    }
+                    if view_control(ui, "Back to files", true, false).clicked() {
+                        self.create.studio.package_mode = false;
+                    }
+
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.set_max_width(ui.available_width());
                         ui.label(summary);
                         if count > 0 && selected.is_none() {
                             ui.label(
@@ -371,29 +394,17 @@ impl Console {
                             );
                         }
                     });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if view_control(
-                            ui,
-                            "Export package",
-                            selected.is_some() && !cfg!(target_os = "windows"),
-                            true,
-                        )
-                        .clicked()
-                        {
-                            let (files, _) = selected.clone().unwrap();
-                            self.create.studio.delivery_request = Some(DeliveryExportRequest {
-                                project_id: self.create.project.clone(),
-                                name: "moxcrew-delivery.zip".into(),
-                                files,
-                                host_epoch: snapshot["hostEpoch"].clone(),
-                            });
-                        }
-                        if view_control(ui, "Back to files", true, false).clicked() {
-                            self.create.studio.package_mode = false;
-                        }
-                    });
                 });
             });
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("delivery-footer"),
+                (footer.response.rect, ui.clip_rect()),
+            )
+        });
+        #[cfg(not(test))]
+        let _ = footer;
     }
 }
 
@@ -519,6 +530,88 @@ mod tests {
             );
         }
         assert!(!console.create.studio.package_mode);
+    }
+
+    #[test]
+    fn right_inspector_keeps_package_actions_and_invalid_selection_warning_bounded() {
+        let size = egui::vec2(1280.0, 820.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        for language in ["en", "tr"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let (mut console, mut data) = fixture();
+                data["desktopPreferences"] = json!({"language":language,"reduceMotion":true});
+                console.create.studio.package_mode = true;
+                let selected = array(&data["projectStudio"]["artifacts"])
+                    .iter()
+                    .map(artifact_key)
+                    .collect();
+                console
+                    .create
+                    .studio
+                    .packages
+                    .insert("project:one".into(), selected);
+                for invalid in [false, true] {
+                    if invalid {
+                        data["projectStudio"]["artifacts"][0]["sha256"] = json!("changed-version");
+                    }
+                    for _ in 0..3 {
+                        let commands = render(&ctx, &mut console, &data, size, false, vec![]).0;
+                        assert!(commands
+                            .iter()
+                            .all(|command| command.action.ends_with("_read")));
+                    }
+                    let (footer, clip) = ctx.data(|data| {
+                        data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new("delivery-footer"))
+                            .unwrap()
+                    });
+                    assert!(
+                        footer.width() <= 620.0 && footer.left() >= size.x - 652.0,
+                        "{language}/{theme:?} bounded inspector {footer:?}"
+                    );
+                    assert!(
+                        screen.contains_rect(footer) && clip.contains_rect(footer),
+                        "{language}/{theme:?}/{invalid} footer clipped {footer:?}/{clip:?}"
+                    );
+                    for label in ["Export package", "Back to files"] {
+                        let rect = ctx.data(|data| {
+                            data.get_temp::<egui::Rect>(egui::Id::new((
+                                "test-action",
+                                "memory_control",
+                                label,
+                            )))
+                            .unwrap()
+                        });
+                        let (clip, enabled) = ctx.data(|data| {
+                            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                                "test-action-visibility",
+                                label,
+                            )))
+                            .unwrap()
+                        });
+                        assert!(footer.contains_rect(rect) && clip.contains_rect(rect));
+                        if label == "Export package" {
+                            assert_eq!(enabled, !invalid && !cfg!(target_os = "windows"));
+                        }
+                    }
+                    if invalid {
+                        assert!(click_at_size(
+                            &ctx,
+                            &mut console,
+                            &data,
+                            size,
+                            false,
+                            "memory_control",
+                            "Export package"
+                        )
+                        .is_empty());
+                        assert!(console.take_delivery_export_request(true).is_none());
+                    }
+                }
+            }
+        }
     }
 
     #[test]

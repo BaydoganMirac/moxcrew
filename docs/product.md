@@ -24,11 +24,14 @@ Decisions include ordinary choices about a project's audience, evidence or
 delivery, not only software architecture. Notes and generated suggestions remain
 context until explicitly accepted. Decisions stay scoped to their project.
 
-Chat presents a durable Project conversation and an inspectable crew plan.
-Mox recommends up to six members from bundled ability guides and explicit goal
-terms; this local recommendation is labeled as such. The owner can adjust it,
-prepare a mission, and explicitly start supported Codex runs in managed local
-folders without Git. Reusable rosters belong to Projects. Real agents exchange
+Chat starts with one message box and a visible local provider choice. An explicit
+first Send can create its Project through an exact applied receipt. The selected
+provider plans the work; clarification replies and revisions use the same
+composer while preserving the original goal and bounded prior context. Recipes,
+work modes and roster configuration are optional details. Actual plans remain
+inspectable and require explicit preparation and start before agents execute.
+The bundled-guide recommendation remains available as a labelled alternative.
+Reusable rosters belong to Projects. Real agents exchange
 attributed messages within the same Project and receive checked upstream files.
 Closed agents do not automatically wake when sent a message. Single task remains
 available for direct work. See [crew state](state/project-crew-orchestration.md).
@@ -76,8 +79,11 @@ Mox works through an owner-connected local Codex, Gemini CLI or Claude Code
 installation; one is sufficient. Provider installation, authentication and
 task/tool readiness are separate onboarding checks. Moxcrew Cloud sign-in is
 optional and does not connect those providers. The local application does not
-imply on-device inference or bundled provider usage. Currently only Codex has
-supported execution control; Claude/Gemini execution remains release work.
+imply on-device inference or bundled provider usage. Codex app-server and
+supported Claude/Gemini headless adapters provide selected-provider execution;
+live account/model access remains separately unverified. See
+[provider execution state](state/provider-execution.md) and
+[conversation-first state](state/conversation-first-orchestration.md).
 
 The default skills must produce and revise checked outputs across the approved
 release scope, with tool/access preflight and attributable inputs. A recipe

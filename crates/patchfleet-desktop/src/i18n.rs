@@ -52,6 +52,23 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
     let translated = match text {
+        "Send" => "Gönder",
+        "New conversation" => "Yeni sohbet",
+        "Selected provider is unavailable. Check connections, then send again." => "Seçtiğiniz sağlayıcı kullanılamıyor. Bağlantıyı kontrol edip tekrar gönderin.",
+        "Conversation" => "Sohbet",
+        "Set up provider" => "Sağlayıcıyı bağla",
+        "Checking provider availability…" => "Bağlantı kontrol ediliyor…",
+        "Install the selected provider CLI, then restart Moxcrew." => "Seçtiğiniz sağlayıcının CLI aracını kurup Moxcrew’ü yeniden açın.",
+        "Update the selected provider CLI, then restart Moxcrew." => "Sağlayıcının CLI aracını güncelleyip Moxcrew’ü yeniden açın.",
+        "Sign in to the selected provider CLI, then check connections." => "Sağlayıcınızda oturum açıp bağlantıyı yeniden kontrol edin.",
+        "Planning uses your selected provider. Execution needs your approval." => "Gönderdiğiniz mesaj seçtiğiniz sağlayıcıyı kullanır. Çalıştırma için onayınız gerekir.",
+        "Creating a project for this conversation…" => "Sohbetiniz için proje oluşturuluyor…",
+        "Project creation failed. Your message is still here; send again when ready." => "Proje oluşturulamadı. Mesajınız duruyor; hazır olduğunuzda tekrar gönderin.",
+        "Waiting for planner confirmation…" => "Mesajınızın işleme alındığı doğrulanıyor…",
+        "Reply with details or ask for a revision. Sending never starts the crew." => "Yanıtınızı veya değişiklik isteğinizi yazın. Göndermek takımı başlatmaz.",
+        "Planning context" => "Sohbet bağlamı",
+        "Planning context is full. Your message is preserved; start a new request." => "Sohbet bağlamı doldu. Mesajınız korunuyor; yeni bir istek başlatın.",
+        "Review crew" => "Takımı incele",
         "Delivery package" => "Teslim paketi",
         "Create package" => "Paket oluştur",
         "Export package" => "Paketi dışa aktar",

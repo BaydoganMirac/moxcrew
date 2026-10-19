@@ -136,6 +136,7 @@ pub struct Bridge {
     decision_search: Option<Value>,
     shared_search: Option<Value>,
     shared_search_connection: Option<Value>,
+    project_create_receipt: Option<Value>,
     project_work_receipt: Option<Value>,
     project_results: Option<Value>,
     project_result: Option<Value>,
@@ -206,6 +207,27 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 
 impl Bridge {
     #[cfg(feature = "ui-smoke")]
+    pub fn smoke_provider_connections(&mut self, ready: bool) {
+        if self.provider_connections.is_some() {
+            return;
+        }
+        self.provider_connections = Some(serde_json::json!({
+            "schemaVersion":1,"reasonCode":"PROVIDER_CONNECTIONS_READ",
+            "observedAt":"2026-10-19T00:00:00.000Z",
+            "providers":[
+                {"id":"codex","installed":ready,"version":if ready {Some("0.163.0")} else {None},
+                    "authentication":if ready {"present"} else {"unknown"},"controlSupported":ready,
+                    "reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"},
+                {"id":"claude","installed":false,"version":null,"authentication":"unknown","controlSupported":false,"reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"},
+                {"id":"gemini","installed":false,"version":null,"authentication":"unknown","controlSupported":false,"reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"}
+            ]
+        }));
+        if let Some(snapshot) = self.snapshot.clone() {
+            self.apply_snapshot(Ok(snapshot));
+        }
+    }
+
+    #[cfg(feature = "ui-smoke")]
     pub fn productive_smoke(&mut self, scene: &str) {
         let snapshot = self.snapshot.clone().unwrap();
         let project = snapshot["projectMemory"]["projects"][0]["projectId"].clone();
@@ -238,7 +260,21 @@ impl Bridge {
         self.productive_pages
             .insert("projectWorkflowRead", workflows);
         if matches!(scene, "productive-plan" | "productive-questions") {
-            let goal = snapshot["projectCrews"]["missions"][0]["instruction"].clone();
+            let goal = snapshot["projectCrews"]["missions"][0]["instruction"]
+                .as_str()
+                .or_else(|| {
+                    snapshot["abilities"]
+                        .as_array()?
+                        .iter()
+                        .find(|ability| ability["id"] == "P1")?["starter"]
+                        [if snapshot["desktopPreferences"]["language"] == "en" {
+                            "en"
+                        } else {
+                            "tr"
+                        }]
+                    .as_str()
+                })
+                .expect("A disposable plan goal is required");
             let plan = self
                 .runtime
                 .block_on(host.action(
@@ -246,7 +282,8 @@ impl Bridge {
                     serde_json::json!({"projectId":project,"abilityId":"P1","instruction":goal}),
                 ))
                 .unwrap();
-            self.productive_pages.insert("projectCrewPlanJob",serde_json::json!({"reasonCode":"PROJECT_CREW_PLAN_READ","projectId":project,"planJobId":"plan:rendering-fixture","revision":3,"status":if scene=="productive-questions"{"needs_input"}else{"completed"},"providerId":"codex","title":"Illustrative launch plan · no provider run","instruction":goal,"plan":if scene=="productive-questions"{Value::Null}else{serde_json::json!({"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})},"questions":if scene=="productive-questions"{serde_json::json!([{"id":"audience","question":"Who should this launch reach?"},{"id":"format","question":"Which deliverable should the crew prioritize?"}])}else{serde_json::json!([])}}));
+            let english = snapshot["desktopPreferences"]["language"] == "en";
+            self.productive_pages.insert("projectCrewPlanJob",serde_json::json!({"reasonCode":"PROJECT_CREW_PLAN_READ","projectId":project,"planJobId":"plan:rendering-fixture","revision":3,"status":if scene=="productive-questions"{"needs_input"}else{"completed"},"providerId":"codex","title":"Illustrative launch plan · no provider run","instruction":goal,"plan":if scene=="productive-questions"{Value::Null}else{serde_json::json!({"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})},"questions":if scene=="productive-questions"{serde_json::json!([{"id":"audience","question":if english {"Who should this launch reach?"} else {"Bu sunum kimler için?"}},{"id":"format","question":if english {"Which deliverable should the crew prioritize?"} else {"En önemli hedefiniz nedir?"}}])}else{serde_json::json!([])}}));
         }
         self.apply_snapshot(Ok(snapshot));
     }
@@ -616,6 +653,7 @@ impl Bridge {
             decision_search: None,
             shared_search: None,
             shared_search_connection: None,
+            project_create_receipt: None,
             project_work_receipt: None,
             project_results: None,
             project_result: None,
@@ -660,6 +698,9 @@ impl Bridge {
                         Ok(receipt) => {
                             self.productive_outcome(&command, Ok(&receipt));
                             match command.action {
+                                "project_create" => {
+                                    self.project_create_receipt = Some(receipt.clone());
+                                }
                                 "project_work_enqueue" | "project_chat_send" => {
                                     let mut scoped = receipt.clone();
                                     scoped["commandId"] = command.payload["commandId"].clone();
@@ -728,6 +769,12 @@ impl Bridge {
                         }
                         Err(error) => {
                             self.productive_outcome(&command, Err(&error));
+                            if command.action == "project_create" {
+                                self.project_create_receipt = Some(serde_json::json!({
+                                    "commandId":command.payload["commandId"],
+                                    "outcome":"unknown","reasonCode":safe_error(&error)
+                                }));
+                            }
                             if command.action.starts_with("project_crew_")
                                 && productive_key(command.action).is_none()
                             {
@@ -1163,6 +1210,7 @@ impl Bridge {
                     self.project_crew_receipt = None;
                     self.project_crew_error = None;
                     self.provider_connections = None;
+                    self.project_create_receipt = None;
                 }
                 if self.project_chat.as_ref().is_some_and(|page| {
                     !snapshot["projectMemory"]["projects"]
@@ -1206,6 +1254,8 @@ impl Bridge {
                 snapshot["projectCrewError"] =
                     self.project_crew_error.clone().unwrap_or(Value::Null);
                 snapshot["projectChat"] = self.project_chat.clone().unwrap_or(Value::Null);
+                snapshot["projectCreateReceipt"] =
+                    self.project_create_receipt.clone().unwrap_or(Value::Null);
                 snapshot["providerConnections"] =
                     self.provider_connections.clone().unwrap_or(Value::Null);
                 self.productive_overlay(&mut snapshot);
@@ -1242,6 +1292,7 @@ impl Bridge {
             Ok(()) => {
                 self.productive_submit(&command);
                 match command.action {
+                    "project_create" => self.project_create_receipt = None,
                     "project_work_enqueue" | "project_chat_send" => {
                         self.project_work_receipt = None
                     }
@@ -1270,6 +1321,8 @@ impl Bridge {
                     _ => (),
                 }
                 if let Some(snapshot) = self.snapshot.as_mut() {
+                    snapshot["projectCreateReceipt"] =
+                        self.project_create_receipt.clone().unwrap_or(Value::Null);
                     snapshot["projectWorkReceipt"] =
                         self.project_work_receipt.clone().unwrap_or(Value::Null);
                     snapshot["projectResults"] =
@@ -2726,12 +2779,29 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
         await_idle(&mut bridge);
-        bridge.submit(Command::new(
-            "project_create",
-            json!({"name":"Conversation proof"}),
-        ));
+        let create = Command::new("project_create", json!({"name":"Conversation proof"}));
+        bridge.submit(create.clone());
+        assert!(bridge.snapshot.as_ref().unwrap()["projectCreateReceipt"].is_null());
         await_idle(&mut bridge);
         let project = bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"][0].clone();
+        let created = bridge.snapshot.as_ref().unwrap()["projectCreateReceipt"].clone();
+        assert_eq!(created["commandId"], create.payload["commandId"]);
+        assert_eq!(created["projectId"], project["projectId"]);
+        assert_eq!(created["projectRevision"], project["revision"]);
+        assert_eq!(created["outcome"], "applied");
+        bridge.submit(create);
+        await_idle(&mut bridge);
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectCreateReceipt"],
+            created
+        );
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectMemory"]["projects"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         let send = Command::new(
             "project_chat_send",
             json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],"abilityId":"D3","title":"Owner goal","instruction":"Create an editable brief from my notes."}),
@@ -2760,6 +2830,10 @@ mod tests {
         assert_eq!(history["items"][0]["goal"], send.payload["instruction"]);
         assert_eq!(history["items"][0]["workItemId"], receipt["workItemId"]);
         assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["projectCreateReceipt"],
+            created
+        );
+        assert_eq!(
             bridge.snapshot.as_ref().unwrap()["projectWorkReceipt"],
             receipt
         );
@@ -2773,12 +2847,29 @@ mod tests {
         ));
         await_idle(&mut reopened);
         assert_eq!(reopened.snapshot.as_ref().unwrap()["projectChat"], history);
+        let invalid_create = Command::new("project_create", json!({"name":""}));
+        reopened.submit(invalid_create.clone());
+        assert!(reopened.snapshot.as_ref().unwrap()["projectCreateReceipt"].is_null());
+        await_idle(&mut reopened);
+        let failed = &reopened.snapshot.as_ref().unwrap()["projectCreateReceipt"];
+        assert_eq!(failed["commandId"], invalid_create.payload["commandId"]);
+        assert_eq!(failed["outcome"], "unknown");
+        assert!(failed["projectId"].is_null());
+        assert_eq!(
+            reopened.snapshot.as_ref().unwrap()["projectMemory"]["projects"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         reopened.provider_connections = Some(json!({"providers":[]}));
+        reopened.project_create_receipt = Some(created);
         let mut replacement = reopened.snapshot.clone().unwrap();
         replacement["hostEpoch"] = json!("changed-host");
         reopened.apply_snapshot(Ok(replacement));
         assert!(reopened.snapshot.as_ref().unwrap()["projectChat"].is_null());
         assert!(reopened.snapshot.as_ref().unwrap()["providerConnections"].is_null());
+        assert!(reopened.snapshot.as_ref().unwrap()["projectCreateReceipt"].is_null());
         reopened.shutdown();
     }
 

@@ -9,6 +9,13 @@ commitments.
 
 ## Now
 
+- Execute the owner-approved [1.0.0 master release](plans/0039-version-one-release.md):
+  eight capability areas, forty abilities and ten composed Project workflows
+  in one release. Start with execution/tool-access feasibility, then implement
+  bounded work packages within that scope. Track real output and integration
+  evidence in [release state](state/version-one-release.md); no date or current
+  1.0.0 completion is implied.
+
 - Apply the owner-selected [general-purpose Project direction](decisions/0038-general-purpose-projects.md)
   to future product work. Keep Project as the main container; research, content,
   analysis and planning belong in the target audience alongside coding. Current
@@ -47,13 +54,11 @@ commitments.
 
 ## Next
 
-- Define the owner-selected [broad general-purpose ability release](decisions/0039-broad-general-purpose-ability-release.md),
-  including presentations, video editing and research, with compatible skill/tool
-  reuse and composed project work. Evaluate document, image, audio, data, web
-  and connected-action capabilities in the same release definition. Use bounded
-  implementation cards for resources, execution, consent, results and onboarding
-  inside that release; do not substitute a three-ability launch. Do not claim
-  support or remove Git validation before replacement contracts are verified.
+- Complete the approved 1.0.0 ability/composition acceptance matrix, including
+  presentations, video editing, research and the other five areas. Keep skill/tool
+  compatibility and execution-environment decisions explicit; do not substitute
+  a three-ability launch or remove Git validation before replacement contracts
+  are verified.
 
 - Run the native desktop build/runtime matrix and signing evidence for
   [Task 0023](plans/0023-rust-desktop-migration.md). The macOS development

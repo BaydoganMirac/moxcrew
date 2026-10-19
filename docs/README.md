@@ -22,6 +22,11 @@ and trust boundaries come before implementation details.
 
 ## Current product focus
 
+[Moxcrew 1.0.0](plans/0039-version-one-release.md) is the owner-approved release
+target: eight areas, forty abilities and ten composed workflows. The
+[release state](state/version-one-release.md) records actual implementation and
+remaining evidence; the current application is not yet 1.0.0.
+
 [General-purpose Projects](decisions/0038-general-purpose-projects.md) is the
 owner-selected product direction: work beyond software development, with
 Project as the primary scope. See [state](state/general-purpose-projects.md)

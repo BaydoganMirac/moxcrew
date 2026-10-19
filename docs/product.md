@@ -35,6 +35,13 @@ reviewable outputs and onboarding need bounded implementation cards and
 verification before being advertised as delivered. Current internal
 workspace/schema identifiers retain their meaning.
 
+The owner accepted the broad plan as the
+[1.0.0 release baseline](decisions/0040-version-one-release-baseline.md): eight
+capability areas, forty abilities and ten composed workflows. The
+[master release plan](plans/0039-version-one-release.md) defines observable
+acceptance; [release state](state/version-one-release.md) distinguishes planned
+scope from verified implementation. This does not change the current version.
+
 ## Jobs to be done
 
 Across supported workflows, a customer needs to:

@@ -572,6 +572,32 @@ fn copy_export(source: impl Read, destination: &mut File) -> Result<u64> {
 }
 
 impl Host {
+    pub(crate) fn checked_export_destination(&self, target: &str) -> Result<File> {
+        let target = Path::new(target);
+        if !target.is_absolute()
+            || target.components().any(|part| {
+                !matches!(
+                    part,
+                    Component::Prefix(_) | Component::RootDir | Component::Normal(_)
+                )
+            })
+        {
+            return Err(invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"));
+        }
+        let parent = fs::canonicalize(
+            target
+                .parent()
+                .ok_or_else(|| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?,
+        )?;
+        if parent.starts_with(fs::canonicalize(self.creation_data_dir())?) {
+            return Err(invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"));
+        }
+        let name = target
+            .file_name()
+            .ok_or_else(|| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?;
+        export_destination(&parent, name)
+    }
+
     pub(crate) fn crew_prepare_inputs(&self, mission_id: &str, payload: &Value) -> Result<Value> {
         let project = text(payload, "projectId")?;
         let references = match payload.get("referencePaths") {
@@ -949,31 +975,8 @@ impl Host {
                 } else {
                     None
                 };
-                let target = Path::new(text(payload, "targetPath")?);
-                if !target.is_absolute()
-                    || target.components().any(|part| {
-                        !matches!(
-                            part,
-                            Component::Prefix(_) | Component::RootDir | Component::Normal(_)
-                        )
-                    })
-                {
-                    return Err(invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"));
-                }
-                let parent = fs::canonicalize(
-                    target
-                        .parent()
-                        .ok_or_else(|| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?,
-                )?;
-                if parent.starts_with(fs::canonicalize(self.creation_data_dir())?) {
-                    return Err(invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"));
-                }
-                let target = parent.join(
-                    target
-                        .file_name()
-                        .ok_or_else(|| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?,
-                );
-                let mut destination = export_destination(&parent, target.file_name().unwrap())?;
+                let mut destination =
+                    self.checked_export_destination(text(payload, "targetPath")?)?;
                 // On failure retain the partial file: the public path may already name somebody else's replacement.
                 response["bytes"] = if let Some(content) = pinned {
                     destination.write_all(&content)?;

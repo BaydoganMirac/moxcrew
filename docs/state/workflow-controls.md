@@ -2,7 +2,7 @@
 
 Updated: 2026-10-19
 
-Status: Implemented; focused native boundaries verified, integrated review pending.
+Status: Implemented; integrated tests and independent review passed.
 
 Plan: [Task0044](../plans/0044-productive-project-crews.md).
 Decision: [ADR0045](../decisions/0045-productive-crews-and-explicit-tools.md).

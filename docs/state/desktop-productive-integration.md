@@ -2,7 +2,7 @@
 
 Updated: 2026-10-19
 
-Status: Implemented; integrated native capture and independent review in progress.
+Status: Implemented; integrated tests, native captures and independent review passed.
 
 Plan: [Task0044](../plans/0044-productive-project-crews.md).
 Decision: [ADR0045](../decisions/0045-productive-crews-and-explicit-tools.md).
@@ -63,7 +63,8 @@ All six Output Studio tests also pass after the Tools/Apps split, including
 visible and clickable prepared-app approval at 800x560 in both languages/themes
 and no resubmission after an unknown remote result. A separate Bridge regression
 covers exact response identity, epoch invalidation and credential redaction. All-feature desktop strict Clippy passed after the final planner reveal; the
-coordinator runs final workspace checks.
+final workspace checks, 43 native captures plus nine final app previews, and the
+feature-off macOS development package pass in the [Task0044 report](productive-project-crews.md).
 
 `ui-smoke` scenes `productive-plan`, `productive-questions`, `productive-direction`,
 `productive-recipes`, `productive-schedules`, `productive-activity`,

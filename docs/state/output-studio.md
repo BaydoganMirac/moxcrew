@@ -53,6 +53,6 @@ descriptors. Windows remains explicitly unsupported for these file operations
 until pinned no-reparse handles are implemented and verified; no unsafe fallback
 is enabled. Other native platform/package release checks remain separate.
 
-Verification evidence is finalized in the Task0044 report. Live model inference,
+Verification evidence is recorded in the [Task0044 report](productive-project-crews.md). Live model inference,
 real app credentials, external writes and public release signing are not part of
 the local fixture proof.

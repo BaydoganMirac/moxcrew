@@ -167,6 +167,16 @@ fn main() {
                 r#"{"isError":false,"structuredContent":{"schemaVersion":1},"content":[]}"#,
             );
         } else if line.contains("\"turn/start\"") {
+            if mode.contains("usage") {
+                for (session, turn, input, output) in [
+                    ("foreign", "owned-turn", 999, 999),
+                    ("owned-thread", "foreign", 888, 888),
+                    ("owned-thread", "owned-turn", 13, 7),
+                ] {
+                    println!("{{\"method\":\"thread/tokenUsage/updated\",\"params\":{{\"threadId\":\"{session}\",\"turnId\":\"{turn}\",\"tokenUsage\":{{\"total\":{{\"inputTokens\":{input},\"outputTokens\":{output}}}}}}}}}");
+                }
+                io::stdout().flush().unwrap();
+            }
             if mode.contains("start-hang") {
                 thread::sleep(Duration::from_secs(10));
                 continue;
@@ -188,6 +198,10 @@ fn main() {
                 return;
             }
             if mode.contains("complete") || mode.contains("fail") {
+                if mode.contains("usage") {
+                    let update = r#"{"method":"thread/tokenUsage/updated","params":{"threadId":"owned-thread","turnId":"owned-turn","tokenUsage":{"total":{"inputTokens":19,"outputTokens":11}}}}"#;
+                    println!("{update}");
+                }
                 let status = if mode.contains("fail") {
                     "failed"
                 } else {

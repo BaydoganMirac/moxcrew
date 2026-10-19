@@ -35,7 +35,13 @@ async fn check(id: &str, programs: &Programs) -> Value {
     };
     result["installed"] = json!(true);
     result["version"] = json!(version);
-    result["controlSupported"] = json!(id == "codex" && at_least(&version, [0, 144, 1], true));
+    result["controlSupported"] = json!(
+        (id == "codex" && at_least(&version, [0, 144, 1], true))
+            || super::cli_control::supported(id, &version)
+    );
+    if id != "codex" && result["controlSupported"] == true {
+        result["toolReadiness"] = json!("configured_unverified");
+    }
     if id == "gemini" {
         result["reasonCode"] = json!("GEMINI_AUTH_CHECK_UNSUPPORTED");
         return result;

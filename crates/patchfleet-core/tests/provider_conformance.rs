@@ -65,6 +65,44 @@ fn work() -> (tempfile::TempDir, serde_json::Value, serde_json::Value) {
     (dir, w, r)
 }
 #[tokio::test]
+async fn codex_usage_is_actual_terminal_cumulative_and_owned() {
+    for mode in [
+        "codex-usage-complete",
+        "codex-complete",
+        "codex-usage-cancel",
+    ] {
+        let (_dir, work, run) = work();
+        let controller = Controller::with_programs(programs(mode));
+        let (session, turn) = controller.start(&work, &run).await.unwrap();
+        assert!(controller.drain_usage().await.is_empty());
+        if mode.ends_with("cancel") {
+            controller
+                .cancel(&json!({"providerSessionId":session,"providerTurnId":turn}))
+                .await
+                .unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(controller
+            .drain_signals()
+            .await
+            .iter()
+            .any(|s| s["status"] == "completed" || s["status"] == "interrupted"));
+        let usage = controller.drain_usage().await;
+        if mode.contains("usage") {
+            assert_eq!(
+                usage,
+                vec![
+                    json!({"providerId":"codex","runId":"run:test","sessionId":session,"inputTokens":if mode.ends_with("cancel"){13}else{19},"outputTokens":if mode.ends_with("cancel"){7}else{11}})
+                ]
+            );
+        } else {
+            assert!(usage.is_empty());
+        }
+        assert!(controller.drain_usage().await.is_empty());
+        controller.shutdown().await;
+    }
+}
+#[tokio::test]
 async fn supported_observation_is_bounded_and_sanitized() {
     let all = providers::observe_with(&programs("codex")).await.unwrap();
     assert_eq!(all.len(), 3);

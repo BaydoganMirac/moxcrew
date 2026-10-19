@@ -1,4 +1,6 @@
 //! Provider-supported surfaces only. Native text and credentials never leave this module.
+#[path = "cli_control.rs"]
+mod cli_control;
 #[path = "provider_connections.rs"]
 mod connections;
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -248,12 +250,26 @@ async fn extraction_cleanup(child: &mut Child, job: std::os::windows::io::OwnedH
     reap(child).await;
 }
 async fn extraction_process<T, F>(
+    command: Command,
+    input: &[u8],
+    active: &AtomicBool,
+    bound: Duration,
+    limit: usize,
+    read: impl FnOnce(ChildStdout, Arc<AtomicUsize>) -> F,
+) -> Result<T>
+where
+    F: Future<Output = Result<T>>,
+{
+    bounded_process(command, input, active, bound, limit, read, None).await
+}
+async fn bounded_process<T, F>(
     mut command: Command,
     input: &[u8],
     active: &AtomicBool,
     bound: Duration,
     limit: usize,
     read: impl FnOnce(ChildStdout, Arc<AtomicUsize>) -> F,
+    started: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> Result<T>
 where
     F: Future<Output = Result<T>>,
@@ -294,6 +310,9 @@ where
         return Err("EXTRACTION_PROVIDER_FAILED".into());
     };
     let budget = Arc::new(AtomicUsize::new(0));
+    if let Some(started) = started {
+        let _ = started.send(());
+    }
     let result = tokio::select! {
         biased;
         _ = extraction_cancelled(active) => Err("EXTRACTION_CANCELLED".into()),
@@ -1004,6 +1023,9 @@ struct AppServer {
     bound: Duration,
     signals: Vec<Value>,
     owned: HashMap<String, String>,
+    run_ids: HashMap<String, String>,
+    pending_usage: HashMap<String, Value>,
+    usage: Vec<Value>,
     memory: HashMap<String, MemoryConfig>,
     leases: Arc<StdMutex<ReaderLeases>>,
 }
@@ -1094,6 +1116,9 @@ impl AppServer {
             bound,
             signals: vec![],
             owned: HashMap::new(),
+            run_ids: HashMap::new(),
+            pending_usage: HashMap::new(),
+            usage: vec![],
             memory: HashMap::new(),
             leases,
         };
@@ -1121,6 +1146,25 @@ impl AppServer {
             return self
                 .write(json!({"id":m["id"],"error":{"code":-32601,"message":"Method not found"}}))
                 .await;
+        }
+        if m["method"] == "thread/tokenUsage/updated" {
+            let p = &m["params"];
+            if let (Some(session), Some(turn)) = (p["threadId"].as_str(), p["turnId"].as_str()) {
+                if !turn.is_empty() && self.owned.get(session).map(String::as_str) == Some(turn) {
+                    let total = &p["tokenUsage"]["total"];
+                    if let (Some(input), Some(output)) = (
+                        total["inputTokens"].as_u64(),
+                        total["outputTokens"].as_u64(),
+                    ) {
+                        // Each owned thread is new and receives exactly one turn. The native
+                        // thread cumulative total therefore belongs to this run, without pricing.
+                        self.pending_usage.insert(
+                            session.into(),
+                            json!({"inputTokens":input,"outputTokens":output}),
+                        );
+                    }
+                }
+            }
         }
         if m["method"] == "turn/completed" || m["method"] == "turn/started" {
             let p = &m["params"];
@@ -1151,12 +1195,23 @@ impl AppServer {
                 }
                 self.signals.push(json!({"schemaVersion":1,"providerId":"codex","providerSessionId":id,"status":status,"observedAt":now()}));
                 if status != "running" {
+                    self.finish_usage(id);
                     self.revoke_memory(id);
                     self.owned.remove(id);
                 }
             }
         }
         Ok(())
+    }
+    fn finish_usage(&mut self, session: &str) {
+        let run = self.run_ids.remove(session);
+        let usage = self.pending_usage.remove(session);
+        if let (Some(run), Some(mut usage)) = (run, usage) {
+            usage["runId"] = json!(run);
+            usage["providerId"] = json!("codex");
+            usage["sessionId"] = json!(session);
+            self.usage.push(usage);
+        }
     }
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         let id = self.next;
@@ -1182,7 +1237,7 @@ impl AppServer {
                         .is_some_and(|thread| msg["params"]["threadId"] == *thread)
                         && matches!(
                             msg["method"].as_str(),
-                            Some("turn/started" | "turn/completed")
+                            Some("turn/started" | "turn/completed" | "thread/tokenUsage/updated")
                         )
                         && msg.get("id").is_none()
                     {
@@ -1221,7 +1276,9 @@ impl AppServer {
                         .get_mut(thread)
                         .ok_or("CODEX_PROTOCOL_MALFORMED")? = turn.into();
                     for notification in deferred {
-                        if notification["params"]["turn"]["id"] == turn {
+                        if notification["params"]["turn"]["id"] == turn
+                            || notification["params"]["turnId"] == turn
+                        {
                             self.notification(&notification).await?;
                         }
                     }
@@ -1466,6 +1523,17 @@ async fn observe_gemini(p: &Programs) -> Value {
 }
 pub fn supports_control(observation: &Value) -> bool {
     let p = &observation["provider"];
+    if p["id"] != "codex" {
+        let readiness = p["state"] == "available"
+            || (p["id"] == "gemini"
+                && p["state"] == "degraded"
+                && p["error"]["code"] == "GEMINI_HOOK_SETUP_REQUIRED");
+        return readiness
+            && p["id"]
+                .as_str()
+                .zip(p["version"].as_str())
+                .is_some_and(|(id, version)| cli_control::supported(id, version));
+    }
     p["id"] == "codex"
         && p["state"] == "available"
         && p["capabilities"]["recentObservation"] == true
@@ -1475,13 +1543,15 @@ pub fn supports_control(observation: &Value) -> bool {
             .is_some_and(|v| semver(v) && at_least(v, [0, 144, 1], true))
 }
 pub fn supports_codex_control(observation: &Value) -> bool {
-    supports_control(observation)
+    observation["provider"]["id"] == "codex" && supports_control(observation)
 }
 
 pub struct Controller {
     programs: Programs,
     server: Mutex<Option<AppServer>>,
     lost: Mutex<Vec<Value>>,
+    finished_usage: Mutex<Vec<Value>>,
+    cli: cli_control::Control,
 }
 impl Default for Controller {
     fn default() -> Self {
@@ -1497,11 +1567,53 @@ impl Controller {
             programs,
             server: Mutex::new(None),
             lost: Mutex::new(vec![]),
+            finished_usage: Mutex::new(vec![]),
+            cli: cli_control::Control::default(),
         }
     }
     /// Explicit local diagnostics. Saved credentials do not prove model access or entitlement.
     pub async fn connection_status(&self) -> Value {
         connections::read(&self.programs).await
+    }
+    /// Bounded, tool-free planning through the explicitly selected local provider.
+    pub async fn generate_structured(
+        &self,
+        provider: &str,
+        scratch: &Path,
+        prompt: &str,
+        schema: &Value,
+        active: Arc<AtomicBool>,
+    ) -> Result<Value> {
+        if provider == "codex" {
+            return self
+                .extract_decisions(scratch, prompt, schema, active)
+                .await;
+        }
+        let mut cancellation = ExtractionCancellation(Some(active.clone()));
+        let programs = self.programs.clone();
+        let (provider, scratch, prompt, schema) = (
+            provider.to_owned(),
+            scratch.to_owned(),
+            prompt.to_owned(),
+            schema.clone(),
+        );
+        let result = tokio::spawn(async move {
+            cli_control::generate(&programs, &provider, &scratch, &prompt, &schema, active).await
+        })
+        .await
+        .map_err(|_| "EXTRACTION_PROVIDER_FAILED".to_owned())?;
+        cancellation.0 = None;
+        result
+    }
+    /// Only provider-reported, terminal cumulative measurements are returned.
+    pub async fn drain_usage(&self) -> Vec<Value> {
+        let mut guard = self.server.lock().await;
+        let mut result = std::mem::take(&mut *self.finished_usage.lock().await);
+        if let Some(server) = guard.as_mut() {
+            result.append(&mut server.usage);
+        }
+        result.extend(self.cli.drain_usage().await);
+        result
     }
     /// Source text goes only to stdin; this independent worker never locks owned work sessions.
     pub async fn extract_decisions(
@@ -1533,6 +1645,7 @@ impl Controller {
     }
     async fn discard(&self, guard: &mut Option<AppServer>) {
         if let Some(s) = guard.as_mut() {
+            self.finished_usage.lock().await.append(&mut s.usage);
             lease_guard(&s.leases).close();
             s.memory.clear();
             let mut lost = self.lost.lock().await;
@@ -1573,11 +1686,17 @@ impl Controller {
     }
     async fn prepare_in_directory(
         &self,
-        _work: &Value,
+        work: &Value,
         run: &Value,
         memory: Option<MemoryConfig>,
         cwd: String,
     ) -> Result<String> {
+        if work["providerId"].as_str().is_some_and(|id| id != "codex") {
+            return self
+                .cli
+                .prepare(&self.programs, work, run, memory, cwd)
+                .await;
+        }
         let intent = run
             .get("intentId")
             .or_else(|| run.get("runId"))
@@ -1641,6 +1760,9 @@ impl Controller {
                 s.memory.insert(id.clone(), memory);
             }
             s.owned.insert(id.clone(), String::new());
+            if let Some(run_id) = run["runId"].as_str().filter(|v| opaque(v)) {
+                s.run_ids.insert(id.clone(), run_id.into());
+            }
             Ok(id)
         } else {
             let err = if matches!(result,Err(ref e) if e=="CODEX_PROTOCOL_METHOD_ERROR") {
@@ -1682,6 +1804,9 @@ impl Controller {
         run: &Value,
         session: &str,
     ) -> Result<(String, String)> {
+        if work["providerId"].as_str().is_some_and(|id| id != "codex") {
+            return self.cli.start(work, run, session).await;
+        }
         let instruction = work["instruction"]
             .as_str()
             .filter(|s| !s.is_empty() && s.encode_utf16().count() <= 50_000)
@@ -1744,6 +1869,7 @@ impl Controller {
                 s.owned.insert(session.into(), id.clone());
             }
             if status != Some("inProgress") {
+                s.finish_usage(session);
                 s.revoke_memory(session);
                 s.signals.push(json!({"schemaVersion":1,"providerId":"codex","providerSessionId":session,"status":status,"observedAt":now()}));
                 s.owned.remove(session);
@@ -1764,6 +1890,9 @@ impl Controller {
         self.start_prepared(work, run, &session).await
     }
     pub async fn cancel(&self, run: &Value) -> Result<()> {
+        if run["providerId"].as_str().is_some_and(|id| id != "codex") {
+            return self.cli.cancel(run).await;
+        }
         let session = run["providerSessionId"]
             .as_str()
             .filter(|s| opaque(s))
@@ -1820,11 +1949,13 @@ impl Controller {
         if let Some(s) = guard.as_mut() {
             result.append(&mut s.signals);
         }
+        result.extend(self.cli.drain_signals().await);
         result
     }
     pub async fn shutdown(&self) {
         let mut guard = self.server.lock().await;
         self.discard(&mut guard).await;
+        self.cli.shutdown().await;
     }
 }
 fn validate_managed_directory(work: &Value, expected: &Path) -> Result<String> {

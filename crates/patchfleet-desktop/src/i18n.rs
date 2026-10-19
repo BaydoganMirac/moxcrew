@@ -311,7 +311,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "No agent files are available for this mission yet." => "Bu takım görevinin ajan dosyaları henüz kullanılamıyor.",
         "Crew plans use bundled guides. Review before preparing." => "Takım planları yerleşik rehberleri kullanır. Hazırlamadan önce incele.",
         "Your studio" => "Stüdyon",
-        "One idea. Start with a direction." => "Bir fikir. Önce bir yön seç.",
+        "Tell Mox what you want to do." => "Ne yapmak istediğini Mox’a anlat.",
         "Mox · Your project crew" => "Mox · Proje ekibin",
         "Connections" => "Bağlantılar",
         "Connect your crew" => "Ekibini bağla",

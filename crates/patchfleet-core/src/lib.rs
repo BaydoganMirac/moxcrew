@@ -1,6 +1,7 @@
 pub mod abilities;
 pub mod agent_memory;
 pub mod cloud;
+mod conversation;
 mod creation;
 pub mod decisions;
 pub mod desktop_login;

@@ -578,6 +578,11 @@ impl Store {
         self.ensure_unchanged(&state)?;
         crate::creation::project_jobs(data_dir, &state.events, &state.projected)
     }
+    pub(crate) fn read_conversation(&self, payload: &Value) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        crate::conversation::read(&self.directory, &state.events, &state.projected, payload)
+    }
     pub fn projections(&self) -> Result<Value> {
         let state = self.guard()?;
         self.ensure_unchanged(&state)?;

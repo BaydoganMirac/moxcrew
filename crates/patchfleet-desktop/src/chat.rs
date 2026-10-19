@@ -1,5 +1,28 @@
 use super::*;
 
+const COMPOSER_ROW_WIDTH: f32 = 640.0;
+
+fn composer_frame(ui: &Ui, focused: bool) -> egui::Frame {
+    egui::Frame::new()
+        .fill(colors(ui).surface)
+        .stroke(egui::Stroke::new(
+            1.0,
+            if focused {
+                colors(ui).primary
+            } else {
+                colors(ui).control_border
+            },
+        ))
+        .corner_radius(studio::metrics::CARD_RADIUS)
+        .inner_margin(studio::metrics::PADDING)
+        .shadow(egui::epaint::Shadow {
+            offset: [0, 6],
+            blur: 24,
+            spread: 0,
+            color: colors(ui).primary.gamma_multiply(0.10),
+        })
+}
+
 fn terminal(status: &str) -> bool {
     matches!(status, "completed" | "failed" | "interrupted")
 }
@@ -340,7 +363,10 @@ impl Console {
                 .resizable(false)
                 .show_separator_line(false)
                 .exact_size(
-                    if ui.available_width() < 640.0 {
+                    if ui.available_width().min(820.0)
+                        - composer_frame(ui, false).total_margin().sum().x
+                        < COMPOSER_ROW_WIDTH
+                    {
                         224.0
                     } else {
                         174.0
@@ -426,25 +452,8 @@ impl Console {
                 &self.create.ability,
             )))
         });
-        let frame = egui::Frame::new()
-            .fill(colors(ui).surface)
-            .stroke(egui::Stroke::new(
-                1.0,
-                if focused {
-                    colors(ui).primary
-                } else {
-                    colors(ui).control_border
-                },
-            ))
-            .corner_radius(studio::metrics::CARD_RADIUS)
-            .inner_margin(studio::metrics::PADDING)
-            .shadow(egui::epaint::Shadow {
-                offset: [0, 6],
-                blur: 24,
-                spread: 0,
-                color: colors(ui).primary.gamma_multiply(0.10),
-            })
-            .show(ui, |ui| self.chat_composer(ui, snapshot, commands));
+        let frame =
+            composer_frame(ui, focused).show(ui, |ui| self.chat_composer(ui, snapshot, commands));
         #[cfg(test)]
         ui.data_mut(|data| {
             data.insert_temp(
@@ -505,7 +514,7 @@ impl Console {
                 .any(|ability| text(ability, "id") == *id)
         });
         let payload = self.create.chat_payload(snapshot);
-        let two_rows = ui.available_width() < 640.0;
+        let two_rows = ui.available_width() < COMPOSER_ROW_WIDTH;
         ui.horizontal_wrapped(|ui| {
             if self.create.crew.single {
                 let enabled = payload.is_some() && self.create.pending.is_none();
@@ -1144,7 +1153,14 @@ mod tests {
                     d.get_temp::<(egui::Rect, egui::Id)>(egui::Id::new("delivery-search"))
                         .unwrap()
                 });
-                for size in [wide, egui::vec2(800.0, 560.0), wide] {
+                for size in [
+                    wide,
+                    egui::vec2(1360.0, 820.0),
+                    egui::vec2(1392.0, 820.0),
+                    egui::vec2(1400.0, 820.0),
+                    egui::vec2(800.0, 560.0),
+                    wide,
+                ] {
                     for _ in 0..3 {
                         render(&ctx, &mut console, &data, size, false, vec![]);
                     }

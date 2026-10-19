@@ -5,15 +5,20 @@ use eframe::egui::{self, RichText};
 pub fn show(ui: &mut egui::Ui) {
     let p = studio::palette(ui.ctx());
     egui::CentralPanel::default()
-        .frame(egui::Frame::new().fill(p.canvas).inner_margin(32))
+        .frame(
+            egui::Frame::new()
+                .fill(p.canvas)
+                .inner_margin(m::PAGE_PADDING),
+        )
         .show(ui, |ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(m::SECTION_GAP, m::SECTION_GAP);
+            ui.spacing_mut().item_spacing = egui::vec2(m::SECTION_GAP, m::PADDING as f32);
             studio::ambient(ui);
             ui.horizontal(|ui| {
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(48.0, 40.0), egui::Sense::hover());
                 studio::mark(ui.painter(), rect);
                 ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 4.0;
                     ui.label(studio::title("Moxcrew UI Kit", 32.0));
                     ui.label(
                         RichText::new("NATIVE / MANROPE / LIGHT + DARK")

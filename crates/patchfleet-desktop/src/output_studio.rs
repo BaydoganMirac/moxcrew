@@ -82,6 +82,85 @@ pub(super) fn project_revision(snapshot: &Value, project: &str) -> Option<u64> {
         .filter(|rev| *rev > 0)
 }
 
+fn app_name(provider: &str) -> &str {
+    match provider {
+        "google_drive" => "Google Drive",
+        "notion" => "Notion",
+        "google_calendar" => "Google Calendar",
+        _ => "App",
+    }
+}
+fn app_operation_name(operation: &str) -> &str {
+    match operation {
+        "drive_import" => "Import Drive file",
+        "notion_page" => "Create Notion page",
+        "calendar_event" => "Create Calendar event",
+        _ => "App operation",
+    }
+}
+fn app_values(ui: &mut Ui, values: &Value) {
+    let Some(values) = values.as_object() else {
+        return;
+    };
+    let labels = [
+        ("providerId", "App"),
+        ("operation", "Operation"),
+        ("fileId", "Drive file ID"),
+        ("parentPageId", "Parent page ID"),
+        ("calendarId", "Calendar ID"),
+        ("pageId", "Page ID"),
+        ("eventId", "Event ID"),
+        ("title", "Title"),
+        ("summary", "Title"),
+        ("name", "Name"),
+        ("content", "Content"),
+        ("description", "Description"),
+        ("start", "Start time"),
+        ("end", "End time"),
+        ("timeZone", "Time zone"),
+        ("bytes", "Size (bytes)"),
+    ];
+    let keys = labels
+        .iter()
+        .map(|(key, _)| *key)
+        .filter(|key| values.contains_key(*key))
+        .chain(
+            values
+                .keys()
+                .map(String::as_str)
+                .filter(|key| !labels.iter().any(|(known, _)| known == key)),
+        );
+    for key in keys {
+        let label = labels
+            .iter()
+            .find(|(known, _)| *known == key)
+            .map(|(_, label)| *label)
+            .unwrap_or(key);
+        let value = &values[key];
+        let value = match key {
+            "providerId" => app_name(value.as_str().unwrap_or("")).to_owned(),
+            "operation" => t(ui, app_operation_name(value.as_str().unwrap_or(""))).into_owned(),
+            _ => value
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| value.to_string()),
+        };
+        ui.horizontal_top(|ui| {
+            ui.add_sized(
+                [130.0, 18.0],
+                egui::Label::new(
+                    RichText::new(t(ui, label))
+                        .size(12.0)
+                        .color(colors(ui).muted),
+                )
+                .wrap(),
+            );
+            ui.add(egui::Label::new(value).wrap().selectable(true));
+        });
+        ui.add_space(4.0);
+    }
+}
+
 impl CreateState {
     pub(crate) fn close_studio(&mut self) {
         self.studio.open = false;
@@ -615,7 +694,7 @@ impl Console {
         );
         for connection in array(&page["connections"]) {
             ui.horizontal_wrapped(|ui| {
-                let name=match text(connection,"providerId"){"google_drive"=>"Google Drive","notion"=>"Notion","google_calendar"=>"Google Calendar",_=>"App"};
+                let name=app_name(text(connection,"providerId"));
                 ui.label(if text(connection,"label").is_empty(){name.into()}else{format!("{name} · {}",text(connection,"label"))});
                 hint(ui,if connection["connected"]==true {"Credentials saved"}else{"Not connected"});
                 action(ui,commands,"Disconnect","project_connection_remove",connection["connected"]==true,||json!({"projectId":self.create.project,"providerId":connection["providerId"]}));
@@ -627,7 +706,8 @@ impl Console {
         }
         let previous = state.connection_provider.clone();
         egui::ComboBox::from_id_salt("app-provider")
-            .selected_text(&state.connection_provider)
+            .width(190.0)
+            .selected_text(app_name(&state.connection_provider))
             .show_ui(ui, |ui| {
                 for (id, label) in [
                     ("google_drive", "Google Drive"),
@@ -694,9 +774,9 @@ impl Console {
             if let Some((project,action_id,rev))=&state.prepared {
                 if project==&self.create.project && text(receipt,"preparedActionId")==action_id && text(receipt,"projectId")==project && text(receipt,"reasonCode")=="PROJECT_CONNECTION_PREPARED" && revision(receipt)==*rev && text(receipt,"outcome")=="applied" {
                     ui.label(t(ui,"Review the exact remote operation before approving."));
-                    ui.label(t(ui,match text(receipt,"operation"){ "drive_import"=>"Import Drive file","notion_page"=>"Create Notion page",_=>"Create Calendar event"}));
-                    if !receipt["preview"].is_null(){ui.add(egui::Label::new(receipt["preview"].to_string()).wrap().selectable(true));}
-                    ui.add(egui::Label::new(receipt["arguments"].to_string()).wrap().selectable(true));
+                    ui.label(t(ui,app_operation_name(text(receipt,"operation"))));
+                    if let Some(preview)=receipt["preview"].as_str(){ui.add(egui::Label::new(preview).wrap().selectable(true));}
+                    app_values(ui,&receipt["arguments"]);
                     if control(ui,"Approve & execute",state.executing.as_ref().is_none_or(|(_,id)|id!=action_id)).clicked() && commands.is_empty() {
                         let command=Command::new("project_connection_execute",json!({"projectId":project,"preparedActionId":action_id,"expectedActionRevision":rev}));
                         state.executing=Some((project.clone(),action_id.clone()));
@@ -707,7 +787,7 @@ impl Console {
             if let Some((project,id))=&state.executing {
                 if text(receipt,"projectId")==project && text(receipt,"preparedActionId")==id {
                     hint(ui,text(receipt,"reasonCode"));
-                    if !receipt["result"].is_null(){ui.add(egui::Label::new(receipt["result"].to_string()).wrap().selectable(true));}
+                    app_values(ui,&receipt["result"]);
                     if text(receipt,"reasonCode")=="PROJECT_CONNECTION_OUTCOME_UNKNOWN" {hint(ui,"Remote outcome is uncertain. Check the connected app before preparing another operation.");}
                 }
             }
@@ -1053,6 +1133,116 @@ mod tests {
                 );
                 assert_eq!(commands.len(), 1);
                 assert_eq!(commands[0].payload["expectedActionRevision"], 1);
+            }
+        }
+    }
+
+    #[test]
+    fn app_selector_and_frozen_arguments_use_readable_localized_rows_without_json() {
+        for language in ["en", "tr"] {
+            for (provider, operation, args, labels) in [
+                (
+                    "google_drive",
+                    "drive_import",
+                    json!({"fileId":"frozen-drive-file"}),
+                    vec!["Drive file ID"],
+                ),
+                (
+                    "notion",
+                    "notion_page",
+                    json!({"parentPageId":"frozen-parent","title":"Frozen title","content":"Frozen content"}),
+                    vec!["Parent page ID", "Title", "Content"],
+                ),
+                (
+                    "google_calendar",
+                    "calendar_event",
+                    json!({"calendarId":"frozen-calendar","summary":"Frozen event","description":"Frozen description","start":"2100-01-01T10:00:00Z","end":"2100-01-01T11:00:00Z","timeZone":"Europe/Istanbul"}),
+                    vec![
+                        "Calendar ID",
+                        "Title",
+                        "Description",
+                        "Start time",
+                        "End time",
+                        "Time zone",
+                    ],
+                ),
+            ] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                let mut data = fixture();
+                data["desktopPreferences"]["language"] = json!(language);
+                data["projectStudio"]["connections"] =
+                    json!([{"providerId":provider,"label":"Test account","connected":true}]);
+                data["projectStudioReceipt"] = json!({"projectId":"project:one","preparedActionId":"connection-action:one","revision":1,"outcome":"applied","reasonCode":"PROJECT_CONNECTION_PREPARED","providerId":provider,"operation":operation,"arguments":args});
+                let mut console = console(&data);
+                console.create.studio.tab = 3;
+                console.create.studio.connection_project = "project:one".into();
+                console.create.studio.connection_provider = provider.into();
+                console.create.studio.arguments = args
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .map(|key| (key.clone(), format!("Editable {key}")))
+                    .collect();
+                let mut copy = Vec::new();
+                for _ in 0..3 {
+                    let (commands, frame) = render(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        egui::vec2(1280.0, 2200.0),
+                        false,
+                        vec![],
+                    );
+                    assert!(commands.is_empty());
+                    copy = frame;
+                }
+                assert!(
+                    copy.iter().any(|line| line == app_name(provider)),
+                    "friendly app name must be visible before preview: {language}/{provider}"
+                );
+                assert!(!copy.iter().any(|line| line == provider));
+                console.create.studio.prepared =
+                    Some(("project:one".into(), "connection-action:one".into(), 1));
+                assert!(click(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    false,
+                    "memory_control",
+                    "Prepare app operation"
+                )
+                .is_empty());
+                for _ in 0..4 {
+                    let (commands, frame) = render(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        egui::vec2(1280.0, 2200.0),
+                        false,
+                        vec![],
+                    );
+                    assert!(commands.is_empty());
+                    copy = frame;
+                }
+                for label in labels {
+                    assert!(
+                        copy.iter()
+                            .any(|line| line
+                                == i18n::tr(Language::from_code(language), label).as_ref()),
+                        "missing localized {label}"
+                    );
+                }
+                for value in args.as_object().unwrap().values() {
+                    assert!(
+                        copy.iter().any(|line| line == value.as_str().unwrap()),
+                        "frozen argument omitted: {value}"
+                    );
+                }
+                assert!(
+                    !copy.join("\n").contains(&args.to_string()),
+                    "normal preview must use field rows"
+                );
             }
         }
     }

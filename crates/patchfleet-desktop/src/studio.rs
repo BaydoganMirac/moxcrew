@@ -35,6 +35,63 @@ pub fn title(text: impl Into<String>, size: f32) -> RichText {
     RichText::new(text).font(FontId::new(size, FontFamily::Name("studio-display".into())))
 }
 
+pub fn section_nav(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
+    let p = palette(ui.ctx());
+    let response = ui.add(
+        egui::Button::new(RichText::new(label).size(13.0).color(if selected {
+            p.text
+        } else {
+            p.muted
+        }))
+        .frame(false)
+        .min_size(egui::vec2(0.0, 32.0)),
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::SelectableLabel,
+            response.enabled(),
+            selected,
+            label,
+        )
+    });
+    if selected {
+        ui.painter().line_segment(
+            [
+                response.rect.left_bottom() + egui::vec2(8.0, 0.0),
+                response.rect.right_bottom() - egui::vec2(8.0, 0.0),
+            ],
+            egui::Stroke::new(2.0, p.primary),
+        );
+    }
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            5,
+            egui::Stroke::new(2.0, p.focus),
+            egui::StrokeKind::Inside,
+        );
+    }
+    response
+}
+
+pub fn quiet_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    let p = palette(ui.ctx());
+    let response = ui.add(
+        egui::Button::new(RichText::new(label).size(12.0).color(p.muted))
+            .frame(false)
+            .min_size(egui::vec2(0.0, 32.0)),
+    );
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            5,
+            egui::Stroke::new(2.0, p.focus),
+            egui::StrokeKind::Inside,
+        );
+    }
+    response
+}
+
 pub fn install(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     for (name, bytes) in [

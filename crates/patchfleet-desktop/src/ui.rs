@@ -1250,6 +1250,8 @@ impl Console {
                 }
                 if self.tab == Tab::Create {
                     ui.add_enabled_ui(!busy, |ui| self.create_studio(ui, snapshot, &mut commands));
+                } else if self.tab == Tab::Teams && self.create.productive_view() != 0 {
+                    ui.add_enabled_ui(!busy, |ui| self.crew_hub(ui, snapshot, &mut commands));
                 } else {
                     egui::ScrollArea::vertical()
                         .id_salt(("console-body", self.tab.name()))

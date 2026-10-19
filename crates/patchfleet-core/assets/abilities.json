@@ -1,0 +1,682 @@
+[
+  {
+    "id": "R1",
+    "category": "research",
+    "name": {
+      "en": "Research a topic",
+      "tr": "Bir konuyu araştır"
+    },
+    "description": {
+      "en": "Find reliable sources and explain the findings.",
+      "tr": "Güvenilir kaynaklar bul, bulguları açıkla."
+    },
+    "starter": {
+      "en": "Research this topic with dated sources and a clear conclusion.",
+      "tr": "Bu konuyu tarihli kaynaklarla araştır ve sonucu açıkla."
+    },
+    "instruction": "Research this topic with dated sources and a clear conclusion. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "R2",
+    "category": "research",
+    "name": {
+      "en": "Compare options",
+      "tr": "Seçenekleri karşılaştır"
+    },
+    "description": {
+      "en": "Weigh alternatives against your criteria.",
+      "tr": "Alternatifleri ölçütlerine göre değerlendir."
+    },
+    "starter": {
+      "en": "Compare these options using my criteria and explain tradeoffs.",
+      "tr": "Bu seçenekleri ölçütlerime göre karşılaştır ve farkları açıkla."
+    },
+    "instruction": "Compare these options using my criteria and explain tradeoffs. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "R3",
+    "category": "research",
+    "name": {
+      "en": "Connect the sources",
+      "tr": "Kaynakları birleştir"
+    },
+    "description": {
+      "en": "Bring findings and disagreements together.",
+      "tr": "Bulguları ve çelişkileri bir araya getir."
+    },
+    "starter": {
+      "en": "Synthesize the supplied sources and show where they agree or disagree.",
+      "tr": "Verdiğim kaynakları birleştir, ortak ve çelişen noktaları göster."
+    },
+    "instruction": "Synthesize the supplied sources and show where they agree or disagree. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "R4",
+    "category": "research",
+    "name": {
+      "en": "Check the claims",
+      "tr": "İddiaları kontrol et"
+    },
+    "description": {
+      "en": "Separate evidence from uncertainty.",
+      "tr": "Kanıtı belirsizlikten ayır."
+    },
+    "starter": {
+      "en": "Check these claims against the available evidence.",
+      "tr": "Bu iddiaları erişilebilen kanıtlarla kontrol et."
+    },
+    "instruction": "Check these claims against the available evidence. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "R5",
+    "category": "research",
+    "name": {
+      "en": "Track what changed",
+      "tr": "Değişiklikleri izle"
+    },
+    "description": {
+      "en": "Compare dated source snapshots.",
+      "tr": "Kaynakların tarihli sürümlerini karşılaştır."
+    },
+    "starter": {
+      "en": "Compare these source versions and report meaningful changes.",
+      "tr": "Bu kaynak sürümlerini karşılaştır, anlamlı değişiklikleri raporla."
+    },
+    "instruction": "Compare these source versions and report meaningful changes. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "D1",
+    "category": "documents",
+    "name": {
+      "en": "Create a document",
+      "tr": "Belge hazırla"
+    },
+    "description": {
+      "en": "Reports, proposals and CVs as editable files.",
+      "tr": "Rapor, teklif ve CV için düzenlenebilir dosyalar."
+    },
+    "starter": {
+      "en": "Create an editable Word document from my brief.",
+      "tr": "Briefime göre düzenlenebilir bir Word belgesi hazırla."
+    },
+    "instruction": "Create an editable Word document from my brief. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "D2",
+    "category": "documents",
+    "name": {
+      "en": "Work with PDFs",
+      "tr": "PDF ile çalış"
+    },
+    "description": {
+      "en": "Extract, organize or combine supported pages.",
+      "tr": "Desteklenen sayfaları çıkar, düzenle veya birleştir."
+    },
+    "starter": {
+      "en": "Process these PDFs and explain any unreadable pages.",
+      "tr": "Bu PDF belgelerini işle ve okunamayan sayfaları belirt."
+    },
+    "instruction": "Process these PDFs and explain any unreadable pages. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "D3",
+    "category": "documents",
+    "name": {
+      "en": "Turn notes into a plan",
+      "tr": "Notlardan plan çıkar"
+    },
+    "description": {
+      "en": "A useful brief, open questions and next actions.",
+      "tr": "Kullanışlı bir brief, açık sorular ve sonraki adımlar."
+    },
+    "starter": {
+      "en": "Turn my notes into a clear brief and an actionable plan.",
+      "tr": "Notlarımı anlaşılır bir brief ve uygulanabilir plana dönüştür."
+    },
+    "instruction": "Turn my notes into a clear brief and an actionable plan. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "D4",
+    "category": "documents",
+    "name": {
+      "en": "Translate and rewrite",
+      "tr": "Çevir ve yeniden yaz"
+    },
+    "description": {
+      "en": "Keep the meaning, change the language or tone.",
+      "tr": "Anlamı koru, dili veya üslubu değiştir."
+    },
+    "starter": {
+      "en": "Rewrite or translate this text, preserving meaning and facts.",
+      "tr": "Bu metni anlamını ve bilgileri koruyarak yeniden yaz veya çevir."
+    },
+    "instruction": "Rewrite or translate this text, preserving meaning and facts. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "D5",
+    "category": "documents",
+    "name": {
+      "en": "Fill a template",
+      "tr": "Şablonu doldur"
+    },
+    "description": {
+      "en": "Use your source facts in a structured template.",
+      "tr": "Kaynak bilgilerini yapılandırılmış şablona aktar."
+    },
+    "starter": {
+      "en": "Fill this template from the supplied facts; mark missing information.",
+      "tr": "Şablonu verdiğim bilgilerle doldur, eksik bilgileri belirt."
+    },
+    "instruction": "Fill this template from the supplied facts; mark missing information. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "P1",
+    "category": "presentations",
+    "name": {
+      "en": "Create a presentation",
+      "tr": "Sunum hazırla"
+    },
+    "description": {
+      "en": "Turn your sources into an editable slide deck.",
+      "tr": "Kaynaklarını düzenlenebilir sunuma dönüştür."
+    },
+    "starter": {
+      "en": "Create an editable presentation with visual slides and speaker notes.",
+      "tr": "Görsel slaytları ve konuşmacı notları olan düzenlenebilir bir sunum hazırla."
+    },
+    "instruction": "Create an editable presentation with visual slides and speaker notes. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "P2",
+    "category": "presentations",
+    "name": {
+      "en": "Edit a presentation",
+      "tr": "Sunumu düzenle"
+    },
+    "description": {
+      "en": "Revise the slides you choose.",
+      "tr": "Seçtiğin slaytları yeniden düzenle."
+    },
+    "starter": {
+      "en": "Make the requested edits to this presentation and preserve other slides.",
+      "tr": "Bu sunumda istediğim değişiklikleri yap, diğer slaytları koru."
+    },
+    "instruction": "Make the requested edits to this presentation and preserve other slides. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "P3",
+    "category": "presentations",
+    "name": {
+      "en": "Apply your brand",
+      "tr": "Markanı sunuma uygula"
+    },
+    "description": {
+      "en": "Use your visual identity and templates.",
+      "tr": "Görsel kimliğini ve şablonlarını kullan."
+    },
+    "starter": {
+      "en": "Adapt this presentation to my supplied brand and template.",
+      "tr": "Bu sunumu verdiğim marka kimliği ve şablona uyarla."
+    },
+    "instruction": "Adapt this presentation to my supplied brand and template. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "P4",
+    "category": "presentations",
+    "name": {
+      "en": "Tell the data story",
+      "tr": "Veriyi görsel anlat"
+    },
+    "description": {
+      "en": "Explain the evidence with charts and visuals.",
+      "tr": "Kanıtları grafik ve görsellerle açıkla."
+    },
+    "starter": {
+      "en": "Create accurate charts and a clear visual story from these findings.",
+      "tr": "Bu bulgulardan doğru grafikler ve anlaşılır bir görsel anlatı hazırla."
+    },
+    "instruction": "Create accurate charts and a clear visual story from these findings. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "P5",
+    "category": "presentations",
+    "name": {
+      "en": "Narrate the deck",
+      "tr": "Sunumu seslendir"
+    },
+    "description": {
+      "en": "Plan narration and a playable presentation video.",
+      "tr": "Seslendirme ve oynatılabilir sunum videosu hazırla."
+    },
+    "starter": {
+      "en": "Turn this deck into a narrated presentation video.",
+      "tr": "Bu sunumu seslendirilmiş bir sunum videosuna dönüştür."
+    },
+    "instruction": "Turn this deck into a narrated presentation video. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "V1",
+    "category": "video",
+    "name": {
+      "en": "Edit a video",
+      "tr": "Videoyu kurgula"
+    },
+    "description": {
+      "en": "Cut, join and reorder your footage.",
+      "tr": "Görüntülerini kes, birleştir ve sırala."
+    },
+    "starter": {
+      "en": "Edit this footage according to my cut and ordering instructions.",
+      "tr": "Bu görüntüleri verdiğim kesim ve sıralama talimatlarına göre kurgula."
+    },
+    "instruction": "Edit this footage according to my cut and ordering instructions. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "V2",
+    "category": "video",
+    "name": {
+      "en": "Find the best clips",
+      "tr": "Öne çıkan klipleri çıkar"
+    },
+    "description": {
+      "en": "Select meaningful moments from a longer recording.",
+      "tr": "Uzun kayıttan anlamlı anları seç."
+    },
+    "starter": {
+      "en": "Select the strongest moments and create short clips with time ranges.",
+      "tr": "En güçlü anları seç, zaman aralıklarıyla kısa klipler hazırla."
+    },
+    "instruction": "Select the strongest moments and create short clips with time ranges. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "V3",
+    "category": "video",
+    "name": {
+      "en": "Captions and formats",
+      "tr": "Altyazı ve formatlar"
+    },
+    "description": {
+      "en": "Prepare timed captions and platform aspect ratios.",
+      "tr": "Zamanlı altyazı ve platform boyutları hazırla."
+    },
+    "starter": {
+      "en": "Add checked captions and create vertical and horizontal video versions.",
+      "tr": "Kontrol edilmiş altyazı ekle, dikey ve yatay video sürümleri hazırla."
+    },
+    "instruction": "Add checked captions and create vertical and horizontal video versions. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "V4",
+    "category": "video",
+    "name": {
+      "en": "Bring the edit together",
+      "tr": "Kurguyu tamamla"
+    },
+    "description": {
+      "en": "Combine titles, images and audio.",
+      "tr": "Başlık, görsel ve sesi birleştir."
+    },
+    "starter": {
+      "en": "Add the requested titles, images and audio to this video.",
+      "tr": "Bu videoya istediğim başlık, görsel ve sesleri ekle."
+    },
+    "instruction": "Add the requested titles, images and audio to this video. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "V5",
+    "category": "video",
+    "name": {
+      "en": "Create a motion video",
+      "tr": "Hareketli video hazırla"
+    },
+    "description": {
+      "en": "Turn a brief into a promo or explainer.",
+      "tr": "Briefi tanıtım veya açıklayıcı videoya dönüştür."
+    },
+    "starter": {
+      "en": "Create a motion promo or explainer video from this brief.",
+      "tr": "Bu briefi hareketli tanıtım veya açıklayıcı videoya dönüştür."
+    },
+    "instruction": "Create a motion promo or explainer video from this brief. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "I1",
+    "category": "images",
+    "name": {
+      "en": "Create an image",
+      "tr": "Görsel üret"
+    },
+    "description": {
+      "en": "Explore a visual idea with a supported provider.",
+      "tr": "Desteklenen sağlayıcıyla görsel fikrini geliştir."
+    },
+    "starter": {
+      "en": "Generate an image following this visual brief.",
+      "tr": "Bu görsel briefe uygun bir görsel üret."
+    },
+    "instruction": "Generate an image following this visual brief. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "I2",
+    "category": "images",
+    "name": {
+      "en": "Edit an image",
+      "tr": "Görseli düzenle"
+    },
+    "description": {
+      "en": "Change details or work with the background.",
+      "tr": "Ayrıntıları veya arka planı düzenle."
+    },
+    "starter": {
+      "en": "Edit the supplied image while preserving the requested details.",
+      "tr": "Verdiğim görseli istediğim ayrıntıları koruyarak düzenle."
+    },
+    "instruction": "Edit the supplied image while preserving the requested details. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "I3",
+    "category": "images",
+    "name": {
+      "en": "Prepare image formats",
+      "tr": "Görsel formatlarını hazırla"
+    },
+    "description": {
+      "en": "Resize, optimize and convert a batch.",
+      "tr": "Birden çok görseli boyutlandır, optimize et ve dönüştür."
+    },
+    "starter": {
+      "en": "Resize and convert these images to my requested formats.",
+      "tr": "Bu görselleri istediğim boyut ve formatlara dönüştür."
+    },
+    "instruction": "Resize and convert these images to my requested formats. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "I4",
+    "category": "images",
+    "name": {
+      "en": "Create covers and cards",
+      "tr": "Kapak ve kart hazırla"
+    },
+    "description": {
+      "en": "Thumbnails, posters and social assets.",
+      "tr": "Thumbnail, afiş ve sosyal görseller."
+    },
+    "starter": {
+      "en": "Create a cover, poster or social card for this project.",
+      "tr": "Bu proje için kapak, afiş veya sosyal kart hazırla."
+    },
+    "instruction": "Create a cover, poster or social card for this project. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "I5",
+    "category": "images",
+    "name": {
+      "en": "Build branded assets",
+      "tr": "Markalı materyaller hazırla"
+    },
+    "description": {
+      "en": "Keep your brand consistent across formats.",
+      "tr": "Markanı farklı formatlarda tutarlı kullan."
+    },
+    "starter": {
+      "en": "Apply my supplied brand assets to these materials.",
+      "tr": "Verdiğim marka varlıklarını bu materyallere uygula."
+    },
+    "instruction": "Apply my supplied brand assets to these materials. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "A1",
+    "category": "audio",
+    "name": {
+      "en": "Transcribe a recording",
+      "tr": "Kaydı metne dönüştür"
+    },
+    "description": {
+      "en": "Readable transcripts and timed subtitles.",
+      "tr": "Okunabilir transkript ve zamanlı altyazı."
+    },
+    "starter": {
+      "en": "Transcribe this recording, marking uncertain passages.",
+      "tr": "Bu kaydı metne dönüştür, belirsiz bölümleri işaretle."
+    },
+    "instruction": "Transcribe this recording, marking uncertain passages. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "A2",
+    "category": "audio",
+    "name": {
+      "en": "Create a voiceover",
+      "tr": "Seslendirme hazırla"
+    },
+    "description": {
+      "en": "Turn approved text into narration.",
+      "tr": "Onayladığın metni seslendirmeye dönüştür."
+    },
+    "starter": {
+      "en": "Create a voiceover from this approved text.",
+      "tr": "Onayladığım bu metinden seslendirme hazırla."
+    },
+    "instruction": "Create a voiceover from this approved text. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "A3",
+    "category": "audio",
+    "name": {
+      "en": "Clean up the audio",
+      "tr": "Sesi temizle"
+    },
+    "description": {
+      "en": "Improve levels and supported noise problems.",
+      "tr": "Ses seviyesini ve desteklenen gürültü sorunlarını düzelt."
+    },
+    "starter": {
+      "en": "Clean and level this audio, preserving the original.",
+      "tr": "Orijinali koruyarak bu sesi temizle ve seviyesini düzenle."
+    },
+    "instruction": "Clean and level this audio, preserving the original. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "A4",
+    "category": "audio",
+    "name": {
+      "en": "Edit a podcast",
+      "tr": "Podcast düzenle"
+    },
+    "description": {
+      "en": "Cut segments and prepare a chapter package.",
+      "tr": "Bölümleri kurgula ve bölüm paketini hazırla."
+    },
+    "starter": {
+      "en": "Edit this podcast and prepare chapter notes.",
+      "tr": "Bu podcasti kurgula ve bölüm notlarını hazırla."
+    },
+    "instruction": "Edit this podcast and prepare chapter notes. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "A5",
+    "category": "audio",
+    "name": {
+      "en": "Make another language version",
+      "tr": "Başka dilde sesli sürüm hazırla"
+    },
+    "description": {
+      "en": "Translate and check a narrated version.",
+      "tr": "Sesli sürümü çevir ve kontrol et."
+    },
+    "starter": {
+      "en": "Translate this material and prepare a checked narrated version.",
+      "tr": "Bu materyali çevir, kontrol edilmiş sesli sürümünü hazırla."
+    },
+    "instruction": "Translate this material and prepare a checked narrated version. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "T1",
+    "category": "data",
+    "name": {
+      "en": "Clean a spreadsheet",
+      "tr": "Tabloyu temizle"
+    },
+    "description": {
+      "en": "Prepare consistent CSV and XLSX data.",
+      "tr": "CSV ve XLSX verilerini tutarlı hâle getir."
+    },
+    "starter": {
+      "en": "Clean this dataset and document transformed or missing values.",
+      "tr": "Bu veriyi temizle, dönüştürülen veya eksik değerleri belgele."
+    },
+    "instruction": "Clean this dataset and document transformed or missing values. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "T2",
+    "category": "data",
+    "name": {
+      "en": "Find the pattern",
+      "tr": "Verideki örüntüyü bul"
+    },
+    "description": {
+      "en": "Check calculations and explain trends.",
+      "tr": "Hesapları kontrol et, eğilimleri açıkla."
+    },
+    "starter": {
+      "en": "Analyze these data and verify every numerical conclusion.",
+      "tr": "Bu verileri analiz et, sayısal sonuçları doğrula."
+    },
+    "instruction": "Analyze these data and verify every numerical conclusion. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "T3",
+    "category": "data",
+    "name": {
+      "en": "Create charts and reports",
+      "tr": "Grafik ve rapor hazırla"
+    },
+    "description": {
+      "en": "Show the data clearly and accurately.",
+      "tr": "Veriyi açık ve doğru biçimde göster."
+    },
+    "starter": {
+      "en": "Create checked charts and a concise report from this dataset.",
+      "tr": "Bu veriden kontrol edilmiş grafikler ve kısa rapor hazırla."
+    },
+    "instruction": "Create checked charts and a concise report from this dataset. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "T4",
+    "category": "data",
+    "name": {
+      "en": "Build a scenario model",
+      "tr": "Senaryo modeli kur"
+    },
+    "description": {
+      "en": "Budgets, formulas and what-if calculations.",
+      "tr": "Bütçe, formül ve olasılık hesapları."
+    },
+    "starter": {
+      "en": "Build an editable budget or scenario model with checked formulas.",
+      "tr": "Kontrol edilmiş formüllerle düzenlenebilir bütçe veya senaryo modeli kur."
+    },
+    "instruction": "Build an editable budget or scenario model with checked formulas. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "T5",
+    "category": "data",
+    "name": {
+      "en": "Extract a structured table",
+      "tr": "Yapılandırılmış tablo çıkar"
+    },
+    "description": {
+      "en": "Bring source facts into usable rows.",
+      "tr": "Kaynak bilgilerini kullanılabilir satırlara dönüştür."
+    },
+    "starter": {
+      "en": "Extract a traceable structured table from these sources.",
+      "tr": "Bu kaynaklardan kökeni izlenebilir yapılandırılmış bir tablo çıkar."
+    },
+    "instruction": "Extract a traceable structured table from these sources. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "W1",
+    "category": "web",
+    "name": {
+      "en": "Build a website",
+      "tr": "Web sitesi hazırla"
+    },
+    "description": {
+      "en": "A landing page or portfolio you can preview.",
+      "tr": "Önizleyebileceğin landing veya portfolyo sayfası."
+    },
+    "starter": {
+      "en": "Build a website for this project with working local preview files.",
+      "tr": "Bu proje için yerel önizleme dosyaları çalışan bir web sitesi hazırla."
+    },
+    "instruction": "Build a website for this project with working local preview files. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "W2",
+    "category": "web",
+    "name": {
+      "en": "Build a useful tool",
+      "tr": "Kullanışlı bir araç geliştir"
+    },
+    "description": {
+      "en": "A small interactive app or coding task.",
+      "tr": "Küçük etkileşimli uygulama veya kodlama işi."
+    },
+    "starter": {
+      "en": "Build and test a bounded interactive tool for this goal.",
+      "tr": "Bu hedef için sınırları belli etkileşimli bir araç geliştir ve test et."
+    },
+    "instruction": "Build and test a bounded interactive tool for this goal. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "W3",
+    "category": "web",
+    "name": {
+      "en": "Work in the browser",
+      "tr": "Tarayıcıda çalış"
+    },
+    "description": {
+      "en": "Supported research and scoped form tasks.",
+      "tr": "Desteklenen araştırma ve kapsamı belirli form işleri."
+    },
+    "starter": {
+      "en": "Use supported browser tools to carry out this bounded task.",
+      "tr": "Desteklenen tarayıcı araçlarıyla kapsamı belirli bu işi yap."
+    },
+    "instruction": "Use supported browser tools to carry out this bounded task. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "W4",
+    "category": "web",
+    "name": {
+      "en": "Connect the next step",
+      "tr": "Sonraki adımı bağla"
+    },
+    "description": {
+      "en": "Work with supported mail, calendar and task apps.",
+      "tr": "Desteklenen e-posta, takvim ve görev uygulamalarıyla çalış."
+    },
+    "starter": {
+      "en": "Prepare the requested supported app action for my review.",
+      "tr": "İstediğim desteklenen uygulama işlemini incelemem için hazırla."
+    },
+    "instruction": "Prepare the requested supported app action for my review. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  },
+  {
+    "id": "W5",
+    "category": "web",
+    "name": {
+      "en": "Plan recurring work",
+      "tr": "Tekrarlayan işi planla"
+    },
+    "description": {
+      "en": "Prepare a supported schedule and workflow.",
+      "tr": "Desteklenen zamanlama ve iş akışı hazırla."
+    },
+    "starter": {
+      "en": "Prepare this recurring workflow and explain scheduling requirements.",
+      "tr": "Bu tekrarlayan iş akışını hazırla ve zamanlama gereksinimlerini açıkla."
+    },
+    "instruction": "Prepare this recurring workflow and explain scheduling requirements. Produce the requested real output files when supported tools are available. Clearly report missing tools, access, uncertain facts or unfulfilled requirements. Do not invent a successful output, install tools, contact others, publish, purchase, or schedule a job without the required explicit authorization."
+  }
+]

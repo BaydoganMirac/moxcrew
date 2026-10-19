@@ -837,6 +837,30 @@ pub fn validate_event(v: &Value) -> Result<()> {
     let p = &v["payload"];
     let kind = string(&v["type"])?;
     object(p)?;
+    if v["schemaVersion"] == 8 {
+        match kind {
+            "owner.command.requested" => {
+                exact(p, &["commandId", "action", "payload"])?;
+                opaque(&p["commandId"])?;
+                one_of(
+                    &p["action"],
+                    &[
+                        "project_work_enqueue",
+                        "project_result_export",
+                        "work_retry",
+                    ],
+                )?;
+                bounded_object(&p["payload"])?;
+            }
+            "owner.command.receipted" => {
+                exact(p, &["commandId", "result"])?;
+                opaque(&p["commandId"])?;
+                bounded_object(&p["result"])?;
+            }
+            _ => return Err(fail("unsupported V8 local event")),
+        }
+        return Ok(());
+    }
     if v["schemaVersion"] == 6 {
         return crate::agent_memory::validate_event(v);
     }

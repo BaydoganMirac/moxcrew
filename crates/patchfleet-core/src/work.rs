@@ -195,6 +195,24 @@ impl Host {
         request: Value,
         project: Option<&str>,
     ) -> Result<Value> {
+        self.apply_queue_intent_checked(request, project, None)
+    }
+
+    pub(crate) fn apply_queue_intent_project(
+        &self,
+        request: Value,
+        project: &str,
+        expected_revision: &Value,
+    ) -> Result<Value> {
+        self.apply_queue_intent_checked(request, Some(project), Some(expected_revision))
+    }
+
+    fn apply_queue_intent_checked(
+        &self,
+        request: Value,
+        project: Option<&str>,
+        expected_project_revision: Option<&Value>,
+    ) -> Result<Value> {
         if self.closing.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(Error("HOST_CLOSING".into()));
         }
@@ -218,7 +236,16 @@ impl Host {
                 if kind == "enqueue_work" {
                     let item = &request["payload"]["workItem"];
                     item_id = item["workItemId"].clone();
+                    let project_failure = if let (Some(id),Some(expected)) = (project,expected_project_revision) {
+                        let memory = crate::project_memory::project(events)?;
+                        match array(&memory,"projects").iter().find(|p|p["projectId"]==id) {
+                            None => Some("PROJECT_NOT_FOUND"),
+                            Some(p) if p["revision"] != *expected => Some("STALE_PROJECT_REVISION"),
+                            _ => None,
+                        }
+                    } else { None };
                     if request["expiresAt"].as_str().unwrap_or("") <= now().as_str() { outcome="expired"; reason="COMMAND_EXPIRED"; }
+                    else if let Some(failure)=project_failure {return Err(Error(failure.into()));}
                     else if events.iter().any(|e|e["type"]=="work.enqueued" && e["payload"]["workItem"]["workItemId"]==item_id) { outcome="rejected"; reason="WORK_ITEM_EXISTS"; }
                     else {
                         if let Some(project) = project {
@@ -302,6 +329,17 @@ impl Host {
         let mut target = staged["target"].clone();
         let mut add = Vec::new();
         let (outcome, reason) = if kind == "start_work" {
+            let managed_directory = self
+                .store
+                .read_events()
+                .and_then(|events| {
+                    crate::creation::managed_work_directory(
+                        self.creation_data_dir(),
+                        &events,
+                        &target,
+                    )
+                })
+                .map_err(|_| "WORKSPACE_NOT_ALLOWED".to_owned());
             let memory = self.prepare_agent_memory(&target).await;
             let _ticket_cleanup = memory
                 .as_ref()
@@ -317,9 +355,24 @@ impl Host {
                         config: ticket.config,
                         active: ticket.active,
                     });
-                    self.controller
-                        .prepare_with_memory(&target, &target, configuration)
-                        .await
+                    match &managed_directory {
+                        Ok(Some(directory)) => {
+                            self.controller
+                                .prepare_managed_with_memory(
+                                    &target,
+                                    &target,
+                                    directory,
+                                    configuration,
+                                )
+                                .await
+                        }
+                        Ok(None) => {
+                            self.controller
+                                .prepare_with_memory(&target, &target, configuration)
+                                .await
+                        }
+                        Err(code) => Err(code.clone()),
+                    }
                 }
                 Err(error) => Err(error.0),
             };
@@ -330,11 +383,20 @@ impl Host {
                 Ok(session) => {
                     self.store.append(vec![event("run.prepared",json!({"intentId":request["intentId"],"workItemId":target["workItemId"],"providerId":"codex","providerSessionId":session,"expectedItemRevision":request["payload"]["expectedItemRevision"],"ownerEpoch":self.epoch})),
                         event("turn.requested",json!({"intentId":request["intentId"],"providerSessionId":session,"ownerEpoch":self.epoch}))])?;
-                    match self
-                        .controller
-                        .start_prepared(&target, &target, &session)
-                        .await
-                    {
+                    let started = match &managed_directory {
+                        Ok(Some(directory)) => {
+                            self.controller
+                                .start_prepared_managed(&target, &target, directory, &session)
+                                .await
+                        }
+                        Ok(None) => {
+                            self.controller
+                                .start_prepared(&target, &target, &session)
+                                .await
+                        }
+                        Err(code) => Err(code.clone()),
+                    };
+                    match started {
                         Ok((session, turn)) => {
                             add.push(event("run.started",json!({"intentId":request["intentId"],"expectedItemRevision":request["payload"]["expectedItemRevision"],"ownerEpoch":self.epoch,"run":{
                                 "schemaVersion":1,"runId":target["runId"],"workItemId":target["workItemId"],"providerId":"codex","ownerEpoch":self.epoch,"providerSessionId":session,"providerTurnId":turn,"status":"running","startedAt":now(),"terminalAt":null,"revision":1}})));

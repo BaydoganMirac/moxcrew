@@ -573,6 +573,11 @@ impl Store {
         self.ensure_unchanged(&state)?;
         Ok(state.events.clone())
     }
+    pub(crate) fn creation_jobs(&self, data_dir: &Path) -> Result<Value> {
+        let state = self.guard()?;
+        self.ensure_unchanged(&state)?;
+        crate::creation::project_jobs(data_dir, &state.events, &state.projected)
+    }
     pub fn projections(&self) -> Result<Value> {
         let state = self.guard()?;
         self.ensure_unchanged(&state)?;

@@ -3,6 +3,8 @@ use super::*;
 mod chat;
 #[path = "connect.rs"]
 mod connect;
+#[path = "crew.rs"]
+mod crew;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CreateExportRequest {
@@ -56,12 +58,14 @@ pub(super) struct CreateState {
     selected_work: HashMap<String, String>,
     result_path: String,
     chat: ChatState,
+    crew: crew::CrewState,
     pending: Option<Submission>,
     export_request: Option<CreateExportRequest>,
 }
 
 impl CreateState {
     pub(super) fn sync(&mut self, snapshot: &Value) {
+        self.sync_crew(snapshot);
         let Some(pending) = &self.pending else { return };
         let receipt = &snapshot["projectWorkReceipt"];
         if text(receipt, "commandId") != pending.command_id
@@ -333,7 +337,13 @@ impl Console {
         commands: &mut Vec<Command>,
     ) {
         self.chat_studio(ui, snapshot, commands);
+        self.crew_roster_dialog(ui, snapshot);
         self.create_catalog_dialog(ui, snapshot);
+        self.connection_dialog(ui, snapshot, commands);
+    }
+
+    pub(super) fn crew_hub(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        self.crew_hub_view(ui, snapshot, commands);
         self.connection_dialog(ui, snapshot, commands);
     }
 
@@ -361,10 +371,12 @@ impl Console {
                     });
                 if control(ui, "Close", true).clicked() {
                     self.create.catalog_open = false;
+                    self.create.crew.catalog_target = None;
                 }
             });
         if modal.should_close() {
             self.create.catalog_open = false;
+            self.create.crew.catalog_target = None;
         }
     }
 
@@ -442,7 +454,11 @@ impl Console {
                                 )
                             });
                             if response.clicked() {
-                                self.create.select_ability(text(ability, "id"));
+                                if self.create.crew.catalog_target.is_some() {
+                                    self.create.add_crew_member(ability, language);
+                                } else {
+                                    self.create.select_ability(text(ability, "id"));
+                                }
                                 self.create.catalog_open = false;
                             }
                             raw_hint(ui, ability_text(ability, "description", language));
@@ -454,14 +470,31 @@ impl Console {
     }
 
     fn create_jobs(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        self.create_jobs_scoped(ui, snapshot, commands, None);
+    }
+
+    fn create_jobs_scoped(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+        scope: Option<&[String]>,
+    ) {
         let project_jobs: Vec<_> = items(&snapshot["work"])
             .iter()
             .filter(|w| job_belongs(snapshot, &self.create.project, text(w, "workItemId")))
+            .filter(|work| {
+                scope.is_none_or(|ids| ids.iter().any(|id| id == text(work, "workItemId")))
+            })
             .collect();
         if project_jobs.is_empty() {
             hint(
                 ui,
-                "No creations in this project yet. Open New creation to begin.",
+                if scope.is_some() {
+                    "No agent files are available for this mission yet."
+                } else {
+                    "No creations in this project yet. Open New creation to begin."
+                },
             );
             return;
         }
@@ -497,7 +530,9 @@ impl Console {
                 }
             });
         }
-        let Some(work) = self.create.selected_work(snapshot) else {
+        let Some(work) = self.create.selected_work(snapshot).filter(|work| {
+            scope.is_none_or(|ids| ids.iter().any(|id| id == text(work, "workItemId")))
+        }) else {
             hint(ui, "Choose a task to inspect its outputs.");
             return;
         };
@@ -629,7 +664,7 @@ impl Console {
 mod tests {
     use super::*;
 
-    fn snapshot() -> Value {
+    pub(super) fn snapshot() -> Value {
         json!({"projectMemory":{"projects":[{"projectId":"project:one","revision":3,"name":"Owner project"},
             {"projectId":"project:two","revision":4,"name":"Second project"}]},
             "abilities":[{"id":"P1","category":"presentations","name":{"en":"Presentation","tr":"Sunum"},
@@ -645,7 +680,7 @@ mod tests {
         data["projectChat"]["items"] = json!([{"workItemId":"work:one","abilityId":"P1","goal":"Owner request retained","status":status,"revision":2,"replyToWorkItemId":null}]);
     }
 
-    fn state() -> CreateState {
+    pub(super) fn state() -> CreateState {
         let mut state = CreateState {
             project: "project:one".into(),
             ability: "P1".into(),
@@ -655,10 +690,11 @@ mod tests {
             title: "Owner title".into(),
             goal: "Owner goal".into(),
         };
+        state.crew.single = true;
         state
     }
 
-    fn render(
+    pub(super) fn render(
         ctx: &egui::Context,
         console: &mut Console,
         snapshot: &Value,
@@ -695,7 +731,7 @@ mod tests {
         (commands, copy)
     }
 
-    fn click(
+    pub(super) fn click(
         ctx: &egui::Context,
         console: &mut Console,
         data: &Value,
@@ -714,7 +750,7 @@ mod tests {
         )
     }
 
-    fn click_at_size(
+    pub(super) fn click_at_size(
         ctx: &egui::Context,
         console: &mut Console,
         data: &Value,
@@ -1173,6 +1209,7 @@ mod tests {
             let mut console = Console::launch();
             console.create.project = "project:one".into();
             console.create.draft().goal = "Owner launch idea".into();
+            console.create.crew.single = true;
             let (commands, copy) = render(
                 &ctx,
                 &mut console,
@@ -1315,7 +1352,6 @@ mod tests {
     #[test]
     fn secondary_navigation_is_hidden_until_more_and_all_routes_remain_accessible() {
         for tab in [
-            Tab::Teams,
             Tab::Memory,
             Tab::Decisions,
             Tab::Agents,
@@ -1366,6 +1402,27 @@ mod tests {
             });
             assert!(rect.is_positive());
         }
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut console = Console {
+            tab: Tab::Create,
+            create: state(),
+            ..Default::default()
+        };
+        let data = snapshot();
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "navigation",
+            Tab::Teams.name()
+        )
+        .is_empty());
+        assert!(
+            console.tab == Tab::Teams,
+            "Project crews must be reachable without opening More"
+        );
     }
 
     #[test]

@@ -57,6 +57,30 @@ deleted. See the [verified production window](screenshots/native-production-0.5-
 
 ## Local operation
 
+### First task with Quick start
+
+The empty Projects screen offers **Quick start / Hızlı Başlangıç**, with Mox
+showing the next step. You can leave the guide and reopen it from Projects;
+existing populated installations keep their normal view.
+
+1. Create a project, or explicitly choose an existing one.
+2. Select an existing Git repository with the system folder picker, confirm
+   registration, then choose **Link folder**. Selecting or registering a folder
+   alone does not link it. If the project has several folders, choose the one
+   to use for this walkthrough.
+3. Use **Refresh providers** or **Open providers** to check Codex compatibility.
+   This check does not verify provider sign-in. Project-bound memory requires
+   Codex 0.155.1 or later; provider accounts remain independently managed.
+4. Choose **Write first task**, enter its name and bounded instruction, and
+   select **Add to queue**. Review the queued task, then deliberately choose
+   **Start Codex**. Queueing does not start an agent. The guide confirms a first
+   start only after its applied receipt and corresponding project-bound run.
+
+An existing task draft keeps its text and folder when opened through the guide.
+Saved project/folder/start progress is reconstructed after restart; unsent task
+text is session-only. On a failed action, follow the feedback and retry
+deliberately. Moxcrew account sign-in and Cloud pairing are optional throughout.
+
 ### Project decisions
 
 Create a project and add messages in Memory (linked task/team sources also

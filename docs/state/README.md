@@ -24,7 +24,7 @@
 | Product studio interface | Complete; independently reviewed and macOS package verified | 2026-10-15 | [product-studio-interface.md](product-studio-interface.md) |
 | Moxcrew native interface | Complete; independently reviewed and locally verified | 2026-10-19 | [dobbly-brand-interface.md](dobbly-brand-interface.md) |
 | Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
-| First-task quick start | Proposed; bounded implementation approval pending | 2026-10-19 | [first-task-quick-start.md](first-task-quick-start.md) |
+| First-task quick start | Implemented; visual and packaging verification in progress | 2026-10-19 | [first-task-quick-start.md](first-task-quick-start.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

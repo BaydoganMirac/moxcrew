@@ -4,7 +4,7 @@ use crate::i18n::{self, Language};
 use crate::studio;
 use eframe::egui::{self, Color32, RichText, Ui};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 macro_rules! localized_format {
     ($ui:expr,$key:literal,$($value:expr),+ $(,)?) => {
@@ -82,6 +82,12 @@ struct WorkDraft {
     path_problem: Option<String>,
 }
 impl WorkDraft {
+    fn is_empty(&self) -> bool {
+        self.title.is_empty()
+            && self.instruction.is_empty()
+            && self.path.is_empty()
+            && self.workspace.is_empty()
+    }
     fn payload(&self, snapshot: &Value) -> Result<Value, &'static str> {
         required(&self.title, 160, "Add a task name (up to 160 characters).")?;
         required(
@@ -107,6 +113,95 @@ impl WorkDraft {
         Ok(
             json!({"title":self.title.trim(),"instruction":self.instruction.trim(),"workspaceId":selected,"workingDirectory":manual}),
         )
+    }
+}
+
+#[derive(Default)]
+struct QuickStart {
+    initialized: bool,
+    open: bool,
+    project: String,
+    workspace: String,
+}
+impl QuickStart {
+    fn sync(&mut self, snapshot: &Value) {
+        let projects = array(&snapshot["projectMemory"]["projects"]);
+        if !self.initialized {
+            self.initialized = true;
+            self.open = projects.is_empty();
+        }
+        if self.project.is_empty() && projects.len() == 1 {
+            self.project = text(&projects[0], "projectId").to_owned();
+        }
+        if self.workspace.is_empty() {
+            if let Some(project) = self.project(snapshot) {
+                let linked: Vec<_> = items(&snapshot["workspaces"])
+                    .iter()
+                    .filter(|w| array(&project["workspaceIds"]).contains(&w["workspaceId"]))
+                    .collect();
+                if linked.len() == 1 {
+                    self.workspace = text(linked[0], "workspaceId").to_owned();
+                }
+            }
+        }
+    }
+    fn project<'a>(&self, snapshot: &'a Value) -> Option<&'a Value> {
+        array(&snapshot["projectMemory"]["projects"])
+            .iter()
+            .find(|p| !self.project.is_empty() && text(p, "projectId") == self.project)
+    }
+    fn workspace<'a>(&self, snapshot: &'a Value) -> Option<&'a Value> {
+        let project = self.project(snapshot)?;
+        items(&snapshot["workspaces"]).iter().find(|w| {
+            !self.workspace.is_empty()
+                && text(w, "workspaceId") == self.workspace
+                && array(&project["workspaceIds"]).contains(&w["workspaceId"])
+        })
+    }
+    fn started(&self, snapshot: &Value) -> bool {
+        let Some(workspace) = self.workspace(snapshot) else {
+            return false;
+        };
+        let work_ids: HashSet<_> = items(&snapshot["work"])
+            .iter()
+            .filter(|work| work["workingDirectory"] == workspace["workingDirectory"])
+            .map(|work| text(work, "workItemId"))
+            .collect();
+        let bound: HashSet<_> = array(&snapshot["agentMemory"]["contexts"])
+            .iter()
+            .filter(|context| text(context, "projectId") == self.project)
+            .map(|context| (text(context, "runId"), text(context, "workItemId")))
+            .collect();
+        let started: HashSet<_> = array(&snapshot["work"]["runs"])
+            .iter()
+            .filter(|run| !text(run, "startedAt").is_empty())
+            .map(|run| (text(run, "runId"), text(run, "workItemId")))
+            .filter(|key| bound.contains(key))
+            .collect();
+        array(&snapshot["work"]["receipts"]).iter().any(|receipt| {
+            receipt["commandType"] == "start_work"
+                && receipt["outcome"] == "applied"
+                && receipt["reasonCode"] == "WORK_STARTED"
+                && !text(receipt, "intentId").is_empty()
+                && work_ids.contains(text(receipt, "workItemId"))
+                && started.contains(&(
+                    format!("run:{}", text(receipt, "intentId")).as_str(),
+                    text(receipt, "workItemId"),
+                ))
+        })
+    }
+    fn step(&self, snapshot: &Value) -> usize {
+        if self.project(snapshot).is_none() {
+            0
+        } else if self.workspace(snapshot).is_none() {
+            1
+        } else if self.started(snapshot) {
+            4
+        } else if !quick_codex_ready(snapshot) {
+            2
+        } else {
+            3
+        }
     }
 }
 
@@ -624,6 +719,7 @@ impl ExtractionPanel {
 #[derive(Default)]
 pub struct Console {
     tab: Tab,
+    quick_start: QuickStart,
     navigation_tab: Option<Tab>,
     new_project_name: String,
     link_choices: HashMap<String, String>,
@@ -670,6 +766,12 @@ pub enum NoticeAction {
 }
 
 impl Console {
+    #[cfg(feature = "ui-smoke")]
+    pub fn quick_start_smoke(&mut self) {
+        self.quick_start.initialized = true;
+        self.quick_start.open = true;
+    }
+
     #[cfg(feature = "ui-smoke")]
     pub fn studio_smoke(&mut self, scene: &str, snapshot: &Value) {
         self.tab = match scene {
@@ -807,6 +909,7 @@ impl Console {
         notice: Option<&Notice>,
         can_retry: bool,
     ) -> Vec<Command> {
+        self.quick_start.sync(snapshot);
         self.open_login_browser(ui.ctx(), snapshot);
         if let Some(project) = &self.registration_project {
             if let Some(workspace) = items(&snapshot["workspaces"])
@@ -1019,7 +1122,7 @@ impl Console {
                 } else {
                     18.0
                 });
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(studio::title(
                         t(ui, self.tab.name()),
                         if ui.ctx().viewport_rect().height() < 700.0 {
@@ -1030,6 +1133,9 @@ impl Console {
                     ));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if self.tab == Tab::Projects {
+                            if control(ui, "Quick start", !busy).clicked() {
+                                self.quick_start.open = true;
+                            }
                             if !array(&snapshot["projectMemory"]["projects"]).is_empty()
                                 && control(ui, "New project", !busy).clicked()
                             {
@@ -1094,6 +1200,15 @@ impl Console {
                         } else {
                             1180.0
                         }));
+                        if self.quick_start.open && matches!(self.tab, Tab::Work | Tab::Providers) {
+                            ui.horizontal_wrapped(|ui| {
+                                hint(ui, "Quick start is open. Return for your next step.");
+                                if control(ui, "Back to quick start", !busy).clicked() {
+                                    self.tab = Tab::Projects;
+                                }
+                            });
+                            ui.add_space(12.0);
+                        }
                         ui.add_enabled_ui(!busy, |ui| match self.tab {
                             Tab::Projects => self.projects(ui, snapshot, &mut commands),
                             Tab::Memory => self.project_memory(ui, snapshot, &mut commands),
@@ -1224,7 +1339,206 @@ impl Console {
         });
     }
 
+    fn quick_start_panel(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        ui.horizontal_wrapped(|ui| {
+            studio::mascot(ui, 56.0);
+            let title_width = (ui.available_width() - 130.0).max(140.0);
+            ui.vertical(|ui| {
+                ui.set_max_width(title_width);
+                ui.label(studio::title(t(ui, "Quick start"), 21.0));
+                hint(ui, "Your first local task, one step at a time.");
+            });
+            if control(ui, "Leave guide", true).clicked() {
+                self.quick_start.open = false;
+            }
+        });
+        ui.add_space(10.0);
+        let projects = array(&snapshot["projectMemory"]["projects"]);
+        if !projects.is_empty() {
+            let previous = self.quick_start.project.clone();
+            choose(
+                ui,
+                "quick-project",
+                "Project",
+                &mut self.quick_start.project,
+                projects,
+                ("projectId", "name"),
+                true,
+            );
+            if previous != self.quick_start.project {
+                self.quick_start.workspace.clear();
+            }
+            self.quick_start.sync(snapshot);
+        }
+        let step = self.quick_start.step(snapshot);
+        ui.horizontal_wrapped(|ui| {
+            for (index, label) in ["Project", "Folder", "Codex", "First task"]
+                .into_iter()
+                .enumerate()
+            {
+                ui.label(
+                    RichText::new(format!(
+                        "{} {}",
+                        if index < step {
+                            "✓".into()
+                        } else {
+                            (index + 1).to_string()
+                        },
+                        t(ui, label)
+                    ))
+                    .size(11.0)
+                    .color(if index == step {
+                        colors(ui).primary
+                    } else {
+                        colors(ui).muted
+                    }),
+                );
+                ui.add_space(8.0);
+            }
+        });
+        ui.add_space(12.0);
+        match step {
+            0 => {
+                if projects.is_empty() {
+                    self.create_project_form(ui, commands);
+                } else {
+                    hint(ui, "Choose the project you want to set up.");
+                }
+            }
+            1 => {
+                let project = self.quick_start.project(snapshot).unwrap();
+                let linked: Vec<_> = items(&snapshot["workspaces"])
+                    .iter()
+                    .filter(|w| array(&project["workspaceIds"]).contains(&w["workspaceId"]))
+                    .collect();
+                if linked.is_empty() {
+                    self.project_folders(ui, project, snapshot, commands);
+                } else {
+                    card(ui, |ui| {
+                        hint(ui, "Choose a linked folder for this walkthrough.");
+                        choose_refs(
+                            ui,
+                            "quick-folder",
+                            "Folder",
+                            &mut self.quick_start.workspace,
+                            &linked,
+                            ("workspaceId", "displayName"),
+                            true,
+                        );
+                    });
+                }
+            }
+            2 => card(ui, |ui| {
+                section_title(
+                    ui,
+                    "Check Codex",
+                    "Refresh providers to check the installed CLIs and proven controls.",
+                );
+                hint(ui, "Codex needs a supported installation for starting tasks. Open Providers for the current diagnosis.");
+                ui.horizontal_wrapped(|ui| {
+                    if control(ui, "Open providers", true).clicked() {
+                        self.tab = Tab::Providers;
+                    }
+                    action(ui, commands, "Refresh providers", "observe", true, || {
+                        json!({})
+                    });
+                });
+                hint(ui, "Compatibility does not confirm provider sign-in. Project memory needs Codex 0.155.1 or later.");
+            }),
+            3 => {
+                let workspace = self.quick_start.workspace(snapshot).unwrap();
+                let work = items(&snapshot["work"]);
+                let task =
+                    work.iter().enumerate().rev().find(|(_, item)| {
+                        item["workingDirectory"] == workspace["workingDirectory"]
+                    });
+                card(ui, |ui| {
+                    section_title(
+                        ui,
+                        "Start your first task",
+                        "Write a clear goal, review the queued task, then choose Start Codex.",
+                    );
+                    hint(ui, "Task name: the outcome. Instruction: the change, limits and how to check it.");
+                    if let Some((index, task)) = task {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.strong(text(task, "title"));
+                            status(ui, text(task, "status"));
+                        });
+                        if array(&snapshot["work"]["receipts"])
+                            .iter()
+                            .rev()
+                            .find(|r| {
+                                r["commandType"] == "start_work"
+                                    && r["workItemId"] == task["workItemId"]
+                            })
+                            .is_some_and(|r| r["outcome"] != "applied")
+                        {
+                            hint(ui, "Start was not confirmed. Open the task, review its feedback and fix the connection before trying again.");
+                        }
+                        if control(ui, "Review task in Tasks", true).clicked() {
+                            self.work_page = index / 25;
+                            self.tab = Tab::Work;
+                        }
+                    }
+                    if control(
+                        ui,
+                        if self.work.is_empty() {
+                            "Write first task"
+                        } else {
+                            "Open task draft"
+                        },
+                        true,
+                    )
+                    .clicked()
+                    {
+                        if self.work.is_empty() {
+                            self.work.workspace = self.quick_start.workspace.clone();
+                        }
+                        self.tab = Tab::Work;
+                        self.form_error = None;
+                    }
+                    if !self.work.is_empty()
+                        && (self.work.workspace != self.quick_start.workspace
+                            || !self.work.path.is_empty())
+                    {
+                        hint(ui, "Your current draft uses another folder. Opening it preserves its text and folder.");
+                    }
+                    ui.collapsing(t(ui, "Task writing example"), |ui| {
+                        hint(ui, "For example: improve the welcome text; keep the layout and verify both languages.");
+                    });
+                    hint(ui, "Adding to the queue does not start a task. Only an applied start completes this guide.");
+                });
+            }
+            _ => card(ui, |ui| {
+                section_title(
+                    ui,
+                    "First task started",
+                    "The local host confirmed the start. Follow the task for its result.",
+                );
+                if control(ui, "Open Tasks", true).clicked() {
+                    self.tab = Tab::Work;
+                }
+                if control(ui, "Finish guide", true).clicked() {
+                    self.quick_start.open = false;
+                }
+            }),
+        }
+        ui.add_space(12.0);
+        hint(
+            ui,
+            "No Moxcrew account is needed. Setup does not start an agent.",
+        );
+        hint(
+            ui,
+            "Saved steps survive restart. Unsent task text stays in this session only.",
+        );
+    }
+
     fn projects(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        if self.quick_start.open {
+            self.quick_start_panel(ui, snapshot, commands);
+            return;
+        }
         let projects = array(&snapshot["projectMemory"]["projects"]);
         let workspaces = items(&snapshot["workspaces"]);
         if projects.is_empty() {
@@ -1298,87 +1612,108 @@ impl Console {
             for row in projects.chunks(columns) {
                 ui.columns(columns, |columns| {
                     for (project, ui) in row.iter().zip(columns.iter_mut()) {
-                ui.push_id(text(project,"projectId"), |ui| card(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let (rect, _) = ui.allocate_exact_size(egui::vec2(34.0, 34.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 8, colors(ui).info_surface);
-                        draw_icon(ui.painter(), rect.shrink(8.0), Tab::Projects, colors(ui).primary);
-                        let name_width = (ui.available_width() - 116.0).max(80.0);
-                        ui.allocate_ui_with_layout(egui::vec2(name_width, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                            ui.set_max_width(name_width);
-                            ui.add(egui::Label::new(studio::title(text(project,"name"), 20.0)).truncate()).on_hover_text(text(project,"name"));
-                            hint(ui, &localized_format!(ui,"{0} folders · {1} sources",array(&project["workspaceIds"]).len(),project["sourceCount"].as_u64().unwrap_or(0)));
+                        ui.push_id(text(project, "projectId"), |ui| {
+                            card(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(34.0, 34.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().rect_filled(rect, 8, colors(ui).info_surface);
+                                    draw_icon(
+                                        ui.painter(),
+                                        rect.shrink(8.0),
+                                        Tab::Projects,
+                                        colors(ui).primary,
+                                    );
+                                    let name_width = (ui.available_width() - 116.0).max(80.0);
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(name_width, 0.0),
+                                        egui::Layout::top_down(egui::Align::LEFT),
+                                        |ui| {
+                                            ui.set_max_width(name_width);
+                                            ui.add(
+                                                egui::Label::new(studio::title(
+                                                    text(project, "name"),
+                                                    20.0,
+                                                ))
+                                                .truncate(),
+                                            )
+                                            .on_hover_text(text(project, "name"));
+                                            hint(
+                                                ui,
+                                                &localized_format!(
+                                                    ui,
+                                                    "{0} folders · {1} sources",
+                                                    array(&project["workspaceIds"]).len(),
+                                                    project["sourceCount"].as_u64().unwrap_or(0)
+                                                ),
+                                            );
+                                        },
+                                    );
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if control(ui, "Open memory", true).clicked() {
+                                                self.memory.select(text(project, "projectId"));
+                                                self.tab = Tab::Memory;
+                                            }
+                                        },
+                                    );
+                                });
+                                ui.add_space(14.0);
+                                self.project_folders(ui, project, snapshot, commands);
+                                ui.add_space(8.0);
+                                ui.collapsing(t(ui, "Project details"), |ui| {
+                                    ui.monospace(text(project, "projectId"));
+                                    hint(
+                                        ui,
+                                        &localized_format!(
+                                            ui,
+                                            "Revision {0} · created {1}",
+                                            revision(project),
+                                            format_time(ui, text(project, "createdAt"))
+                                        ),
+                                    );
+                                });
+                                ui.add_space(12.0);
+                                ui.separator();
+                                ui.add_space(10.0);
+                                ui.horizontal_wrapped(|ui| {
+                                    if control(ui, "Open decisions", true).clicked() {
+                                        self.decisions.select(text(project, "projectId"));
+                                        self.tab = Tab::Decisions;
+                                    }
+                                    let workspace =
+                                        array(&project["workspaceIds"]).iter().find_map(|id| {
+                                            workspaces.iter().find(|w| w["workspaceId"] == *id)
+                                        });
+                                    let new_task = self.work.title.is_empty()
+                                        && self.work.instruction.is_empty();
+                                    if control(
+                                        ui,
+                                        if new_task {
+                                            "New task"
+                                        } else {
+                                            "Open task draft"
+                                        },
+                                        workspace.is_some(),
+                                    )
+                                    .clicked()
+                                    {
+                                        if new_task {
+                                            self.work.workspace =
+                                                text(workspace.unwrap(), "workspaceId").to_owned();
+                                            self.work.path.clear();
+                                            self.work.path_problem = None;
+                                        }
+                                        self.tab = Tab::Work;
+                                        self.form_error = None;
+                                    }
+                                });
+                            })
                         });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if control(ui,"Open memory",true).clicked() { self.memory.select(text(project,"projectId")); self.tab = Tab::Memory; }
-                        });
-                    });
-                    ui.add_space(14.0);
-                    if array(&project["workspaceIds"]).is_empty() {
-                        egui::Frame::new().fill(colors(ui).raised).corner_radius(8).inner_margin(12).show(ui, |ui| {
-                            ui.set_min_width(ui.available_width());
-                            ui.label(RichText::new(t(ui,"Connect a local folder")).strong().color(colors(ui).text));
-                            hint(ui,"Choose the Git repository where your agents will work.");
-                            ui.add_space(8.0);
-                            if submit(ui,"Choose folder","folder_picker") {
-                                self.registration_project = Some(text(project,"projectId").to_owned());
-                                self.folder_request = Some(folder::Target::Registration);
-                                self.form_error = None;
-                            }
-                        });
-                    } else {
-                        for id in array(&project["workspaceIds"]) {
-                            let workspace = workspaces.iter().find(|w|w["workspaceId"] == *id);
-                            ui.horizontal_wrapped(|ui| {
-                                ui.label(workspace.map(|w|std::borrow::Cow::Borrowed(text(w,"displayName"))).unwrap_or_else(||t(ui,"Removed folder")));
-                                action(ui,commands,"Unlink","project_unlink_workspace",revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":id,"expectedProjectRevision":project["revision"]}));
-                            });
-                            if let Some(workspace) = workspace { path_label(ui,text(workspace,"workingDirectory")); }
-                            ui.add_space(5.0);
-                        }
-                        if control(ui,"Add another folder",true).clicked() {
-                            self.registration_project = Some(text(project,"projectId").to_owned());
-                            self.folder_request = Some(folder::Target::Registration);
-                        }
-                    }
-                    let available: Vec<_> = workspaces.iter().filter(|w|!projects.iter().any(|p|array(&p["workspaceIds"]).contains(&w["workspaceId"]))).collect();
-                    if !available.is_empty() {
                         ui.add_space(12.0);
-                        let selected = self.link_choices.entry(text(project,"projectId").to_owned()).or_default();
-                        if selected.is_empty() && available.len() == 1 { *selected = text(available[0],"workspaceId").to_owned(); }
-                        choose_refs(ui,"link-worktree","Link an existing folder",selected,&available,("workspaceId","displayName"),true);
-                        let workspace = available.iter().find(|w|text(w,"workspaceId") == selected);
-                        if let Some(workspace) = workspace { path_label(ui,text(workspace,"workingDirectory")); }
-                        action(ui,commands,"Link folder","project_link_workspace",workspace.is_some()&&revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":selected,"expectedProjectRevision":project["revision"]}));
-                    }
-                    ui.add_space(8.0);
-                    ui.collapsing(t(ui,"Project details"),|ui| {
-                        ui.monospace(text(project,"projectId"));
-                        hint(ui,&localized_format!(ui,"Revision {0} · created {1}",revision(project),format_time(ui,text(project,"createdAt"))));
-                    });
-                    ui.add_space(12.0);
-                    ui.separator();
-                    ui.add_space(10.0);
-                    ui.horizontal_wrapped(|ui| {
-                        if control(ui,"Open decisions",true).clicked() {
-                            self.decisions.select(text(project,"projectId"));
-                            self.tab = Tab::Decisions;
-                        }
-                        let workspace = array(&project["workspaceIds"]).iter()
-                            .find_map(|id| workspaces.iter().find(|w| w["workspaceId"] == *id));
-                        let new_task = self.work.title.is_empty() && self.work.instruction.is_empty();
-                        if control(ui,if new_task { "New task" } else { "Open task draft" },workspace.is_some()).clicked() {
-                            if new_task {
-                                self.work.workspace = text(workspace.unwrap(),"workspaceId").to_owned();
-                                self.work.path.clear();
-                                self.work.path_problem = None;
-                            }
-                            self.tab = Tab::Work;
-                            self.form_error = None;
-                        }
-                    });
-                }));
-                ui.add_space(12.0);
                     }
                 });
             }
@@ -1411,6 +1746,95 @@ impl Console {
                     path_label(ui,text(workspace,"workingDirectory"));
                 });
             }
+        }
+    }
+
+    fn project_folders(
+        &mut self,
+        ui: &mut Ui,
+        project: &Value,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let projects = array(&snapshot["projectMemory"]["projects"]);
+        let workspaces = items(&snapshot["workspaces"]);
+        if array(&project["workspaceIds"]).is_empty() {
+            egui::Frame::new()
+                .fill(colors(ui).raised)
+                .corner_radius(8)
+                .inner_margin(12)
+                .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
+                    ui.label(
+                        RichText::new(t(ui, "Connect a local folder"))
+                            .strong()
+                            .color(colors(ui).text),
+                    );
+                    hint(ui, "Choose the Git repository where your agents will work.");
+                    ui.add_space(8.0);
+                    if submit(ui, "Choose folder", "folder_picker") {
+                        self.registration_project = Some(text(project, "projectId").to_owned());
+                        self.folder_request = Some(folder::Target::Registration);
+                        self.form_error = None;
+                    }
+                });
+        } else {
+            for id in array(&project["workspaceIds"]) {
+                let workspace = workspaces.iter().find(|w| w["workspaceId"] == *id);
+                ui.horizontal_wrapped(|ui| {
+                                ui.label(workspace.map(|w|std::borrow::Cow::Borrowed(text(w,"displayName"))).unwrap_or_else(||t(ui,"Removed folder")));
+                                action(ui,commands,"Unlink","project_unlink_workspace",revision(project)>0,||json!({"projectId":project["projectId"],"workspaceId":id,"expectedProjectRevision":project["revision"]}));
+                            });
+                if let Some(workspace) = workspace {
+                    path_label(ui, text(workspace, "workingDirectory"));
+                }
+                ui.add_space(5.0);
+            }
+            if control(ui, "Add another folder", true).clicked() {
+                self.registration_project = Some(text(project, "projectId").to_owned());
+                self.folder_request = Some(folder::Target::Registration);
+            }
+        }
+        let available: Vec<_> = workspaces
+            .iter()
+            .filter(|w| {
+                !projects
+                    .iter()
+                    .any(|p| array(&p["workspaceIds"]).contains(&w["workspaceId"]))
+            })
+            .collect();
+        if !available.is_empty() {
+            ui.add_space(12.0);
+            let selected = self
+                .link_choices
+                .entry(text(project, "projectId").to_owned())
+                .or_default();
+            if selected.is_empty() && available.len() == 1 {
+                *selected = text(available[0], "workspaceId").to_owned();
+            }
+            choose_refs(
+                ui,
+                "link-worktree",
+                "Link an existing folder",
+                selected,
+                &available,
+                ("workspaceId", "displayName"),
+                true,
+            );
+            let workspace = available
+                .iter()
+                .find(|w| text(w, "workspaceId") == selected);
+            if let Some(workspace) = workspace {
+                path_label(ui, text(workspace, "workingDirectory"));
+            }
+            action(
+                ui,
+                commands,
+                "Link folder",
+                "project_link_workspace",
+                workspace.is_some() && revision(project) > 0,
+                || json!({"projectId":project["projectId"],"workspaceId":selected,"expectedProjectRevision":project["revision"]}),
+            );
         }
     }
 
@@ -4567,6 +4991,23 @@ fn codex_ready(snapshot: &Value) -> bool {
     array(&snapshot["observation"]["observations"])
         .iter()
         .any(patchfleet_core::providers::supports_codex_control)
+}
+fn quick_codex_ready(snapshot: &Value) -> bool {
+    array(&snapshot["observation"]["observations"])
+        .iter()
+        .any(|observation| {
+            // Project-bound work also needs the existing scoped-memory minimum.
+            let version: Vec<u64> = text(&observation["provider"], "version")
+                .split('+')
+                .next()
+                .unwrap_or("")
+                .split('.')
+                .filter_map(|part| part.parse().ok())
+                .collect();
+            patchfleet_core::providers::supports_codex_control(observation)
+                && version.len() == 3
+                && version.as_slice() >= [0, 155, 1].as_slice()
+        })
 }
 fn joined(value: &Value) -> String {
     array(value)
@@ -7864,6 +8305,385 @@ mod tests {
         }
     }
 
+    fn quick_snapshot() -> Value {
+        let mut data = snapshot();
+        data["projectMemory"]["projects"] = json!([{"projectId":"project:quick","name":"Owner project","revision":4,"workspaceIds":["workspace:fixture"]}]);
+        data["observation"]["observations"][0]["provider"]["version"] = json!("0.155.1");
+        data
+    }
+    fn quick_console() -> Console {
+        Console {
+            quick_start: QuickStart {
+                initialized: true,
+                open: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+    fn confirm_quick_start(data: &mut Value) {
+        data["work"]["items"][0]["status"] = json!("running");
+        data["work"]["runs"] = json!([{"runId":"run:cmd:quick","workItemId":"work:fixture","status":"running","startedAt":"2026-10-19T08:00:00Z"}]);
+        data["work"]["receipts"] = json!([{"intentId":"cmd:quick","commandType":"start_work","workItemId":"work:fixture","outcome":"applied","reasonCode":"WORK_STARTED"}]);
+        data["agentMemory"]["contexts"] = json!([{"projectId":"project:quick","workItemId":"work:fixture","runId":"run:cmd:quick"}]);
+    }
+
+    #[test]
+    fn quick_start_rebuilds_progress_only_from_linked_scope_and_exact_applied_start() {
+        let mut data = quick_snapshot();
+        let mut guide = QuickStart::default();
+        guide.sync(&data);
+        assert!(!guide.open, "populated owners are not redirected");
+        assert_eq!(guide.step(&data), 3, "queueing is not starting");
+        confirm_quick_start(&mut data);
+        assert_eq!(guide.step(&data), 4);
+        let mut restarted = QuickStart::default();
+        restarted.sync(&data);
+        assert_eq!(restarted.step(&data), 4);
+        for (pointer, invalid) in [
+            ("/work/receipts/0/outcome", json!("failed")),
+            ("/work/receipts/0/intentId", json!("cmd:another")),
+            ("/work/receipts/0/workItemId", json!("work:another")),
+            ("/work/runs/0/startedAt", Value::Null),
+            (
+                "/agentMemory/contexts/0/projectId",
+                json!("project:foreign"),
+            ),
+            ("/work/items/0/workingDirectory", json!("/tmp/foreign")),
+        ] {
+            let mut invalid_data = data.clone();
+            *invalid_data.pointer_mut(pointer).unwrap() = invalid;
+            assert_eq!(guide.step(&invalid_data), 3, "{pointer}");
+        }
+        data["projectMemory"]["projects"][0]["workspaceIds"] = json!([]);
+        assert_eq!(guide.step(&data), 1);
+    }
+
+    #[test]
+    fn quick_start_requires_stable_memory_capable_codex_and_never_claims_sign_in() {
+        let mut data = quick_snapshot();
+        for (version, ready) in [
+            ("0.144.1", false),
+            ("0.155.0", false),
+            ("0.155.1", true),
+            ("0.155.1+build.2", true),
+            ("1.0.0", true),
+            ("0.156.0-beta.1", false),
+        ] {
+            data["observation"]["observations"][0]["provider"]["version"] = json!(version);
+            assert_eq!(quick_codex_ready(&data), ready, "{version}");
+        }
+        data["observation"]["observations"][0]["provider"]["version"] = json!("0.155.1");
+        for id in ["claude", "gemini"] {
+            data["observation"]["observations"][0]["provider"]["id"] = json!(id);
+            assert!(!quick_codex_ready(&data));
+        }
+        data["observation"]["observations"][0]["provider"]["id"] = json!("codex");
+        data["observation"]["observations"][0]["provider"]["state"] = json!("unavailable");
+        for language in ["tr", "en"] {
+            let ctx = test_context();
+            let mut console = quick_console();
+            data["desktopPreferences"] = json!({"language":language});
+            let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+            assert!(copy.contains("0.155.1"));
+            assert!(copy.contains(if language == "en" {
+                "does not confirm provider sign-in"
+            } else {
+                "giriş yapıldığını doğrulamaz"
+            }));
+            assert_eq!(console.quick_start.step(&data), 2);
+        }
+    }
+
+    #[test]
+    fn quick_start_multiple_scopes_require_selection_and_do_not_replace_stale_ids() {
+        let mut data = quick_snapshot();
+        data["projectMemory"]["projects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"projectId":"project:other","name":"Other","workspaceIds":[]}));
+        let mut guide = QuickStart::default();
+        guide.sync(&data);
+        assert!(guide.project.is_empty());
+        assert_eq!(guide.step(&data), 0);
+        guide.project = "project:quick".into();
+        data["workspaces"]["items"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"workspaceId":"workspace:other","workingDirectory":"/tmp/other"}));
+        data["projectMemory"]["projects"][0]["workspaceIds"] =
+            json!(["workspace:fixture", "workspace:other"]);
+        guide.sync(&data);
+        assert!(guide.workspace.is_empty());
+        assert_eq!(guide.step(&data), 1);
+        guide.workspace = "workspace:other".into();
+        guide.sync(&data);
+        assert_eq!(guide.workspace, "workspace:other");
+        data["workspaces"]["items"].as_array_mut().unwrap().pop();
+        guide.sync(&data);
+        assert_eq!(guide.workspace, "workspace:other");
+        assert_eq!(guide.step(&data), 1);
+        guide.project = "project:removed".into();
+        guide.sync(&data);
+        assert_eq!(guide.project, "project:removed");
+        assert_eq!(guide.step(&data), 0);
+    }
+
+    #[test]
+    fn quick_start_navigation_keeps_drafts_and_only_owner_clicks_emit_commands() {
+        let ctx = test_context();
+        let mut console = quick_console();
+        let mut data = quick_snapshot();
+        for _ in 0..3 {
+            assert!(render(&ctx, &mut console, &data, false, vec![])
+                .0
+                .is_empty());
+        }
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            true,
+            "memory_control",
+            "Write first task"
+        )
+        .is_empty());
+        assert!(console.tab == Tab::Projects);
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Write first task"
+        )
+        .is_empty());
+        assert!(console.tab == Tab::Work);
+        assert_eq!(console.work.workspace, "workspace:fixture");
+        console.work.title = "Keep owner text".into();
+        console.work.instruction = "Keep owner instruction".into();
+        console.work.path = "/tmp/another-owner-folder".into();
+        console.work.workspace.clear();
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Back to quick start"
+        )
+        .is_empty());
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Open task draft"
+        )
+        .is_empty());
+        assert_eq!(console.work.title, "Keep owner text");
+        assert_eq!(console.work.instruction, "Keep owner instruction");
+        assert_eq!(console.work.path, "/tmp/another-owner-folder");
+        assert!(console.work.workspace.is_empty());
+        console.tab = Tab::Projects;
+        data["observation"]["observations"][0]["provider"]["id"] = json!("claude-code");
+        assert_eq!(console.quick_start.step(&data), 2);
+        let refresh = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "observe",
+            "Refresh providers",
+        );
+        assert_eq!(refresh.len(), 1);
+        assert_eq!(refresh[0].action, "observe");
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Open providers"
+        )
+        .is_empty());
+        assert!(console.tab == Tab::Providers);
+    }
+
+    #[test]
+    fn quick_start_folder_cancel_error_and_registration_do_not_imply_a_link() {
+        let ctx = test_context();
+        let mut console = quick_console();
+        let mut data = quick_snapshot();
+        data["projectMemory"]["projects"][0]["workspaceIds"] = json!([]);
+        data["workspaces"]["items"] = json!([]);
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "folder_picker",
+            "Choose folder"
+        )
+        .is_empty());
+        assert_eq!(
+            console.registration_project.as_deref(),
+            Some("project:quick")
+        );
+        assert!(matches!(
+            console.take_folder_request(),
+            Some(folder::Target::Registration)
+        ));
+        console.accept_folder(folder::Target::Registration, None);
+        assert_eq!(console.quick_start.step(&data), 1);
+        console.accept_folder(
+            folder::Target::Registration,
+            Some(folder::Selection {
+                path: "/tmp/denied".into(),
+                problem: Some("WORKSPACE_ACCESS_DENIED".into()),
+            }),
+        );
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "workspace_register",
+            "Add folder"
+        )
+        .is_empty());
+        assert_eq!(console.quick_start.step(&data), 1);
+        console.registration_open = false;
+        console.project_path = "/tmp/fixture".into();
+        data["workspaces"] = snapshot()["workspaces"].clone();
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert_eq!(console.quick_start.step(&data), 1);
+        let linked = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_link_workspace",
+            "Link folder",
+        );
+        assert_eq!(linked.len(), 1);
+        assert_eq!(linked[0].payload["projectId"], "project:quick");
+        assert_eq!(linked[0].payload["expectedProjectRevision"], 4);
+        assert_eq!(
+            console.quick_start.step(&data),
+            1,
+            "request alone never advances"
+        );
+        assert!(
+            render(&ctx, &mut console, &data, false, vec![])
+                .0
+                .is_empty(),
+            "no automatic link retry"
+        );
+        data["projectMemory"]["projects"][0]["workspaceIds"] = json!(["workspace:fixture"]);
+        console.quick_start.sync(&data);
+        assert_eq!(console.quick_start.step(&data), 3);
+    }
+
+    #[test]
+    fn quick_start_can_be_left_and_reopened_without_redirecting_populated_owners() {
+        let ctx = test_context();
+        let mut console = Console::default();
+        let data = quick_snapshot();
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert!(!console.quick_start.open);
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Quick start"
+        )
+        .is_empty());
+        assert!(console.quick_start.open);
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Leave guide"
+        )
+        .is_empty());
+        assert!(!console.quick_start.open);
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert!(!console.quick_start.open);
+    }
+
+    #[test]
+    fn quick_start_next_action_fits_minimum_window_in_both_languages_and_themes() {
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            for language in ["tr", "en"] {
+                for step in 0..=4 {
+                    let ctx = test_context();
+                    ctx.set_theme(theme);
+                    let mut console = quick_console();
+                    let mut data = quick_snapshot();
+                    data["desktopPreferences"] = json!({"language":language});
+                    data["work"]["items"] = json!([]);
+                    match step {
+                        0 => data["projectMemory"]["projects"] = json!([]),
+                        1 => {
+                            data["projectMemory"]["projects"][0]["workspaceIds"] = json!([]);
+                            data["workspaces"]["items"] = json!([]);
+                        }
+                        2 => data["observation"]["observations"] = json!([]),
+                        4 => {
+                            data["work"]["items"] = snapshot()["work"]["items"].clone();
+                            confirm_quick_start(&mut data);
+                        }
+                        _ => {}
+                    }
+                    let mut commands = vec![];
+                    let output = ctx.run_ui(
+                        RawInput {
+                            screen_rect: Some(Rect::from_min_size(
+                                Pos2::ZERO,
+                                egui::vec2(800.0, 560.0),
+                            )),
+                            ..Default::default()
+                        },
+                        |ui| commands = console.show(ui, &data, false, None, false),
+                    );
+                    output.drop_without_applying_deltas();
+                    let (action, label) = match step {
+                        0 => ("project_create", "Create project"),
+                        1 => ("folder_picker", "Choose folder"),
+                        2 => ("memory_control", "Open providers"),
+                        3 => ("memory_control", "Write first task"),
+                        _ => ("memory_control", "Open Tasks"),
+                    };
+                    let rect: Rect = ctx.data(|d| {
+                        d.get_temp(egui::Id::new(("test-action", action, label)))
+                            .unwrap()
+                    });
+                    assert!(
+                        rect.min.x >= 216.0
+                            && rect.max.x <= 800.0
+                            && rect.min.y >= 0.0
+                            && rect.max.y <= 540.0,
+                        "{language} {theme:?} step{step}: {rect:?}"
+                    );
+                    assert_eq!(console.quick_start.step(&data), step);
+                    assert!(commands.is_empty());
+                }
+            }
+        }
+    }
+
     #[test]
     fn owner_click_keeps_current_revision_and_busy_or_unproven_control_blocks_start() {
         let ctx = test_context();
@@ -8379,6 +9199,7 @@ mod tests {
         assert_eq!(command.len(), 1);
         assert_eq!(command[0].action, "project_create");
         assert_eq!(command[0].payload["name"], "Stable project");
+        console.quick_start.open = false;
         let mut data = memory_snapshot();
         console
             .link_choices

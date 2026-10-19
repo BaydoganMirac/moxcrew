@@ -83,6 +83,10 @@ impl Patchfleet {
                         }
                         console.create_smoke(bridge.snapshot.as_ref().unwrap(), results);
                     }
+                    if scene.starts_with("productive-") {
+                        bridge.productive_smoke(&scene);
+                        console.productive_smoke(bridge.snapshot.as_ref().unwrap(), &scene);
+                    }
                     if scene.starts_with("crew-") {
                         bridge.crew_smoke(&scene);
                         console.crew_smoke(bridge.snapshot.as_ref().unwrap(), &scene);
@@ -250,7 +254,7 @@ fn seed_create_scene(directory: &std::path::Path) {
             return;
         }
         let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":"Launch idea · UI fixture"})).payload).await.unwrap();
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| scene.starts_with("crew-")) {
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| (scene.starts_with("crew-") || scene.starts_with("productive-")) && !matches!(scene.as_str(),"productive-output"|"productive-resources"|"productive-apps")) {
             let goal = "Research the audience and prepare a launch presentation with sources. Disposable UI fixture; no provider was run.";
             let plan = host.action("project_crew_plan", serde_json::json!({"projectId":created["projectId"],"instruction":goal,"abilityId":"P1"})).await.unwrap();
             let prepared = host.action("project_crew_prepare", command::Command::new("project_crew_prepare", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":1,"title":"Launch crew · UI fixture","instruction":goal,"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})).payload).await.unwrap();
@@ -264,6 +268,11 @@ fn seed_create_scene(directory: &std::path::Path) {
         }
         if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("chat-reduced") {
             host.action("desktop_motion", command::Command::new("desktop_motion", serde_json::json!({"reduceMotion":true})).payload).await.unwrap();
+        }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("productive-resources") {
+            let source=directory.join("rendering-input.txt");std::fs::write(&source,"Project brief · disposable UI resource. No provider was run.").unwrap();
+            let snapshot=host.snapshot().unwrap();
+            host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":snapshot["projectMemory"]["projects"][0]["revision"],"sourcePath":source})).payload).await.unwrap();
         }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
@@ -583,6 +592,22 @@ impl eframe::App for Patchfleet {
             if let Some(command) = commands.into_iter().next() {
                 self.bridge.submit(command);
             }
+            if let Some(request) = self.console.take_studio_path_request() {
+                if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
+                    let title = match &request.kind {
+                        ui::StudioPathKind::Resource => "Import resource",
+                        ui::StudioPathKind::Tool { .. } => "Choose executable",
+                    };
+                    let choice = rfd::AsyncFileDialog::new()
+                        .set_title(i18n::tr(language, title).into_owned())
+                        .set_parent(frame)
+                        .pick_file();
+                    self.bridge
+                        .choose_studio_path(ctx.clone(), request, async move {
+                            choice.await.map(|file| file.path().to_owned())
+                        });
+                }
+            }
             if let Some(request) = self.console.take_create_export_request() {
                 if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
                     let choice = rfd::AsyncFileDialog::new()
@@ -677,6 +702,7 @@ fn main() {
             if scene.starts_with("create-")
                 || scene.starts_with("chat-")
                 || scene.starts_with("crew-")
+                || scene.starts_with("productive-")
             {
                 seed_create_scene(&directory);
             }

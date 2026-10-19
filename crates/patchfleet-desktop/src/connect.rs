@@ -27,6 +27,23 @@ pub(super) fn can_start(snapshot: &Value) -> bool {
     })
 }
 
+pub(super) fn can_attempt_provider(snapshot: &Value, id: &str) -> bool {
+    connections(snapshot).iter().any(|provider| {
+        text(provider, "id") == id
+            && provider["installed"] == true
+            && provider["controlSupported"] == true
+            && matches!(text(provider, "authentication"), "present" | "unknown")
+    })
+}
+pub(super) fn crew_can_start(snapshot: &Value, mission: &Value) -> bool {
+    let assignments = array(&mission["workflow"]["providerAssignments"]);
+    if assignments.is_empty() {
+        return can_start(snapshot);
+    }
+    assignments
+        .iter()
+        .all(|assignment| can_attempt_provider(snapshot, text(assignment, "providerId")))
+}
 fn setup_url(id: &str) -> Option<&'static str> {
     match id {
         "codex" => Some("https://learn.chatgpt.com/docs/codex/cli"),
@@ -77,7 +94,7 @@ impl Console {
                                         for (column,label,value) in [
                                             (0,"Installation",match provider {Some(provider) if provider["installed"]==true=>"Installed",Some(_)=>"Not installed",None=>"Not checked"}),
                                             (1,"Sign-in",match provider.map(|provider|text(provider,"authentication")) {Some("present")=>"Saved sign-in found",Some("missing")=>"Sign-in needed",_=>"Unknown"}),
-                                            (2,"Task control",if id!="codex" {"Not supported yet"} else if provider.is_some_and(|provider|provider["controlSupported"]==true) {"Supported"} else {"Install or update Codex"}),
+                                            (2,"Task control",if provider.is_some_and(|provider|provider["controlSupported"]==true) {"Compatible CLI"} else {"Install or update CLI"}),
                                         ] {
                                             let ui=&mut columns[column];
                                             ui.label(RichText::new(t(ui,label)).size(11.0).color(colors(ui).muted));
@@ -87,7 +104,8 @@ impl Console {
                                     if let Some(provider)=provider {
                                         ui.collapsing(t(ui,"Diagnostic details"),|ui| {
                                             ui.monospace(text(provider,"reasonCode"));
-                                            if id!="codex" {hint(ui,"Task execution for this provider is not available yet.");}
+                                            if let Some(readiness)=provider["toolReadiness"].as_str(){hint(ui,readiness);}
+                                            hint(ui,"Compatible CLI does not verify authentication, model access, quota or tool permissions.");
                                         });
                                     }
                                 });

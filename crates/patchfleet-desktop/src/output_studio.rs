@@ -426,6 +426,41 @@ impl Console {
             ui.horizontal(|ui| {
                 ui.label(studio::title(t(ui, "Outputs"), 22.0));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let before = self.create.studio.tab;
+                    let labels = ["Files", "Resources", "Tools", "Apps"];
+                    let picker = egui::ComboBox::from_id_salt("studio-context-view")
+                        .width(140.0)
+                        .selected_text(t(ui, labels[self.create.studio.tab.min(3)]))
+                        .show_ui(ui, |ui| {
+                            for (index, label) in labels.iter().enumerate() {
+                                let response = ui.selectable_value(
+                                    &mut self.create.studio.tab,
+                                    index,
+                                    t(ui, label),
+                                );
+                                #[cfg(test)]
+                                ui.data_mut(|data| {
+                                    data.insert_temp(
+                                        egui::Id::new(("studio-view-tab", index)),
+                                        (response.rect, ui.clip_rect(), response.id),
+                                    )
+                                });
+                                #[cfg(not(test))]
+                                let _ = response;
+                            }
+                        });
+                    #[cfg(test)]
+                    ui.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::new(("test-action", "memory_control", "Output view")),
+                            picker.response.rect,
+                        )
+                    });
+                    #[cfg(not(test))]
+                    let _ = picker;
+                    if before != self.create.studio.tab {
+                        self.create.studio.token.clear();
+                    }
                     quiet_action(
                         ui,
                         commands,
@@ -436,29 +471,7 @@ impl Console {
                     );
                 });
             });
-            ui.add_space(if compact { 4.0 } else { 8.0 });
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 14.0;
-                for (index, label) in [(0, "Files"), (1, "Resources"), (2, "Tools"), (3, "Apps")] {
-                    let response = studio::section_nav(
-                        ui,
-                        self.create.studio.tab == index,
-                        t(ui, label).as_ref(),
-                    );
-                    #[cfg(test)]
-                    ui.data_mut(|data| {
-                        data.insert_temp(
-                            egui::Id::new(("studio-view-tab", index)),
-                            (response.rect, ui.clip_rect(), response.id),
-                        )
-                    });
-                    if response.clicked() {
-                        self.create.studio.tab = index;
-                        self.create.studio.token.clear();
-                    }
-                }
-            });
-            ui.add_space(if compact { 8.0 } else { 16.0 });
+            ui.add_space(if compact { 16.0 } else { 24.0 });
             let height = (ui.available_height() - 64.0).max(60.0);
             egui::ScrollArea::vertical()
                 .id_salt(("output-studio-body", &project, self.create.studio.tab))

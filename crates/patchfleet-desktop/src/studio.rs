@@ -81,7 +81,7 @@ fn style(p: Palette, dark: bool) -> egui::Style {
         ..Default::default()
     };
     style.spacing.item_spacing = egui::vec2(12.0, 8.0);
-    style.spacing.button_padding = egui::vec2(12.0, 8.0);
+    style.spacing.button_padding = egui::vec2(12.0, 7.0);
     style.spacing.interact_size.y = 36.0;
     for (kind, size, family) in [
         (egui::TextStyle::Body, 14.0, FontFamily::Proportional),
@@ -117,7 +117,7 @@ fn style(p: Palette, dark: bool) -> egui::Style {
     style.visuals.warn_fg_color = p.warning;
     style.visuals.error_fg_color = p.danger;
     style.visuals.window_stroke = egui::Stroke::new(1.0, p.border);
-    style.visuals.window_corner_radius = egui::CornerRadius::same(16);
+    style.visuals.window_corner_radius = egui::CornerRadius::same(20);
     style.visuals.menu_corner_radius = egui::CornerRadius::same(12);
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, p.border);
     style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, p.text);
@@ -141,6 +141,141 @@ fn style(p: Palette, dark: bool) -> egui::Style {
     style.visuals.widgets.active.bg_stroke = egui::Stroke::new(2.0, p.focus);
     style.visuals.widgets.open = style.visuals.widgets.active;
     style
+}
+
+/// Static light gives the canvas depth without waking an idle window.
+pub fn ambient(ui: &egui::Ui) {
+    let rect = ui.max_rect();
+    let dark = ui.ctx().theme() == egui::Theme::Dark;
+    let center = egui::pos2(rect.center().x, rect.top() + rect.height() * 0.27);
+    let radius = rect.width().min(1100.0) * 0.58;
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(
+        center,
+        Color32::from_rgba_unmultiplied(65, 90, 230, if dark { 27 } else { 12 }),
+    );
+    for i in 0..=64 {
+        let angle = i as f32 / 64.0 * std::f32::consts::TAU;
+        mesh.colored_vertex(
+            center + egui::vec2(angle.cos() * radius, angle.sin() * radius * 0.8),
+            Color32::TRANSPARENT,
+        );
+        if i > 0 {
+            mesh.add_triangle(0, i, i + 1);
+        }
+    }
+    ui.painter().add(egui::Shape::mesh(mesh));
+}
+
+/// Small native line icons share one stroke and never depend on emoji fonts.
+pub fn icon(ui: &mut egui::Ui, key: &str, size: f32, color: Color32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    let painter = ui.painter();
+    let p = |x: f32, y: f32| rect.min + egui::vec2(x, y) * (size / 24.0);
+    let stroke = egui::Stroke::new((size / 15.0).max(1.2), color);
+    let line = |a: (f32, f32), b: (f32, f32)| {
+        painter.line_segment([p(a.0, a.1), p(b.0, b.1)], stroke);
+    };
+    let outline = |a: (f32, f32), b: (f32, f32)| {
+        painter.rect_stroke(
+            egui::Rect::from_min_max(p(a.0, a.1), p(b.0, b.1)),
+            3,
+            stroke,
+            egui::StrokeKind::Inside,
+        );
+    };
+    match key {
+        "presentations" => {
+            outline((3.0, 3.0), (21.0, 16.0));
+            line((12.0, 16.0), (12.0, 21.0));
+            line((7.0, 22.0), (12.0, 19.0));
+            line((12.0, 19.0), (17.0, 22.0));
+            line((7.0, 12.0), (10.0, 8.0));
+            line((10.0, 8.0), (13.0, 11.0));
+            line((13.0, 11.0), (17.0, 6.0));
+        }
+        "video" => {
+            outline((2.0, 4.0), (22.0, 20.0));
+            painter.add(egui::Shape::closed_line(
+                vec![p(10.0, 8.0), p(16.0, 12.0), p(10.0, 16.0)],
+                stroke,
+            ));
+        }
+        "images" => {
+            outline((2.0, 3.0), (22.0, 21.0));
+            painter.circle_stroke(p(16.0, 8.0), size * 0.08, stroke);
+            line((3.0, 18.0), (9.0, 11.0));
+            line((9.0, 11.0), (14.0, 16.0));
+            line((14.0, 16.0), (17.0, 13.0));
+            line((17.0, 13.0), (21.0, 18.0));
+        }
+        "audio" => {
+            for (x, h) in [
+                (3.0, 3.0),
+                (7.5, 6.0),
+                (12.0, 9.0),
+                (16.5, 5.0),
+                (21.0, 2.5),
+            ] {
+                line((x, 12.0 - h), (x, 12.0 + h));
+            }
+        }
+        "research" => {
+            painter.circle_stroke(p(10.0, 10.0), size * 0.29, stroke);
+            line((15.0, 15.0), (21.0, 21.0));
+            line((7.0, 10.0), (13.0, 10.0));
+            line((10.0, 7.0), (10.0, 13.0));
+        }
+        "documents" | "files" => {
+            outline((5.0, 2.0), (20.0, 22.0));
+            for y in [7.0, 12.0, 17.0] {
+                line((9.0, y), (16.0, y));
+            }
+        }
+        "data" => {
+            for (x, h) in [(4.0, 8.0), (10.0, 15.0), (16.0, 11.0)] {
+                outline((x, 21.0 - h), (x + 4.0, 21.0));
+            }
+        }
+        "web" => {
+            painter.circle_stroke(p(12.0, 12.0), size * 0.4, stroke);
+            line((3.0, 12.0), (21.0, 12.0));
+            painter.add(egui::Shape::closed_line(
+                (0..32)
+                    .map(|i| {
+                        let a = i as f32 / 32.0 * std::f32::consts::TAU;
+                        p(12.0 + a.cos() * 4.0, 12.0 + a.sin() * 9.0)
+                    })
+                    .collect(),
+                stroke,
+            ));
+        }
+        "connections" => {
+            for (x, y) in [(5.0, 6.0), (19.0, 6.0), (12.0, 19.0)] {
+                painter.circle_stroke(p(x, y), size * 0.12, stroke);
+            }
+            line((8.0, 6.0), (16.0, 6.0));
+            line((6.5, 9.0), (10.5, 16.0));
+            line((17.5, 9.0), (13.5, 16.0));
+        }
+        "refresh" => {
+            painter.add(egui::Shape::line(
+                (0..28)
+                    .map(|i| {
+                        let a = 0.6 + i as f32 / 27.0 * 5.0;
+                        p(12.0 + a.cos() * 8.0, 12.0 + a.sin() * 8.0)
+                    })
+                    .collect(),
+                stroke,
+            ));
+            line((19.0, 3.0), (20.0, 9.0));
+            line((20.0, 9.0), (14.0, 8.0));
+        }
+        _ => {
+            painter.circle_stroke(rect.center(), size * 0.3, stroke);
+        }
+    }
+    response
 }
 
 /// Mox's flat face for small chrome. Geometry follows the canonical vector mark.

@@ -2,7 +2,7 @@
   "brand": "Moxcrew",
   "mascot": "Mox",
   "domain": "moxcrew.com",
-  "version": "1.0",
+  "version": "1.1",
   "approvedMascotConcept": 4,
   "naming": {
     "structure": "Mox + crew",
@@ -22,12 +22,12 @@
   },
   "themes": {
     "light": {
-      "canvas": "#F8F7F3",
+      "canvas": "#F5F7FC",
       "surface": "#FFFFFF",
-      "raised": "#F0F3FA",
+      "raised": "#EEF2FA",
       "text": "#15223D",
       "secondaryText": "#56627A",
-      "border": "#DDE2EC",
+      "border": "#DEE4F0",
       "primary": "#2854F4",
       "onPrimary": "#FFFFFF",
       "controlBorder": "#7A889F",
@@ -41,21 +41,21 @@
       "danger": "#BC294A",
       "dangerSurface": "#FCECF0",
       "info": "#2348D7",
-      "infoSurface": "#EEF2FF"
+      "infoSurface": "#EAF0FF"
     },
     "dark": {
-      "canvas": "#101827",
-      "surface": "#182438",
-      "raised": "#21314A",
-      "text": "#F7F8FC",
-      "secondaryText": "#AEB9CF",
-      "border": "#40516D",
-      "primary": "#8DA6FF",
-      "onPrimary": "#101827",
-      "controlBorder": "#7588A8",
+      "canvas": "#090D18",
+      "surface": "#111827",
+      "raised": "#1B253A",
+      "text": "#F2F5FF",
+      "secondaryText": "#A7B3CC",
+      "border": "#28334B",
+      "primary": "#9BAEFF",
+      "onPrimary": "#090D18",
+      "controlBorder": "#71809E",
       "accent": "#FF9B66",
       "onAccent": "#101827",
-      "focus": "#A7BCFF",
+      "focus": "#B4C4FF",
       "success": "#75D9B5",
       "successSurface": "#173D34",
       "warning": "#FFC08A",
@@ -63,7 +63,7 @@
       "danger": "#FF9CB3",
       "dangerSurface": "#492735",
       "info": "#ABC0FF",
-      "infoSurface": "#263860"
+      "infoSurface": "#1C2A4B"
     }
   },
   "typography": {

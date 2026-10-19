@@ -612,7 +612,7 @@ impl Console {
         snapshot: &Value,
         commands: &mut Vec<Command>,
     ) {
-        let menu = ui.menu_button(t(ui, "More"), |ui| {
+        let _menu = ui.menu_button(t(ui, "More"), |ui| {
             if view_control(ui, "Skills", true, false).clicked() {
                 self.create.crew.catalog_target = None;
                 self.create.catalog_open = true;
@@ -642,7 +642,7 @@ impl Console {
         ui.data_mut(|data| {
             data.insert_temp(
                 egui::Id::new(("test-action", "memory_control", "More")),
-                menu.response.rect,
+                _menu.response.rect,
             )
         });
     }

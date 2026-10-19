@@ -335,6 +335,60 @@ where
     result
 }
 
+/// A typed local worker shares the provider lifecycle: bounded streams, deadline,
+/// cancellation and an owned process tree, including when its caller is dropped.
+pub(crate) async fn typed_process(
+    mut command: Command,
+    input: Vec<u8>,
+    active: Arc<AtomicBool>,
+    bound: Duration,
+    limit: usize,
+) -> Result<Vec<u8>> {
+    if input.len() > 1024 * 1024 || limit == 0 || limit > 16 * 1024 * 1024 {
+        return Err("EXTRACTION_INVALID_INPUT".into());
+    }
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut cancellation = ExtractionCancellation(Some(active.clone()));
+    let result = tokio::spawn(async move {
+        extraction_process(
+            command,
+            &input,
+            &active,
+            bound,
+            limit,
+            |mut stdout, budget| async move {
+                let mut result = Vec::new();
+                let mut bytes = [0; 8192];
+                loop {
+                    let size = stdout
+                        .read(&mut bytes)
+                        .await
+                        .map_err(|_| "EXTRACTION_PROVIDER_FAILED")?;
+                    if size == 0 {
+                        return Ok(result);
+                    }
+                    extraction_budget(&budget, size, limit)?;
+                    result.extend_from_slice(&bytes[..size]);
+                }
+            },
+        )
+        .await
+    })
+    .await
+    .map_err(|_| "EXTRACTION_PROVIDER_FAILED".to_owned())?;
+    cancellation.0 = None;
+    result
+}
+
+#[cfg(test)]
+#[path = "typed_process_tests.rs"]
+mod typed_process_tests;
+
 #[derive(Default)]
 struct ExtractionTranscript {
     message: Option<String>,

@@ -1233,6 +1233,16 @@ mod tests {
                             .0
                             .is_empty());
                     }
+                    assert!(super::super::tests::click_at_size(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        "memory_control",
+                        "Output view"
+                    )
+                    .is_empty());
                     let next = (tab + 1) % 4;
                     let (rect, clip, id) = ctx.data(|data| {
                         data.get_temp::<(egui::Rect, egui::Rect, egui::Id)>(egui::Id::new((

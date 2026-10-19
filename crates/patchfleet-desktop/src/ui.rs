@@ -5624,8 +5624,20 @@ fn source_kind_label(kind: &str) -> &'static str {
     }
 }
 fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool) -> bool {
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 42.0), egui::Sense::click());
+    let label = t(
+        ui,
+        if tab == Tab::Create {
+            "Your studio"
+        } else {
+            tab.name()
+        },
+    );
+    let (_, rect) = ui.allocate_space(egui::vec2(ui.available_width(), 42.0));
+    let response = ui.interact(
+        rect,
+        egui::Id::new(("console-route", tab.name())),
+        egui::Sense::click(),
+    );
     #[cfg(test)]
     let clipped = rect.intersect(ui.clip_rect());
     #[cfg(test)]
@@ -5635,13 +5647,14 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
             rect,
         );
         data.insert_temp(egui::Id::new(("navigation-clip", tab.name())), clipped);
+        data.insert_temp(egui::Id::new(("navigation-id", tab.name())), response.id);
     });
     response.widget_info(|| {
         egui::WidgetInfo::selected(
             egui::WidgetType::SelectableLabel,
             true,
             selected,
-            t(ui, tab.name()),
+            label.as_ref(),
         )
     });
     if selected && reveal {
@@ -5697,7 +5710,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         ui.painter().text(
             rect.min + egui::vec2(40.0, 21.0),
             egui::Align2::LEFT_CENTER,
-            t(ui, tab.name()),
+            label.as_ref(),
             egui::FontId::proportional(13.0),
             color,
         );
@@ -5716,7 +5729,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
             colors(ui).muted,
         );
     }
-    let response = response.on_hover_text(t(ui, tab.name()));
+    let response = response.on_hover_text(label.as_ref());
     response.clicked()
         || (response.has_focus()
             && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)))

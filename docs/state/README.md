@@ -41,6 +41,7 @@
 | Product crew design | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [product-crew-design.md](product-crew-design.md) |
 | Project delivery packages | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [delivery-packages.md](delivery-packages.md) |
 | Shared UI kit and chat-centered studio | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [chat-centered-ui-kit.md](chat-centered-ui-kit.md) |
+| UI kit across native screens | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [ui-kit-screen-migration.md](ui-kit-screen-migration.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

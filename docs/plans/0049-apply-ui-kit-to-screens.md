@@ -1,6 +1,6 @@
 # Task0049: Apply the UI kit across native screens
 
-Status: Owner-approved, implementing
+Status: Complete; independently reviewed, native screens and macOS development package verified
 
 Updated: 2026-10-19
 
@@ -39,3 +39,13 @@ Clippy/formatting, actual native captures of all destinations and key dialogs,
 and a separate smoke-free macOS development package. Record remaining platform
 and live-provider limits. No inference, real account writes, installation, push,
 deployment or public release.
+
+## Completion
+
+All nine destinations and listed forms use the shared kit. Native review also
+closed the Turkish sidebar inset, duplicate Project dialog frame and duplicated
+Crew roster/actions beside Chat. The full desktop suite passes171 tests; strict
+workspace Clippy/formatting, actual native captures and a separate smoke-free
+macOS ARM64 development package pass. Source and actual-image review is clear.
+See [screen migration state](../state/ui-kit-screen-migration.md) for the exact
+capture matrix, source revisions, package hashes and platform limits.

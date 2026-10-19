@@ -772,8 +772,16 @@ pub enum NoticeAction {
 }
 
 impl Console {
+    pub fn launch() -> Self {
+        Self {
+            tab: Tab::Create,
+            ..Default::default()
+        }
+    }
+
     #[cfg(feature = "ui-smoke")]
     pub fn quick_start_smoke(&mut self) {
+        self.tab = Tab::Projects;
         self.quick_start.initialized = true;
         self.quick_start.open = true;
     }
@@ -916,21 +924,6 @@ impl Console {
         notice: Option<&Notice>,
         can_retry: bool,
     ) -> Vec<Command> {
-        if !self.quick_start.initialized
-            && self.navigation_tab.is_none()
-            && self.tab == Tab::Projects
-            && !self.quick_start.open
-            && array(&snapshot["projectMemory"]["projects"]).is_empty()
-            && items(&snapshot["workspaces"]).is_empty()
-            && items(&snapshot["work"]).is_empty()
-            && items(&snapshot["teams"]).is_empty()
-            && self.work.is_empty()
-            && self.new_project_name.is_empty()
-            && !self.new_project_open
-            && !self.registration_open
-        {
-            self.tab = Tab::Create;
-        }
         self.quick_start.sync(snapshot);
         self.create.sync(snapshot);
         self.open_login_browser(ui.ctx(), snapshot);
@@ -1001,53 +994,43 @@ impl Console {
                 } else {
                     126.0 + account_footer
                 };
-                let nav_height = (ui.available_height() - footer_height).max(32.0);
+                let nav_height =
+                    (ui.available_height() - footer_height - ui.spacing().item_spacing.y).max(32.0);
                 egui::ScrollArea::vertical()
                     .id_salt("sidebar-navigation")
                     .max_height(nav_height)
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        for (group, tabs) in [
-                            (
-                                "YOUR WORK",
-                                &[Tab::Create, Tab::Projects, Tab::Work, Tab::Teams][..],
-                            ),
-                            ("KNOWLEDGE", &[Tab::Memory, Tab::Decisions][..]),
-                            ("SYSTEM", &[Tab::Agents, Tab::Providers, Tab::Cloud][..]),
-                        ] {
-                            ui.add_space(7.0);
-                            ui.label(
-                                RichText::new(t(ui, group))
-                                    .size(10.0)
-                                    .color(colors(ui).muted)
-                                    .extra_letter_spacing(1.4),
-                            );
-                            ui.add_space(6.0);
-                            for &tab in tabs {
-                                let count = match tab {
-                                    Tab::Projects => {
-                                        array(&snapshot["projectMemory"]["projects"]).len()
-                                    }
-                                    Tab::Decisions => {
-                                        array(&snapshot["projectDecisions"]["projects"])
-                                            .iter()
-                                            .map(|p| {
-                                                p["decisionCount"].as_u64().unwrap_or(0) as usize
-                                            })
-                                            .sum()
-                                    }
-                                    Tab::Work => items(&snapshot["work"]).len(),
-                                    Tab::Teams => items(&snapshot["teams"]).len(),
-                                    _ => 0,
-                                };
-                                if navigation(ui, tab, self.tab == tab, count, reveal_navigation) {
-                                    self.tab = tab;
-                                    self.form_error = None;
-                                }
-                                ui.add_space(2.0);
-                            }
-                            ui.add_space(10.0);
+                        for tab in [Tab::Create, Tab::Projects, Tab::Work] {
+                            self.sidebar_route(ui, snapshot, tab, reveal_navigation);
                         }
+                        ui.add_space(8.0);
+                        let secondary =
+                            !matches!(self.tab, Tab::Create | Tab::Projects | Tab::Work);
+                        let more = egui::CollapsingHeader::new(t(ui, "More"))
+                            .id_salt("sidebar-more")
+                            .default_open(secondary)
+                            .open(secondary.then_some(true))
+                            .show(ui, |ui| {
+                                for tab in [
+                                    Tab::Teams,
+                                    Tab::Memory,
+                                    Tab::Decisions,
+                                    Tab::Agents,
+                                    Tab::Providers,
+                                    Tab::Cloud,
+                                ] {
+                                    self.sidebar_route(ui, snapshot, tab, reveal_navigation);
+                                }
+                            });
+                        #[cfg(test)]
+                        ui.data_mut(|data| {
+                            data.insert_temp(
+                                egui::Id::new(("test-action", "navigation", "More")),
+                                more.header_response.rect,
+                            )
+                        });
+                        let _ = more;
                     });
                 ui.allocate_ui_with_layout(
                     ui.available_size(),
@@ -1320,6 +1303,24 @@ impl Console {
             }
         }
         commands
+    }
+
+    fn sidebar_route(&mut self, ui: &mut Ui, snapshot: &Value, tab: Tab, reveal: bool) {
+        let count = match tab {
+            Tab::Projects => array(&snapshot["projectMemory"]["projects"]).len(),
+            Tab::Work => items(&snapshot["work"]).len(),
+            Tab::Teams => items(&snapshot["teams"]).len(),
+            Tab::Decisions => array(&snapshot["projectDecisions"]["projects"])
+                .iter()
+                .map(|project| project["decisionCount"].as_u64().unwrap_or(0) as usize)
+                .sum(),
+            _ => 0,
+        };
+        if navigation(ui, tab, self.tab == tab, count, reveal) {
+            self.tab = tab;
+            self.form_error = None;
+        }
+        ui.add_space(2.0);
     }
 
     fn feedback(&mut self, ui: &mut Ui, notice: &Notice, ready: bool, can_retry: bool) {
@@ -8144,7 +8145,7 @@ mod tests {
                 if clipped.is_positive() {
                     assert!(
                         clipped.max.y <= footer.min.y.min(account.min.y),
-                        "{} overlaps a sidebar footer control",
+                        "{} overlaps a sidebar footer control: clip={clipped:?} footer={footer:?} account={account:?}",
                         tab.name()
                     );
                 }

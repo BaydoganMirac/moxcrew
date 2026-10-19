@@ -27,6 +27,7 @@ pub(super) struct CreateState {
     ability: String,
     category: String,
     search: String,
+    catalog_open: bool,
     drafts: HashMap<(String, String), CreateDraft>,
     selected_work: HashMap<String, String>,
     result_path: String,
@@ -70,6 +71,21 @@ impl CreateState {
             .or_default()
     }
 
+    fn select_ability(&mut self, ability: &str) {
+        if self.ability.is_empty() {
+            let initial = self
+                .drafts
+                .get(&(self.project.clone(), String::new()))
+                .cloned();
+            if let Some(initial) = initial {
+                self.drafts
+                    .entry((self.project.clone(), ability.to_owned()))
+                    .or_insert(initial);
+            }
+        }
+        self.ability = ability.into();
+    }
+
     fn payload(&self, snapshot: &Value) -> Option<Value> {
         let project = array(&snapshot["projectMemory"]["projects"])
             .iter()
@@ -83,12 +99,13 @@ impl CreateState {
         let draft = self
             .drafts
             .get(&(self.project.clone(), self.ability.clone()))?;
-        if !valid_input(&draft.title, 160) || !valid_input(&draft.goal, 50_000) {
+        if !valid_input(&draft.goal, 50_000) {
             return None;
         }
+        let title = draft_title(draft)?;
         Some(
             json!({"projectId":self.project,"expectedProjectRevision":project["revision"],
-            "abilityId":self.ability,"title":draft.title.trim(),"instruction":draft.goal.trim()}),
+            "abilityId":self.ability,"title":title,"instruction":draft.goal.trim()}),
         )
     }
 
@@ -117,6 +134,23 @@ impl CreateState {
 
 fn valid_input(value: &str, max: usize) -> bool {
     !value.trim().is_empty() && utf16_len(value.trim()) <= max && !value.contains('\0')
+}
+
+fn draft_title(draft: &CreateDraft) -> Option<String> {
+    if !draft.title.trim().is_empty() {
+        return valid_input(&draft.title, 160).then(|| draft.title.trim().into());
+    }
+    let normalized = draft.goal.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut title = String::new();
+    let mut units = 0;
+    for character in normalized.chars() {
+        if units + character.len_utf16() > 80 {
+            break;
+        }
+        units += character.len_utf16();
+        title.push(character);
+    }
+    valid_input(&title, 160).then(|| title.trim_end().into())
 }
 
 fn jobs(snapshot: &Value) -> &[Value] {
@@ -231,42 +265,45 @@ impl Console {
         snapshot: &Value,
         commands: &mut Vec<Command>,
     ) {
-        if !self.create.view_results || ui.ctx().viewport_rect().height() >= 700.0 {
-            egui::Frame::new()
-                .fill(colors(ui).info_surface)
-                .corner_radius(14)
-                .inner_margin(14)
-                .show(ui, |ui| {
-                    ui.set_min_width((ui.available_width() - 1.0).max(0.0));
-                    if ui.ctx().viewport_rect().height() >= 700.0 {
-                        ui.label(
-                            RichText::new(t(ui, "CREATE WITH MOX"))
-                                .size(10.0)
-                                .color(colors(ui).primary)
-                                .extra_letter_spacing(1.4),
-                        );
-                        ui.add_space(4.0);
-                    }
-                    ui.label(studio::title(t(ui, "One idea. A whole crew."), 26.0));
-                    ui.add_space(4.0);
-                    hint(ui, "Give Mox a goal. Review the result.");
-                });
-            ui.add_space(10.0);
-        }
         let projects = array(&snapshot["projectMemory"]["projects"]);
+        if self.create.project.is_empty() && projects.len() == 1 {
+            self.create.project = text(&projects[0], "projectId").into();
+        }
+        ui.horizontal_wrapped(|ui| {
+            ui.label(studio::title(
+                t(
+                    ui,
+                    if self.create.view_results {
+                        "Project creations"
+                    } else {
+                        "What would you like to make?"
+                    },
+                ),
+                26.0,
+            ));
+            if self.create.view_results {
+                if control(ui, "New creation", true).clicked() {
+                    self.create.view_results = false;
+                }
+            } else if jobs(snapshot)
+                .iter()
+                .any(|job| text(job, "projectId") == self.create.project)
+                && control(ui, "View results", true).clicked()
+            {
+                self.create.view_results = true;
+            }
+        });
+        ui.add_space(12.0);
         if projects.is_empty() {
-            empty(
+            hint(
                 ui,
-                "Create a project first",
-                "Give your ideas a home. No repository or folder is required here.",
+                "Create a project to keep your work together. No folder setup needed.",
             );
+            ui.add_space(12.0);
             if submit(ui, "Create project", "create-project") {
                 self.new_project_open = true;
             }
             return;
-        }
-        if self.create.project.is_empty() && projects.len() == 1 {
-            self.create.project = text(&projects[0], "projectId").into();
         }
         let previous = self.create.project.clone();
         project_switcher(
@@ -280,20 +317,11 @@ impl Console {
         }
         if !projects
             .iter()
-            .any(|p| text(p, "projectId") == self.create.project)
+            .any(|project| text(project, "projectId") == self.create.project)
         {
             hint(ui, "Choose the project for this idea.");
             return;
         }
-        ui.horizontal_wrapped(|ui| {
-            ui.selectable_value(&mut self.create.view_results, false, t(ui, "New creation"));
-            ui.selectable_value(
-                &mut self.create.view_results,
-                true,
-                t(ui, "Project creations"),
-            );
-        });
-        ui.add_space(12.0);
         if self.create.view_results {
             self.create_jobs(ui, snapshot, commands);
             return;
@@ -308,27 +336,33 @@ impl Console {
             action(ui, commands, "Refresh", "observe", true, || json!({}));
             return;
         }
-        if self.create.ability.is_empty() {
-            self.create.ability = text(&abilities[0], "id").into();
-        }
-        if ui.available_width() >= 850.0 {
-            ui.columns(2, |columns| {
-                self.create_catalog(
-                    &mut columns[0],
-                    abilities,
-                    Language::from_snapshot(snapshot),
-                );
-                self.create_composer(&mut columns[1], snapshot, commands);
-            });
-        } else {
-            egui::CollapsingHeader::new(t(ui, "Explore abilities"))
-                .id_salt("create-catalog")
-                .default_open(false)
-                .show(ui, |ui| {
-                    self.create_catalog(ui, abilities, Language::from_snapshot(snapshot))
+        self.create_composer(ui, snapshot, commands);
+        if self.create.catalog_open {
+            let ready = ui.is_enabled();
+            let id = egui::Id::new("create-ability-catalog");
+            let modal = egui::Modal::new(id)
+                .area(egui::Modal::default_area(id).fade_in(false))
+                .show(ui.ctx(), |ui| {
+                    ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 680.0));
+                    egui::ScrollArea::vertical()
+                        .id_salt("create-catalog-dialog")
+                        .max_height((ui.ctx().viewport_rect().height() - 150.0).max(120.0))
+                        .show(ui, |ui| {
+                            ui.add_enabled_ui(ready, |ui| {
+                                self.create_catalog(
+                                    ui,
+                                    abilities,
+                                    Language::from_snapshot(snapshot),
+                                )
+                            });
+                        });
+                    if control(ui, "Close", true).clicked() {
+                        self.create.catalog_open = false;
+                    }
                 });
-            ui.add_space(14.0);
-            self.create_composer(ui, snapshot, commands);
+            if modal.should_close() {
+                self.create.catalog_open = false;
+            }
         }
     }
 
@@ -336,7 +370,7 @@ impl Console {
         card(ui, |ui| {
             section_title(
                 ui,
-                "What would you like to make?",
+                "Explore abilities",
                 "Task recipes guide your agent. Results depend on available tools and access.",
             );
             ui.add_space(10.0);
@@ -406,7 +440,8 @@ impl Console {
                                 )
                             });
                             if response.clicked() {
-                                self.create.ability = text(ability, "id").into();
+                                self.create.select_ability(text(ability, "id"));
+                                self.create.catalog_open = false;
                             }
                             raw_hint(ui, ability_text(ability, "description", language));
                             ui.add_space(9.0);
@@ -418,74 +453,130 @@ impl Console {
 
     fn create_composer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let language = Language::from_snapshot(snapshot);
-        let Some(ability) = array(&snapshot["abilities"])
+        let abilities = array(&snapshot["abilities"]);
+        let selected = abilities
             .iter()
-            .find(|a| text(a, "id") == self.create.ability)
-        else {
-            hint(ui, "Choose an ability to shape your task.");
-            return;
-        };
+            .find(|ability| text(ability, "id") == self.create.ability);
         card(ui, |ui| {
-            let payload = self.create.payload(snapshot);
+            let placeholder = selected
+                .map(|ability| {
+                    std::borrow::Cow::Borrowed(ability_text(ability, "starter", language))
+                })
+                .unwrap_or_else(|| {
+                    i18n::tr(
+                        language,
+                        "Describe your idea and what a useful result looks like.",
+                    )
+                });
+            let rows = if ui.ctx().viewport_rect().height() < 700.0 {
+                3
+            } else {
+                5
+            };
+            let response = ui.add(
+                egui::TextEdit::multiline(&mut self.create.draft().goal)
+                    .hint_text(placeholder)
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(rows)
+                    .char_limit(50_000)
+                    .font(egui::TextStyle::Body)
+                    .margin(egui::Margin::symmetric(12, 10)),
+            );
+            #[cfg(test)]
+            ui.data_mut(|data| {
+                data.insert_temp(egui::Id::new("create-goal-prompt"), response.rect)
+            });
+            let _ = response;
+            ui.add_space(10.0);
             ui.horizontal_wrapped(|ui| {
-                status(ui, "Task recipe");
-                ui.add_space(8.0);
-                ui.add_enabled_ui(payload.is_some() && self.create.pending.is_none(), |ui| {
-                    if submit(ui, "Queue project task", "project_work_enqueue")
-                        && commands.is_empty()
-                    {
-                        if let Some(payload) = payload {
-                            let command = Command::new("project_work_enqueue", payload);
-                            self.create.pending = Some(Submission {
-                                command_id: text(&command.payload, "commandId").into(),
-                                project: self.create.project.clone(),
-                                ability: self.create.ability.clone(),
-                                draft: self.create.draft().clone(),
-                            });
-                            commands.push(command);
+                for category in [
+                    "presentations",
+                    "video",
+                    "images",
+                    "audio",
+                    "research",
+                    "documents",
+                    "data",
+                    "web",
+                ] {
+                    let active =
+                        selected.is_some_and(|ability| text(ability, "category") == category);
+                    let label = if category == "web" {
+                        "Web"
+                    } else {
+                        category_name(category)
+                    };
+                    let response = ui.selectable_label(active, t(ui, label));
+                    #[cfg(test)]
+                    ui.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::new(("test-action", "category", category)),
+                            response.rect,
+                        )
+                    });
+                    if response.clicked() {
+                        if let Some(ability) = abilities
+                            .iter()
+                            .find(|ability| text(ability, "category") == category)
+                        {
+                            self.create.select_ability(text(ability, "id"));
+                            self.create.category = category.into();
                         }
                     }
-                });
+                }
             });
             ui.add_space(8.0);
-            ui.label(studio::title(ability_text(ability, "name", language), 21.0));
-            raw_hint(ui, ability_text(ability, "description", language));
-            ui.add_space(12.0);
-            let draft = self.create.draft();
-            field(ui, "Task name", &mut draft.title, 160, false);
-            multiline(ui, "What should Mox deliver?", &mut draft.goal, 50_000, 4);
-            if control(ui, "Use example", true).clicked() {
-                self.create.draft().goal = ability_text(ability, "starter", language).into();
-            }
-            egui::CollapsingHeader::new(t(ui, "Recipe instructions"))
-                .id_salt("create-instructions")
-                .show(ui, |ui| {
-                    ui.label(text(ability, "instruction"));
-                });
-            ui.add_space(10.0);
-            ui.add_space(8.0);
-            hint(
-                ui,
-                "Queueing does not start the agent. Review the task, then start it explicitly.",
-            );
-            hint(ui, "Your provider may receive this goal and the accepted decisions for this project when you start.");
-            if !quick_codex_ready(snapshot) {
-                ui.add_space(6.0);
-                hint(ui, "Starting project tasks requires supported Codex access. Your draft can be queued first.");
-                if control(ui, "Open providers", true).clicked() {
-                    self.tab = Tab::Providers;
+            ui.horizontal_wrapped(|ui| {
+                if let Some(ability) = abilities
+                    .iter()
+                    .find(|ability| text(ability, "id") == self.create.ability)
+                {
+                    ui.label(RichText::new(ability_text(ability, "name", language)).strong());
+                } else {
+                    hint(ui, "Choose a type");
                 }
-            }
+                if control(ui, "Explore abilities", true).clicked() {
+                    self.create.catalog_open = true;
+                }
+            });
+            ui.add_space(12.0);
+            let payload = self.create.payload(snapshot);
+            ui.add_enabled_ui(payload.is_some() && self.create.pending.is_none(), |ui| {
+                if submit(ui, "Prepare task", "project_work_enqueue") && commands.is_empty() {
+                    if let Some(payload) = payload {
+                        let command = Command::new("project_work_enqueue", payload);
+                        self.create.pending = Some(Submission {
+                            command_id: text(&command.payload, "commandId").into(),
+                            project: self.create.project.clone(),
+                            ability: self.create.ability.clone(),
+                            draft: self.create.draft().clone(),
+                        });
+                        commands.push(command);
+                    }
+                }
+            });
+            ui.add_space(6.0);
+            hint(ui, "You will review and start the task next.");
+            ui.add_space(6.0);
+            egui::CollapsingHeader::new(t(ui,"Details")).id_salt("create-task-details").default_open(false).show(ui,|ui| {
+                field(ui,"Task name (optional)",&mut self.create.draft().title,160,false);
+                if let Some(ability)=abilities.iter().find(|ability|text(ability,"id")==self.create.ability) {
+                    raw_hint(ui,ability_text(ability,"description",language));
+                    if control(ui,"Use example",true).clicked() { self.create.draft().goal=ability_text(ability,"starter",language).into(); }
+                    ui.label(RichText::new(t(ui,"Recipe instructions")).strong());
+                    ui.label(text(ability,"instruction"));
+                }
+                hint(ui,"Task recipes guide your agent. Results depend on available tools and access.");
+                hint(ui,"Your provider may receive this goal and the accepted decisions for this project when you start.");
+                if !quick_codex_ready(snapshot) {
+                    hint(ui,"Starting project tasks requires supported Codex access. Your draft can be queued first.");
+                    if control(ui,"Open providers",true).clicked() { self.tab=Tab::Providers; }
+                }
+            });
         });
     }
 
     fn create_jobs(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
-        section_title(
-            ui,
-            "Project creations",
-            "Follow the task, inspect actual files and export a copy.",
-        );
-        ui.add_space(8.0);
         let project_jobs: Vec<_> = items(&snapshot["work"])
             .iter()
             .filter(|w| job_belongs(snapshot, &self.create.project, text(w, "workItemId")))
@@ -497,36 +588,38 @@ impl Console {
             );
             return;
         }
-        ui.horizontal_wrapped(|ui| {
-            ui.label(t(ui, "Task"));
-            let selected = self
-                .create
-                .selected_work
-                .entry(self.create.project.clone())
-                .or_default();
-            let before = selected.clone();
-            let name = project_jobs
-                .iter()
-                .find(|job| text(job, "workItemId") == selected)
-                .map(|job| std::borrow::Cow::Borrowed(text(job, "title")))
-                .unwrap_or_else(|| t(ui, "Choose…"));
-            egui::ComboBox::from_id_salt("create-task-picker")
-                .selected_text(name)
-                .truncate()
-                .width((ui.available_width() - 6.0).clamp(150.0, 420.0))
-                .show_ui(ui, |ui| {
-                    for job in &project_jobs {
-                        ui.selectable_value(
-                            selected,
-                            text(job, "workItemId").into(),
-                            text(job, "title"),
-                        );
-                    }
-                });
-            if *selected != before {
-                self.create.result_path.clear();
-            }
-        });
+        if project_jobs.len() > 1 || self.create.selected_work(snapshot).is_none() {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(t(ui, "Task"));
+                let selected = self
+                    .create
+                    .selected_work
+                    .entry(self.create.project.clone())
+                    .or_default();
+                let before = selected.clone();
+                let name = project_jobs
+                    .iter()
+                    .find(|job| text(job, "workItemId") == selected)
+                    .map(|job| std::borrow::Cow::Borrowed(text(job, "title")))
+                    .unwrap_or_else(|| t(ui, "Choose…"));
+                egui::ComboBox::from_id_salt("create-task-picker")
+                    .selected_text(name)
+                    .truncate()
+                    .width((ui.available_width() - 6.0).clamp(150.0, 420.0))
+                    .show_ui(ui, |ui| {
+                        for job in &project_jobs {
+                            ui.selectable_value(
+                                selected,
+                                text(job, "workItemId").into(),
+                                text(job, "title"),
+                            );
+                        }
+                    });
+                if *selected != before {
+                    self.create.result_path.clear();
+                }
+            });
+        }
         let Some(work) = self.create.selected_work(snapshot) else {
             hint(ui, "Choose a task to inspect its outputs.");
             return;
@@ -537,8 +630,9 @@ impl Console {
                 ui.strong(text(work, "title"));
                 status(ui, text(work, "status"));
             });
-            ui.collapsing(t(ui, "Task goal"), |ui| {
+            ui.collapsing(t(ui, "Details"), |ui| {
                 ui.label(text(work, "instruction"));
+                hint(ui, "Files may be partial while a task is running or after a failure. Review them before use.");
             });
             if let Some(issue) = runtime_issue {
                 ui.colored_label(
@@ -567,11 +661,22 @@ impl Console {
                 action(ui, commands, "Refresh outputs", "project_results_read", !cfg!(target_os = "windows") && runtime_issue.is_none() && !self.hold_automatic_reads,
                     || json!({"projectId":self.create.project,"workItemId":work["workItemId"]}));
             });
+            if text(work, "status") == "queued" {
+                if quick_codex_ready(snapshot) {
+                    hint(ui, "Prepared. Start when you're ready.");
+                } else {
+                    ui.horizontal_wrapped(|ui| {
+                        hint(ui, "Codex is not ready.");
+                        if control(ui, "Set up Codex", true).clicked() {
+                            self.tab = Tab::Providers;
+                        }
+                    });
+                }
+            }
             if runtime_issue.is_some() || cfg!(target_os = "windows") {
                 return;
             }
             ui.add_space(10.0);
-            hint(ui, "Files may be partial while a task is running or after a failure. Review them before use.");
             let Some(results) =
                 self.create
                     .scoped(snapshot, "projectResults", "PROJECT_RESULTS_READ")
@@ -677,6 +782,7 @@ mod tests {
         busy: bool,
         events: Vec<egui::Event>,
     ) -> (Vec<Command>, Vec<String>) {
+        ctx.global_style_mut(|style| style.animation_time = 0.0);
         let mut commands = Vec::new();
         let output = ctx.run_ui(
             egui::RawInput {
@@ -753,6 +859,269 @@ mod tests {
     }
 
     #[test]
+    fn simple_prompt_has_no_hidden_recipe_and_keeps_catalog_and_details_out_of_the_way() {
+        for language in ["tr", "en"] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut data = snapshot();
+            data["desktopPreferences"] = json!({"language":language});
+            data["abilities"] = patchfleet_core::abilities::catalog();
+            let mut console = Console::launch();
+            console.create.project = "project:one".into();
+            console.create.draft().goal = "Owner launch idea".into();
+            let (commands, copy) = render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(800.0, 560.0),
+                false,
+                vec![],
+            );
+            assert!(commands.is_empty());
+            assert!(
+                console.create.ability.is_empty(),
+                "typing must not silently select research"
+            );
+            assert!(console.create.payload(&data).is_none());
+            let copy = copy.join("\n");
+            for hidden in [
+                "Search abilities",
+                "Yetenek ara",
+                "Task name (optional)",
+                "Görev adı (isteğe bağlı)",
+                "Recipe instructions",
+                "Tarif yönergeleri",
+            ] {
+                assert!(
+                    !copy.contains(hidden),
+                    "advanced content leaked onto primary flow: {hidden}"
+                );
+            }
+            assert!(copy.contains(if language == "tr" {
+                "Bir tür seçin"
+            } else {
+                "Choose a type"
+            }));
+            let prompt = ctx.data(|data| {
+                data.get_temp::<egui::Rect>(egui::Id::new("create-goal-prompt"))
+                    .unwrap()
+            });
+            assert!(
+                egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 560.0))
+                    .contains_rect(prompt)
+            );
+            let enabled = ctx.data(|data| {
+                data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                    "test-action-state",
+                    "project_work_enqueue",
+                    "Prepare task",
+                )))
+                .unwrap()
+                .0
+            });
+            assert!(!enabled);
+            assert!(click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "category",
+                "presentations"
+            )
+            .is_empty());
+            assert_eq!(console.create.ability, "P1");
+            assert_eq!(console.create.draft().goal, "Owner launch idea");
+            assert_eq!(
+                console.create.payload(&data).unwrap()["title"],
+                "Owner launch idea"
+            );
+            let copy = render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(800.0, 560.0),
+                false,
+                vec![],
+            )
+            .1
+            .join("\n");
+            assert!(copy.contains(if language == "tr" {
+                "Sunum hazırla"
+            } else {
+                "Create a presentation"
+            }));
+            assert!(click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "memory_control",
+                "Explore abilities"
+            )
+            .is_empty());
+            assert!(console.create.catalog_open);
+            console.create.category.clear();
+            console.create.search = "V1".into();
+            let copy = render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(800.0, 560.0),
+                false,
+                vec![],
+            )
+            .1
+            .join("\n");
+            assert!(copy.contains(if language == "tr" {
+                "Yetenek ara"
+            } else {
+                "Search abilities"
+            }));
+            assert!(click(&ctx, &mut console, &data, false, "ability", "V1").is_empty());
+            assert_eq!(console.create.ability, "V1");
+            assert!(!console.create.catalog_open);
+            console.create.select_ability("P1");
+            assert_eq!(
+                console.create.draft().goal,
+                "Owner launch idea",
+                "returning to a recipe restores its exact draft"
+            );
+        }
+    }
+
+    #[test]
+    fn optional_title_is_derived_from_goal_without_splitting_unicode_boundaries() {
+        let mut draft = CreateDraft {
+            goal: "  Plan\n the\t launch  ".into(),
+            ..Default::default()
+        };
+        assert_eq!(draft_title(&draft).unwrap(), "Plan the launch");
+        draft.goal = "😀".repeat(100);
+        assert_eq!(draft_title(&draft).unwrap(), "😀".repeat(40));
+        assert_eq!(utf16_len(&draft_title(&draft).unwrap()), 80);
+        draft.goal = format!("{}😀next", "a".repeat(79));
+        assert_eq!(draft_title(&draft).unwrap(), "a".repeat(79));
+        draft.title = "😀".repeat(80);
+        assert_eq!(utf16_len(&draft_title(&draft).unwrap()), 160);
+        draft.title.push('a');
+        assert!(draft_title(&draft).is_none());
+        draft.title = "  Owner's exact title  ".into();
+        assert_eq!(draft_title(&draft).unwrap(), "Owner's exact title");
+        let mut state = state();
+        state.draft().title.clear();
+        state.draft().goal = "A useful result".into();
+        assert_eq!(
+            state.payload(&snapshot()).unwrap()["title"],
+            "A useful result"
+        );
+    }
+
+    #[test]
+    fn secondary_navigation_is_hidden_until_more_and_all_routes_remain_accessible() {
+        for tab in [
+            Tab::Teams,
+            Tab::Memory,
+            Tab::Decisions,
+            Tab::Agents,
+            Tab::Providers,
+            Tab::Cloud,
+        ] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut console = Console {
+                tab: Tab::Create,
+                create: state(),
+                ..Default::default()
+            };
+            let data = snapshot();
+            render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(1280.0, 1200.0),
+                false,
+                vec![],
+            );
+            assert!(ctx
+                .data(|data| data.get_temp::<egui::Rect>(egui::Id::new((
+                    "test-action",
+                    "navigation",
+                    tab.name()
+                ))))
+                .is_none());
+            assert!(click(&ctx, &mut console, &data, false, "navigation", "More").is_empty());
+            let commands = click(&ctx, &mut console, &data, false, "navigation", tab.name());
+            assert!(commands.iter().all(|command| !matches!(
+                command.action,
+                "work_start" | "work_enqueue" | "project_work_enqueue"
+            )));
+            assert!(
+                console.tab == tab,
+                "More must preserve route {}",
+                tab.name()
+            );
+            let rect = ctx.data(|data| {
+                data.get_temp::<egui::Rect>(egui::Id::new((
+                    "test-action",
+                    "navigation",
+                    tab.name(),
+                )))
+                .unwrap()
+            });
+            assert!(rect.is_positive());
+        }
+    }
+
+    #[test]
+    fn unavailable_provider_has_a_clear_setup_route_without_starting_a_task() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut console = Console {
+            tab: Tab::Create,
+            create: state(),
+            ..Default::default()
+        };
+        let mut data = snapshot();
+        data["desktopPreferences"] = json!({"language":"en"});
+        console.create.view_results = true;
+        console
+            .create
+            .selected_work
+            .insert("project:one".into(), "work:one".into());
+        let copy = render(
+            &ctx,
+            &mut console,
+            &data,
+            egui::vec2(800.0, 560.0),
+            false,
+            vec![],
+        )
+        .1
+        .join("\n");
+        assert!(copy.contains("Codex is not ready."));
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            true,
+            "memory_control",
+            "Set up Codex"
+        )
+        .is_empty());
+        assert!(console.tab == Tab::Create);
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Set up Codex"
+        )
+        .is_empty());
+        assert!(console.tab == Tab::Providers);
+    }
+
+    #[test]
     fn create_screen_only_queues_after_explicit_click_and_preserves_busy_draft() {
         let ctx = egui::Context::default();
         studio::install(&ctx);
@@ -775,14 +1144,14 @@ mod tests {
             commands.is_empty(),
             "opening the studio must not enqueue or start work"
         );
-        assert!(copy.join("\n").contains("One idea. A whole crew."));
+        assert!(copy.join("\n").contains("What would you like to make?"));
         let commands = click(
             &ctx,
             &mut console,
             &data,
             true,
             "project_work_enqueue",
-            "Queue project task",
+            "Prepare task",
         );
         assert!(commands.is_empty());
         assert_eq!(console.create.draft().goal, "Owner goal");
@@ -792,7 +1161,7 @@ mod tests {
             &data,
             false,
             "project_work_enqueue",
-            "Queue project task",
+            "Prepare task",
         );
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].action, "project_work_enqueue");
@@ -812,7 +1181,7 @@ mod tests {
             &data,
             false,
             "project_work_enqueue",
-            "Queue project task"
+            "Prepare task"
         )
         .is_empty());
     }
@@ -1176,7 +1545,7 @@ mod tests {
                     data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
                         "test-action-state",
                         "project_work_enqueue",
-                        "Queue project task",
+                        "Prepare task",
                     )))
                     .unwrap()
                 });
@@ -1238,7 +1607,7 @@ mod tests {
                 let ctx = egui::Context::default();
                 studio::install(&ctx);
                 ctx.set_theme(theme);
-                let mut console = Console::default();
+                let mut console = Console::launch();
                 let data = json!({"desktopPreferences":{"language":language}});
                 let (commands, copy) = render(
                     &ctx,
@@ -1254,9 +1623,9 @@ mod tests {
                 assert!(console.folder_request.is_none());
                 assert!(!copy.join("\n").contains("Git"));
                 assert!(copy.join("\n").contains(if language == "tr" {
-                    "Bir fikir. Koca bir ekip."
+                    "Ne üretmek istersiniz?"
                 } else {
-                    "One idea. A whole crew."
+                    "What would you like to make?"
                 }));
                 let action = ctx.data(|data| {
                     data.get_temp::<egui::Rect>(egui::Id::new((
@@ -1294,7 +1663,7 @@ mod tests {
         let ctx = egui::Context::default();
         studio::install(&ctx);
         let empty = json!({"desktopPreferences":{"language":"en"}});
-        let mut console = Console::default();
+        let mut console = Console::launch();
         assert!(render(
             &ctx,
             &mut console,
@@ -1354,7 +1723,7 @@ mod tests {
         ] {
             let ctx = egui::Context::default();
             studio::install(&ctx);
-            let mut console = Console::default();
+            let mut console = Console::launch();
             let mut data = empty.clone();
             match existing {
                 "project" => {

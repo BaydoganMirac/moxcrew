@@ -199,6 +199,14 @@ impl Console {
                 if control(ui, "Connections", true).clicked() {
                     self.create.chat.connections_open = true;
                 }
+                if array(&snapshot["projectCrews"]["missions"])
+                    .iter()
+                    .any(|mission| text(mission, "projectId") == self.create.project)
+                    && control(ui, "Crew", true).clicked()
+                {
+                    self.create.crew.panel_open = !self.create.crew.panel_open;
+                    self.create.chat.files_open = false;
+                }
             });
         });
         ui.add_space(if compact { 8.0 } else { 18.0 });
@@ -242,7 +250,20 @@ impl Console {
             return;
         }
         let wide = ui.available_width() >= 850.0;
-        if wide && self.create.chat.files_open {
+        if wide && self.create.crew.panel_open {
+            egui::Panel::right("conversation-crew")
+                .resizable(true)
+                .default_size(330.0)
+                .min_size(290.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(colors(ui).surface)
+                        .inner_margin(16)
+                        .corner_radius(18),
+                )
+                .show(ui, |ui| self.crew_panel(ui, snapshot, commands));
+        }
+        if wide && self.create.chat.files_open && !self.create.crew.panel_open {
             egui::Panel::right("conversation-files")
                 .resizable(true)
                 .default_size(320.0)
@@ -300,7 +321,8 @@ impl Console {
         let welcome = self
             .create
             .chat_page(snapshot)
-            .is_some_and(|page| array(&page["items"]).is_empty());
+            .is_some_and(|page| array(&page["items"]).is_empty())
+            && !self.create.crew_has_history(snapshot);
         egui::ScrollArea::vertical()
             .id_salt((
                 "project-conversation",
@@ -312,13 +334,17 @@ impl Console {
             .show(ui, |ui| {
                 centered(ui, 820.0, |ui| self.chat_history(ui, snapshot, commands))
             });
-        if self.create.chat.files_open && !wide {
+        if self.create.crew.panel_open && !wide {
+            self.crew_overlay(ui, snapshot, commands);
+        }
+        if self.create.chat.files_open && !wide && !self.create.crew.panel_open {
+            let ready = ui.is_enabled();
             let id = egui::Id::new("conversation-files-dialog");
             let modal = egui::Modal::new(id)
                 .area(egui::Modal::default_area(id).fade_in(false))
                 .show(ui.ctx(), |ui| {
                     ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 620.0));
-                    self.chat_files(ui, snapshot, commands);
+                    ui.add_enabled_ui(ready, |ui| self.chat_files(ui, snapshot, commands));
                 });
             if modal.should_close() {
                 self.create.chat.files_open = false;
@@ -385,39 +411,58 @@ impl Console {
         });
         let payload = self.create.chat_payload(snapshot);
         ui.horizontal_wrapped(|ui| {
-            let enabled = payload.is_some() && self.create.pending.is_none();
-            let clicked = ui
-                .add_enabled_ui(enabled, |ui| {
-                    submit(ui, "Prepare task", "project_chat_send")
-                })
-                .inner;
-            if (clicked || (shortcut && enabled)) && commands.is_empty() {
-                if let Some(payload) = payload {
-                    let command = Command::new("project_chat_send", payload);
-                    let command_id = text(&command.payload, "commandId").to_owned();
-                    self.create.chat.pending_reply = Some((
-                        command_id.clone(),
-                        self.create
-                            .chat
-                            .replies
-                            .get(&(self.create.project.clone(), self.create.ability.clone()))
-                            .cloned(),
-                    ));
-                    self.create.pending = Some(Submission {
-                        command_id,
-                        project: self.create.project.clone(),
-                        ability: self.create.ability.clone(),
-                        draft: self.create.draft().clone(),
-                    });
-                    commands.push(command);
+            if self.create.crew.single {
+                let enabled = payload.is_some() && self.create.pending.is_none();
+                let clicked = ui
+                    .add_enabled_ui(enabled, |ui| {
+                        submit(ui, "Prepare task", "project_chat_send")
+                    })
+                    .inner;
+                if (clicked || (shortcut && enabled)) && commands.is_empty() {
+                    if let Some(payload) = payload {
+                        let command = Command::new("project_chat_send", payload);
+                        let command_id = text(&command.payload, "commandId").to_owned();
+                        self.create.chat.pending_reply = Some((
+                            command_id.clone(),
+                            self.create
+                                .chat
+                                .replies
+                                .get(&(self.create.project.clone(), self.create.ability.clone()))
+                                .cloned(),
+                        ));
+                        self.create.pending = Some(Submission {
+                            command_id,
+                            project: self.create.project.clone(),
+                            ability: self.create.ability.clone(),
+                            draft: self.create.draft().clone(),
+                        });
+                        commands.push(command);
+                    }
                 }
+            } else {
+                self.crew_plan_button(ui, snapshot, commands, shortcut);
             }
             if control(ui, "Skills", true).clicked() {
+                self.create.crew.catalog_target = None;
                 self.create.catalog_open = true;
             }
             if control(ui, "Details", true).clicked() {
                 self.create.chat.details_open = true;
             }
+            egui::ComboBox::from_id_salt("conversation-work-mode")
+                .selected_text(t(
+                    ui,
+                    if self.create.crew.single {
+                        "Single task"
+                    } else {
+                        "Crew"
+                    },
+                ))
+                .width(94.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.create.crew.single, false, t(ui, "Crew"));
+                    ui.selectable_value(&mut self.create.crew.single, true, t(ui, "Single task"));
+                });
         });
         if let Some(selected) = array(&snapshot["abilities"])
             .iter()
@@ -449,8 +494,13 @@ impl Console {
             {
                 self.create.select_ability(text(suggested, "id"));
             }
-        } else {
+        } else if self.create.crew.single {
             hint(ui, "Choose a type");
+        } else {
+            hint(
+                ui,
+                "Crew plans use bundled guides. Review before preparing.",
+            );
         }
     }
 
@@ -493,17 +543,18 @@ impl Console {
         }
         let Some(page) = self.create.chat_page(snapshot) else {
             hint(ui, "Loading this project's conversation…");
+            self.crew_chat_content(ui, snapshot, commands);
             return;
         };
-        if array(&page["items"]).is_empty() {
+        if array(&page["items"]).is_empty() && !self.create.crew_has_history(snapshot) {
             self.chat_welcome(ui, snapshot);
             return;
         }
         let project = self.create.project.clone();
-        for entry in array(&page["items"])
-            .iter()
-            .filter(|entry| job_belongs(snapshot, &project, text(entry, "workItemId")))
-        {
+        for entry in array(&page["items"]).iter().filter(|entry| {
+            job_belongs(snapshot, &project, text(entry, "workItemId"))
+                && !crew::contains_work(snapshot, &project, text(entry, "workItemId"))
+        }) {
             ui.push_id(text(entry, "workItemId"), |ui| {
                 ui.add_space(18.0);
                 let owner_width = ui.available_width() * 0.86;
@@ -543,6 +594,7 @@ impl Console {
                 ui.add_space(12.0);
             });
         }
+        self.crew_chat_content(ui, snapshot, commands);
     }
 
     fn chat_welcome(&mut self, ui: &mut Ui, snapshot: &Value) {
@@ -758,6 +810,7 @@ impl Console {
                     if commands.len()>before {
                         self.create.selected_work.insert(self.create.project.clone(),text(work,"workItemId").into());
                         self.create.result_path.clear();self.create.chat.files_open=true;
+                        self.create.crew.panel_open=false;
                     }
                     if control(ui,"Follow up",terminal(text(work,"status"))).clicked() {self.begin_chat_reply(snapshot,work);}
                 });
@@ -787,6 +840,7 @@ impl Console {
         {
             return;
         }
+        self.create.crew.single = true;
         if self
             .create
             .chat

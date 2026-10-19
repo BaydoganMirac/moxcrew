@@ -13,7 +13,9 @@ The owner selected easier first use and explicitly approved
 
 - A nonmodal Mox guide connects project creation, actual folder linkage,
   observed Codex compatibility and a deliberate first task start. It opens
-  automatically for empty Projects; populated installations keep their view.
+  explicitly from Projects. Task0040 supersedes the original empty-install
+  automatic entry with the general-purpose Create screen on application launch.
+  Explicit navigation and unsent drafts remain unchanged within the session.
   Owners can leave/reopen it and return from Tasks/Providers.
 - Existing project/folder forms, native picker, provider refresh, composer,
   revision gates and command/receipt behavior are reused. Multiple projects

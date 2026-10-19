@@ -24,15 +24,17 @@ Decisions include ordinary choices about a project's audience, evidence or
 delivery, not only software architecture. Notes and generated suggestions remain
 context until explicitly accepted. Decisions stay scoped to their project.
 
-This is the product direction, not a claim of universal execution today. The
-current task/team runner and Quick start still require Git worktrees and
-supported Codex control. The owner selected one broad general-purpose ability
+Create now queues project-scoped work in managed local folders without Git,
+using supported Codex control and explicit start. It offers forty inspectable
+recipes and real output preview/export. Ordinary coding tasks, teams and their
+Quick start guide keep Git worktrees. Recipes do not establish installed tools
+or verified output quality. The owner selected one broad general-purpose ability
 release, including presentations, video editing and research, under
 [ADR 0039](decisions/0039-broad-general-purpose-ability-release.md). Evaluate
 compatible existing skills and tools across documents, images, audio, data,
-web and connected actions. General-purpose execution, resource ingestion,
-reviewable outputs and onboarding need bounded implementation cards and
-verification before being advertised as delivered. Current internal
+web and connected actions. Resource ingestion, tool integration and the full
+ability paths still need bounded implementation and output verification.
+See [Create studio state](state/project-create-studio.md). Current internal
 workspace/schema identifiers retain their meaning.
 
 The owner accepted the broad plan as the

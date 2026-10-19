@@ -1,6 +1,6 @@
 # Task 0039: Moxcrew 1.0.0 master release
 
-Status: Owner-approved release target; implementation not started
+Status: Owner-approved release target; first implementation slice in progress
 
 Updated: 2026-10-19
 
@@ -120,7 +120,14 @@ separate public launches.
 | F7 Crew/onboarding integration | `crates/patchfleet-core/src/teams.rs`, pack/template assets, desktop `studio.rs`, `ui.rs`, `i18n.rs` and related tests | After producing paths exist: J1–J10, source/decision reuse, nontechnical setup and honest progress. |
 | F8 Release hardening | `Packager.toml`, existing CI workflows, `docs/release.md`, installation/recovery docs and release evidence | All scope rows: install/upgrade/recovery and supported OS matrix; reviewed candidate and rollback proof. |
 
-No F0 environment/provider has been chosen yet. In particular, reuse candidates
+Task0040 selects existing supported Codex control and exact managed directories
+for the first non-Git job/result foundation under ADR0041. Development-only
+editable PPTX and edited MP4 feasibility checks passed with existing host tools;
+their redistribution licenses, shipped integration and cross-platform execution
+remain unresolved. Forty localized recipes are guidance, not F2 tool availability
+or forty completed abilities. See [Create state](../state/project-create-studio.md).
+
+No shipped presentation/video tool environment has been chosen yet. Reuse candidates
 that require Python, Node or a headless browser do not silently change ADR 0024.
 A changed execution environment needs an accepted architecture record before
 relying on it. Model credentials, paid services and dependency downloads are not

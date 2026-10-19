@@ -1,6 +1,6 @@
 # Task 0040: Project Create studio
 
-Status: Approved implementation in progress
+Status: Complete for bounded foundation; reviewed and locally verified
 
 Updated: 2026-10-19
 
@@ -15,6 +15,14 @@ recipe, write a goal, queue a real project-scoped job without a Git folder,
 explicitly start/cancel it through supported Codex control, and inspect/export
 actual output files. Recipes guide provider work; listing forty recipes does not
 prove that forty file formats or external tools are installed or verified.
+
+Owner feedback after the first native UI: the screen feels complex and difficult
+to use. The authorized interface refinement makes the goal prompt dominant,
+keeps Project and selected recipe clear, and moves the full catalog/advanced
+fields into deliberate disclosures. Preserve every scoped draft, provider gate
+and explicit start. Queueing remains a preparation step, never automatic
+execution. Primary navigation should emphasize Create, Projects and Tasks;
+secondary tools remain reachable without competing with the first task.
 
 ## Contract
 

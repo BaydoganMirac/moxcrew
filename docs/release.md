@@ -59,9 +59,12 @@ Local must remain usable without an account or reachable Cloud.
 ## Interface 0.12
 
 Task0036 refreshes presentation, bundled fonts and platform icons without new
-canonical events, services or production dependencies. Data written by0.12
-remains readable by0.11. Existing V6/V7 backup and rollback requirements below
-still apply. See [interface state](state/product-studio-interface.md).
+canonical events, services or production dependencies. That interface-only
+baseline preserves 0.11 readability. Subsequent Task0040 development changes
+write V8 Create/retry/export audit facts; a pre-Task0040 reader cannot read those
+facts even though the source version remains 0.12.0. Existing V6/V7 and the V8
+backup/rollback requirements below apply. See [interface state](state/product-studio-interface.md)
+and [Create state](state/project-create-studio.md).
 
 ## Native rendering proof
 
@@ -102,6 +105,11 @@ Moxcrew display-identity packages retain `com.patchfleet.desktop`, binary names
 and canonical data paths. The packaged App is now `Moxcrew.app`; CI archive and
 verification paths use that display name. Theme smoke controls additionally
 accept `PATCHFLEET_SMOKE_THEME=light` or `dark`; these remain test-only.
+
+The `create-catalog` and `create-results` scenes seed a disposable non-Git
+Project and queued job. The results scene writes deterministic Markdown/CSV
+fixtures to its real outputs directory and reads them through the Host. Neither
+scene runs a model or renderer; filenames/content explicitly identify fixtures.
 
 Windows installer templates are pinned to cargo-packager0.11.8 under
 `crates/patchfleet-desktop/assets/windows/`. Moxcrew display labels deliberately
@@ -148,3 +156,10 @@ smoke scenes use deterministic canonical provider results without any live model
 turn. Verify consent/default-off, source edit/disable cancellation and truthful
 manual retry in addition to the existing Local acceptance lifecycle. See
 [draft evidence](state/automatic-drafts.md).
+
+Task0040 adds V8 owner-command audit events for project job enqueue, result
+export and work retry (including ordinary retries). Close and back up the data
+directory before the first such command. Readers without V8 support reject
+those events. Rollback restores the complete unchanged pre-upgrade data copy;
+never delete or rewrite V8 lines to make an old reader open the directory.
+Create does not bump the current development source to 1.0.0.

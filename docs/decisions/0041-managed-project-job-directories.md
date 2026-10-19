@@ -16,6 +16,11 @@ Ordinary registered/manual coding work keeps Git validation. A user-provided
 boolean, source instruction or arbitrary path cannot select the managed path.
 Symlink aliases and escapes must fail closed, including result reads/exports.
 
+Unix result operations use pinned directory handles. Windows result access is
+explicitly unsupported until equivalent race-resistant protection is implemented
+and natively verified. Failed exports may retain a partial new destination;
+cleanup must never remove a pathname another process may have replaced.
+
 Native Create uses declarative, localized ability recipes and does not claim
 their required renderers, models or connectors exist. Actual files can be
 inspected and explicitly exported with overwrite protection. Their presence

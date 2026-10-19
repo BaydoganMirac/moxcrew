@@ -230,6 +230,11 @@ fn seed_create_scene(directory: &std::path::Path) {
         if std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en") {
             host.action("desktop_language", command::Command::new("desktop_language", serde_json::json!({"language":"en"})).payload).await.unwrap();
         }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("create-empty") {
+            assert_eq!(host.snapshot().unwrap()["projectMemory"]["projects"], serde_json::json!([]));
+            host.shutdown().await;
+            return;
+        }
         let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":"Launch idea · UI fixture"})).payload).await.unwrap();
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();

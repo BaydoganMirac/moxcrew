@@ -1,6 +1,6 @@
 # General-purpose Project direction
 
-Status: Owner-selected product direction recorded; broader execution pending
+Status: Owner-selected direction; managed non-Git Create foundation implemented
 
 Updated: 2026-10-19
 
@@ -23,10 +23,12 @@ Cloud sharing and free Local/optional subscription Cloud are preserved.
 ## Current implementation and next step
 
 Existing project identity and owner-entered memory are independent of folders.
-Task/team execution and the delivered Quick start still use Git worktrees and
-supported Codex control. No non-coding runner, file import, browser/application
-control, general preference inheritance, migration or new onboarding shipped
-in this clarification. Historical internal workspace IDs remain compatible.
+The [Create studio](project-create-studio.md) now queues managed non-Git jobs
+through supported Codex, with forty recipes and scoped output reads/export.
+The application opens Create. Ordinary coding tasks/teams and their explicitly
+opened Quick start retain Git worktrees. File ingestion, integrated media tools,
+browser/application control and general preference inheritance remain future
+implementation. Historical internal workspace IDs retain their meanings.
 
 The owner subsequently rejected the narrow three-ability launch proposal and
 selected a broad release including presentations, video editing and research.

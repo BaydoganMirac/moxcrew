@@ -254,18 +254,30 @@ fn connection_fields(
             );
         }
     } else {
-        ui.label(studio::title(t(ui, "Connect account"), 16.0));
+        ui.label(studio::title(t(ui, "Connect account"), 20.0));
     }
     field(ui, "Connection label", &mut state.label, 80, false);
     let token_id = egui::Id::new("app-access-token");
     ui.label(t(ui, "Access token"));
-    ui.add(
+    let token_input = ui.add_sized(
+        egui::vec2(ui.available_width(), studio::metrics::CONTROL_HEIGHT),
         egui::TextEdit::singleline(&mut state.token)
             .id(token_id)
             .password(true)
             .desired_width(f32::INFINITY)
+            .font(egui::TextStyle::Body)
+            .margin(studio::metrics::INPUT_MARGIN)
             .char_limit(16_000),
     );
+    #[cfg(test)]
+    ui.data_mut(|data| {
+        data.insert_temp(
+            egui::Id::new("app-private-input"),
+            (token_input.rect, token_input.id),
+        )
+    });
+    #[cfg(not(test))]
+    let _ = token_input;
     if let Some(mut edit) = egui::text_edit::TextEditState::load(ui.ctx(), token_id) {
         edit.clear_undoer();
         edit.store(ui.ctx(), token_id);
@@ -451,7 +463,7 @@ impl Console {
                             "Outputs"
                         },
                     ),
-                    22.0,
+                    24.0,
                 ));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let before = self.create.studio.tab;
@@ -538,7 +550,7 @@ impl Console {
                         hint(ui, text(error, "reasonCode"));
                     }
                 });
-            ui.add_space(12.0);
+            ui.add_space(studio::metrics::CONTROL_GAP);
             self.studio_footer(ui, snapshot, commands);
         });
     }
@@ -595,7 +607,7 @@ impl Console {
             return;
         }
         delivery::file_filters(ui, &mut self.create.studio);
-        ui.add_space(8.0);
+        ui.add_space(studio::metrics::GAP);
         let current = selected_artifact(&self.create, snapshot)
             .map(|artifact| {
                 format!(
@@ -608,11 +620,13 @@ impl Console {
                 )
             })
             .unwrap_or_else(|| t(ui, "Choose an output").into_owned());
-        egui::ComboBox::from_id_salt("studio-artifact-version")
-            .selected_text(current)
-            .width(ui.available_width().min(540.0))
-            .height(220.0)
-            .show_ui(ui, |ui| {
+        form_combo(
+            ui,
+            egui::ComboBox::from_id_salt("studio-artifact-version")
+                .selected_text(current)
+                .width(ui.available_width().min(540.0))
+                .height(220.0),
+            |ui| {
                 let mut count = 0;
                 for artifact in artifacts.iter().filter(|artifact| {
                     delivery::matches_file(
@@ -652,17 +666,18 @@ impl Console {
                 if count == 0 {
                     hint(ui, "No matching outputs.");
                 }
-            });
+            },
+        );
         let Some(artifact) = selected_artifact(&self.create, snapshot).cloned() else {
             hint(ui, "Choose an output to preview or revise.");
             return;
         };
-        ui.add_space(16.0);
-        ui.label(studio::title(text(&artifact, "name"), 16.0));
-        ui.add_space(12.0);
+        ui.add_space(f32::from(studio::metrics::PADDING));
+        ui.label(studio::title(text(&artifact, "name"), 20.0));
+        ui.add_space(studio::metrics::CONTROL_GAP);
         if let Some(preview) = artifact_preview(&self.create, snapshot, &artifact) {
             self.studio_preview(ui, &preview["preview"], text(&artifact, "sha256"));
-            ui.add_space(20.0);
+            ui.add_space(studio::metrics::SECTION_GAP);
             let key = (
                 self.create.project.clone(),
                 text(&artifact, "workItemId").into(),
@@ -677,7 +692,7 @@ impl Console {
                 .is_some_and(|draft| !draft.is_empty());
             let revision_ui=egui::CollapsingHeader::new(t(ui,"Revise this output")).default_open(has_draft).show(ui,|ui| {
                 let sections=array(&preview["sections"]);
-                egui::ComboBox::from_id_salt("revision-section").selected_text(sections.iter().find(|section|text(section,"id")==self.create.studio.section).map(|section|std::borrow::Cow::Borrowed(text(section,"label"))).unwrap_or_else(||t(ui,"Whole output"))).show_ui(ui,|ui| {
+                form_combo(ui,egui::ComboBox::from_id_salt("revision-section").selected_text(sections.iter().find(|section|text(section,"id")==self.create.studio.section).map(|section|std::borrow::Cow::Borrowed(text(section,"label"))).unwrap_or_else(||t(ui,"Whole output"))),|ui| {
                     ui.selectable_value(&mut self.create.studio.section,String::new(),t(ui,"Whole output"));
                     for section in sections {ui.selectable_value(&mut self.create.studio.section,text(section,"id").into(),text(section,"label"));}
                 });
@@ -701,7 +716,7 @@ impl Console {
         } else {
             hint(ui, "Preview is loaded only for this exact file version.");
         }
-        ui.add_space(12.0);
+        ui.add_space(studio::metrics::CONTROL_GAP);
         ui.collapsing(t(ui, "Version & provenance"), |ui| {
             for (key, label) in [
                 ("versionId", "Version"),
@@ -713,7 +728,7 @@ impl Console {
                 if !text(&artifact, key).is_empty() {
                     ui.label(
                         RichText::new(t(ui, label))
-                            .size(11.0)
+                            .size(12.0)
                             .color(colors(ui).muted),
                     );
                     ui.add(
@@ -829,7 +844,7 @@ impl Console {
                 status(ui,text(resource,"status"));
                 ui.collapsing(t(ui,"Provenance"),|ui| {ui.monospace(text(resource,"sha256"));});
                 quiet_action(ui,commands,"Remove resource","project_resource_remove",revision(resource)>0,||json!({"projectId":self.create.project,"resourceId":resource["resourceId"],"expectedResourceRevision":resource["revision"]}));
-                ui.add_space(16.0);
+                ui.add_space(f32::from(studio::metrics::PADDING));
             });
         }
     }
@@ -887,7 +902,7 @@ impl Console {
                         }
                         hint(ui, text(tool, "reasonCode"));
                     });
-                    ui.add_space(16.0);
+                    ui.add_space(f32::from(studio::metrics::PADDING));
                 })
             });
         }
@@ -905,10 +920,12 @@ impl Console {
             state.connection_provider = "google_drive".into();
         }
         let previous = state.connection_provider.clone();
-        egui::ComboBox::from_id_salt("app-provider")
-            .width(220.0)
-            .selected_text(app_name(&state.connection_provider))
-            .show_ui(ui, |ui| {
+        form_combo(
+            ui,
+            egui::ComboBox::from_id_salt("app-provider")
+                .width(220.0)
+                .selected_text(app_name(&state.connection_provider)),
+            |ui| {
                 for provider in ["google_drive", "notion", "google_calendar"] {
                     ui.selectable_value(
                         &mut state.connection_provider,
@@ -916,7 +933,8 @@ impl Console {
                         app_name(provider),
                     );
                 }
-            });
+            },
+        );
         if previous != state.connection_provider {
             state.token.clear();
             state.prepared = None;
@@ -935,15 +953,15 @@ impl Console {
                 "Not connected"
             },
         );
-        ui.add_space(12.0);
+        ui.add_space(studio::metrics::CONTROL_GAP);
         let prepared = prepared_app(state, snapshot, &project).cloned();
         if let Some(receipt) = prepared {
             ui.label(studio::title(
                 t(ui, app_operation_name(text(&receipt, "operation"))),
-                16.0,
+                20.0,
             ));
             hint(ui, "Review the exact remote operation before approving.");
-            ui.add_space(12.0);
+            ui.add_space(studio::metrics::CONTROL_GAP);
             if let Some(preview) = receipt["preview"].as_str() {
                 ui.add(egui::Label::new(preview).wrap().selectable(true));
             }
@@ -967,7 +985,7 @@ impl Console {
                     ui,
                     app_operation_name(app_fields(&state.connection_provider).0),
                 ),
-                16.0,
+                20.0,
             ));
             let before = state.arguments.clone();
             for (key, label) in app_fields(&state.connection_provider).1 {
@@ -998,7 +1016,7 @@ impl Console {
             }
         }
         if connected {
-            ui.add_space(20.0);
+            ui.add_space(studio::metrics::SECTION_GAP);
             ui.collapsing(t(ui, "Connection settings"), |ui| {
                 connection_fields(ui, state, &project, connection, commands, true)
             });
@@ -1123,6 +1141,11 @@ mod tests {
                                 .as_ref()));
                         assert!(!copy.join("\n").contains("SYNTHETIC-PRIVATE-CANARY"));
                     }
+                    let (input, _) = ctx.data(|data| {
+                        data.get_temp::<(egui::Rect, egui::Id)>(egui::Id::new("app-private-input"))
+                            .unwrap()
+                    });
+                    assert!((input.height() - studio::metrics::CONTROL_HEIGHT).abs() < 0.1);
                     let rect = ctx.data(|data| {
                         data.get_temp::<egui::Rect>(egui::Id::new((
                             "test-action",

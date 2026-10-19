@@ -62,6 +62,21 @@ fn quiet_action(
         commands.push(Command::new(name, payload()));
     }
 }
+fn form_combo<R>(
+    ui: &mut Ui,
+    combo: egui::ComboBox,
+    contents: impl FnOnce(&mut Ui) -> R,
+) -> egui::InnerResponse<Option<R>> {
+    let previous = ui.spacing().interact_size.y;
+    ui.spacing_mut().interact_size.y = studio::metrics::CONTROL_HEIGHT;
+    let result = combo.show_ui(ui, |ui| {
+        ui.spacing_mut().interact_size.y = studio::metrics::COMPACT_HEIGHT;
+        contents(ui)
+    });
+    ui.spacing_mut().interact_size.y = previous;
+    result
+}
+
 fn inline_surface(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
     let width = ui.available_width().min(980.0);
     ui.horizontal_top(|ui| {
@@ -466,6 +481,7 @@ impl Console {
         let id = egui::Id::new("create-ability-catalog");
         let modal = egui::Modal::new(id)
             .area(egui::Modal::default_area(id).fade_in(false))
+            .frame(studio::card(ui))
             .show(ui.ctx(), |ui| {
                 ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 680.0));
                 egui::ScrollArea::vertical()
@@ -492,18 +508,21 @@ impl Console {
     }
 
     fn create_catalog(&mut self, ui: &mut Ui, abilities: &[Value], language: Language) {
-        card(ui, |ui| {
+        egui::Frame::NONE.show(ui, |ui| {
             section_title(
                 ui,
                 "Explore abilities",
                 "Task recipes guide your agent. Results depend on available tools and access.",
             );
-            ui.add_space(10.0);
+            ui.add_space(studio::metrics::CONTROL_GAP);
             field(ui, "Search abilities", &mut self.create.search, 200, false);
             ui.horizontal_wrapped(|ui| {
-                if ui
-                    .selectable_label(self.create.category.is_empty(), t(ui, "All abilities"))
-                    .clicked()
+                if studio::section_nav(
+                    ui,
+                    self.create.category.is_empty(),
+                    t(ui, "All abilities").as_ref(),
+                )
+                .clicked()
                 {
                     self.create.category.clear();
                 }
@@ -517,18 +536,18 @@ impl Console {
                     "data",
                     "web",
                 ] {
-                    if ui
-                        .selectable_label(
-                            self.create.category == category,
-                            t(ui, category_name(category)),
-                        )
-                        .clicked()
+                    if studio::section_nav(
+                        ui,
+                        self.create.category == category,
+                        t(ui, category_name(category)).as_ref(),
+                    )
+                    .clicked()
                     {
                         self.create.category = category.into();
                     }
                 }
             });
-            ui.add_space(10.0);
+            ui.add_space(studio::metrics::CONTROL_GAP);
             let matching: Vec<_> = abilities
                 .iter()
                 .filter(|ability| {
@@ -552,11 +571,24 @@ impl Console {
                         ui.push_id(text(ability, "id"), |ui| {
                             let selected = self.create.ability == text(ability, "id");
                             let label = ability_text(ability, "name", language);
-                            let response = ui.add(
-                                egui::Button::selectable(selected, RichText::new(label).strong())
-                                    .wrap()
-                                    .min_size(egui::vec2(ui.available_width(), 34.0)),
+                            let response = studio::button(
+                                ui,
+                                label,
+                                if selected {
+                                    studio::ButtonKind::Primary
+                                } else {
+                                    studio::ButtonKind::Secondary
+                                },
+                                true,
                             );
+                            response.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::WidgetType::SelectableLabel,
+                                    response.enabled(),
+                                    selected,
+                                    label,
+                                )
+                            });
                             #[cfg(test)]
                             ui.data_mut(|data| {
                                 data.insert_temp(
@@ -573,7 +605,7 @@ impl Console {
                                 self.create.catalog_open = false;
                             }
                             raw_hint(ui, ability_text(ability, "description", language));
-                            ui.add_space(9.0);
+                            ui.add_space(studio::metrics::GAP);
                         });
                     }
                 });
@@ -699,7 +731,7 @@ impl Console {
             if runtime_issue.is_some() || cfg!(target_os = "windows") {
                 return;
             }
-            ui.add_space(10.0);
+            ui.add_space(studio::metrics::CONTROL_GAP);
             let Some(results) =
                 self.create
                     .scoped(snapshot, "projectResults", "PROJECT_RESULTS_READ")
@@ -750,7 +782,7 @@ impl Console {
                         })
                 })
             {
-                ui.add_space(12.0);
+                ui.add_space(studio::metrics::CONTROL_GAP);
                 ui.separator();
                 ui.label(RichText::new(t(ui, "Output preview")).strong());
                 raw_hint(ui, text(detail, "path"));
@@ -968,7 +1000,8 @@ mod tests {
                     for row in rectangles.chunks(4) {
                         for pair in row.windows(2) {
                             assert!(
-                                (pair[1].left() - pair[0].right() - 10.0).abs() < 1.0,
+                                (pair[1].left() - pair[0].right() - studio::metrics::GAP).abs()
+                                    < 1.0,
                                 "grid cells must not allocate extra icon columns"
                             );
                         }

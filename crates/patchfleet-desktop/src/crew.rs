@@ -564,8 +564,8 @@ impl Console {
             return;
         };
         if show_title {
-            ui.label(studio::title(t(ui, "Your crew is ready"), 22.0));
-            ui.add_space(12.0);
+            ui.label(studio::title(t(ui, "Your crew is ready"), 24.0));
+            ui.add_space(studio::metrics::CONTROL_GAP);
         }
         let goal = plan
             .recommended_for
@@ -587,10 +587,10 @@ impl Console {
                 tf(ui, "{0} agents", &[&plan.members.len().to_string()]),
                 t(ui, source)
             ))
-            .size(11.0)
+            .size(12.0)
             .color(colors(ui).muted),
         );
-        ui.add_space(16.0);
+        ui.add_space(f32::from(studio::metrics::PADDING));
         let columns = if ui.available_width() >= 620.0 && plan.members.len() >= 3 {
             3
         } else if ui.available_width() >= 440.0 && plan.members.len() >= 2 {
@@ -633,71 +633,66 @@ impl Console {
                         egui::vec2(width, studio::metrics::CONTROL_HEIGHT * 3.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
-                            egui::Frame::new()
-                                .fill(p.surface)
-                                .stroke(egui::Stroke::new(1.0, p.border))
-                                .corner_radius(studio::metrics::CARD_RADIUS)
-                                .inner_margin(studio::metrics::PADDING)
-                                .show(ui, |ui| {
-                                    ui.set_width(
-                                        (width - f32::from(studio::metrics::PADDING) * 2.0)
-                                            .max(studio::metrics::CONTROL_HEIGHT),
+                            studio::card(ui).show(ui, |ui| {
+                                ui.set_width(
+                                    (width - f32::from(studio::metrics::PADDING) * 2.0)
+                                        .max(studio::metrics::CONTROL_HEIGHT),
+                                );
+                                ui.set_min_height(
+                                    studio::metrics::CONTROL_HEIGHT * 3.0
+                                        - f32::from(studio::metrics::PADDING) * 2.0,
+                                );
+                                ui.spacing_mut().item_spacing.y = studio::metrics::GAP * 0.5;
+                                ui.spacing_mut().interact_size.y = 20.0;
+                                ui.horizontal(|ui| {
+                                    studio::icon(ui, icon, 20.0, accent);
+                                    ui.label(
+                                        RichText::new(t(ui, role_label(role)))
+                                            .size(12.0)
+                                            .color(accent),
                                     );
-                                    ui.set_min_height(
-                                        studio::metrics::CONTROL_HEIGHT * 3.0
-                                            - f32::from(studio::metrics::PADDING) * 2.0,
-                                    );
-                                    ui.spacing_mut().item_spacing.y = 5.0;
-                                    ui.spacing_mut().interact_size.y = 20.0;
-                                    ui.horizontal(|ui| {
-                                        studio::icon(ui, icon, 20.0, accent);
-                                        ui.label(
-                                            RichText::new(t(ui, role_label(role)))
-                                                .size(11.0)
-                                                .color(accent),
-                                        );
-                                    });
-                                    ui.add(
-                                        egui::Label::new(
-                                            RichText::new(text(member, "name")).size(15.0).strong(),
-                                        )
-                                        .truncate(),
-                                    )
-                                    .on_hover_text(text(member, "name"));
-                                    let capability = if role == "review" {
-                                        t(ui, "Quality review")
-                                    } else {
-                                        ability
-                                            .map(|ability| {
-                                                std::borrow::Cow::Borrowed(ability_text(
-                                                    ability,
-                                                    "name",
-                                                    Language::from_snapshot(snapshot),
-                                                ))
-                                            })
-                                            .unwrap_or_else(|| t(ui, role_label(role)))
-                                    };
-                                    ui.add(
-                                        egui::Label::new(
-                                            RichText::new(capability).size(11.0).color(p.muted),
-                                        )
-                                        .truncate(),
-                                    );
-                                    let description = if role == "review" {
-                                        t(ui, "Checks the deliverables against your goal.")
-                                    } else {
-                                        ability
-                                            .map(|ability| {
-                                                std::borrow::Cow::Borrowed(ability_text(
-                                                    ability,
-                                                    "description",
-                                                    Language::from_snapshot(snapshot),
-                                                ))
-                                            })
-                                            .unwrap_or_else(|| t(ui, role_label(role)))
-                                    };
-                                    short_copy(ui, &description, 12.0, p.muted, 2);
                                 });
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(text(member, "name")).size(14.0).strong(),
+                                    )
+                                    .truncate(),
+                                )
+                                .on_hover_text(text(member, "name"));
+                                let capability = if role == "review" {
+                                    t(ui, "Quality review")
+                                } else {
+                                    ability
+                                        .map(|ability| {
+                                            std::borrow::Cow::Borrowed(ability_text(
+                                                ability,
+                                                "name",
+                                                Language::from_snapshot(snapshot),
+                                            ))
+                                        })
+                                        .unwrap_or_else(|| t(ui, role_label(role)))
+                                };
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(capability).size(12.0).color(p.muted),
+                                    )
+                                    .truncate(),
+                                );
+                                let description = if role == "review" {
+                                    t(ui, "Checks the deliverables against your goal.")
+                                } else {
+                                    ability
+                                        .map(|ability| {
+                                            std::borrow::Cow::Borrowed(ability_text(
+                                                ability,
+                                                "description",
+                                                Language::from_snapshot(snapshot),
+                                            ))
+                                        })
+                                        .unwrap_or_else(|| t(ui, role_label(role)))
+                                };
+                                short_copy(ui, &description, 12.0, p.muted, 2);
+                            });
                         },
                     );
                     #[cfg(test)]
@@ -726,7 +721,7 @@ impl Console {
         }
     }
     fn crew_plan_card(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
-        ui.add_space(16.0);
+        ui.add_space(f32::from(studio::metrics::PADDING));
         self.crew_roster_summary(ui, snapshot, true);
         ui.horizontal_wrapped(|ui| {
             self.crew_prepare_action(ui, snapshot, commands);
@@ -753,6 +748,7 @@ impl Console {
         let id = egui::Id::new("crew-roster-editor");
         let modal = egui::Modal::new(id)
             .area(egui::Modal::default_area(id).fade_in(false))
+            .frame(studio::card(ui))
             .show(ui.ctx(), |ui| {
                 ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 640.0));
                 ui.label(studio::title(t(ui, "Build your crew"), 24.0));
@@ -767,11 +763,26 @@ impl Console {
                                 card(ui, |ui| {
                                     let mut name = text(member, "name").to_owned();
                                     ui.horizontal(|ui| {
-                                        ui.add(
+                                        let remove_width = ui
+                                            .painter()
+                                            .layout_no_wrap(
+                                                t(ui, "Remove agent").into_owned(),
+                                                egui::FontId::proportional(14.0),
+                                                colors(ui).text,
+                                            )
+                                            .size()
+                                            .x
+                                            + f32::from(studio::metrics::PADDING) * 2.0;
+                                        let name_width = (ui.available_width()
+                                            - remove_width
+                                            - ui.spacing().item_spacing.x)
+                                            .max(studio::metrics::CONTROL_HEIGHT);
+                                        ui.add_sized(
+                                            egui::vec2(name_width, studio::metrics::CONTROL_HEIGHT),
                                             egui::TextEdit::singleline(&mut name)
-                                                .desired_width(
-                                                    (ui.available_width() - 110.0).max(120.0),
-                                                )
+                                                .desired_width(name_width)
+                                                .font(egui::TextStyle::Body)
+                                                .margin(studio::metrics::INPUT_MARGIN)
                                                 .hint_text(t(ui, "Agent name"))
                                                 .char_limit(80),
                                         );
@@ -812,10 +823,12 @@ impl Console {
                                             .find(|(value, _)| *value == selected_role)
                                             .map(|(_, label)| *label)
                                             .unwrap_or("Choose…");
-                                        egui::ComboBox::from_id_salt("crew-member-role")
-                                            .selected_text(t(ui, label))
-                                            .width(180.0)
-                                            .show_ui(ui, |ui| {
+                                        form_combo(
+                                            ui,
+                                            egui::ComboBox::from_id_salt("crew-member-role")
+                                                .selected_text(t(ui, label))
+                                                .width(180.0),
+                                            |ui| {
                                                 for (value, label) in roles {
                                                     ui.selectable_value(
                                                         &mut selected_role,
@@ -823,7 +836,8 @@ impl Console {
                                                         t(ui, label),
                                                     );
                                                 }
-                                            });
+                                            },
+                                        );
                                     });
                                     member["role"] = json!(selected_role);
                                     ui.collapsing(t(ui, "Instructions"), |ui| {
@@ -831,6 +845,8 @@ impl Console {
                                             text(member, "instruction").to_owned();
                                         ui.add(
                                             egui::TextEdit::multiline(&mut instruction)
+                                                .font(egui::TextStyle::Body)
+                                                .margin(studio::metrics::INPUT_MARGIN)
                                                 .desired_width(f32::INFINITY)
                                                 .desired_rows(3)
                                                 .char_limit(4000),
@@ -961,7 +977,7 @@ impl Console {
         for crew in saved {
             ui.push_id(text(crew, "crewId"), |ui| {
                 card(ui, |ui| {
-                    ui.label(studio::title(text(crew, "name"), 18.0));
+                    ui.label(studio::title(text(crew, "name"), 20.0));
                     ui.horizontal_wrapped(|ui| {
                         for member in array(&crew["members"]) {
                             ui.label(text(member, "name"));
@@ -977,7 +993,7 @@ impl Console {
             self.create.crew.single = false;
             self.tab = Tab::Create;
         }
-        ui.add_space(16.0);
+        ui.add_space(f32::from(studio::metrics::PADDING));
         ui.label(studio::title(t(ui, "Missions"), 20.0));
         for mission in ordered_missions(snapshot, &project)
             .into_iter()
@@ -999,12 +1015,10 @@ impl Console {
         commands: &mut Vec<Command>,
         show_goal: bool,
     ) {
-        ui.add_space(12.0);
+        ui.add_space(studio::metrics::CONTROL_GAP);
         if show_goal {
-            egui::Frame::new()
+            studio::card(ui)
                 .fill(colors(ui).info_surface)
-                .corner_radius(16)
-                .inner_margin(14)
                 .show(ui, |ui| {
                     hint(ui, "You");
                     ui.add(
@@ -1013,52 +1027,47 @@ impl Console {
                             .selectable(true),
                     );
                 });
-            ui.add_space(10.0);
+            ui.add_space(studio::metrics::CONTROL_GAP);
         }
-        egui::Frame::new()
-            .fill(colors(ui).surface)
-            .stroke(egui::Stroke::new(1.0, colors(ui).border))
-            .corner_radius(18)
-            .inner_margin(16)
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    crate::motion::mox(
-                        ui,
-                        36.0,
-                        matches!(text(mission, "status"), "active" | "cancelling"),
-                        snapshot["desktopPreferences"]["reduceMotion"] == true,
-                    );
-                    ui.label(studio::title(text(mission, "title"), 18.0));
-                    status(ui, text(mission, "status"));
-                });
-                let tasks = array(&mission["tasks"]);
-                let complete = tasks
-                    .iter()
-                    .filter(|task| text(task, "status") == "completed")
-                    .count();
-                hint(
+        studio::card(ui).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                crate::motion::mox(
                     ui,
-                    &tf(
-                        ui,
-                        "{0} of {1} tasks completed",
-                        &[&complete.to_string(), &tasks.len().to_string()],
-                    ),
+                    36.0,
+                    matches!(text(mission, "status"), "active" | "cancelling"),
+                    snapshot["desktopPreferences"]["reduceMotion"] == true,
                 );
-                if text(mission, "status") == "prepared" {
-                    hint(ui, "Prepared crew. No agents have started.");
-                }
-                self.crew_mission_actions(ui, snapshot, mission, commands);
-                if control(ui, "Open crew", true).clicked() {
-                    self.create.crew.selected.insert(
-                        self.create.project.clone(),
-                        text(mission, "missionId").into(),
-                    );
-                    self.create.crew.panel_open = true;
-                    self.create.crew.tab = 0;
-                    self.create.chat.files_open = false;
-                }
+                ui.label(studio::title(text(mission, "title"), 20.0));
+                status(ui, text(mission, "status"));
             });
-        ui.add_space(10.0);
+            let tasks = array(&mission["tasks"]);
+            let complete = tasks
+                .iter()
+                .filter(|task| text(task, "status") == "completed")
+                .count();
+            hint(
+                ui,
+                &tf(
+                    ui,
+                    "{0} of {1} tasks completed",
+                    &[&complete.to_string(), &tasks.len().to_string()],
+                ),
+            );
+            if text(mission, "status") == "prepared" {
+                hint(ui, "Prepared crew. No agents have started.");
+            }
+            self.crew_mission_actions(ui, snapshot, mission, commands);
+            if control(ui, "Open crew", true).clicked() {
+                self.create.crew.selected.insert(
+                    self.create.project.clone(),
+                    text(mission, "missionId").into(),
+                );
+                self.create.crew.panel_open = true;
+                self.create.crew.tab = 0;
+                self.create.chat.files_open = false;
+            }
+        });
+        ui.add_space(studio::metrics::CONTROL_GAP);
     }
 
     fn crew_mission_actions(
@@ -1166,7 +1175,7 @@ impl Console {
                 }
             }
         });
-        ui.add_space(8.0);
+        ui.add_space(studio::metrics::GAP);
         match self.create.crew.tab {
             1 => self.crew_messages(ui, snapshot, mission, commands),
             2 => {
@@ -1221,6 +1230,7 @@ impl Console {
         let id = egui::Id::new("project-crew-panel");
         let modal = egui::Modal::new(id)
             .area(egui::Modal::default_area(id).fade_in(false))
+            .frame(studio::card(ui))
             .show(ui.ctx(), |ui| {
                 ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 640.0));
                 ui.add_enabled_ui(ready, |ui| self.crew_panel(ui, snapshot, commands));
@@ -1441,14 +1451,16 @@ fn provider_picker(ui: &mut Ui, id: impl std::hash::Hash + std::fmt::Debug, valu
     if value.is_empty() {
         *value = "codex".into();
     }
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(match value.as_str() {
-            "claude" => "Claude Code",
-            "gemini" => "Gemini CLI",
-            _ => "Codex",
-        })
-        .width(125.0)
-        .show_ui(ui, |ui| {
+    form_combo(
+        ui,
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(match value.as_str() {
+                "claude" => "Claude Code",
+                "gemini" => "Gemini CLI",
+                _ => "Codex",
+            })
+            .width(125.0),
+        |ui| {
             for (id, label) in [
                 ("codex", "Codex"),
                 ("claude", "Claude Code"),
@@ -1456,7 +1468,8 @@ fn provider_picker(ui: &mut Ui, id: impl std::hash::Hash + std::fmt::Debug, valu
             ] {
                 ui.selectable_value(value, id.into(), label);
             }
-        });
+        },
+    );
 }
 fn budgets_ui(ui: &mut Ui, budgets: &mut Value) {
     for (key, label, min, max) in [
@@ -1655,7 +1668,7 @@ impl Console {
                         "Mox planner"
                     },
                 ),
-                16.0,
+                20.0,
             ));
             status(ui, text(job, "status"));
         });
@@ -1698,8 +1711,8 @@ impl Console {
         let job = &model.job;
         raw_hint(ui, text(job, "providerId"));
         ui.add(egui::Label::new(&model.draft.goal).wrap().selectable(true));
-        ui.add_space(8.0);
-        ui.label(RichText::new(t(ui, "Agent providers")).size(13.0).strong());
+        ui.add_space(studio::metrics::GAP);
+        ui.label(RichText::new(t(ui, "Agent providers")).size(14.0).strong());
         for (index, member) in self
             .create
             .crew
@@ -1818,7 +1831,7 @@ impl Console {
                 labels[self.create.crew.workflow.tab.min(4)]
             };
             ui.horizontal(|ui| {
-                let title = ui.label(studio::title(t(ui, heading), 22.0));
+                let title = ui.label(studio::title(t(ui, heading), 24.0));
                 #[cfg(test)]
                 ui.data_mut(|data| {
                     data.insert_temp(
@@ -1895,19 +1908,19 @@ impl Console {
                         if ready{self.model_plan_card(ui,snapshot,commands);self.crew_roster_summary(ui,snapshot,false);}
                         else if self.create.crew.workflow.models.contains_key(&key){self.model_plan_card(ui,snapshot,commands);}
                         else{self.workflow_plan_request(ui,snapshot);}
-                        ui.add_space(16.0);
+                        ui.add_space(f32::from(studio::metrics::PADDING));
                         let details=ui.collapsing(t(ui,"Plan details"),|ui| {
                             if let Some(plan)=self.create.crew.plans.get(&key).cloned(){
                                 ui.label(RichText::new(t(ui,"Agent instructions")).strong());
-                                for member in &plan.members{ui.label(RichText::new(text(member,"name")).strong());ui.add(egui::Label::new(text(member,"instruction")).wrap().selectable(true));ui.add_space(8.0);}
+                                for member in &plan.members{ui.label(RichText::new(text(member,"name")).strong());ui.add(egui::Label::new(text(member,"instruction")).wrap().selectable(true));ui.add_space(studio::metrics::GAP);}
                             }
                             if let Some(model)=self.create.crew.workflow.models.get(&key).cloned().filter(|model|text(&model.job,"status")=="completed"){self.model_plan_details(ui,commands,&key,&model);}
                             if ready{
-                                ui.add_space(16.0);self.workflow_plan_request(ui,snapshot);
+                                ui.add_space(f32::from(studio::metrics::PADDING));self.workflow_plan_request(ui,snapshot);
                                 let enabled=valid_input(&self.create.draft().goal,20_000)&&self.create.crew.workflow.request.is_none()&&connect::can_attempt_provider(snapshot,&self.create.crew.workflow.provider);
                                 if view_control(ui,"Generate plan",enabled,false).clicked(){self.begin_model_plan(snapshot,commands,None);}
                             }
-                            ui.add_space(16.0);ui.label(RichText::new(t(ui,"Saved plans")).strong());
+                            ui.add_space(f32::from(studio::metrics::PADDING));ui.label(RichText::new(t(ui,"Saved plans")).strong());
                             for saved in workflow_values(snapshot,&project,"plans"){
                                 ui.push_id(text(saved,"planJobId"),|ui|ui.horizontal_wrapped(|ui|{
                                     ui.label(text(saved,"title"));status(ui,text(saved,"status"));
@@ -1928,14 +1941,10 @@ impl Console {
                 let error=&snapshot["projectWorkflowError"];if text(error,"projectId")==project{hint(ui,text(error,"reasonCode"));}
                 let receipt=&snapshot["projectWorkflowReceipt"];if text(receipt,"projectId")==project&&!text(receipt,"reasonCode").is_empty(){hint(ui,text(receipt,"reasonCode"));}
             });
-            ui.add_space(12.0);
+            ui.add_space(studio::metrics::CONTROL_GAP);
             if self.create.crew.workflow.tab == 0 {
-                let preparation = egui::Frame::new()
-                    .fill(colors(ui).raised)
-                    .stroke(egui::Stroke::new(1.0, colors(ui).border))
-                    .corner_radius(studio::metrics::CARD_RADIUS)
-                    .inner_margin(studio::metrics::PADDING)
-                    .show(ui, |ui| {
+                let preparation =
+                    studio::card(ui).fill(colors(ui).raised).show(ui, |ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if self.create.crew.plans.contains_key(&key) {
                                 self.crew_prepare_action(ui, snapshot, commands);
@@ -1976,7 +1985,7 @@ impl Console {
                                             "Plan before you start"
                                         },
                                     ))
-                                    .size(13.0)
+                                    .size(14.0)
                                     .strong(),
                                 );
                                 let guidance = ui.add(
@@ -1985,7 +1994,7 @@ impl Console {
                                             ui,
                                             "Prepare now. Start the crew when you’re ready.",
                                         ))
-                                        .size(11.0)
+                                        .size(12.0)
                                         .color(colors(ui).muted),
                                     )
                                     .wrap(),
@@ -2019,8 +2028,8 @@ impl Console {
         });
     }
     fn workflow_plan_request(&mut self, ui: &mut Ui, snapshot: &Value) {
-        ui.label(studio::title(t(ui, "Plan your next goal"), 16.0));
-        ui.add_space(8.0);
+        ui.label(studio::title(t(ui, "Plan your next goal"), 20.0));
+        ui.add_space(studio::metrics::GAP);
         multiline(ui, "Goal", &mut self.create.draft().goal, 20_000, 3);
         ui.horizontal_wrapped(|ui| {
             ui.label(
@@ -2158,7 +2167,7 @@ impl Console {
                 ui.add(egui::Label::new(instruction).wrap().selectable(true));
             });
         }
-        ui.add_space(20.0);
+        ui.add_space(studio::metrics::SECTION_GAP);
         ui.collapsing(t(ui,"Providers & limits"), |ui| {
         if let Some(crew) = crews(snapshot)
             .iter()
@@ -2242,16 +2251,18 @@ impl Console {
                 *selected = text(recipe, "recipeId").into();
             }
         }
-        egui::ComboBox::from_id_salt("crew-recipe-picker")
-            .width(ui.available_width().min(440.0))
-            .selected_text(
-                recipes
-                    .iter()
-                    .find(|recipe| text(recipe, "recipeId") == selected)
-                    .map(|recipe| std::borrow::Cow::Borrowed(text(recipe, "name")))
-                    .unwrap_or_else(|| t(ui, "Choose recipe")),
-            )
-            .show_ui(ui, |ui| {
+        form_combo(
+            ui,
+            egui::ComboBox::from_id_salt("crew-recipe-picker")
+                .width(ui.available_width().min(440.0))
+                .selected_text(
+                    recipes
+                        .iter()
+                        .find(|recipe| text(recipe, "recipeId") == selected)
+                        .map(|recipe| std::borrow::Cow::Borrowed(text(recipe, "name")))
+                        .unwrap_or_else(|| t(ui, "Choose recipe")),
+                ),
+            |ui| {
                 for recipe in &recipes {
                     ui.selectable_value(
                         selected,
@@ -2259,7 +2270,8 @@ impl Console {
                         text(recipe, "name"),
                     );
                 }
-            });
+            },
+        );
         if let Some(recipe) = recipes
             .iter()
             .find(|recipe| text(recipe, "recipeId") == selected)
@@ -2267,9 +2279,9 @@ impl Console {
             let compact = ui.ctx().viewport_rect().height() < 700.0;
             ui.add_space(if compact { 8.0 } else { 16.0 });
             if !compact {
-                ui.label(studio::title(text(recipe, "name"), 16.0));
+                ui.label(studio::title(text(recipe, "name"), 20.0));
                 ui.label(text(recipe, "description"));
-                ui.add_space(12.0);
+                ui.add_space(studio::metrics::CONTROL_GAP);
             }
             let input = ui.scope(|ui| {
                 multiline(
@@ -2328,7 +2340,7 @@ impl Console {
                 }
             });
         }
-        ui.add_space(12.0);
+        ui.add_space(studio::metrics::CONTROL_GAP);
         self.workflow_page_controls(ui, snapshot, commands, "recipes");
         if let Some(mission) = self.create.crew_mission(snapshot).cloned().or_else(|| {
             ordered_missions(snapshot, &project)
@@ -2416,16 +2428,17 @@ impl Console {
         let recipes = workflow_values(snapshot, &project, "recipes");
         let state = &mut self.create.crew.workflow;
         let selected = state.recipe.entry(project.clone()).or_default();
-        egui::ComboBox::from_id_salt("schedule-recipe")
-            .selected_text(
+        form_combo(
+            ui,
+            egui::ComboBox::from_id_salt("schedule-recipe").selected_text(
                 recipes
                     .iter()
                     .find(|recipe| text(recipe, "recipeId") == selected)
                     .map(|recipe| text(recipe, "name"))
                     .map(std::borrow::Cow::Borrowed)
                     .unwrap_or_else(|| t(ui, "Choose recipe")),
-            )
-            .show_ui(ui, |ui| {
+            ),
+            |ui| {
                 for recipe in &recipes {
                     ui.selectable_value(
                         selected,
@@ -2433,7 +2446,8 @@ impl Console {
                         text(recipe, "name"),
                     );
                 }
-            });
+            },
+        );
         state.schedule_interval = state.schedule_interval.clamp(15, 10080);
         state.schedule_count = state.schedule_count.clamp(1, 100);
         ui.horizontal_wrapped(|ui| {

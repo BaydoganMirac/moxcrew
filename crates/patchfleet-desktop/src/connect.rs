@@ -67,21 +67,22 @@ impl Console {
         let id = egui::Id::new("provider-connections");
         let modal = egui::Modal::new(id)
             .area(egui::Modal::default_area(id).fade_in(false))
+            .frame(studio::card(ui))
             .show(ui.ctx(), |ui| {
                 ui.set_width((ui.ctx().viewport_rect().width()-64.0).clamp(280.0,680.0));
-                ui.label(studio::title(t(ui,"Connect your crew"),28.0));
+                ui.label(studio::title(t(ui,"Connect your crew"),24.0));
                 hint(ui,"One supported connection is enough. Your existing provider account stays yours.");
                 hint(ui,"After installing or updating a provider CLI, restart Moxcrew and check connections again.");
-                ui.add_space(8.0);
+                ui.add_space(studio::metrics::GAP);
                 egui::ScrollArea::vertical().id_salt("connection-cards")
                     .max_height((ui.ctx().viewport_rect().height()-365.0).max(110.0))
                     .show(ui,|ui| {
                         for (id,name) in [("codex","Codex"),("claude","Claude Code"),("gemini","Gemini CLI")] {
                             let provider=connections(snapshot).iter().find(|provider|text(provider,"id")==id);
                             ui.push_id(id,|ui| {
-                                egui::Frame::new().fill(colors(ui).raised).corner_radius(14).inner_margin(14).show(ui,|ui| {
+                                studio::card(ui).fill(colors(ui).raised).show(ui,|ui| {
                                     ui.horizontal(|ui| {
-                                        ui.label(studio::title(name,18.0));
+                                        ui.label(studio::title(name,20.0));
                                         if let Some(version)=provider.and_then(|provider|provider["version"].as_str()) {raw_hint(ui,version);}
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
                                             if let Some(url)=setup_url(id) {
@@ -89,7 +90,7 @@ impl Console {
                                             }
                                         });
                                     });
-                                    ui.add_space(8.0);
+                                    ui.add_space(studio::metrics::GAP);
                                     ui.columns(3,|columns| {
                                         for (column,label,value) in [
                                             (0,"Installation",match provider {Some(provider) if provider["installed"]==true=>"Installed",Some(_)=>"Not installed",None=>"Not checked"}),
@@ -110,10 +111,10 @@ impl Console {
                                     }
                                 });
                             });
-                            ui.add_space(10.0);
+                            ui.add_space(studio::metrics::CONTROL_GAP);
                         }
                     });
-                ui.add_space(6.0);
+                ui.add_space(studio::metrics::GAP);
                 hint(ui,"Saved sign-in does not verify model access or available quota. Checking never logs you in.");
                 ui.add_space(4.0);
                 ui.horizontal_wrapped(|ui| {

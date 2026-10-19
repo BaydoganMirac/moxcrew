@@ -543,6 +543,15 @@ impl Console {
         {
             return;
         }
+        if self
+            .create
+            .chat
+            .replies
+            .get(&(self.create.project.clone(), self.create.ability.clone()))
+            .is_some_and(|reply| reply.parent == text(work, "workItemId"))
+        {
+            return;
+        }
         if let Some(ability) = self
             .create
             .chat_page(snapshot)

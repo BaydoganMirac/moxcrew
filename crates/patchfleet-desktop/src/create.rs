@@ -129,16 +129,19 @@ impl CreateState {
                     .entry((self.project.clone(), ability.to_owned()))
                     .or_insert(initial);
             }
+        }
+        if self.ability != ability {
             if let Some(reply) = self
                 .chat
                 .replies
-                .get(&(self.project.clone(), String::new()))
+                .get(&(self.project.clone(), self.ability.clone()))
                 .cloned()
             {
+                // A manual skill choice changes the requested output, not its source files.
+                // Keep the old scoped copy for any receipt that is still in flight.
                 self.chat
                     .replies
-                    .entry((self.project.clone(), ability.to_owned()))
-                    .or_insert(reply);
+                    .insert((self.project.clone(), ability.to_owned()), reply);
             }
         }
         self.ability = ability.into();
@@ -922,6 +925,142 @@ mod tests {
             1,
             "references survive until a matching durable receipt"
         );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn manual_skill_change_keeps_follow_up_files_before_and_after_file_selection() {
+        for select_files_first in [true, false] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut console = Console {
+                tab: Tab::Create,
+                create: state(),
+                ..Default::default()
+            };
+            let mut data = snapshot();
+            data["desktopPreferences"] = json!({"language":"en"});
+            data["abilities"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id":"D1","category":"documents","name":{"en":"Document"}}));
+            chat_entry(&mut data, "completed");
+            data["projectChat"]["items"][0]["abilityId"] = json!("D1");
+            data["projectResults"] = json!({"reasonCode":"PROJECT_RESULTS_READ","projectId":"project:one","workItemId":"work:one",
+                "items":[{"path":"outputs/report.md","name":"Original report.md","bytes":12,"textPreview":true}]});
+            let source = data["projectResults"].clone();
+            console.create.ability = "D1".into();
+            console.create.draft().goal = "Unsent document draft".into();
+            assert!(click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "memory_control",
+                "Follow up"
+            )
+            .is_empty());
+            for files_step in [true, false] {
+                if files_step == select_files_first {
+                    let commands = click(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        false,
+                        "project_results_read",
+                        "Files",
+                    );
+                    assert_eq!(commands.len(), 1);
+                    assert_eq!(commands[0].action, "project_results_read");
+                    assert!(click(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        false,
+                        "reference",
+                        "outputs/report.md"
+                    )
+                    .is_empty());
+                    assert!(click(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        false,
+                        "memory_control",
+                        "Close files"
+                    )
+                    .is_empty());
+                } else {
+                    assert!(
+                        click(&ctx, &mut console, &data, false, "memory_control", "Skills")
+                            .is_empty()
+                    );
+                    assert!(click(&ctx, &mut console, &data, false, "ability", "P1").is_empty());
+                }
+            }
+            assert_eq!(
+                console.create.ability, "P1",
+                "file selection must retain the manual skill choice"
+            );
+            let key = ("project:one".to_owned(), "P1".to_owned());
+            assert_eq!(console.create.chat.replies[&key].parent, "work:one");
+            assert!(console.create.chat.replies[&key]
+                .references
+                .contains("outputs/report.md"));
+            console.create.draft().goal = "Create a presentation from the selected report".into();
+            let commands = click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "project_chat_send",
+                "Prepare task",
+            );
+            assert_eq!(commands.len(), 1);
+            assert_eq!(commands[0].action, "project_chat_send");
+            assert_eq!(commands[0].payload["projectId"], "project:one");
+            assert_eq!(commands[0].payload["expectedProjectRevision"], 3);
+            assert_eq!(commands[0].payload["abilityId"], "P1");
+            assert_eq!(commands[0].payload["replyToWorkItemId"], "work:one");
+            assert_eq!(
+                commands[0].payload["referencePaths"],
+                json!(["outputs/report.md"])
+            );
+            assert_eq!(
+                commands[0].payload["instruction"],
+                "Create a presentation from the selected report"
+            );
+
+            // A delayed receipt acknowledges only the submitted skill's frozen draft.
+            assert!(click(&ctx, &mut console, &data, false, "memory_control", "Skills").is_empty());
+            assert!(click(&ctx, &mut console, &data, false, "ability", "V1").is_empty());
+            console.create.draft().goal = "A separate unsent video follow-up".into();
+            let video_key = ("project:one".to_owned(), "V1".to_owned());
+            console
+                .create
+                .chat
+                .replies
+                .get_mut(&video_key)
+                .unwrap()
+                .references
+                .insert("outputs/new.md".into());
+            data["projectWorkReceipt"] = json!({"commandId":commands[0].payload["commandId"],"projectId":"project:one","workItemId":"work:one","outcome":"applied"});
+            console.create.sync(&data);
+            assert_eq!(console.create.ability, "V1");
+            assert_eq!(
+                console.create.draft().goal,
+                "A separate unsent video follow-up"
+            );
+            assert_eq!(console.create.chat.replies[&video_key].parent, "work:one");
+            assert_eq!(console.create.chat.replies[&video_key].references.len(), 2);
+            assert!(!console.create.drafts.contains_key(&key));
+            assert!(!console.create.chat.replies.contains_key(&key));
+            assert_eq!(
+                console.create.drafts[&("project:one".into(), "D1".into())].goal,
+                "Unsent document draft"
+            );
+            assert_eq!(data["projectResults"], source);
+        }
     }
 
     #[test]

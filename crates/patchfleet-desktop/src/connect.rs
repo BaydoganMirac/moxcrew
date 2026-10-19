@@ -52,6 +52,7 @@ impl Console {
             ui.set_width((ui.ctx().viewport_rect().width()-64.0).clamp(280.0,640.0));
             ui.label(studio::title(t(ui,"Connect your crew"),24.0));
             hint(ui,"One supported connection is enough. Your existing provider account stays yours.");
+            hint(ui,"After installing or updating a provider CLI, restart Moxcrew and check connections again.");
             ui.add_enabled_ui(ready,|ui| {
                 action(ui,commands,"Check connections","provider_connections_read",!self.hold_automatic_reads,||json!({}));
             });

@@ -259,9 +259,13 @@ impl Console {
                 }
             }
         });
-        ui.add_space(6.0);
-        ui.separator();
-        ui.add_space(if compact { 14.0 } else { 22.0 });
+        if compact {
+            ui.add_space(4.0);
+        } else {
+            ui.add_space(6.0);
+            ui.separator();
+            ui.add_space(22.0);
+        }
         match self.create.productive_view() {
             1 => {
                 self.workflow_dialog(ui, snapshot, commands);

@@ -802,6 +802,9 @@ impl Console {
         self.new_project_open = scene == "studio-project-form";
         if let Some(project) = array(&snapshot["projectMemory"]["projects"]).first() {
             self.memory.select(text(project, "projectId"));
+            if scene == "studio-decisions" {
+                self.decisions.select(text(project, "projectId"));
+            }
         }
         if let Some(workspace) = items(&snapshot["workspaces"]).first() {
             self.work.workspace = text(workspace, "workspaceId").to_owned();
@@ -2786,11 +2789,14 @@ impl Console {
         self.memory_search(ui, snapshot, false, commands);
         ui.add_space(8.0);
         ui.horizontal_wrapped(|ui| {
+            let previous_height = ui.spacing().interact_size.y;
+            ui.spacing_mut().interact_size.y = studio::metrics::CONTROL_HEIGHT;
             ui.add_enabled_ui(!self.hold_automatic_reads, |ui| {
                 egui::ComboBox::from_id_salt("decision-status")
                     .selected_text(t(ui, decision_status_label(&self.decisions.status)))
                     .width(150.0)
                     .show_ui(ui, |ui| {
+                        ui.spacing_mut().interact_size.y = studio::metrics::COMPACT_HEIGHT;
                         for value in ["all", "proposed", "accepted", "rejected", "superseded"] {
                             if ui
                                 .selectable_value(
@@ -2806,6 +2812,7 @@ impl Console {
                         }
                     });
             });
+            ui.spacing_mut().interact_size.y = previous_height;
             ui.add_sized(
                 egui::vec2(230.0, studio::metrics::CONTROL_HEIGHT),
                 egui::TextEdit::singleline(&mut self.decisions.query_input)
@@ -8317,6 +8324,11 @@ mod tests {
                 )))
                 .unwrap()
             });
+            assert!(
+                account.min.x >= f32::from(studio::metrics::PADDING)
+                    && account.max.x <= 192.0 - f32::from(studio::metrics::PADDING),
+                "{code}: account action must keep the sidebar inset: {account:?}"
+            );
             for tab in Tab::ALL {
                 let clipped: Rect = ctx.data(|d| {
                     d.get_temp(egui::Id::new(("navigation-clip", tab.name())))

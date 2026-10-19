@@ -33,6 +33,15 @@ fn main() {
         .unwrap()
         .to_owned();
     let args: Vec<_> = env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--connection-child") {
+        thread::sleep(Duration::from_millis(600));
+        std::fs::write(
+            env::current_exe().unwrap().with_extension("alive"),
+            b"alive",
+        )
+        .unwrap();
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--version") {
         if mode.contains("timeout") {
             thread::sleep(Duration::from_secs(10));
@@ -41,12 +50,14 @@ fn main() {
             println!("2.1.169 (Claude Code)");
         } else if mode.contains("gemini") {
             println!("0.30.0");
-        } else if mode.contains("malformed") {
+        } else if mode.contains("malformed") && !mode.contains("auth-") {
             println!("SECRET_TOKEN should never leak");
         } else {
             println!(
                 "codex-cli {}",
-                if mode.contains("managed") {
+                if mode.contains("auth-old") {
+                    "0.143.0"
+                } else if mode.contains("managed") {
                     "0.155.1"
                 } else {
                     "0.144.1"
@@ -54,6 +65,50 @@ fn main() {
             );
         }
         return;
+    }
+    if mode.contains("auth-") {
+        assert!(args[1..] == ["login", "status"] || args[1..] == ["auth", "status"]);
+        if mode.contains("tree-hang") {
+            let mut child = std::process::Command::new(env::current_exe().unwrap())
+                .arg("--connection-child")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            std::fs::write(
+                env::current_exe().unwrap().with_extension("child"),
+                child.id().to_string(),
+            )
+            .unwrap();
+            let _ = child.wait();
+        }
+        if mode.contains("hang") {
+            thread::sleep(Duration::from_secs(10));
+        }
+        if mode.contains("oversize") {
+            io::stdout().write_all(&vec![b'X'; 128 * 1024]).unwrap();
+            return;
+        }
+        if mode.contains("invalid-utf8") {
+            io::stdout().write_all(&[0xff, 0xfe]).unwrap();
+            return;
+        }
+        if mode.contains("malformed") {
+            println!("SECRET_MALFORMED_AUTH");
+            return;
+        }
+        if mode.contains("unexpected-exit") {
+            eprintln!("SECRET_UNSUPPORTED_AUTH");
+            std::process::exit(2);
+        }
+        let present = !mode.contains("missing");
+        if mode.contains("claude") {
+            println!("{{\"loggedIn\":{present},\"authMethod\":\"{}\",\"configDirectory\":\"/private/SECRET_CONFIG\",\"email\":\"SECRET@example.com\",\"apiKey\":\"SECRET_KEY\"}}", if present { "claude.ai" } else { "none" });
+        } else {
+            eprintln!("SECRET_ACCOUNT@example.com SECRET_KEY /private/SECRET_CONFIG");
+        }
+        std::process::exit(if present { 0 } else { 1 });
     }
     if args.get(1).map(String::as_str) == Some("agents") {
         println!("[{{\"id\":\"job-1\",\"state\":\"working\",\"startedAt\":1784160000000,\"prompt\":\"SECRET_PROMPT\",\"cwd\":\"/secret/repo\"}}]");

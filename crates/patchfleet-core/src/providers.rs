@@ -1,4 +1,6 @@
 //! Provider-supported surfaces only. Native text and credentials never leave this module.
+#[path = "provider_connections.rs"]
+mod connections;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{json, Value};
 #[cfg(unix)]
@@ -865,6 +867,21 @@ async fn output_streams(
     bound: Duration,
     max: usize,
 ) -> Result<(String, String)> {
+    let (status, stdout, stderr) = output_status(program, args, bound, max).await?;
+    if !status.success() {
+        return Err("FAILED".into());
+    }
+    Ok((
+        String::from_utf8(stdout).map_err(|_| "MALFORMED")?,
+        String::from_utf8(stderr).map_err(|_| "MALFORMED")?,
+    ))
+}
+async fn output_status(
+    program: &Path,
+    args: &[&str],
+    bound: Duration,
+    max: usize,
+) -> Result<(std::process::ExitStatus, Vec<u8>, Vec<u8>)> {
     let mut command = command(program, args).map_err(|e| {
         if e == "PROVIDER_NOT_FOUND" {
             "NOT_FOUND".to_string()
@@ -896,13 +913,7 @@ async fn output_streams(
             return Err("MALFORMED");
         }
         let status = child.wait().await.map_err(|_| "FAILED")?;
-        if !status.success() {
-            return Err("FAILED");
-        }
-        Ok((
-            String::from_utf8(bytes).map_err(|_| "MALFORMED")?,
-            String::from_utf8(err).map_err(|_| "MALFORMED")?,
-        ))
+        Ok((status, bytes, err))
     })
     .await;
     let r = match result {
@@ -1487,6 +1498,10 @@ impl Controller {
             server: Mutex::new(None),
             lost: Mutex::new(vec![]),
         }
+    }
+    /// Explicit local diagnostics. Saved credentials do not prove model access or entitlement.
+    pub async fn connection_status(&self) -> Value {
+        connections::read(&self.programs).await
     }
     /// Source text goes only to stdin; this independent worker never locks owned work sessions.
     pub async fn extract_decisions(

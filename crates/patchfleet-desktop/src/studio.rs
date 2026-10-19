@@ -311,6 +311,8 @@ fn style(p: Palette, dark: bool) -> egui::Style {
     style.spacing.item_spacing = egui::vec2(metrics::CONTROL_GAP, metrics::GAP);
     style.spacing.button_padding = egui::vec2(12.0, 8.0);
     style.spacing.interact_size.y = metrics::COMPACT_HEIGHT;
+    style.spacing.window_margin = egui::Margin::same(metrics::PADDING);
+    style.spacing.menu_margin = egui::Margin::same(metrics::GAP as i8);
     for (kind, size, family) in [
         (egui::TextStyle::Body, 14.0, FontFamily::Proportional),
         (
@@ -345,8 +347,8 @@ fn style(p: Palette, dark: bool) -> egui::Style {
     style.visuals.warn_fg_color = p.warning;
     style.visuals.error_fg_color = p.danger;
     style.visuals.window_stroke = egui::Stroke::new(1.0, p.border);
-    style.visuals.window_corner_radius = egui::CornerRadius::same(20);
-    style.visuals.menu_corner_radius = egui::CornerRadius::same(12);
+    style.visuals.window_corner_radius = egui::CornerRadius::same(metrics::CARD_RADIUS);
+    style.visuals.menu_corner_radius = egui::CornerRadius::same(metrics::CONTROL_RADIUS);
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, p.border);
     style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, p.text);
     for widget in [

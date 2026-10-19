@@ -1,8 +1,8 @@
 # Moxcrew UI kit
 
 One native component system for the application. The accepted Mox identity,
-Manrope and semantic light/dark colors remain unchanged. Task0048 applies the
-existing brand measurements to production helpers and Project work surfaces.
+Manrope and semantic light/dark colors remain unchanged. Task0048 established
+the shared controls; Task0049 applies them across the native application screens.
 
 ## Measurements
 
@@ -23,6 +23,7 @@ physical pixels on each axis.
 | Control radius | 12 px |
 | Focus | 2 px visible ring, independent of hover |
 | Typography | 14 px body/control, 12 px metadata, 20/24 px section/page heading |
+| Dialog | Card frame with 16 px inset/radius; menus use 8 px inset |
 
 ## Components and hierarchy
 
@@ -59,3 +60,28 @@ The semantic contract is [design-tokens.json](tokens/design-tokens.json). Tests
 check the main dimensions against the native implementation and exercise actual
 control geometry, enabled state and layout in both themes. Existing palettes
 and portable CSS colors remain available for other surfaces.
+
+## Screen adoption
+
+| Destination | Shared components applied |
+|---|---|
+| Chat | Message/task cards, connection/catalog/detail dialogs, composer controls |
+| Projects | Page hierarchy, metric/project/folder cards, project/folder forms |
+| Teams | Plan and role cards, roster editor, provider/recipe selectors and footers |
+| Tasks | Intake form, task cards, search/action rows and compact pagination |
+| Project Memory | Source/search forms, cards, disclosure and extraction controls |
+| Decisions | Filters, evidence and edit forms, selected decision cards |
+| Agents | Catalog cards, pack configuration and installation form |
+| Providers | Diagnosis cards, headings and connection controls |
+| Account / Cloud | Optional sign-in/pairing forms, account cards and shared search |
+| Crew / Outputs context | Plan/revision forms, file filters, delivery rows, private setup and frozen approval |
+
+Forms use 44 px controls and 36 px popup options. Long project names wrap within
+the width remaining after the measured action. A short viewport scrolls content
+without shrinking controls. Native evidence and acceptance results are recorded
+in [screen migration state](../../docs/state/ui-kit-screen-migration.md).
+
+The unframed chat editor retains its measured 8/6 px inset inside the 16 px
+composer frame. Read-only folder wells and feedback use the compact 12 px inset
+and control radius. Mascot/icon painter coordinates, status dots/badges and the
+brand wordmark retain their intentional geometry; they are not spacing tokens.

@@ -33,7 +33,7 @@ pub struct Host {
     pub(crate) epoch: String,
     pub(crate) controller: providers::Controller,
     data_dir: PathBuf,
-    operations: AsyncMutex<()>,
+    pub(crate) operations: AsyncMutex<()>,
     cloud: AsyncMutex<Option<Cloud>>,
     cloud_status: Mutex<Value>,
     desktop_preferences: Mutex<Value>,
@@ -105,6 +105,24 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
             "referencePaths",
         ],
         "project_chat_read" => &["projectId", "offset", "limit"],
+        "project_crew_plan" => &["projectId", "instruction", "abilityId"],
+        "project_crew_prepare" => &[
+            "projectId",
+            "expectedProjectRevision",
+            "title",
+            "instruction",
+            "abilityId",
+            "members",
+            "crewId",
+            "crewName",
+            "settings",
+            "replyToWorkItemId",
+            "referencePaths",
+        ],
+        "project_crew_start" | "project_crew_cancel" | "project_crew_retry" => {
+            &["projectId", "missionId", "expectedMissionRevision"]
+        }
+        "project_crew_messages_read" => &["projectId", "missionId", "offset", "limit"],
         "provider_connections_read" => &[],
         "project_results_read" => &["projectId", "workItemId"],
         "project_result_read" => &["projectId", "workItemId", "path"],
@@ -305,6 +323,8 @@ impl Host {
             host.apply_queue_intent(e["payload"]["intent"].clone())?;
         }
         host.reconcile_ownership()?;
+        host.store
+            .transaction(|events| Ok((crate::project_crews::recover(events)?, Value::Null)))?;
         host.store.transaction(|events| {
             let pending = events.iter().filter(|e| {
                 e["type"] == "owner.command.requested"
@@ -313,13 +333,27 @@ impl Host {
                             && r["payload"]["commandId"] == e["payload"]["commandId"]
                     })
             });
-            let additions = pending.map(|e| {
-                let result = matches!(e["schemaVersion"].as_u64(), Some(8 | 9))
-                    .then(|| crate::creation::recovered_owner_result(events, &e["payload"]))
-                    .flatten()
-                    .unwrap_or_else(|| json!({"outcome":"failed","reasonCode":"OWNER_COMMAND_OUTCOME_UNKNOWN"}));
-                owner_event("owner.command.receipted", json!({"commandId":e["payload"]["commandId"],"result":result}), e["schemaVersion"].as_u64().unwrap())
-            }).collect();
+            let additions = pending
+                .map(|e| {
+                    let result = match e["schemaVersion"].as_u64() {
+                        Some(10) => {
+                            crate::project_crews::recovered_owner_result(events, &e["payload"])
+                        }
+                        Some(8 | 9) => {
+                            crate::creation::recovered_owner_result(events, &e["payload"])
+                        }
+                        _ => None,
+                    }
+                    .unwrap_or_else(
+                        || json!({"outcome":"failed","reasonCode":"OWNER_COMMAND_OUTCOME_UNKNOWN"}),
+                    );
+                    owner_event(
+                        "owner.command.receipted",
+                        json!({"commandId":e["payload"]["commandId"],"result":result}),
+                        e["schemaVersion"].as_u64().unwrap(),
+                    )
+                })
+                .collect();
             Ok((additions, Value::Null))
         })?;
         Ok(host)
@@ -513,11 +547,21 @@ impl Host {
         if matches!(action, "project_results_read" | "project_result_read") {
             return self.creation_action(action, &payload).await;
         }
+        if matches!(action, "project_crew_plan" | "project_crew_messages_read") {
+            return self.crew_action(action, &payload).await;
+        }
+        let crew_mutation = matches!(
+            action,
+            "project_crew_prepare"
+                | "project_crew_start"
+                | "project_crew_cancel"
+                | "project_crew_retry"
+        );
         let creation_mutation = matches!(
             action,
             "project_work_enqueue" | "project_result_export" | "project_chat_send"
         );
-        if action.starts_with("project_") && !creation_mutation {
+        if action.starts_with("project_") && !creation_mutation && !crew_mutation {
             return self
                 .store
                 .transaction(|events| project_memory::apply(events, action, &payload));
@@ -527,8 +571,11 @@ impl Host {
             || action == "desktop_language"
             || action == "desktop_motion"
             || creation_mutation
+            || crew_mutation
             || action == "work_retry";
-        let audit_version = if matches!(action, "project_chat_send" | "desktop_motion") {
+        let audit_version = if crew_mutation {
+            10
+        } else if matches!(action, "project_chat_send" | "desktop_motion") {
             9
         } else if creation_mutation || action == "work_retry" {
             8
@@ -583,7 +630,7 @@ impl Host {
             let recorded = match &result {
                 Ok(v) => v.clone(),
                 Err(error)
-                    if matches!(audit_version, 8 | 9)
+                    if matches!(audit_version, 8..=10)
                         && error
                             .0
                             .bytes()
@@ -618,6 +665,7 @@ impl Host {
             }
         }
         match action {
+            "project_crew_prepare" | "project_crew_start" | "project_crew_cancel" | "project_crew_retry" => self.crew_action(action, p).await,
             "project_chat_send"=>self.conversation_action(action,p).await,
             "desktop_motion"=>{
                 let reduce = p["reduceMotion"].as_bool().ok_or_else(|| Error("INVALID_DESKTOP_MOTION".into()))?;
@@ -1226,6 +1274,7 @@ impl Host {
             return Ok(());
         }
         self.advance_all().await?;
+        self.advance_crews().await?;
         self.pump_extraction(true).await?;
         let _ = self.sync_cloud().await;
         let _ = self.sync_shared_memory(None, false).await;
@@ -1355,7 +1404,7 @@ impl Host {
         }
     }
 
-    fn checked_agent_scope(&self, binding: &agent_memory::Binding) -> Result<Value> {
+    pub(crate) fn checked_agent_scope(&self, binding: &agent_memory::Binding) -> Result<Value> {
         let denied = || Error("AGENT_MEMORY_SCOPE_DENIED".into());
         if self.closing.load(Ordering::SeqCst)
             || !binding.active.load(Ordering::SeqCst)
@@ -1402,6 +1451,10 @@ impl Host {
     ) -> Result<Value> {
         let invalid = || Error("AGENT_MEMORY_INVALID_ARGUMENTS".into());
         let scope = self.checked_agent_scope(binding)?;
+        if matches!(tool, "crew_context" | "crew_messages" | "crew_message") {
+            agent_memory::validate_arguments(tool, &arguments)?;
+            return self.crew_agent_call(binding, tool, &arguments).await;
+        }
         let fields = arguments.as_object().ok_or_else(invalid)?;
         let allowed: &[&str] = match tool {
             "project_context" => &["offset", "limit", "revision"],

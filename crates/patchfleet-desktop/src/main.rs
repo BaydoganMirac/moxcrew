@@ -83,6 +83,10 @@ impl Patchfleet {
                         }
                         console.create_smoke(bridge.snapshot.as_ref().unwrap(), results);
                     }
+                    if scene.starts_with("crew-") {
+                        bridge.crew_smoke(&scene);
+                        console.crew_smoke(bridge.snapshot.as_ref().unwrap(), &scene);
+                    }
                     if scene.starts_with("chat-") {
                         let files = scene == "chat-results";
                         let connections = scene == "chat-connections";
@@ -246,6 +250,14 @@ fn seed_create_scene(directory: &std::path::Path) {
             return;
         }
         let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":"Launch idea · UI fixture"})).payload).await.unwrap();
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| scene.starts_with("crew-")) {
+            let goal = "Research the audience and prepare a launch presentation with sources. Disposable UI fixture; no provider was run.";
+            let plan = host.action("project_crew_plan", serde_json::json!({"projectId":created["projectId"],"instruction":goal,"abilityId":"P1"})).await.unwrap();
+            let prepared = host.action("project_crew_prepare", command::Command::new("project_crew_prepare", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":1,"title":"Launch crew · UI fixture","instruction":goal,"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})).payload).await.unwrap();
+            assert_eq!(prepared["outcome"],"applied");
+            host.shutdown().await;
+            return;
+        }
         if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("chat-compose") {
             host.shutdown().await;
             return;
@@ -662,7 +674,10 @@ fn main() {
         );
         #[cfg(feature = "ui-smoke")]
         if let Ok(scene) = std::env::var("PATCHFLEET_SMOKE_SCENE") {
-            if scene.starts_with("create-") || scene.starts_with("chat-") {
+            if scene.starts_with("create-")
+                || scene.starts_with("chat-")
+                || scene.starts_with("crew-")
+            {
                 seed_create_scene(&directory);
             }
             if scene.starts_with("quick-") {

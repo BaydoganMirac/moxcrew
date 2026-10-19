@@ -1248,7 +1248,7 @@ impl AppServer {
                     if let Some(server) = entries.iter().find(|v| v["name"] == "patchfleet_memory") {
                         if server["runtimeStatus"] == "connected" {
                             let tools = server["tools"].as_object().ok_or("MEMORY_CONNECTION_FAILED")?;
-                            let names = ["project_context", "memory_search", "decision_read"];
+                            let names = crate::agent_memory::TOOLS;
                             return if server.get("toolsError") == Some(&Value::Null)
                                 && tools.len() == names.len()
                                 && names.iter().all(|name| tools.get(*name).is_some_and(|v| v["name"] == *name))

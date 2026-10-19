@@ -5,6 +5,7 @@ use crate::{
     Error, Host, Result,
 };
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 #[cfg(unix)]
 use std::fs::OpenOptions;
 use std::{
@@ -188,6 +189,9 @@ pub(crate) fn recovered_owner_result(events: &[Value], payload: &Value) -> Optio
 }
 
 fn authorized_job(events: &[Value], project: &str, work: &str) -> bool {
+    if crate::project_crews::authorized_work(events, project, work) {
+        return true;
+    }
     let mut current = work.to_owned();
     let mut visited = std::collections::HashSet::new();
     while visited.insert(current.clone()) {
@@ -482,6 +486,170 @@ fn copy_export(source: impl Read, destination: &mut File) -> Result<u64> {
 }
 
 impl Host {
+    pub(crate) fn crew_prepare_inputs(&self, mission_id: &str, payload: &Value) -> Result<Value> {
+        let project = text(payload, "projectId")?;
+        let references = match payload.get("referencePaths") {
+            None => &[][..],
+            Some(value) => value
+                .as_array()
+                .ok_or_else(|| invalid("PROJECT_INPUT_PATH_INVALID"))?
+                .as_slice(),
+        };
+        if references.len() > 8 {
+            return Err(invalid("PROJECT_INPUT_LIMIT_EXCEEDED"));
+        }
+        let parent = payload
+            .get("replyToWorkItemId")
+            .map(|value| {
+                value
+                    .as_str()
+                    .ok_or_else(|| invalid("PROJECT_JOB_NOT_FOUND"))
+            })
+            .transpose()?;
+        let Some(parent) = parent else {
+            return if references.is_empty() {
+                Ok(Value::Null)
+            } else {
+                Err(invalid("PROJECT_INPUT_PARENT_REQUIRED"))
+            };
+        };
+        let selection = json!({"projectId":project,"workItemId":parent});
+        let (directory, work) = if references.is_empty() {
+            self.creation_parent(&selection)?
+        } else {
+            self.creation_scope(&selection)?
+        };
+        if !matches!(
+            work["status"].as_str(),
+            Some("completed" | "failed" | "interrupted")
+        ) {
+            return Err(invalid("PROJECT_INPUT_PARENT_ACTIVE"));
+        }
+        if references.is_empty() {
+            return Ok(Value::Null);
+        }
+        let mut names = std::collections::HashSet::new();
+        let mut files = Vec::new();
+        let mut entries = Vec::new();
+        let mut total = 0;
+        for reference in references {
+            let reference = reference
+                .as_str()
+                .ok_or_else(|| invalid("PROJECT_INPUT_PATH_INVALID"))?;
+            if !names.insert(reference) {
+                return Err(invalid("PROJECT_INPUT_PATH_INVALID"));
+            }
+            let path = relative_result(reference)?;
+            let bytes =
+                crate::conversation::copied_bytes(&directory, &path, 25 * 1024 * 1024 - total)?;
+            total += bytes.len() as u64;
+            let name = crate::conversation::copied_name(files.len(), &path);
+            entries.push(json!({"sourceWorkItemId":parent,"referencePath":reference,"inputPath":format!("inputs/{name}"),"bytes":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}));
+            files.push((name, bytes));
+        }
+        let manifest =
+            json!({"schemaVersion":1,"projectId":project,"missionId":mission_id,"files":entries});
+        let frozen = crew_input_directory(self.creation_data_dir(), project, mission_id)?;
+        create_job_directory(&frozen)?;
+        write_inputs(&frozen, &files, &manifest)?;
+        Ok(manifest)
+    }
+
+    pub(crate) async fn crew_task_inputs(
+        &self,
+        project: &str,
+        mission_id: &str,
+        upstream: &[String],
+    ) -> Result<Option<crate::conversation::FrozenInputs>> {
+        let events = self.store.read_events()?;
+        let mission = &events
+            .iter()
+            .find(|event| {
+                event["type"] == "project_crew.prepared"
+                    && event["payload"]["mission"]["missionId"] == mission_id
+                    && event["payload"]["mission"]["projectId"] == project
+            })
+            .ok_or_else(|| invalid("CREW_MISSION_NOT_FOUND"))?["payload"]["mission"];
+        let mut files = Vec::new();
+        let mut entries = Vec::new();
+        let mut total = 0;
+        if !mission["inputs"].is_null() {
+            let frozen = crew_input_directory(self.creation_data_dir(), project, mission_id)?;
+            let saved = crate::conversation::copied_bytes(
+                &frozen,
+                Path::new("inputs/manifest.json"),
+                64 * 1024,
+            )?;
+            let manifest: Value = serde_json::from_slice(&saved)?;
+            if manifest != mission["inputs"] {
+                return Err(invalid("CREW_INPUT_CHANGED"));
+            }
+            let stored = manifest["files"]
+                .as_array()
+                .filter(|v| v.len() <= 8)
+                .ok_or_else(|| invalid("CREW_INPUT_CHANGED"))?;
+            for entry in stored {
+                let reference = relative_result(text(entry, "referencePath")?)?;
+                let name = crate::conversation::copied_name(files.len(), &reference);
+                let expected = format!("inputs/{name}");
+                if entry["inputPath"] != expected {
+                    return Err(invalid("CREW_INPUT_CHANGED"));
+                }
+                let bytes = crate::conversation::copied_bytes(
+                    &frozen,
+                    Path::new(&expected),
+                    25 * 1024 * 1024 - total,
+                )?;
+                if entry["bytes"].as_u64() != Some(bytes.len() as u64)
+                    || entry["sha256"] != format!("{:x}", Sha256::digest(&bytes))
+                {
+                    return Err(invalid("CREW_INPUT_CHANGED"));
+                }
+                total += bytes.len() as u64;
+                entries.push(entry.clone());
+                files.push((name, bytes));
+            }
+        }
+        for work_id in upstream {
+            let selection = json!({"projectId":project,"workItemId":work_id});
+            let (directory, work) = self.creation_scope(&selection)?;
+            if work["status"] != "completed" {
+                return Err(invalid("CREW_DEPENDENCY_NOT_COMPLETE"));
+            }
+            let listing = self
+                .creation_action("project_results_read", &selection)
+                .await?;
+            let results = listing["items"]
+                .as_array()
+                .ok_or_else(|| invalid("CREW_INPUT_UNAVAILABLE"))?;
+            if listing["truncated"] == true || files.len() + results.len() > 8 {
+                return Err(invalid("PROJECT_INPUT_LIMIT_EXCEEDED"));
+            }
+            if results.is_empty() {
+                return Err(invalid("CREW_DEPENDENCY_OUTPUT_MISSING"));
+            }
+            for result in results {
+                let reference = text(result, "path")?;
+                let path = relative_result(reference)?;
+                let bytes =
+                    crate::conversation::copied_bytes(&directory, &path, 25 * 1024 * 1024 - total)?;
+                total += bytes.len() as u64;
+                let name = crate::conversation::copied_name(files.len(), &path);
+                entries.push(json!({"sourceWorkItemId":work_id,"referencePath":reference,"inputPath":format!("inputs/{name}"),"bytes":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}));
+                files.push((name, bytes));
+            }
+        }
+        if files.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(crate::conversation::FrozenInputs {
+            files,
+            manifest: serde_json::to_vec(
+                &json!({"schemaVersion":1,"projectId":project,"missionId":mission_id,"files":entries}),
+            )?,
+        }))
+    }
+
     pub(crate) fn creation_retry(&self, payload: &Value) -> Result<Option<Value>> {
         let events = self.store.read_events()?;
         let projected = domain::project_events(&events)?;
@@ -510,6 +678,9 @@ impl Host {
             .iter()
             .find(|p| p["projectId"] == project)
             .ok_or_else(|| invalid("PROJECT_NOT_FOUND"))?["revision"];
+        if crate::project_crews::authorized_work(&events, &project, text(work, "workItemId")?) {
+            return Err(invalid("CREW_RETRY_REQUIRED"));
+        }
         let base = intent("enqueue_work", Value::Null, payload);
         let work_id = format!("work:{}", uuid_part(text(&base, "intentId")?, "cmd:")?);
         let directory = expected_directory(self.creation_data_dir(), &project, &work_id)?;
@@ -765,6 +936,32 @@ fn write_inputs(directory: &Path, inputs: &[(String, Vec<u8>)], manifest: &Value
     write_input_bytes(directory, inputs, &serde_json::to_vec(manifest)?)
 }
 
+fn crew_input_directory(data_dir: &Path, project: &str, mission: &str) -> Result<PathBuf> {
+    Ok(fs::canonicalize(data_dir)?
+        .join("project-crews")
+        .join(uuid_part(project, "project:")?)
+        .join(uuid_part(mission, "mission:")?))
+}
+
+fn write_frozen_input(directory: &Path, name: &std::ffi::OsStr, bytes: &[u8]) -> Result<()> {
+    match export_destination(directory, name) {
+        Ok(mut file) => {
+            file.write_all(bytes)?;
+            file.sync_all()?;
+        }
+        Err(error) => {
+            // A crash can leave an exact copy before its queue receipt; never overwrite changed bytes.
+            let saved =
+                crate::conversation::copied_bytes(directory, Path::new(name), bytes.len() as u64)
+                    .map_err(|_| error)?;
+            if saved != bytes {
+                return Err(invalid("PROJECT_INPUT_CHANGED"));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn write_input_bytes(
     directory: &Path,
     inputs: &[(String, Vec<u8>)],
@@ -793,13 +990,13 @@ fn write_input_bytes(
         {
             return Err(invalid("PROJECT_INPUT_PATH_INVALID"));
         }
-        let mut destination = export_destination(&input_directory, path.as_os_str())?;
-        destination.write_all(bytes)?;
-        destination.sync_all()?;
+        write_frozen_input(&input_directory, path.as_os_str(), bytes)?;
     }
-    let mut file = export_destination(&input_directory, std::ffi::OsStr::new("manifest.json"))?;
-    file.write_all(manifest)?;
-    file.sync_all()?;
+    write_frozen_input(
+        &input_directory,
+        std::ffi::OsStr::new("manifest.json"),
+        manifest,
+    )?;
     File::open(&input_directory)?.sync_all()?;
     Ok(())
 }
@@ -874,6 +1071,94 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn crew_references_freeze_at_prepare_and_reject_tampering_or_foreign_sources() {
+        let (_peer, programs) = crate::providers::managed_tests::peer("codex-managed-complete");
+        let directory = tempfile::tempdir().unwrap();
+        let host = Host::open_with_controller(
+            directory.path().join("data"),
+            crate::providers::Controller::with_programs(programs),
+        )
+        .unwrap();
+        host.store.append(vec![crate::event("provider.observed",json!({"providerId":"codex","state":"available","version":"0.155.1","capabilities":{"recentObservation":true,"explicitLiveStatus":true},"observedAt":crate::now(),"sessionIds":[]}))]).unwrap();
+        let project = host
+            .action("project_create", command(json!({"name":"Frozen inputs"})))
+            .await
+            .unwrap()["projectId"]
+            .clone();
+        let queued = host.action("project_chat_send",command(json!({"projectId":project,"expectedProjectRevision":1,"abilityId":"D1","title":"Reference","instruction":"Write a real reference file."}))).await.unwrap();
+        let started = host
+            .action(
+                "work_start",
+                command(json!({"workItemId":queued["workItemId"],"expectedItemRevision":1})),
+            )
+            .await
+            .unwrap();
+        assert_eq!(started["outcome"], "applied");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        host.background_tick(false).await.unwrap();
+        let (parent, work) = host
+            .creation_scope(&json!({"projectId":project,"workItemId":queued["workItemId"]}))
+            .unwrap();
+        assert_eq!(work["status"], "completed");
+        fs::write(parent.join("outputs/summary.md"), b"Original reference").unwrap();
+        let snapshot = host.snapshot().unwrap();
+        let revision = snapshot["projectMemory"]["projects"][0]["revision"].clone();
+        let payload = json!({"projectId":project,"expectedProjectRevision":revision,"title":"Revision crew","instruction":"Use the selected original reference.","abilityId":"D1","members":[{"name":"Writer","role":"document","abilityId":"D1","instruction":"Write the revision."}],"replyToWorkItemId":queued["workItemId"],"referencePaths":["outputs/summary.md"]});
+        let prepared = host
+            .action("project_crew_prepare", command(payload.clone()))
+            .await
+            .unwrap();
+        assert_eq!(prepared["outcome"], "applied");
+        fs::write(parent.join("outputs/summary.md"), b"Changed source").unwrap();
+        let mission = prepared["missionId"].as_str().unwrap();
+        let copies = host
+            .crew_task_inputs(project.as_str().unwrap(), mission, &[])
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(copies.files[0].1, b"Original reference");
+        let frozen =
+            crew_input_directory(host.creation_data_dir(), project.as_str().unwrap(), mission)
+                .unwrap();
+        fs::write(frozen.join("inputs/reference-01.md"), b"Tampered copy").unwrap();
+        assert!(host
+            .crew_task_inputs(project.as_str().unwrap(), mission, &[])
+            .await
+            .is_err());
+        let other = host
+            .action("project_create", command(json!({"name":"Other scope"})))
+            .await
+            .unwrap()["projectId"]
+            .clone();
+        let mut foreign = payload.clone();
+        foreign["projectId"] = other;
+        foreign["expectedProjectRevision"] = json!(1);
+        assert!(host
+            .action("project_crew_prepare", command(foreign))
+            .await
+            .is_err());
+        let mut duplicate = payload;
+        duplicate["referencePaths"] = json!(["outputs/summary.md", "outputs/summary.md"]);
+        assert!(host
+            .action("project_crew_prepare", command(duplicate))
+            .await
+            .is_err());
+        assert_eq!(
+            host.snapshot().unwrap()["projectCrews"]["missions"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            fs::read(parent.join("outputs/summary.md")).unwrap(),
+            b"Changed source"
+        );
+        host.shutdown().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn host_runs_a_managed_job_to_a_real_artifact_and_retains_terminal_state() {
         let (_peer, programs) = crate::providers::managed_tests::peer("codex-managed-complete");
         let directory = tempfile::tempdir().unwrap();
@@ -936,6 +1221,27 @@ mod tests {
         assert_eq!(results["workStatus"], "completed");
         assert_eq!(results["items"][0]["path"], "outputs/summary.md");
         host.shutdown().await;
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn frozen_inputs_recover_exact_copies_and_never_overwrite_changed_or_linked_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        let inputs = vec![("reference-01.md".into(), b"Owner bytes".to_vec())];
+        let manifest = json!({"files":[{"inputPath":"inputs/reference-01.md"}]});
+        write_inputs(&root, &inputs, &manifest).unwrap();
+        write_inputs(&root, &inputs, &manifest).unwrap();
+        let file = root.join("inputs/reference-01.md");
+        fs::write(&file, b"Edited bytes").unwrap();
+        assert!(write_inputs(&root, &inputs, &manifest).is_err());
+        assert_eq!(fs::read(&file).unwrap(), b"Edited bytes");
+        fs::remove_file(&file).unwrap();
+        let external = root.join("external");
+        fs::write(&external, b"Owner bytes").unwrap();
+        std::os::unix::fs::symlink(&external, &file).unwrap();
+        assert!(write_inputs(&root, &inputs, &manifest).is_err());
+        assert_eq!(fs::read(external).unwrap(), b"Owner bytes");
     }
 
     #[cfg(unix)]

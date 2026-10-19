@@ -32,6 +32,9 @@ fn pure_allowlist_has_no_private_data() {
         with_creation["providerConnections"] =
             json!({"providers":[{"authentication":"PRIVATE_AUTH_CANARY"}]});
         with_creation["desktopPreferences"] = json!({"reduceMotion":true});
+        with_creation["projectCrews"] = json!({"crews":[{"name":"PRIVATE_CREW_NAME","members":[{"instruction":"PRIVATE_AGENT_RULE"}]}],"missions":[{"instruction":"PRIVATE_MISSION_GOAL","inputs":{"files":[{"referencePath":"PRIVATE_CREW_FILE"}]}}],"messages":[{"body":"PRIVATE_CREW_MESSAGE"}]});
+        with_creation["projectCrewPlan"] = json!({"members":[{"instruction":"PRIVATE_PLAN"}]});
+        with_creation["projectCrewMessages"] = json!({"items":[{"body":"PRIVATE_SCOPED_MESSAGE"}]});
         assert_eq!(
             cloud::build_projection(&with_creation, version, 1, "install:test").unwrap(),
             p

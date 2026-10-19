@@ -47,3 +47,4 @@ supersedes the old one.
 | [0041](0041-managed-project-job-directories.md) | Accepted; bounded implementation reviewed | Exact managed Project job directories and V8 owner audit; preserve ordinary Git and Cloud contracts |
 | [0042](0042-owner-providers-default-skills-and-motion.md) | Accepted requirements; implementation pending | Owner-connected local Codex/Gemini/Claude, verified default skills and truthful expressive motion |
 | [0043](0043-local-project-conversation.md) | Accepted; Task0041 | Durable Project conversation, bounded copied revision inputs, explicit connection diagnostics and local motion preferences |
+| [0044](0044-project-crews-and-scoped-communication.md) | Accepted; Task0043 | Reusable Project crews, explicit missions and scoped attributable agent messages over the existing local runner |

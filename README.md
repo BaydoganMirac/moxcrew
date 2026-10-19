@@ -13,8 +13,13 @@ research, writing, analysis, planning, personal work and software development.
 Project is the main product concept; a separate Workspace hierarchy is not
 required. See the [product direction](docs/decisions/0038-general-purpose-projects.md).
 
-Talk to Mox in a Project, prepare a goal and explicitly start supported Codex
-work without a Git folder. Durable request history, honest work cards and an
+Talk to Mox in a Project, inspect its crew recommendation, adjust the members,
+then prepare and explicitly start supported Codex work without a Git folder.
+Saved crews can take another goal in the same Project. Their tasks exchange
+scoped messages and pass checked output files to dependent agents. The crew
+panel shows real task states, inbox delivery and actual files; Single task keeps
+the direct workflow. See [crew state](docs/state/project-crew-orchestration.md).
+ Durable request history, honest work cards and an
 on-demand file panel keep goals and actual outputs together. A follow-up can
 copy selected files from a finished job into a fresh task. Forty inspectable
 recipes and eight bundled skill guides support this flow; they do not install
@@ -48,7 +53,7 @@ work instructions, code and custom user content retain their original language.
 
 The application opens Chat with the Project conversation and one composer.
 It suggests a task type from explicit goal terms, with manual selection and an
-inspectable catalog. Chat, Projects and Tasks are the primary navigation;
+inspectable catalog. Chat, Projects, Teams and Tasks are the primary navigation;
 other tools remain available under More. Connections separates installation,
 saved sign-in and supported task control for the three local CLIs. Setup guides
 open by deliberate action. Saved credentials do not establish model access.
@@ -109,7 +114,8 @@ build/runtime evidence and remaining signing/platform checks are recorded in
 
 Read [installation and recovery](docs/install.md), [architecture](docs/architecture.md)
 and [release checks](docs/release.md). Create/retry/export commands write V8 local
-events; chat-send and motion preferences add V9 audit facts. Older builds need
+events; chat-send and motion preferences add V9 audit facts. Project crews add
+V10 local mission and communication facts. Older builds need
 an unchanged pre-upgrade backup for rollback.
 [Project Memory](docs/state/project-memory.md)
 supports durable sources, message revisions, sourced ADR lifecycle and scoped

@@ -159,7 +159,7 @@ fn main() {
         } else if line.contains("\"mcpServerStatus/list\"") && mode.contains("managed") {
             send(
                 &id,
-                r#"{"data":[{"name":"patchfleet_memory","runtimeStatus":"connected","toolsError":null,"tools":{"project_context":{"name":"project_context"},"memory_search":{"name":"memory_search"},"decision_read":{"name":"decision_read"}}}],"nextCursor":null}"#,
+                r#"{"data":[{"name":"patchfleet_memory","runtimeStatus":"connected","toolsError":null,"tools":{"project_context":{"name":"project_context"},"memory_search":{"name":"memory_search"},"decision_read":{"name":"decision_read"},"crew_context":{"name":"crew_context"},"crew_messages":{"name":"crew_messages"},"crew_message":{"name":"crew_message"}}}],"nextCursor":null}"#,
             );
         } else if line.contains("\"mcpServer/tool/call\"") && mode.contains("managed") {
             send(

@@ -596,6 +596,8 @@ impl Store {
         for key in ["observation", "work", "workspaces", "packs", "teams"] {
             bundle.insert(key.into(), state.projected[key].clone());
         }
+        let crews = state.projected.get("projectCrews").map(|crews| serde_json::json!({"revision":crews["revision"],"crews":crews["crews"],"missions":crews["missions"]})).unwrap_or_else(|| serde_json::json!({"revision":0,"crews":[],"missions":[]}));
+        bundle.insert("projectCrews".into(), crews);
         bundle.insert(
             "projectMemory".into(),
             crate::project_memory::metadata(&state.projected["projectMemory"]),

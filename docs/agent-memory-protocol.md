@@ -28,7 +28,7 @@ Each protected owner-only UUID ticket expires in 60 seconds. Initialize/list/pin
 are static and do not consume it: Codex starts both an inventory probe and a
 retained runtime child. The first valid tools/call claims and deletes the
 ticket; that child caches the credential only in RAM. Preparation proves the
-three-tool inventory and calls project_context before starting any model turn.
+six-tool inventory and calls project_context before starting any model turn.
 Unused/failed/expired tickets and abandoned claim files are cleaned narrowly.
 
 Leases last at most 24 hours, are limited to 64, and bind project/work/run/Host
@@ -40,13 +40,17 @@ is allowed only for its live launching work; a failed/unknown start is denied.
 ## Tools
 
 All input objects reject extra fields; none accepts projectId, paths, SQL or
-Host actions. MCP annotations identify all three as read-only.
+Host actions. The three decision-memory tools remain read-only. Crew tools use
+the same transport but require an actual active Project crew allocation.
 
 | Tool | Arguments | Result |
 |---|---|---|
 | project_context | optional offset, limit, revision | Current accepted manifest, project/work/run identity, start/current revisions and stale flag |
 | memory_search | query, optional limit | Existing Local accepted-only keyword results; no embedding/model/network request |
 | decision_read | decisionId | Exact current accepted ADR body and opaque source ID/revision references |
+| crew_context | optional offset, limit | Current assignment and same-Project recipient IDs; no cross-Project discovery |
+| crew_messages | optional offset, limit | This agent's inbox; durably acknowledges returned records as read |
+| crew_message | toMissionId, toAgentId, body, nonce | Durable message ID and pending/read state; sender comes from the authenticated run |
 
 Context pages default to 0/20 and allow at most 20 records. Read every page before
 search/exact reads. Subsequent pages require the same current revision and the
@@ -56,6 +60,15 @@ revision. Proposed, rejected, superseded and foreign-project records are denied.
 Search retains the existing 400 UTF16-character query and 10-result bounds.
 Exact DTOs exclude raw source bodies, origin events and decision history.
 Decision text is untrusted project evidence and grants no execution permission.
+
+Crew messages are local work context, never accepted decisions or additional
+permissions. Bodies are bounded to 2,000 UTF-8 bytes, nonces to 128 characters,
+with at most 500 messages sent by a mission and pages of at most 50. Exact nonce
+replays return the existing record; conflicting reuse is rejected. A message to
+a closed run remains pending; no background reply run is implied. V10 records
+attribute sender and reader to an active allocation and historical run context.
+Ordinary non-crew jobs cannot read or mutate crew context. Oversized inbox
+responses fail before recording read acknowledgements.
 
 ## Framing and limits
 

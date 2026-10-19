@@ -293,6 +293,7 @@ impl Host {
                 else {array(&work,"runs").iter().find(|r|r["runId"]==request["payload"]["runId"]).cloned()};
             let item_id=if is_start {request["payload"]["workItemId"].clone()} else {target.as_ref().map(|r|r["workItemId"].clone()).unwrap_or(Value::Null)};
             let failure=if request["expiresAt"].as_str().unwrap_or("")<=now().as_str() {Some(("expired","COMMAND_EXPIRED"))}
+                else if is_start && !crate::project_crews::work_start_allowed(events, item_id.as_str().unwrap_or("")) {Some(("rejected","WORKSPACE_NOT_ALLOWED"))}
                 else if !available {Some(("rejected","PROVIDER_CONTROL_UNAVAILABLE"))}
                 else if let Some(t)=target.as_ref() {
                     let own_pending=seen && (if is_start {t["status"]=="launching"} else {t["status"]=="cancelling"});
@@ -339,7 +340,17 @@ impl Host {
                         &target,
                     )
                 })
-                .map_err(|_| "WORKSPACE_NOT_ALLOWED".to_owned());
+                .and_then(|directory| {
+                    self.crew_work_inputs_check(&target)?;
+                    Ok(directory)
+                })
+                .map_err(|error| {
+                    if error.0.starts_with("CREW_") {
+                        error.0
+                    } else {
+                        "WORKSPACE_NOT_ALLOWED".to_owned()
+                    }
+                });
             let memory = self.prepare_agent_memory(&target).await;
             let _ticket_cleanup = memory
                 .as_ref()

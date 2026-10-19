@@ -24,8 +24,14 @@ Decisions include ordinary choices about a project's audience, evidence or
 delivery, not only software architecture. Notes and generated suggestions remain
 context until explicitly accepted. Decisions stay scoped to their project.
 
-Chat now presents a durable Project conversation, queues work in managed local
-folders without Git, and uses supported Codex control with explicit start.
+Chat presents a durable Project conversation and an inspectable crew plan.
+Mox recommends up to six members from bundled ability guides and explicit goal
+terms; this local recommendation is labeled as such. The owner can adjust it,
+prepare a mission, and explicitly start supported Codex runs in managed local
+folders without Git. Reusable rosters belong to Projects. Real agents exchange
+attributed messages within the same Project and receive checked upstream files.
+Closed agents do not automatically wake when sent a message. Single task remains
+available for direct work. See [crew state](state/project-crew-orchestration.md).
 Follow-ups can copy selected prior outputs; a side panel previews/exports actual
 files. It offers forty inspectable recipes and eight bundled workflow guides.
 Ordinary coding tasks, teams and their
@@ -100,8 +106,12 @@ execution authority.
 
 ### Agent packs and teams
 
+General-purpose Project crews retain the reusable roster separately from each
+mission's goal, task attempts, outputs and messages. Teams is a primary native
+navigation item, with the active crew also accessible from Chat.
+
 Ready agent packs are inspectable local data, not executable plugins. In the
-current coding implementation an owner selects a registered Git folder, an
+legacy coding implementation an owner selects a registered Git folder, an
 orchestrator, roles, and limits. The local scheduler
 coordinates bounded provider runs and keeps task ownership, decisions, retries,
 questions, and receipts durable. Cloud receives only the sanitized operational

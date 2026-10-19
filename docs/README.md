@@ -53,6 +53,10 @@ team roles to current accepted Local ADRs. See [agent state](state/agent-memory.
 [Automatic drafts](extraction-protocol.md) add project consent, source-version jobs and
 attributed proposals through the installed Codex provider. See [draft state](state/automatic-drafts.md).
 
+[Project crew orchestration](state/project-crew-orchestration.md) adds editable
+crew recommendations, reusable Project teams, explicit mission starts and
+attributed agent communication to the native conversation.
+
 ## Execution records
 
 - [Plans](plans/) describe a bounded implementation slice and its acceptance

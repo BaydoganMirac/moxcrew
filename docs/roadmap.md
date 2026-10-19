@@ -9,16 +9,17 @@ commitments.
 
 ## Now
 
-- Complete the approved [Project crew orchestration](plans/0043-project-crew-orchestration.md):
-  conversational planning, reusable teams, bounded runs and same-Project
-  communication. Keep actual provider/output evidence in
-  [crew state](state/project-crew-orchestration.md).
+- Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
+  model planning, mixed providers, output revisions, typed production, live
+  direction, cross-crew delivery/review, resources, recurring recipes, explicit
+  app actions and actual usage. Track evidence and limits in
+  [Task0044 state](state/productive-project-crews.md).
 
 - Execute the owner-approved [1.0.0 master release](plans/0039-version-one-release.md):
   eight capability areas, forty abilities and ten composed Project workflows
   in one release. The [Create studio](state/project-create-studio.md) implements
-  managed non-Git jobs, recipes and native result reads/export. Continue with
-  source ingestion and verified tool integration. Track real output and integration
+  managed non-Git jobs, recipes and native result reads/export. Task0044 adds
+  frozen resources and bounded Office/data/media operations. Track real output and integration
   evidence in [release state](state/version-one-release.md); no date or current
   1.0.0 completion is implied.
 
@@ -27,13 +28,13 @@ commitments.
   checked default outputs and revisions, and purposeful Mox/crew motion.
   [Task0041](state/connected-project-conversation.md) adds persisted Project
   conversation, safe file follow-ups, connection diagnostics, bundled guides
-  and reduced motion. Claude/Gemini control and complete tool/quality paths
-  remain work to prove.
+  and reduced motion. Task0044 implements Claude/Gemini control with protocol
+  peers; live provider/account and complete ability quality evidence remain.
 
 - Apply the owner-selected [general-purpose Project direction](decisions/0038-general-purpose-projects.md)
   to future product work. Keep Project as the main container; research, content,
   analysis and planning belong in the target audience alongside coding. Current
-  Create supports non-Git work through Codex; ordinary coding tasks/teams and
+  Create supports non-Git work through selected local providers; ordinary coding tasks/teams and
   their explicitly opened Quick start retain the Git workflow.
 
 - Preserve the completed [Moxcrew identity and native interface](state/dobbly-brand-interface.md),
@@ -87,8 +88,8 @@ commitments.
   journey with moderated external users after its commercial transition.
 - Enable outbound notifications and Paddle entitlements in production only
   after operator configuration and provider sandbox evidence pass.
-- Generalize execution control to Claude Code or Gemini only after a provider
-  proves an equally safe supported lifecycle surface.
+- Verify Claude Code and Gemini execution against supported real CLI releases
+  and user entitlements, retaining the common cancellation/recovery contract.
 
 ## Later
 

@@ -543,7 +543,7 @@ async fn stdio_inventory_is_static_first_valid_call_consumes_and_repeated_calls_
         .send(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))
         .await;
     let tools = runtime.next().await;
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 6);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 13);
     assert!(grant.path.exists());
     let mut probe = Mcp::spawn(&grant.path, dir.path());
     probe.initialize().await;
@@ -555,7 +555,7 @@ async fn stdio_inventory_is_static_first_valid_call_consumes_and_repeated_calls_
             .as_array()
             .unwrap()
             .len(),
-        6
+        13
     );
     probe.finish().await;
     assert!(grant.path.exists());

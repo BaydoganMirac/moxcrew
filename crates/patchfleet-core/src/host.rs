@@ -38,10 +38,12 @@ pub struct Host {
     cloud_status: Mutex<Value>,
     desktop_preferences: Mutex<Value>,
     desktop_login: Mutex<Option<desktop_login::Login>>,
-    self_ref: Weak<Host>,
+    pub(crate) self_ref: Weak<Host>,
     agent_memory_server: AsyncMutex<Option<agent_memory::Server>>,
     agent_memory_progress: Mutex<std::collections::BTreeMap<String, AgentMemoryProgress>>,
     extraction_runtime: Mutex<extraction_runtime::Runtime>,
+    pub(crate) workflow_runtime: Mutex<crate::project_workflows::Runtime>,
+    pub(crate) studio_runtime: Mutex<crate::project_studio::Runtime>,
     memory_download: AsyncMutex<Option<shared_memory::Download>>,
     memory_poll: Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
     shutdown_notify: tokio::sync::Notify,
@@ -81,133 +83,145 @@ fn public_connection(status: &Value) -> Value {
     }
 }
 fn exact_action(action: &str, p: &Value) -> Result<()> {
-    let allowed: &[&str] = match action {
-        "observe" | "cloud_unpair" | "cloud_sync" | "cloud_login_poll" | "cloud_login_cancel"
-        | "cloud_account_read" | "cloud_logout" => &[],
-        "cloud_login_begin" => &["cloudUrl", "displayName"],
-        "workspace_register" => &["workingDirectory", "displayName"],
-        "workspace_remove" => &["workspaceId", "expectedWorkspaceRevision"],
-        "project_create" => &["name"],
-        "project_work_enqueue" => &[
-            "projectId",
-            "expectedProjectRevision",
-            "abilityId",
-            "title",
-            "instruction",
-        ],
-        "project_chat_send" => &[
-            "projectId",
-            "expectedProjectRevision",
-            "abilityId",
-            "title",
-            "instruction",
-            "replyToWorkItemId",
-            "referencePaths",
-        ],
-        "project_chat_read" => &["projectId", "offset", "limit"],
-        "project_crew_plan" => &["projectId", "instruction", "abilityId"],
-        "project_crew_prepare" => &[
-            "projectId",
-            "expectedProjectRevision",
-            "title",
-            "instruction",
-            "abilityId",
-            "members",
-            "crewId",
-            "crewName",
-            "settings",
-            "replyToWorkItemId",
-            "referencePaths",
-        ],
-        "project_crew_start" | "project_crew_cancel" | "project_crew_retry" => {
-            &["projectId", "missionId", "expectedMissionRevision"]
+    let allowed: &[&str] = if let Some(fields) = crate::project_workflows::action_fields(action)
+        .or_else(|| crate::project_studio::action_fields(action))
+    {
+        fields
+    } else {
+        match action {
+            "observe" | "cloud_unpair" | "cloud_sync" | "cloud_login_poll"
+            | "cloud_login_cancel" | "cloud_account_read" | "cloud_logout" => &[],
+            "cloud_login_begin" => &["cloudUrl", "displayName"],
+            "workspace_register" => &["workingDirectory", "displayName"],
+            "workspace_remove" => &["workspaceId", "expectedWorkspaceRevision"],
+            "project_create" => &["name"],
+            "project_work_enqueue" => &[
+                "projectId",
+                "expectedProjectRevision",
+                "abilityId",
+                "title",
+                "instruction",
+            ],
+            "project_chat_send" => &[
+                "projectId",
+                "expectedProjectRevision",
+                "abilityId",
+                "title",
+                "instruction",
+                "replyToWorkItemId",
+                "referencePaths",
+            ],
+            "project_chat_read" => &["projectId", "offset", "limit"],
+            "project_crew_plan" => &["projectId", "instruction", "abilityId"],
+            "project_crew_prepare" => &[
+                "projectId",
+                "expectedProjectRevision",
+                "title",
+                "instruction",
+                "abilityId",
+                "members",
+                "crewId",
+                "crewName",
+                "settings",
+                "replyToWorkItemId",
+                "referencePaths",
+            ],
+            "project_crew_start" | "project_crew_cancel" | "project_crew_retry" => {
+                &["projectId", "missionId", "expectedMissionRevision"]
+            }
+            "project_crew_messages_read" => &["projectId", "missionId", "offset", "limit"],
+            "provider_connections_read" => &[],
+            "project_results_read" => &["projectId", "workItemId"],
+            "project_result_read" => &["projectId", "workItemId", "path"],
+            "project_result_export" => &[
+                "projectId",
+                "workItemId",
+                "path",
+                "targetPath",
+                "expectedSha256",
+            ],
+            "project_link_workspace" | "project_unlink_workspace" => {
+                &["projectId", "workspaceId", "expectedProjectRevision"]
+            }
+            "project_message" => &["projectId", "title", "text", "expectedProjectRevision"],
+            "project_source_edit" => &[
+                "projectId",
+                "sourceId",
+                "title",
+                "text",
+                "expectedSourceRevision",
+            ],
+            "project_memory_read" => &["projectId", "offset", "limit", "query"],
+            "project_extraction_configure" => {
+                &["projectId", "expectedPolicyRevision", "enabled", "consent"]
+            }
+            "project_extraction_enqueue" => &["projectId", "sourceId", "expectedSourceRevision"],
+            "project_extraction_retry" => &["projectId", "jobId", "expectedAttempt"],
+            "project_decision_propose" => &[
+                "projectId",
+                "expectedProjectRevision",
+                "title",
+                "context",
+                "decision",
+                "rationale",
+                "consequences",
+                "sources",
+            ],
+            "project_decision_accept" | "project_decision_reject" => {
+                &["projectId", "decisionId", "expectedDecisionRevision"]
+            }
+            "project_decision_supersede" => &[
+                "projectId",
+                "decisionId",
+                "expectedDecisionRevision",
+                "replacementDecisionId",
+                "expectedReplacementRevision",
+            ],
+            "project_decisions_read" => &["projectId", "offset", "limit", "query", "status"],
+            "project_decision_read" => &["projectId", "decisionId"],
+            "project_decision_search" | "memory_cloud_search" => &["projectId", "query", "limit"],
+            "memory_cloud_create" => &["projectId", "expectedProjectRevision", "name"],
+            "memory_cloud_link" => &["projectId", "expectedProjectRevision", "sharedProjectId"],
+            "memory_cloud_publish" => &[
+                "projectId",
+                "decisionId",
+                "expectedDecisionRevision",
+                "expectedSharedRevision",
+                "consent",
+            ],
+            "memory_cloud_sharing" => &["projectId", "expectedSharedRevision", "enabled"],
+            "memory_cloud_sync" => &["projectId"],
+            "memory_cloud_read" => &["projectId", "offset", "limit"],
+            "memory_cloud_decision_read" => &["projectId", "decisionId", "revision"],
+            "desktop_language" => &["language"],
+            "desktop_motion" => &["reduceMotion"],
+            "work_enqueue" => &["title", "instruction", "workspaceId", "workingDirectory"],
+            "work_start" | "work_retry" | "work_remove" => &["workItemId", "expectedItemRevision"],
+            "work_cancel" => &["runId", "expectedRunRevision"],
+            "pack_install" => &["manifest"],
+            "pack_remove" => &["packId"],
+            "team_create" => &[
+                "name",
+                "goal",
+                "workspaceId",
+                "templateId",
+                "orchestratorPackId",
+                "workerPackIds",
+                "settings",
+            ],
+            "team_start" | "team_advance" | "team_cancel" => &["teamId", "expectedTeamRevision"],
+            "team_cancel_agent" => &["teamId", "agentId", "expectedTeamRevision"],
+            "team_approve" => &[
+                "teamId",
+                "taskId",
+                "decision",
+                "note",
+                "expectedTeamRevision",
+            ],
+            "team_answer" => &["teamId", "questionId", "answer", "expectedTeamRevision"],
+            "cloud_pair" => &["cloudUrl", "displayName", "pairingCode"],
+            _ => return Err(Error("UNKNOWN_ACTION".into())),
         }
-        "project_crew_messages_read" => &["projectId", "missionId", "offset", "limit"],
-        "provider_connections_read" => &[],
-        "project_results_read" => &["projectId", "workItemId"],
-        "project_result_read" => &["projectId", "workItemId", "path"],
-        "project_result_export" => &["projectId", "workItemId", "path", "targetPath"],
-        "project_link_workspace" | "project_unlink_workspace" => {
-            &["projectId", "workspaceId", "expectedProjectRevision"]
-        }
-        "project_message" => &["projectId", "title", "text", "expectedProjectRevision"],
-        "project_source_edit" => &[
-            "projectId",
-            "sourceId",
-            "title",
-            "text",
-            "expectedSourceRevision",
-        ],
-        "project_memory_read" => &["projectId", "offset", "limit", "query"],
-        "project_extraction_configure" => {
-            &["projectId", "expectedPolicyRevision", "enabled", "consent"]
-        }
-        "project_extraction_enqueue" => &["projectId", "sourceId", "expectedSourceRevision"],
-        "project_extraction_retry" => &["projectId", "jobId", "expectedAttempt"],
-        "project_decision_propose" => &[
-            "projectId",
-            "expectedProjectRevision",
-            "title",
-            "context",
-            "decision",
-            "rationale",
-            "consequences",
-            "sources",
-        ],
-        "project_decision_accept" | "project_decision_reject" => {
-            &["projectId", "decisionId", "expectedDecisionRevision"]
-        }
-        "project_decision_supersede" => &[
-            "projectId",
-            "decisionId",
-            "expectedDecisionRevision",
-            "replacementDecisionId",
-            "expectedReplacementRevision",
-        ],
-        "project_decisions_read" => &["projectId", "offset", "limit", "query", "status"],
-        "project_decision_read" => &["projectId", "decisionId"],
-        "project_decision_search" | "memory_cloud_search" => &["projectId", "query", "limit"],
-        "memory_cloud_create" => &["projectId", "expectedProjectRevision", "name"],
-        "memory_cloud_link" => &["projectId", "expectedProjectRevision", "sharedProjectId"],
-        "memory_cloud_publish" => &[
-            "projectId",
-            "decisionId",
-            "expectedDecisionRevision",
-            "expectedSharedRevision",
-            "consent",
-        ],
-        "memory_cloud_sharing" => &["projectId", "expectedSharedRevision", "enabled"],
-        "memory_cloud_sync" => &["projectId"],
-        "memory_cloud_read" => &["projectId", "offset", "limit"],
-        "memory_cloud_decision_read" => &["projectId", "decisionId", "revision"],
-        "desktop_language" => &["language"],
-        "desktop_motion" => &["reduceMotion"],
-        "work_enqueue" => &["title", "instruction", "workspaceId", "workingDirectory"],
-        "work_start" | "work_retry" | "work_remove" => &["workItemId", "expectedItemRevision"],
-        "work_cancel" => &["runId", "expectedRunRevision"],
-        "pack_install" => &["manifest"],
-        "pack_remove" => &["packId"],
-        "team_create" => &[
-            "name",
-            "goal",
-            "workspaceId",
-            "templateId",
-            "orchestratorPackId",
-            "workerPackIds",
-            "settings",
-        ],
-        "team_start" | "team_advance" | "team_cancel" => &["teamId", "expectedTeamRevision"],
-        "team_cancel_agent" => &["teamId", "agentId", "expectedTeamRevision"],
-        "team_approve" => &[
-            "teamId",
-            "taskId",
-            "decision",
-            "note",
-            "expectedTeamRevision",
-        ],
-        "team_answer" => &["teamId", "questionId", "answer", "expectedTeamRevision"],
-        "cloud_pair" => &["cloudUrl", "displayName", "pairingCode"],
-        _ => return Err(Error("UNKNOWN_ACTION".into())),
     };
     let obj = p
         .as_object()
@@ -270,6 +284,8 @@ impl Host {
             agent_memory_server: AsyncMutex::new(None),
             agent_memory_progress: Mutex::new(std::collections::BTreeMap::new()),
             extraction_runtime: Mutex::new(extraction_runtime::Runtime::default()),
+            workflow_runtime: Mutex::new(crate::project_workflows::Runtime::default()),
+            studio_runtime: Mutex::new(crate::project_studio::Runtime::default()),
             memory_download: AsyncMutex::new(None),
             memory_poll: Mutex::new(std::collections::BTreeMap::new()),
             shutdown_notify: tokio::sync::Notify::new(),
@@ -324,7 +340,11 @@ impl Host {
         }
         host.reconcile_ownership()?;
         host.store
+            .transaction(|events| Ok((crate::project_studio::recover(events)?, Value::Null)))?;
+        host.store
             .transaction(|events| Ok((crate::project_crews::recover(events)?, Value::Null)))?;
+        host.store
+            .transaction(|events| Ok((crate::project_workflows::recover(events)?, Value::Null)))?;
         host.store.transaction(|events| {
             let pending = events.iter().filter(|e| {
                 e["type"] == "owner.command.requested"
@@ -336,9 +356,13 @@ impl Host {
             let additions = pending
                 .map(|e| {
                     let result = match e["schemaVersion"].as_u64() {
+                        Some(11) => {
+                            crate::project_workflows::recovered_owner_result(events, &e["payload"])
+                        }
                         Some(10) => {
                             crate::project_crews::recovered_owner_result(events, &e["payload"])
                         }
+                        Some(12) => crate::project_studio::recovered_owner_result(events,&e["payload"]),
                         Some(8 | 9) => {
                             crate::creation::recovered_owner_result(events, &e["payload"])
                         }
@@ -491,6 +515,18 @@ impl Host {
                 result = tokio::time::timeout(std::time::Duration::from_secs(3), self.search_shared_memory(&payload)) => result.unwrap_or_else(|_| Err(Error("MEMORY_UNAVAILABLE".into())))
             };
         }
+        if crate::project_studio::is_read(action) {
+            let stopped = self.shutdown_notify.notified();
+            if self.closing.load(Ordering::SeqCst) {
+                return Err(Error("HOST_CLOSING".into()));
+            }
+            let result = tokio::select! {
+                _=stopped=>Err(Error("HOST_CLOSING".into())),
+                result=tokio::time::timeout(std::time::Duration::from_secs(12),self.studio_action(action,&payload))=>result.unwrap_or_else(|_|Err(Error("PROJECT_STUDIO_READ_TIMEOUT".into())))
+            }?;
+            self.studio_project(&payload)?;
+            return Ok(result);
+        }
         let _guard = self.operations.lock().await;
         if self.closing.load(Ordering::SeqCst) {
             return Err(Error("HOST_CLOSING".into()));
@@ -550,6 +586,14 @@ impl Host {
         if matches!(action, "project_crew_plan" | "project_crew_messages_read") {
             return self.crew_action(action, &payload).await;
         }
+        if crate::project_workflows::is_read(action) {
+            return self.workflow_action(action, &payload).await;
+        }
+        if crate::project_studio::is_read(action) || crate::project_studio::sensitive(action) {
+            return self.studio_action(action, &payload).await;
+        }
+        let studio_mutation = crate::project_studio::action_fields(action).is_some();
+        let workflow_mutation = crate::project_workflows::action_fields(action).is_some();
         let crew_mutation = matches!(
             action,
             "project_crew_prepare"
@@ -561,7 +605,12 @@ impl Host {
             action,
             "project_work_enqueue" | "project_result_export" | "project_chat_send"
         );
-        if action.starts_with("project_") && !creation_mutation && !crew_mutation {
+        if action.starts_with("project_")
+            && !creation_mutation
+            && !crew_mutation
+            && !workflow_mutation
+            && !studio_mutation
+        {
             return self
                 .store
                 .transaction(|events| project_memory::apply(events, action, &payload));
@@ -572,8 +621,16 @@ impl Host {
             || action == "desktop_motion"
             || creation_mutation
             || crew_mutation
+            || workflow_mutation
+            || studio_mutation
             || action == "work_retry";
-        let audit_version = if crew_mutation {
+        let audit_version = if studio_mutation
+            || (action == "project_result_export" && !payload["expectedSha256"].is_null())
+        {
+            12
+        } else if workflow_mutation {
+            11
+        } else if crew_mutation {
             10
         } else if matches!(action, "project_chat_send" | "desktop_motion") {
             9
@@ -630,7 +687,7 @@ impl Host {
             let recorded = match &result {
                 Ok(v) => v.clone(),
                 Err(error)
-                    if matches!(audit_version, 8..=10)
+                    if matches!(audit_version, 8..=13)
                         && error
                             .0
                             .bytes()
@@ -650,6 +707,12 @@ impl Host {
     }
 
     async fn execute(&self, action: &str, p: &Value) -> Result<Value> {
+        if crate::project_studio::action_fields(action).is_some() {
+            return self.studio_action(action, p).await;
+        }
+        if crate::project_workflows::action_fields(action).is_some() {
+            return self.workflow_action(action, p).await;
+        }
         if action.starts_with("team_")
             && action != "team_create"
             && !p["expectedTeamRevision"].is_null()
@@ -679,7 +742,8 @@ impl Host {
                 *self.desktop_preferences.lock().map_err(|_| Error("HOST_STATE_UNAVAILABLE".into()))? = value.clone();
                 Ok(json!({"reasonCode":"DESKTOP_LANGUAGE_SET","language":value["language"]}))
             },
-            "observe"=>{self.observe().await?;self.advance_all().await?;Ok(json!({"reasonCode":"OBSERVED"}))},
+            "observe"=>{self.observe().await?;self.finish_production().await?;
+        self.advance_all().await?;Ok(json!({"reasonCode":"OBSERVED"}))},
             "workspace_register"|"workspace_remove"=>self.workspace_action(action,p).await,
             "work_enqueue"=>{
                 let selected=p["workspaceId"].as_str().unwrap_or(""); let manual=p["workingDirectory"].as_str().unwrap_or("").trim();
@@ -1211,12 +1275,13 @@ impl Host {
     }
     async fn persist_signals(&self) -> Result<()> {
         for signal in self.controller.drain_signals().await {
-            if signal["providerId"] == "codex" && signal["status"] == "unknown" {
+            if signal["status"] == "unknown" {
                 let work = self.store.runtime_projections()?["work"].clone();
                 let lost = array(&work, "runs")
                     .iter()
                     .filter(|r| {
                         r["providerSessionId"] == signal["providerSessionId"]
+                            && r["providerId"] == signal["providerId"]
                             && matches!(r["status"].as_str(), Some("running" | "cancelling"))
                     })
                     .map(|r| {
@@ -1239,6 +1304,28 @@ impl Host {
             }
             self.store
                 .append(vec![event("session.observed", payload)])?;
+        }
+        for actual in self.controller.drain_usage().await {
+            let usage = json!({"runId":actual["runId"],"providerId":actual["providerId"],"providerSessionId":actual["sessionId"],"inputTokens":actual["inputTokens"],"outputTokens":actual["outputTokens"],"costMicros":actual["costMicros"],"currency":actual["currency"]});
+            self.store.transaction(|events| {
+                if events
+                    .iter()
+                    .any(|e| e["type"] == "provider.usage.reported" && e["payload"] == usage)
+                {
+                    return Ok((vec![], Value::Null));
+                }
+                let work = domain::project_work(events)?;
+                if !array(&work, "runs").iter().any(|r| {
+                    r["runId"] == usage["runId"]
+                        && r["providerId"] == usage["providerId"]
+                        && r["providerSessionId"] == usage["providerSessionId"]
+                }) {
+                    return Ok((vec![], Value::Null));
+                }
+                let mut e = event("provider.usage.reported", usage);
+                e["schemaVersion"] = json!(13);
+                Ok((vec![e], Value::Null))
+            })?;
         }
         Ok(())
     }
@@ -1273,7 +1360,9 @@ impl Host {
         if self.closing.load(Ordering::SeqCst) {
             return Ok(());
         }
+        self.finish_production().await?;
         self.advance_all().await?;
+        self.advance_workflows().await?;
         self.advance_crews().await?;
         self.pump_extraction(true).await?;
         let _ = self.sync_cloud().await;
@@ -1281,6 +1370,8 @@ impl Host {
         Ok(())
     }
     pub fn request_shutdown(&self) {
+        self.cancel_workflows();
+        self.cancel_production();
         self.closing.store(true, Ordering::SeqCst);
         self.cancel_login();
         self.cancel_extraction();
@@ -1306,6 +1397,8 @@ impl Host {
         }
         let _guard = self.operations.lock().await;
         self.shutdown_extraction().await;
+        self.shutdown_workflows().await;
+        self.shutdown_production().await;
         self.controller.shutdown().await;
         let _ = self.persist_signals().await;
     }
@@ -1451,6 +1544,18 @@ impl Host {
     ) -> Result<Value> {
         let invalid = || Error("AGENT_MEMORY_INVALID_ARGUMENTS".into());
         let scope = self.checked_agent_scope(binding)?;
+        if matches!(
+            tool,
+            "crew_task_offer" | "crew_task_accept" | "crew_task_deliver" | "crew_review"
+        ) {
+            return self.workflow_agent_call(binding, tool, &arguments).await;
+        }
+        if matches!(
+            tool,
+            "production_run" | "production_read" | "project_resources"
+        ) {
+            return self.studio_agent_call(binding, tool, &arguments).await;
+        }
         if matches!(tool, "crew_context" | "crew_messages" | "crew_message") {
             agent_memory::validate_arguments(tool, &arguments)?;
             return self.crew_agent_call(binding, tool, &arguments).await;

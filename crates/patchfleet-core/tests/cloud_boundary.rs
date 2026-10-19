@@ -19,6 +19,33 @@ fn receipt() -> Value {
     json!({"schemaVersion":1,"intentId":"intent:one","idempotencyKey":"idem:one","commandType":"cancel_run","outcome":"expired","reasonCode":"COMMAND_EXPIRED","completedAt":AT,"workProjectionRevision":2,"workItemId":"work:one"})
 }
 #[test]
+fn productive_state_stays_private_and_v13_work_is_omitted_from_legacy_cloud() {
+    let mut changed = bundle();
+    changed["projectStudio"] = json!({"resources":[{"text":"PRIVATE_RESOURCE"}],"connections":[{"arguments":"PRIVATE_APP_CONTENT"}]});
+    changed["projectWorkflows"] =
+        json!({"plans":[{"instruction":"PRIVATE_PLAN"}],"offers":[{"text":"PRIVATE_OFFER"}]});
+    changed["providerUsage"] = json!({"details":"PRIVATE_USAGE"});
+    for (provider, index) in [("claude", 2), ("gemini", 3)] {
+        let mut item = changed["work"]["items"][0].clone();
+        item["schemaVersion"] = json!(13);
+        item["providerId"] = json!(provider);
+        item["workItemId"] = json!(format!("work:{index}"));
+        changed["work"]["items"].as_array_mut().unwrap().push(item);
+        let mut run = changed["work"]["runs"][0].clone();
+        run["schemaVersion"] = json!(13);
+        run["providerId"] = json!(provider);
+        run["workItemId"] = json!(format!("work:{index}"));
+        run["runId"] = json!(format!("run:{index}"));
+        changed["work"]["runs"].as_array_mut().unwrap().push(run);
+    }
+    for version in [1, 2] {
+        assert_eq!(
+            cloud::build_projection(&changed, version, 1, "install:test").unwrap(),
+            cloud::build_projection(&bundle(), version, 1, "install:test").unwrap()
+        );
+    }
+}
+#[test]
 fn pure_allowlist_has_no_private_data() {
     for version in [1, 2] {
         let p = cloud::build_projection(&bundle(), version, 1, "install:test").unwrap();

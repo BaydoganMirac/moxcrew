@@ -23,6 +23,54 @@ fn fixture() -> Value {
 fn cases() -> Vec<Value> {
     fixture()["cases"].as_array().unwrap().clone()
 }
+#[test]
+fn v13_provider_execution_does_not_widen_v1_envelopes() {
+    let mut events = cases()[0]["events"].as_array().unwrap().clone();
+    let mut checked = 0;
+    for e in &mut events {
+        let kind = e["type"].as_str().unwrap().to_owned();
+        match kind.as_str() {
+            "command.requested" if e["payload"]["intent"]["type"] == "enqueue_work" => {
+                e["schemaVersion"] = json!(13);
+                e["payload"]["intent"]["schemaVersion"] = json!(13);
+                e["payload"]["intent"]["payload"]["workItem"]["schemaVersion"] = json!(13);
+                e["payload"]["intent"]["payload"]["workItem"]["providerId"] = json!("claude");
+            }
+            "work.enqueued" => {
+                e["schemaVersion"] = json!(13);
+                e["payload"]["workItem"]["schemaVersion"] = json!(13);
+                e["payload"]["workItem"]["providerId"] = json!("claude");
+            }
+            "run.prepared" => {
+                e["schemaVersion"] = json!(13);
+                e["payload"]["providerId"] = json!("claude");
+            }
+            "run.started" => {
+                e["schemaVersion"] = json!(13);
+                e["payload"]["run"]["schemaVersion"] = json!(13);
+                e["payload"]["run"]["providerId"] = json!("claude");
+            }
+            "session.observed" | "session.terminal" if e["payload"]["providerId"] == "codex" => {
+                e["payload"]["providerId"] = json!("claude");
+            }
+            _ => {}
+        }
+        if e["schemaVersion"] == 13 {
+            validate_event(e).unwrap();
+            let mut legacy = e.clone();
+            legacy["schemaVersion"] = json!(1);
+            assert!(validate_event(&legacy).is_err(), "{kind} widened V1");
+            checked += 1;
+        }
+    }
+    assert!(checked >= 4);
+    let projected = project_events(&events).unwrap();
+    assert!(projected["work"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|w| w["providerId"] == "claude"));
+}
 fn owner_request(command: &str) -> Value {
     let mut v = event(
         "owner.command.requested",

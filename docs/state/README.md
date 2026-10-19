@@ -26,10 +26,17 @@
 | Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
 | First-task quick start | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [first-task-quick-start.md](first-task-quick-start.md) |
 | General-purpose Project direction | Accepted; broader execution pending | 2026-10-19 | [general-purpose-projects.md](general-purpose-projects.md) |
-| Moxcrew 1.0.0 | Create/conversation foundation implemented; ability/release evidence pending | 2026-10-19 | [version-one-release.md](version-one-release.md) |
+| Moxcrew 1.0.0 | Productive crews and bounded production implemented; complete ability/release evidence pending | 2026-10-19 | [version-one-release.md](version-one-release.md) |
 | Project Create studio | Complete bounded foundation; independently reviewed and locally verified | 2026-10-19 | [project-create-studio.md](project-create-studio.md) |
 | Connected Project conversation | Complete bounded implementation; independently reviewed and macOS development package verified | 2026-10-19 | [connected-project-conversation.md](connected-project-conversation.md) |
 | Futuristic native studio | Complete; independently reviewed and locally verified | 2026-10-19 | [futuristic-native-studio.md](futuristic-native-studio.md) |
+| Project crew orchestration | Implemented and locally verified | 2026-10-19 | [project-crew-orchestration.md](project-crew-orchestration.md) |
+| Productive Project crews | Final verification underway | 2026-10-19 | [productive-project-crews.md](productive-project-crews.md) |
+| Workflow controls | Implemented; model planning, direction, reviews, recipes and schedules | 2026-10-19 | [workflow-controls.md](workflow-controls.md) |
+| Multi-provider execution | Implemented; protocol-peer evidence | 2026-10-19 | [provider-execution.md](provider-execution.md) |
+| Output Studio and production | Implemented; bounded Office/data/media operations | 2026-10-19 | [output-studio.md](output-studio.md) |
+| Explicit app connections | Implemented; loopback evidence | 2026-10-19 | [app-connections.md](app-connections.md) |
+| Productive native interface | Implemented; native fixture evidence | 2026-10-19 | [desktop-productive-integration.md](desktop-productive-integration.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.
@@ -53,4 +60,3 @@ version0.9 adds optional native account sign-in. version0.10 adds scoped Local a
 
 State files are resumable handoffs. Update the relevant file whenever a work
 session changes implementation status, blockers, decisions, or next steps.
-| Project crew orchestration | Implementing; validation and review underway | 2026-10-19 | [project-crew-orchestration.md](project-crew-orchestration.md) |

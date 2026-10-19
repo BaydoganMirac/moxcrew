@@ -308,6 +308,22 @@ If concurrency, query volume, or migration pressure proves this inadequate,
 SQLite may replace the storage implementation behind the same event contract.
 It is not a V0 dependency.
 
+Productive Project crews add V11 workflow facts (plans, direction, offers,
+reviews and schedules), V12 Studio facts (frozen resources, artifact provenance,
+production jobs and explicit app actions), and V13 provider execution/usage facts.
+They retain the same writer and work queue. Older event versions keep their exact
+meaning and projection shapes. Routine snapshots carry workflow metadata;
+Project-scoped reads supply full plans and resources. Existing Cloud content and
+remote-control allowlists are unchanged. See
+[ADR0045](decisions/0045-productive-crews-and-explicit-tools.md).
+
+Typed production uses bounded, cancellable child processes: a bundled standard
+library Python script and explicitly detected owner-installed media tools.
+Provider adapters share the owned-process runner. App credentials live in private
+per-Project files, outside events and snapshots. App previews freeze both typed
+arguments and the credential revision; a durable dispatch precedes the remote
+request. An uncertain outcome is recorded without automatic repetition.
+
 ## Read and write paths
 
 Local observation:

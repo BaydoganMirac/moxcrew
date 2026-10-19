@@ -1,6 +1,14 @@
 use crate::{domain, event, now, Error, Host, Result};
 use serde_json::{json, Value};
 
+fn execution_event(kind: &str, payload: Value, version: &Value) -> Value {
+    let mut value = event(kind, payload);
+    if version == 13 {
+        value["schemaVersion"] = json!(13);
+    }
+    value
+}
+
 struct MemoryTicketCleanup(std::path::PathBuf);
 impl Drop for MemoryTicketCleanup {
     fn drop(&mut self) {
@@ -225,7 +233,7 @@ impl Host {
                 let (seen,previous) = prior(events,&request,"")?;
                 if let Some(r) = previous { return Ok((vec![],r)); }
                 let work = domain::project_events(events)?["work"].clone();
-                let mut add = if seen { vec![] } else { vec![event("command.requested",json!({"intent":request}))] };
+                let mut add = if seen { vec![] } else { vec![execution_event("command.requested",json!({"intent":request}), &request["schemaVersion"])] };
                 if let Some(fact)=events.iter().find(|e|matches!(e["type"].as_str(),Some("work.enqueued"|"work.removed")) && e["payload"]["intentId"]==request["intentId"]) {
                     let item_id=if kind=="enqueue_work" {request["payload"]["workItem"]["workItemId"].clone()} else {request["payload"]["workItemId"].clone()};
                     return terminal(events,add,&request,"applied",if fact["type"]=="work.enqueued" {"WORK_ENQUEUED"} else {"WORK_REMOVED"},item_id);
@@ -255,7 +263,7 @@ impl Host {
                                 add.insert(0,crate::project_memory::bind(project,"work",text(item,"workItemId")?));
                             }
                         }
-                        add.push(event("work.enqueued",json!({"intentId":request["intentId"],"workItem":item}))); reason="WORK_ENQUEUED";
+                        add.push(execution_event("work.enqueued",json!({"intentId":request["intentId"],"workItem":item}), &item["schemaVersion"])); reason="WORK_ENQUEUED";
                     }
                 } else {
                     item_id=request["payload"]["workItemId"].clone();
@@ -279,22 +287,19 @@ impl Host {
         if matches!(kind.as_str(), "enqueue_work" | "remove_queued_work") {
             return self.apply_queue_intent(request);
         }
-        let available = self.store.runtime_projections()?["observation"]["observations"]
-            .as_array()
-            .map(|items| items.iter().any(crate::providers::supports_codex_control))
-            .unwrap_or(false);
+        let observations = self.store.runtime_projections()?["observation"]["observations"].clone();
         let staged=self.store.transaction(|events| {
             let (seen,previous)=prior(events,&request,"")?;
             if let Some(r)=previous {return Ok((vec![],json!({"receipt":r})));}
             let work=domain::project_events(events)?["work"].clone();
-            let mut add=if seen {vec![]} else {vec![event("command.requested",json!({"intent":request}))]};
+            let mut add=if seen {vec![]} else {vec![execution_event("command.requested",json!({"intent":request}), &request["schemaVersion"])]};
             let is_start=kind=="start_work";
             let target=if is_start {find(&work,"workItemId",&request["payload"]["workItemId"])}
                 else {array(&work,"runs").iter().find(|r|r["runId"]==request["payload"]["runId"]).cloned()};
             let item_id=if is_start {request["payload"]["workItemId"].clone()} else {target.as_ref().map(|r|r["workItemId"].clone()).unwrap_or(Value::Null)};
             let failure=if request["expiresAt"].as_str().unwrap_or("")<=now().as_str() {Some(("expired","COMMAND_EXPIRED"))}
                 else if is_start && !crate::project_crews::work_start_allowed(events, item_id.as_str().unwrap_or("")) {Some(("rejected","WORKSPACE_NOT_ALLOWED"))}
-                else if !available {Some(("rejected","PROVIDER_CONTROL_UNAVAILABLE"))}
+                else if is_start && target.as_ref().is_some_and(|t| !observations.as_array().is_some_and(|items| items.iter().any(|o| o["provider"]["id"] == t["providerId"] && crate::providers::supports_control(o)))) {Some(("rejected","PROVIDER_CONTROL_UNAVAILABLE"))}
                 else if let Some(t)=target.as_ref() {
                     let own_pending=seen && (if is_start {t["status"]=="launching"} else {t["status"]=="cancelling"});
                     if !own_pending && t["status"] != if is_start {"queued"} else {"running"} {Some(("rejected",if is_start {"WORK_ITEM_NOT_QUEUED"} else {"RUN_NOT_ACTIVE"}))}
@@ -392,7 +397,7 @@ impl Host {
                     ("failed", "PROVIDER_CONTROL_FAILED")
                 }
                 Ok(session) => {
-                    self.store.append(vec![event("run.prepared",json!({"intentId":request["intentId"],"workItemId":target["workItemId"],"providerId":"codex","providerSessionId":session,"expectedItemRevision":request["payload"]["expectedItemRevision"],"ownerEpoch":self.epoch})),
+                    self.store.append(vec![execution_event("run.prepared",json!({"intentId":request["intentId"],"workItemId":target["workItemId"],"providerId":target["providerId"],"providerSessionId":session,"expectedItemRevision":request["payload"]["expectedItemRevision"],"ownerEpoch":self.epoch}), &target["schemaVersion"]),
                         event("turn.requested",json!({"intentId":request["intentId"],"providerSessionId":session,"ownerEpoch":self.epoch}))])?;
                     let started = match &managed_directory {
                         Ok(Some(directory)) => {
@@ -409,8 +414,8 @@ impl Host {
                     };
                     match started {
                         Ok((session, turn)) => {
-                            add.push(event("run.started",json!({"intentId":request["intentId"],"expectedItemRevision":request["payload"]["expectedItemRevision"],"ownerEpoch":self.epoch,"run":{
-                                "schemaVersion":1,"runId":target["runId"],"workItemId":target["workItemId"],"providerId":"codex","ownerEpoch":self.epoch,"providerSessionId":session,"providerTurnId":turn,"status":"running","startedAt":now(),"terminalAt":null,"revision":1}})));
+                            add.push(execution_event("run.started",json!({"intentId":request["intentId"],"expectedItemRevision":request["payload"]["expectedItemRevision"],"ownerEpoch":self.epoch,"run":{
+                                "schemaVersion":target["schemaVersion"],"runId":target["runId"],"workItemId":target["workItemId"],"providerId":target["providerId"],"ownerEpoch":self.epoch,"providerSessionId":session,"providerTurnId":turn,"status":"running","startedAt":now(),"terminalAt":null,"revision":1}}), &target["schemaVersion"]));
                             ("applied", "WORK_STARTED")
                         }
                         Err(_) => {
@@ -435,7 +440,10 @@ impl Host {
                     ("applied", "RUN_CANCELLED")
                 }
                 Err(code) => {
-                    if code == "CODEX_SESSION_LOST" {
+                    if matches!(
+                        code.as_str(),
+                        "CODEX_SESSION_LOST" | "PROVIDER_SESSION_LOST"
+                    ) {
                         add.push(event(
                             "run.session_lost",
                             json!({"runId":target["runId"],"ownerEpoch":target["ownerEpoch"]}),

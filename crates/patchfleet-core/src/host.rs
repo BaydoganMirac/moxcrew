@@ -294,9 +294,21 @@ impl Host {
         }
         host.reconcile_ownership()?;
         host.store.transaction(|events| {
-            let pending=events.iter().filter(|e|e["type"]=="owner.command.requested" && !events.iter().any(|r|r["type"]=="owner.command.receipted" && r["payload"]["commandId"]==e["payload"]["commandId"]));
-            let additions=pending.map(|e|owner_event("owner.command.receipted",json!({"commandId":e["payload"]["commandId"],"result":{"outcome":"failed","reasonCode":"OWNER_COMMAND_OUTCOME_UNKNOWN"}}),e["schemaVersion"].as_u64().unwrap())).collect();
-            Ok((additions,Value::Null))
+            let pending = events.iter().filter(|e| {
+                e["type"] == "owner.command.requested"
+                    && !events.iter().any(|r| {
+                        r["type"] == "owner.command.receipted"
+                            && r["payload"]["commandId"] == e["payload"]["commandId"]
+                    })
+            });
+            let additions = pending.map(|e| {
+                let result = (e["schemaVersion"] == 8)
+                    .then(|| crate::creation::recovered_owner_result(events, &e["payload"]))
+                    .flatten()
+                    .unwrap_or_else(|| json!({"outcome":"failed","reasonCode":"OWNER_COMMAND_OUTCOME_UNKNOWN"}));
+                owner_event("owner.command.receipted", json!({"commandId":e["payload"]["commandId"],"result":result}), e["schemaVersion"].as_u64().unwrap())
+            }).collect();
+            Ok((additions, Value::Null))
         })?;
         Ok(host)
     }

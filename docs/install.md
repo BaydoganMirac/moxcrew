@@ -2,7 +2,7 @@
 
 Status: 0.12.0 native Rust desktop development distribution
 
-Updated: 2026-10-18
+Updated: 2026-10-19
 
 ## Application requirements
 
@@ -36,7 +36,10 @@ remain the same; existing Rust state can be read by the new application. Back up
 the stopped data directory before upgrading. Bound agent launches write V6
 context facts requiring the 0.10 reader; rollback after V6 writes requires
 that unchanged pre-upgrade backup. Extraction commands add V7 facts requiring
-a 0.11 reader; older readers need the stopped pre-upgrade backup. Uninstalling must not
+a 0.11 reader; older readers need the stopped pre-upgrade backup. Create job,
+export and work retry commands now add V8 facts. Pre-Task0040 builds, including
+older 0.12.0 development binaries, cannot read them; rollback restores the full
+unchanged pre-upgrade copy. Never edit log lines to downgrade. Uninstalling must not
 delete the canonical data directory.
 
 ### macOS opens an entirely white window
@@ -57,9 +60,34 @@ deleted. See the [verified production window](screenshots/native-production-0.5-
 
 ## Local operation
 
-### First task with Quick start
+### Create a general-purpose task
 
-The empty Projects screen offers **Quick start / Hızlı Başlangıç**, with Mox
+The application opens **Create / Üret**. Create or select a Project,
+describe your goal and choose a task type. **Explore abilities** opens the full
+catalog; **Details** contains the optional name and inspectable instructions.
+A blank name is derived from the goal. Select **Prepare task / Görevi hazırla**,
+then explicitly start Codex when its supported provider is available.
+No Git folder, Moxcrew account or Cloud subscription is required. Provider
+accounts and usage costs remain independently managed. These project-bound jobs
+require Codex 0.155.1+ and its scoped memory connection.
+
+Create, Projects and Tasks are the primary navigation. **More / Diğer** opens
+teams, memory, decisions, agent packs, provider setup and Cloud. When Codex is
+unavailable, the queued task shows provider setup next to its start action.
+
+The forty recipes guide the agent; they do not install missing renderers, model
+access or tools. Review any unmet requirements in the output. Task completion
+and file presence do not verify content quality. Read the job's actual output
+list, preview supported UTF-8 Markdown/text/CSV up to 256 KiB, or export a file
+up to 100 MiB using the system save dialog. Export refuses existing destinations.
+On Windows this build does not yet support result listing, preview or export.
+A failed export may leave a partial new copy; choose another name when retrying.
+Canceling the dialog changes nothing. Retries use a fresh job directory and
+retain the original Project and earlier outputs. Unsent text is session-only.
+
+### Coding task with Quick start
+
+Projects offers **Quick start / Hızlı Başlangıç**, with Mox
 showing the next step. You can leave the guide and reopen it from Projects;
 existing populated installations keep their normal view.
 

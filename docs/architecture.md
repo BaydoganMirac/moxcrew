@@ -125,8 +125,33 @@ case and data classification exist.
 [ADR 0038](decisions/0038-general-purpose-projects.md) broadens the intended
 audience and retains Project as the main product concept. Workspace above
 describes the existing Git execution registry, not a required user-facing
-hierarchy. General-purpose execution needs separate capability/resource
-contracts; this document records the current narrower runtime.
+hierarchy. Create general jobs use the managed directory contract below;
+tool-dependent abilities and resource ingestion remain separate work.
+
+## Managed Project jobs
+
+The native Create screen submits `project_work_enqueue` with a current project
+revision and an inspectable recipe. The Host creates an exact private
+`project-jobs/<project UUID>/<work UUID>` directory, binds the work to its Project
+and reuses the durable queue and supported Codex lifecycle. Queueing does not
+start a provider. Ordinary coding work keeps its Git validation; only the exact
+durable owner-command chain and project binding authorize managed preparation.
+Retry creates a fresh job directory and preserves earlier outputs.
+
+V8 owner requested/receipted facts audit enqueue, result export and work retry;
+V1 queue/run and V3 project semantics remain unchanged. Existing readers without
+V8 support reject the new log. Preserve a stopped pre-upgrade copy for rollback.
+Snapshots derive job metadata from cached canonical facts and never read result
+contents automatically. Missing/unsafe folders retain visible job history but
+fail closed on access. Scoped output reads are bounded; export uses owner-chosen
+destinations and refuses overwrite. No recipe, result body or path is added to
+the default Cloud allowlists. See [ADR0041](decisions/0041-managed-project-job-directories.md)
+and [Create state](state/project-create-studio.md).
+
+Unix result access pins directory handles and rejects links. Windows result
+list/read/export fail closed until equivalent protection is implemented and
+verified. Failed export can leave a partial newly created copy; cleanup cannot
+unlink an owner destination by pathname after it might have been replaced.
 
 ## Project memory boundary
 

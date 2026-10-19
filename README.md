@@ -13,9 +13,12 @@ research, writing, analysis, planning, personal work and software development.
 Project is the main product concept; a separate Workspace hierarchy is not
 required. See the [product direction](docs/decisions/0038-general-purpose-projects.md).
 
-The current execution implementation remains coding-oriented: Git worktrees
-and supported Codex control are required to run tasks/teams. The broader uses
-above are product direction, not verified end-to-end capabilities yet.
+Create offers forty inspectable task recipes across eight areas. Choose a
+Project, describe a goal and queue work without a Git folder; explicitly start
+it with supported Codex control, then inspect actual output files and export
+them. Existing coding tasks and teams retain their Git-folder workflow.
+Recipes do not install renderers or establish verified end-to-end abilities.
+See [Create studio state](docs/state/project-create-studio.md) for evidence and limits.
 
 The approved [1.0.0 release target](docs/plans/0039-version-one-release.md)
 covers eight capability areas, forty abilities and ten composed project workflows,
@@ -28,7 +31,7 @@ window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
 
-The Moxcrew interface groups projects, tasks and teams beside project memory and
+The Moxcrew interface groups Create, projects, tasks and teams beside project memory and
 decisions. Project cards open their own context; creating a task from a project
 selects its local folder while preserving any existing unsent draft. Bundled UI
 fonts, Mox mascot and the vector Moxcrew mark work offline. Both light and dark
@@ -37,6 +40,10 @@ themes follow the system preference. The brand source is in [design/moxcrew](des
 The native interface supports Turkish and English. Change the language in the
 sidebar; the owner Host saves it locally for the next launch. Source messages,
 work instructions, code and custom user content retain their original language.
+
+The application opens Create with one goal field and eight task types. The full
+recipe catalog and optional task name/instructions open on demand. Create, Projects and Tasks
+are the primary navigation; other tools remain available under More.
 
 Cloud sign-in is optional. Configure the Cloud server address, then use the
 system browser to sign in and approve this installation. Account and subscription
@@ -92,7 +99,9 @@ build/runtime evidence and remaining signing/platform checks are recorded in
 [native state](docs/state/native-rust-desktop.md).
 
 Read [installation and recovery](docs/install.md), [architecture](docs/architecture.md)
-and [release checks](docs/release.md). [Project Memory](docs/state/project-memory.md)
+and [release checks](docs/release.md). New Create/retry/export commands write
+V8 local events; older builds need an unchanged pre-upgrade backup for rollback.
+[Project Memory](docs/state/project-memory.md)
 supports durable sources, message revisions, sourced ADR lifecycle and scoped
 keyword reads. The optional subscription Cloud memory service supports explicit
 publication and exact cross-device reads; see the [memory protocol](docs/memory-protocol.md).

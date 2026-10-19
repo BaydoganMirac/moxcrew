@@ -1,6 +1,6 @@
 # Moxcrew 1.0.0 release state
 
-Status: Scope approved; implementation and release evidence pending
+Status: Scope approved; Create foundation implemented, ability/release evidence pending
 
 Updated: 2026-10-19
 
@@ -26,23 +26,32 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Web/actions | W1–W5 | Planned; existing coding evidence does not cover this whole area |
 | Composed workflows | J1–J10 | Planned; no end-to-end release proof |
 
-Reuse current Project/decision, durable task, native UI and bounded supported
-Codex control. Current task/team execution remains Git-oriented. Source version
-is still 0.12.0; optional Cloud source remains on its own current version. No
-package version bump, non-Git runner, skill execution, new provider/credential,
-runtime migration or production change was made when creating this baseline.
+The first [Create studio slice](project-create-studio.md) reuses Project/decision,
+durable tasks, native UI and supported Codex control for managed non-Git jobs.
+Forty localized recipes, scoped real output reads and explicit export are
+implemented. Ordinary coding tasks/teams retain their Git workflow. A catalog
+entry does not complete any row above. Source remains 0.12.0; V8 local audit
+facts require the documented stopped-backup rollback procedure. Cloud runtime,
+model credentials and production installation are unchanged.
+
+Development feasibility produced an editable four-shape PPTX (20,027 bytes,
+reopened/rendered with LibreOffice) and a reordered/cut two-second MP4 (320×180,
+24 fps, 48 frames, 189,712 bytes; decoded and frame-order checked). These used
+existing development tools: artifact-tool 2.8.99 and ffmpeg/ffprobe 7.1.1.
+They do not establish redistributed engines, task isolation or live model output.
 
 ## Next executable work
 
-F0 in the master plan: presentation and video execution/access feasibility and
-architecture choice. Then detail F1/F2/F3 against that chosen contract. No dated
-estimate or execution-environment decision has been made. Future work must
-preserve breadth rather than silently moving areas beyond 1.0.0.
+Finish F0 production tool/access selection and licenses, then source ingestion,
+tool availability/preflight and artifact revisions on the Create foundation.
+Task0040 is bounded F1/F3 groundwork, not the complete source/skill pipeline.
+No dated estimate is committed. Preserve breadth rather than moving areas
+beyond 1.0.0.
 
 Store each ability's commit, exact tool versions, test commands, verified output,
 revision proof and limits as it becomes implemented. Keep unmeasured entries
 unverified; do not count a skill catalog entry as an implemented ability.
 
-Documentation links and scope traceability are checked at handoff. Runtime,
-provider, rendering and native release checks were not run for this docs change.
-No skills were installed, API keys created, push, deployment or publication done.
+Create-specific checks, native evidence and remaining limits are recorded in its
+state file. No global skills were installed, API keys created, push, deployment
+or publication performed.

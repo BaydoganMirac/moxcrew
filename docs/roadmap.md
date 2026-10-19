@@ -11,15 +11,17 @@ commitments.
 
 - Execute the owner-approved [1.0.0 master release](plans/0039-version-one-release.md):
   eight capability areas, forty abilities and ten composed Project workflows
-  in one release. Start with execution/tool-access feasibility, then implement
-  bounded work packages within that scope. Track real output and integration
+  in one release. The [Create studio](state/project-create-studio.md) implements
+  managed non-Git jobs, recipes and native result reads/export. Continue with
+  source ingestion and verified tool integration. Track real output and integration
   evidence in [release state](state/version-one-release.md); no date or current
   1.0.0 completion is implied.
 
 - Apply the owner-selected [general-purpose Project direction](decisions/0038-general-purpose-projects.md)
   to future product work. Keep Project as the main container; research, content,
   analysis and planning belong in the target audience alongside coding. Current
-  Git/Codex execution and Quick start are a narrower delivered implementation.
+  Create supports non-Git work through Codex; ordinary coding tasks/teams and
+  their explicitly opened Quick start retain the Git workflow.
 
 - Preserve the completed [Moxcrew identity and native interface](state/dobbly-brand-interface.md),
   with Mox as the mascot and compatible existing installation/data identities.

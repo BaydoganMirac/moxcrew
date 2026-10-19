@@ -59,6 +59,11 @@ version or add remote memory commands. V1 and capability-negotiated V2 serialize
 remain explicit operational allowlists. The native memory read result is local
 and cannot be supplied as an outbound projection.
 
+Local V8 Create/retry/export audit facts also negotiate no Cloud version or
+remote ability command. `abilities`, `projectJobs`, `projectResults` and
+`projectResult` are local-only fields. V1/V2 boundary tests inject these private
+fields and require byte-identical sanitized payloads.
+
 Task0031 adds a separate [opt-in memory protocol1](memory-protocol.md) for
 owner-selected accepted ADR publication. Its explicit consent, paid access and
 project roles do not widen any V1/V2 operational payload or authorize automatic

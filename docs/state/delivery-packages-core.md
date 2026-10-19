@@ -16,8 +16,9 @@ files, and verifies the expected SHA-256. Limits are 25 MiB per file and 64 MiB
 aggregate. All source bytes are checked before creating the destination.
 
 The output is a standard UTF-8 STORE ZIP with CRC32, central directory and no
-ZIP64/compression dependency. Numbered relative aliases prevent colliding names
-while retaining readable Unicode filenames. `manifest.json` schema1 records
+ZIP64/compression dependency. Numbered relative folders (`files/01/name.ext`)
+prevent colliding names while retaining full sanitized Unicode basenames and
+extensions without increasing the basename length. `manifest.json` schema1 records
 Project ID and each work/path/archive-path/hash/byte identity. The package includes
 no absolute paths, goals, prompts, account state or credentials.
 
@@ -35,7 +36,8 @@ Exact duplicate commands return their durable receipt, including after restart.
 A crash after writing the ZIP but before the outer receipt remains
 `OWNER_COMMAND_OUTCOME_UNKNOWN`; the Host never repeats an uncertain export.
 
-Five focused tests exercise real Host exports, Unicode/colliding names, binary
+Six focused tests exercise real Host exports, Unicode/colliding names, 250–253-byte
+basenames with retained `.pptx` extensions, binary
 bytes, ZIP CRC/offsets/manifest, exact receipts/restart, crash prefixes, changed or
 missing files, foreign/missing jobs, traversal, source/destination symlinks,
 duplicate selections, count/size/aggregate limits, internal/existing targets and

@@ -229,7 +229,7 @@ impl Console {
                                 ui.label(&key.1);
                                 ui.label(
                                     RichText::new(key.2.chars().take(8).collect::<String>())
-                                        .size(11.0)
+                                        .size(12.0)
                                         .color(colors(ui).muted),
                                 );
                                 if !present {
@@ -301,33 +301,28 @@ impl Console {
                 .map(|task| text(task, "title"))
                 .filter(|title| !title.is_empty())
                 .unwrap_or(text(file, "path"));
-            let row = egui::Frame::new()
-                .fill(colors(ui).surface)
-                .stroke(egui::Stroke::new(1.0, colors(ui).border))
-                .corner_radius(studio::metrics::CARD_RADIUS)
-                .inner_margin(studio::metrics::PADDING)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    let response = ui.add_enabled(
-                        can_select,
-                        egui::Checkbox::new(&mut checked, text(file, "name")),
-                    );
-                    #[cfg(test)]
-                    ui.data_mut(|data| {
-                        data.insert_temp(egui::Id::new(("delivery-file", &key)), response.rect)
-                    });
-                    ui.label(
-                        RichText::new(format!(
-                            "{} · {} · {}",
-                            task,
-                            size(file["bytes"].as_u64().unwrap_or(0)),
-                            key.2.chars().take(8).collect::<String>()
-                        ))
-                        .size(11.0)
-                        .color(colors(ui).muted),
-                    );
-                    response.changed()
+            let row = studio::card(ui).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                let response = ui.add_enabled(
+                    can_select,
+                    egui::Checkbox::new(&mut checked, text(file, "name")),
+                );
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(egui::Id::new(("delivery-file", &key)), response.rect)
                 });
+                ui.label(
+                    RichText::new(format!(
+                        "{} · {} · {}",
+                        task,
+                        size(file["bytes"].as_u64().unwrap_or(0)),
+                        key.2.chars().take(8).collect::<String>()
+                    ))
+                    .size(12.0)
+                    .color(colors(ui).muted),
+                );
+                response.changed()
+            });
             if row.inner {
                 let selection = self.create.studio.packages.get_mut(&project).unwrap();
                 if checked {
@@ -356,46 +351,41 @@ impl Console {
         } else {
             tf(ui, "{0} files selected", &[&count.to_string()])
         };
-        let footer = egui::Frame::new()
-            .fill(colors(ui).raised)
-            .stroke(egui::Stroke::new(1.0, colors(ui).border))
-            .corner_radius(studio::metrics::CARD_RADIUS)
-            .inner_margin(studio::metrics::PADDING)
-            .show(ui, |ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if view_control(
-                        ui,
-                        "Export package",
-                        selected.is_some() && !cfg!(target_os = "windows"),
-                        true,
-                    )
-                    .clicked()
-                    {
-                        let (files, _) = selected.clone().unwrap();
-                        self.create.studio.delivery_request = Some(DeliveryExportRequest {
-                            project_id: self.create.project.clone(),
-                            name: "moxcrew-delivery.zip".into(),
-                            files,
-                            host_epoch: snapshot["hostEpoch"].clone(),
-                        });
-                    }
-                    if view_control(ui, "Back to files", true, false).clicked() {
-                        self.create.studio.package_mode = false;
-                    }
-
-                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                        ui.set_max_width(ui.available_width());
-                        ui.label(summary);
-                        if count > 0 && selected.is_none() {
-                            ui.label(
-                                RichText::new(t(ui, "Review changed files or package limits."))
-                                    .size(11.0)
-                                    .color(colors(ui).warning),
-                            );
-                        }
+        let footer = studio::card(ui).fill(colors(ui).raised).show(ui, |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if view_control(
+                    ui,
+                    "Export package",
+                    selected.is_some() && !cfg!(target_os = "windows"),
+                    true,
+                )
+                .clicked()
+                {
+                    let (files, _) = selected.clone().unwrap();
+                    self.create.studio.delivery_request = Some(DeliveryExportRequest {
+                        project_id: self.create.project.clone(),
+                        name: "moxcrew-delivery.zip".into(),
+                        files,
+                        host_epoch: snapshot["hostEpoch"].clone(),
                     });
+                }
+                if view_control(ui, "Back to files", true, false).clicked() {
+                    self.create.studio.package_mode = false;
+                }
+
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.set_max_width(ui.available_width());
+                    ui.label(summary);
+                    if count > 0 && selected.is_none() {
+                        ui.label(
+                            RichText::new(t(ui, "Review changed files or package limits."))
+                                .size(12.0)
+                                .color(colors(ui).warning),
+                        );
+                    }
                 });
             });
+        });
         #[cfg(test)]
         ui.data_mut(|data| {
             data.insert_temp(

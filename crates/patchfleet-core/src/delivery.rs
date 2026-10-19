@@ -84,7 +84,6 @@ pub(super) fn export(host: &Host, p: &Value) -> Result<Value> {
                 .to_str()
                 .unwrap()
                 .chars()
-                .take(80)
                 .map(|c| {
                     if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') {
                         c
@@ -93,7 +92,7 @@ pub(super) fn export(host: &Host, p: &Value) -> Result<Value> {
                     }
                 })
                 .collect();
-            let alias = format!("files/{:02}-{name}", index + 1);
+            let alias = format!("files/{:02}/{name}", index + 1);
             files.push(json!({"workItemId":selection["workItemId"],"path":selection["path"],"archivePath":alias,"sha256":sha,"bytes":bytes.len()}));
             entries.push((alias, bytes));
         }
@@ -431,6 +430,42 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap(), bytes);
         reopened.shutdown().await;
     }
+    #[tokio::test]
+    async fn long_unicode_basenames_retain_extensions_and_extractable_component_lengths() {
+        let (tmp, host, project, work, root) = fixture().await;
+        let names = [
+            format!("{}abcde.pptx", "猫".repeat(80)),
+            format!("{}.pptx", "𐐀".repeat(62)),
+        ];
+        let mut selections = Vec::new();
+        for name in &names {
+            assert!((250..=255).contains(&name.len()));
+            let path = format!("outputs/{name}");
+            fs::write(root.join(&path), b"Original presentation bytes").unwrap();
+            selections.push(selected(&work, &path, b"Original presentation bytes"));
+        }
+        let target = tmp.path().join("long-names.zip");
+        host.action(
+            "project_delivery_export",
+            command(json!({"projectId":project,"files":selections,"targetPath":target})),
+        )
+        .await
+        .unwrap();
+        let entries = read_store_zip(&fs::read(target).unwrap());
+        for (index, name) in names.iter().enumerate() {
+            assert_eq!(entries[index].0, format!("files/{:02}/{name}", index + 1));
+            let basename = std::path::Path::new(&entries[index].0)
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap();
+            assert_eq!(basename, name);
+            assert!(basename.len() <= 255);
+            assert!(basename.ends_with(".pptx"));
+            assert_eq!(entries[index].1, b"Original presentation bytes");
+        }
+        host.shutdown().await;
+    }
     #[cfg(unix)]
     #[tokio::test]
     async fn invalid_sources_scopes_and_selections_never_create_destination() {
@@ -632,9 +667,11 @@ mod tests {
         fs::create_dir(root.join("outputs/charts")).unwrap();
         fs::write(root.join("outputs/Özet_猫.md"), b"Original Unicode report").unwrap();
         fs::write(root.join("outputs/charts/Özet_猫.md"), [0, 255, 17, 42]).unwrap();
+        let long_path = format!("outputs/{}.pptx", "𐐀".repeat(62));
+        fs::write(root.join(&long_path), b"Long presentation filename fixture").unwrap();
         let target = tmp.path().join("delivery-fixture.zip");
-        let result = host.action("project_delivery_export",command(json!({"projectId":project,"files":[selected(&work,"outputs/Özet_猫.md",b"Original Unicode report"),selected(&work,"outputs/charts/Özet_猫.md",&[0,255,17,42])],"targetPath":target}))).await.unwrap();
-        assert_eq!(result["fileCount"], 2);
+        let result = host.action("project_delivery_export",command(json!({"projectId":project,"files":[selected(&work,"outputs/Özet_猫.md",b"Original Unicode report"),selected(&work,"outputs/charts/Özet_猫.md",&[0,255,17,42]),selected(&work,&long_path,b"Long presentation filename fixture")],"targetPath":target}))).await.unwrap();
+        assert_eq!(result["fileCount"], 3);
         host.shutdown().await;
         drop(host);
         let retained = tmp.keep();

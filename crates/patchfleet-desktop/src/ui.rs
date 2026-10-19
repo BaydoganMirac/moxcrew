@@ -1179,6 +1179,20 @@ impl Console {
                 });
                 if let Some(notice) = notice {
                     self.feedback(ui, notice, !busy, can_retry);
+                    if self.quick_start.open
+                        && self.tab == Tab::Projects
+                        && notice.kind == NoticeKind::Error
+                        && notice.action == "work_start"
+                    {
+                        ui.horizontal_wrapped(|ui| {
+                            if control(ui, "Open Tasks", !busy).clicked() {
+                                self.tab = Tab::Work;
+                            }
+                            if control(ui, "Open providers", !busy).clicked() {
+                                self.tab = Tab::Providers;
+                            }
+                        });
+                    }
                     ui.add_space(14.0);
                 }
                 if let Some(error) = self.form_error {
@@ -1380,7 +1394,7 @@ impl Console {
                     RichText::new(format!(
                         "{} {}",
                         if index < step {
-                            "✓".into()
+                            t(ui, "Done").into_owned()
                         } else {
                             (index + 1).to_string()
                         },
@@ -1446,12 +1460,6 @@ impl Console {
                 hint(ui, "Compatibility does not confirm provider sign-in. Project memory needs Codex 0.155.1 or later.");
             }),
             3 => {
-                let workspace = self.quick_start.workspace(snapshot).unwrap();
-                let work = items(&snapshot["work"]);
-                let task =
-                    work.iter().enumerate().rev().find(|(_, item)| {
-                        item["workingDirectory"] == workspace["workingDirectory"]
-                    });
                 card(ui, |ui| {
                     section_title(
                         ui,
@@ -1459,27 +1467,6 @@ impl Console {
                         "Write a clear goal, review the queued task, then choose Start Codex.",
                     );
                     hint(ui, "Task name: the outcome. Instruction: the change, limits and how to check it.");
-                    if let Some((index, task)) = task {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.strong(text(task, "title"));
-                            status(ui, text(task, "status"));
-                        });
-                        if array(&snapshot["work"]["receipts"])
-                            .iter()
-                            .rev()
-                            .find(|r| {
-                                r["commandType"] == "start_work"
-                                    && r["workItemId"] == task["workItemId"]
-                            })
-                            .is_some_and(|r| r["outcome"] != "applied")
-                        {
-                            hint(ui, "Start was not confirmed. Open the task, review its feedback and fix the connection before trying again.");
-                        }
-                        if control(ui, "Review task in Tasks", true).clicked() {
-                            self.work_page = index / 25;
-                            self.tab = Tab::Work;
-                        }
-                    }
                     if control(
                         ui,
                         if self.work.is_empty() {
@@ -1502,6 +1489,9 @@ impl Console {
                             || !self.work.path.is_empty())
                     {
                         hint(ui, "Your current draft uses another folder. Opening it preserves its text and folder.");
+                    }
+                    if control(ui, "Open task queue", true).clicked() {
+                        self.tab = Tab::Work;
                     }
                     ui.collapsing(t(ui, "Task writing example"), |ui| {
                         hint(ui, "For example: improve the welcome text; keep the layout and verify both languages.");
@@ -8624,6 +8614,42 @@ mod tests {
     }
 
     #[test]
+    fn quick_start_does_not_recommend_prior_work_after_relinking_a_folder() {
+        for historical_project in [Some("project:old"), None] {
+            let ctx = test_context();
+            let mut console = quick_console();
+            let mut data = quick_snapshot();
+            data["work"]["items"][0]["title"] = json!("FOREIGN_OR_UNBOUND_TASK_CANARY");
+            if let Some(project) = historical_project {
+                confirm_quick_start(&mut data);
+                data["agentMemory"]["contexts"][0]["projectId"] = json!(project);
+            }
+            for _ in 0..3 {
+                assert!(render(&ctx, &mut console, &data, false, vec![])
+                    .0
+                    .is_empty());
+            }
+            let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+            assert!(!copy.contains("FOREIGN_OR_UNBOUND_TASK_CANARY"));
+            assert_eq!(console.quick_start.step(&data), 3);
+            assert!(click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "memory_control",
+                "Open task queue"
+            )
+            .is_empty());
+            assert!(
+                console.tab == Tab::Work,
+                "generic navigation grants no project ownership"
+            );
+            assert!(console.work.is_empty());
+        }
+    }
+
+    #[test]
     fn quick_start_next_action_fits_minimum_window_in_both_languages_and_themes() {
         for theme in [egui::Theme::Light, egui::Theme::Dark] {
             for language in ["tr", "en"] {
@@ -8679,6 +8705,32 @@ mod tests {
                     );
                     assert_eq!(console.quick_start.step(&data), step);
                     assert!(commands.is_empty());
+                    if step == 3 {
+                        let failure = Notice::error("work_start", "PROVIDER_CONTROL_FAILED");
+                        let output = ctx.run_ui(
+                            RawInput {
+                                screen_rect: Some(Rect::from_min_size(
+                                    Pos2::ZERO,
+                                    egui::vec2(800.0, 560.0),
+                                )),
+                                ..Default::default()
+                            },
+                            |ui| commands = console.show(ui, &data, false, Some(&failure), false),
+                        );
+                        output.drop_without_applying_deltas();
+                        for label in ["Open Tasks", "Open providers"] {
+                            let rect: Rect = ctx.data(|d| {
+                                d.get_temp(egui::Id::new(("test-action", "memory_control", label)))
+                                    .unwrap()
+                            });
+                            assert!(
+                                rect.max.y <= 540.0 && rect.max.x <= 800.0,
+                                "failure recovery: {rect:?}"
+                            );
+                        }
+                        assert!(commands.is_empty());
+                        assert_eq!(console.quick_start.step(&data), 3);
+                    }
                 }
             }
         }

@@ -509,8 +509,43 @@ impl Console {
         }
         self.model_plan_card(ui, snapshot, commands);
         if self.create.crew.plans.contains_key(&self.create.crew_key()) {
-            self.crew_plan_card(ui, snapshot, commands);
+            if self.create.productive_view() == 1 {
+                self.crew_plan_chat_summary(ui, snapshot);
+            } else {
+                self.crew_plan_card(ui, snapshot, commands);
+            }
         }
+    }
+
+    fn crew_plan_chat_summary(&mut self, ui: &mut Ui, snapshot: &Value) {
+        let Some(plan) = self.create.crew.plans.get(&self.create.crew_key()) else {
+            return;
+        };
+        let count = plan.members.len().to_string();
+        let goal = plan
+            .recommended_for
+            .clone()
+            .unwrap_or_else(|| self.create.draft().goal.clone());
+        ui.add_space(studio::metrics::GAP);
+        studio::card(ui).show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                crate::motion::mox(
+                    ui,
+                    studio::metrics::COMPACT_HEIGHT,
+                    false,
+                    snapshot["desktopPreferences"]["reduceMotion"] == true,
+                );
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(t(ui, "Your crew is ready")).strong());
+                    short_copy(ui, &goal, 14.0, colors(ui).text, 2);
+                    ui.label(
+                        RichText::new(tf(ui, "{0} agents", &[&count]))
+                            .size(12.0)
+                            .color(colors(ui).muted),
+                    );
+                });
+            });
+        });
     }
 
     fn crew_prepare_action(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -2702,6 +2737,94 @@ mod tests {
     }
 
     #[test]
+    fn crew_context_paints_one_plan_and_closing_it_restores_the_chat_card() {
+        let size = egui::vec2(1280.0, 880.0);
+        for language in ["en", "tr"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language,"reduceMotion":true});
+                data["projectCrews"]["missions"] = json!([]);
+                let mut console = console();
+                console.hold_automatic_reads = true;
+                console.create.draft().goal = "Unsent owner goal retained".into();
+                let draft = console.create.draft().clone();
+                let plan = console.create.crew.plans[&console.create.crew_key()].clone();
+                console.create.select_productive_view(1);
+
+                for _ in 0..3 {
+                    let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+                    assert!(commands.is_empty());
+                    for label in ["Builder", "Reviewer", "Prepare crew", "Edit roster"] {
+                        let localized = i18n::tr(Language::from_code(language), label);
+                        assert_eq!(
+                            copy.iter()
+                                .filter(|line| line.as_str() == localized.as_ref())
+                                .count(),
+                            1,
+                            "{language}/{theme:?}: duplicated {label}: {copy:?}"
+                        );
+                    }
+                    assert!(copy.iter().any(|line| line == "Owner goal"));
+                    let count =
+                        i18n::tr(Language::from_code(language), "{0} agents").replace("{0}", "2");
+                    assert!(copy.iter().any(|line| line == &count));
+                }
+
+                let rect = ctx.data(|data| {
+                    data.get_temp::<egui::Rect>(egui::Id::new(("project-view-tab", 0usize)))
+                        .unwrap()
+                });
+                let pos = rect.center();
+                for pressed in [true, false] {
+                    assert!(render(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(pos),
+                            egui::Event::PointerButton {
+                                pos,
+                                button: egui::PointerButton::Primary,
+                                pressed,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    )
+                    .0
+                    .is_empty());
+                }
+                assert_eq!(console.create.productive_view(), 0);
+                let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+                assert!(commands.is_empty());
+                for label in [
+                    "Builder",
+                    "Reviewer",
+                    "Prepare crew",
+                    "Edit roster",
+                    "Your crew is ready",
+                ] {
+                    let localized = i18n::tr(Language::from_code(language), label);
+                    assert_eq!(
+                        copy.iter()
+                            .filter(|line| line.as_str() == localized.as_ref())
+                            .count(),
+                        1,
+                        "{language}/{theme:?}: restored chat card missing {label}"
+                    );
+                }
+                assert!(console.create.draft() == &draft);
+                assert!(console.create.crew.plans[&console.create.crew_key()] == plan);
+                assert!(console.create.crew.pending.is_none());
+            }
+        }
+    }
+
+    #[test]
     fn teams_inline_plan_keeps_prepare_and_return_visible_at_minimum_size() {
         for language in ["en", "tr"] {
             for theme in [egui::Theme::Light, egui::Theme::Dark] {
@@ -3334,7 +3457,12 @@ mod tests {
                     )))
                     .unwrap()
                 });
-                assert!(enabled && screen.contains_rect(button) && clip.contains_rect(button));
+                assert!(
+                    enabled
+                        && bar.contains_rect(button)
+                        && screen.contains_rect(button)
+                        && clip.contains_rect(button)
+                );
                 let (guidance, clip) = ctx.data(|data| {
                     data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new(
                         "workflow-footer-guidance",
@@ -3354,6 +3482,10 @@ mod tests {
                 assert_eq!(commands.len(), 1);
                 assert_eq!(commands[0].action, "project_crew_prepare");
                 assert_eq!(commands[0].payload["projectId"], "project:one");
+                assert_eq!(commands[0].payload["expectedProjectRevision"], 3);
+                assert_eq!(commands[0].payload["abilityId"], "P1");
+                assert_eq!(commands[0].payload["instruction"], "Owner goal");
+                assert_eq!(commands[0].payload["members"], json!(plan().members));
                 assert!(commands
                     .iter()
                     .all(|command| command.action != "project_crew_start"));

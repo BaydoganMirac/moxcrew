@@ -397,6 +397,8 @@ impl Console {
     pub fn chat_smoke(&mut self, snapshot: &Value, show_files: bool, show_connections: bool) {
         self.create_smoke(snapshot, show_files);
         self.create.chat.connections_open = show_connections;
+        self.create.catalog_open =
+            std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("chat-catalog");
     }
 
     #[cfg(feature = "ui-smoke")]

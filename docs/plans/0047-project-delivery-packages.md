@@ -22,7 +22,8 @@ release scope: find actual outputs, select several and export a usable package.
   internal/existing destinations and unsupported platforms fail closed.
 - Export one standard UTF-8 ZIP with the original bytes under collision-free
   relative names, plus manifest.json containing Project/work/path/hash/byte
-  provenance. No prompts, credentials or absolute source paths enter the package.
+  provenance. The manifest adds no prompts, credentials or absolute source paths;
+  explicitly selected file contents remain unchanged.
 - A real ZIP reader must reopen the result and reconcile every hash. Failure is
   visible; no partial package is reported successful. Originals remain intact.
 

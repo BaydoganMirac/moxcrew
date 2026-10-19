@@ -20,8 +20,9 @@ The output is a standard UTF-8 STORE ZIP with CRC32, central directory and no
 ZIP64/compression dependency. Numbered relative folders (`files/01/name.ext`)
 prevent colliding names while retaining full sanitized Unicode basenames and
 extensions without increasing the basename length. `manifest.json` schema1 records
-Project ID and each work/path/archive-path/hash/byte identity. The package includes
-no absolute paths, goals, prompts, account state or credentials.
+Project ID and each work/path/archive-path/hash/byte identity. The manifest adds
+no absolute paths, goals, prompts, account state or credentials. Explicitly
+selected source bytes are exported unchanged; their content is not redacted.
 
 Single-file and package exports share the checked destination helper: absolute
 owner-selected target, existing parent, outside the canonical data directory,

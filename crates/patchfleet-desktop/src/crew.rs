@@ -606,6 +606,8 @@ impl Console {
                         p.info
                     } else if role == "review" {
                         p.success
+                    } else if role == "presentation" {
+                        p.warning
                     } else {
                         p.primary
                     };
@@ -648,21 +650,39 @@ impl Console {
                                         .truncate(),
                                     )
                                     .on_hover_text(text(member, "name"));
-                                    if let Some(ability) = ability {
-                                        ui.add(
-                                            egui::Label::new(
-                                                RichText::new(ability_text(
+                                    let capability = if role == "review" {
+                                        t(ui, "Quality review")
+                                    } else {
+                                        ability
+                                            .map(|ability| {
+                                                std::borrow::Cow::Borrowed(ability_text(
                                                     ability,
                                                     "name",
                                                     Language::from_snapshot(snapshot),
                                                 ))
-                                                .size(11.0)
-                                                .color(p.muted),
-                                            )
-                                            .truncate(),
-                                        );
-                                    }
-                                    short_copy(ui, text(member, "instruction"), 12.0, p.muted, 2);
+                                            })
+                                            .unwrap_or_else(|| t(ui, role_label(role)))
+                                    };
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(capability).size(11.0).color(p.muted),
+                                        )
+                                        .truncate(),
+                                    );
+                                    let description = if role == "review" {
+                                        t(ui, "Checks the deliverables against your goal.")
+                                    } else {
+                                        ability
+                                            .map(|ability| {
+                                                std::borrow::Cow::Borrowed(ability_text(
+                                                    ability,
+                                                    "description",
+                                                    Language::from_snapshot(snapshot),
+                                                ))
+                                            })
+                                            .unwrap_or_else(|| t(ui, role_label(role)))
+                                    };
+                                    short_copy(ui, &description, 12.0, p.muted, 2);
                                 });
                         },
                     );
@@ -1796,6 +1816,7 @@ impl Console {
                 let _ = title;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let picker = egui::ComboBox::from_id_salt("crew-context-view")
+                        .height(260.0)
                         .width(if compact { 128.0 } else { 148.0 })
                         .selected_text(t(ui, labels[self.create.crew.workflow.tab.min(4)]))
                         .show_ui(ui, |ui| {
@@ -1849,7 +1870,7 @@ impl Console {
                         else if self.create.crew.workflow.models.contains_key(&key){self.model_plan_card(ui,snapshot,commands);}
                         else{self.workflow_plan_request(ui,snapshot);}
                         ui.add_space(16.0);
-                        ui.collapsing(t(ui,"Plan details"),|ui| {
+                        let details=ui.collapsing(t(ui,"Plan details"),|ui| {
                             if let Some(plan)=self.create.crew.plans.get(&key).cloned(){
                                 ui.label(RichText::new(t(ui,"Agent instructions")).strong());
                                 for member in &plan.members{ui.label(RichText::new(text(member,"name")).strong());ui.add(egui::Label::new(text(member,"instruction")).wrap().selectable(true));ui.add_space(8.0);}
@@ -1873,6 +1894,8 @@ impl Console {
                             }
                             self.workflow_page_controls(ui,snapshot,commands,"plans");
                         });
+                        #[cfg(test)] ui.data_mut(|data|data.insert_temp(egui::Id::new(("test-action","memory_control","Plan details")),details.header_response.rect));
+                        #[cfg(not(test))] let _=details;
                     },
                     1=>self.workflow_direction(ui,snapshot,commands),2=>self.workflow_recipes(ui,snapshot,commands),3=>self.workflow_schedules(ui,snapshot,commands),_=>self.workflow_activity(ui,snapshot,commands),
                 }
@@ -3025,6 +3048,59 @@ mod tests {
     }
 
     #[test]
+    fn role_cards_show_localized_capabilities_and_keep_runtime_instructions_in_plan_details() {
+        for language in ["en", "tr"] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut data = fixture();
+            data["desktopPreferences"]["language"] = json!(language);
+            let mut console = console();
+            console.create.crew.workflow.read = Some(("project:one".into(), 0));
+            console.create.select_productive_view(1);
+            let key = console.create.crew_key();
+            for member in &mut console.create.crew.plans.get_mut(&key).unwrap().members {
+                member["instruction"] = json!("ACTUAL-AGENT-INSTRUCTION-CANARY");
+            }
+            let size = egui::vec2(800.0, 560.0);
+            for _ in 0..3 {
+                let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+                assert!(commands.is_empty());
+                assert!(copy.iter().any(|line| line
+                    == i18n::tr(Language::from_code(language), "Quality review").as_ref()));
+                assert!(!copy.join("\n").contains("ACTUAL-AGENT-INSTRUCTION-CANARY"));
+                assert!(!copy
+                    .iter()
+                    .any(|line| line
+                        == i18n::tr(Language::from_code(language), "Saved plans").as_ref()));
+            }
+            let payload = console.create.crew_payload(&data).unwrap();
+            assert_eq!(
+                payload["members"][0]["instruction"],
+                "ACTUAL-AGENT-INSTRUCTION-CANARY"
+            );
+            assert!(click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "memory_control",
+                "Plan details"
+            )
+            .is_empty());
+            let copy = render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(1280.0, 2200.0),
+                false,
+                vec![],
+            )
+            .1;
+            assert!(copy.join("\n").contains("ACTUAL-AGENT-INSTRUCTION-CANARY"));
+        }
+    }
+
+    #[test]
     fn model_planning_acceptance_preserves_async_scope_answers_and_manual_member_providers() {
         let mut data = fixture();
         let ctx = egui::Context::default();
@@ -3363,6 +3439,16 @@ mod tests {
                             .0
                             .is_empty());
                     }
+                    assert!(click_at_size(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        "memory_control",
+                        "Crew view"
+                    )
+                    .is_empty());
                     let next = (tab + 1) % 5;
                     let (rect, clip, id) = ctx.data(|data| {
                         data.get_temp::<(egui::Rect, egui::Rect, egui::Id)>(egui::Id::new((

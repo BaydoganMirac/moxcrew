@@ -98,6 +98,8 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Plan before you start" => "Başlamadan önce planla",
         "Plan details" => "Plan ayrıntıları",
         "{0} agents" => "{0} ajan",
+        "Quality review" => "Kalite kontrolü",
+        "Checks the deliverables against your goal." => "Çıktıları hedefinle karşılaştırarak kontrol eder.",
         "Planning request" => "Planlama isteği",
         "Agent providers" => "Ajan sağlayıcıları",
         "Choose an output" => "Çıktı seç",

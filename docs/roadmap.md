@@ -20,7 +20,10 @@ commitments.
 - Deliver the [owner-connected provider/default-skill experience](decisions/0042-owner-providers-default-skills-and-motion.md):
   guided local Codex/Gemini CLI/Claude Code setup, one provider sufficient,
   checked default outputs and revisions, and purposeful Mox/crew motion.
-  Claude/Gemini control and persisted chat remain work to prove.
+  [Task0041](state/connected-project-conversation.md) adds persisted Project
+  conversation, safe file follow-ups, connection diagnostics, bundled guides
+  and reduced motion. Claude/Gemini control and complete tool/quality paths
+  remain work to prove.
 
 - Apply the owner-selected [general-purpose Project direction](decisions/0038-general-purpose-projects.md)
   to future product work. Keep Project as the main container; research, content,

@@ -26,8 +26,9 @@
 | Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
 | First-task quick start | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [first-task-quick-start.md](first-task-quick-start.md) |
 | General-purpose Project direction | Accepted; broader execution pending | 2026-10-19 | [general-purpose-projects.md](general-purpose-projects.md) |
-| Moxcrew 1.0.0 | Create foundation implemented; ability/release evidence pending | 2026-10-19 | [version-one-release.md](version-one-release.md) |
+| Moxcrew 1.0.0 | Create/conversation foundation implemented; ability/release evidence pending | 2026-10-19 | [version-one-release.md](version-one-release.md) |
 | Project Create studio | Complete bounded foundation; independently reviewed and locally verified | 2026-10-19 | [project-create-studio.md](project-create-studio.md) |
+| Connected Project conversation | Complete bounded implementation; independently reviewed and macOS development package verified | 2026-10-19 | [connected-project-conversation.md](connected-project-conversation.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

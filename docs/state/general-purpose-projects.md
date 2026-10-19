@@ -1,6 +1,6 @@
 # General-purpose Project direction
 
-Status: Owner-selected direction; managed non-Git Create foundation implemented
+Status: Owner-selected direction; managed jobs and Project conversation implemented
 
 Updated: 2026-10-19
 
@@ -25,8 +25,11 @@ Cloud sharing and free Local/optional subscription Cloud are preserved.
 Existing project identity and owner-entered memory are independent of folders.
 The [Create studio](project-create-studio.md) now queues managed non-Git jobs
 through supported Codex, with forty recipes and scoped output reads/export.
-The application opens Create. Ordinary coding tasks/teams and their explicitly
-opened Quick start retain Git worktrees. File ingestion, integrated media tools,
+The application opens [Chat/Sohbet](connected-project-conversation.md), with
+durable Project requests, selected-output follow-ups, explicit local-provider
+diagnostics, bundled guides and reduced motion. Ordinary coding tasks/teams and
+their explicitly opened Quick start retain Git worktrees. General source
+ingestion, integrated media tools,
 browser/application control and general preference inheritance remain future
 implementation. Historical internal workspace IDs retain their meanings.
 

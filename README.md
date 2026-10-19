@@ -13,12 +13,14 @@ research, writing, analysis, planning, personal work and software development.
 Project is the main product concept; a separate Workspace hierarchy is not
 required. See the [product direction](docs/decisions/0038-general-purpose-projects.md).
 
-Create offers forty inspectable task recipes across eight areas. Choose a
-Project, describe a goal and queue work without a Git folder; explicitly start
-it with supported Codex control, then inspect actual output files and export
-them. Existing coding tasks and teams retain their Git-folder workflow.
-Recipes do not install renderers or establish verified end-to-end abilities.
-See [Create studio state](docs/state/project-create-studio.md) for evidence and limits.
+Talk to Mox in a Project, prepare a goal and explicitly start supported Codex
+work without a Git folder. Durable request history, honest work cards and an
+on-demand file panel keep goals and actual outputs together. A follow-up can
+copy selected files from a finished job into a fresh task. Forty inspectable
+recipes and eight bundled skill guides support this flow; they do not install
+renderers or establish forty verified end-to-end abilities. Existing coding
+tasks and teams retain their Git-folder workflow. See
+[conversation state](docs/state/connected-project-conversation.md) for evidence and limits.
 
 The approved [1.0.0 release target](docs/plans/0039-version-one-release.md)
 covers eight capability areas, forty abilities and ten composed project workflows,
@@ -31,7 +33,7 @@ window through one Glow backend; the installed application contains no WebView,
 HTML/JavaScript bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
 
-The Moxcrew interface groups Create, projects, tasks and teams beside project memory and
+The Moxcrew interface groups Chat, projects, tasks and teams beside project memory and
 decisions. Project cards open their own context; creating a task from a project
 selects its local folder while preserving any existing unsent draft. Bundled UI
 fonts, Mox mascot and the vector Moxcrew mark work offline. Both light and dark
@@ -41,9 +43,13 @@ The native interface supports Turkish and English. Change the language in the
 sidebar; the owner Host saves it locally for the next launch. Source messages,
 work instructions, code and custom user content retain their original language.
 
-The application opens Create with one goal field and eight task types. The full
-recipe catalog and optional task name/instructions open on demand. Create, Projects and Tasks
-are the primary navigation; other tools remain available under More.
+The application opens Chat with the Project conversation and one composer.
+It suggests a task type from explicit goal terms, with manual selection and an
+inspectable catalog. Chat, Projects and Tasks are the primary navigation;
+other tools remain available under More. Connections separates installation,
+saved sign-in and supported task control for the three local CLIs. Setup guides
+open by deliberate action. Saved credentials do not establish model access.
+Mox moves during real active work; reduced motion is saved locally.
 
 Cloud sign-in is optional. Configure the Cloud server address, then use the
 system browser to sign in and approve this installation. Account and subscription
@@ -99,8 +105,9 @@ build/runtime evidence and remaining signing/platform checks are recorded in
 [native state](docs/state/native-rust-desktop.md).
 
 Read [installation and recovery](docs/install.md), [architecture](docs/architecture.md)
-and [release checks](docs/release.md). New Create/retry/export commands write
-V8 local events; older builds need an unchanged pre-upgrade backup for rollback.
+and [release checks](docs/release.md). Create/retry/export commands write V8 local
+events; chat-send and motion preferences add V9 audit facts. Older builds need
+an unchanged pre-upgrade backup for rollback.
 [Project Memory](docs/state/project-memory.md)
 supports durable sources, message revisions, sourced ADR lifecycle and scoped
 keyword reads. The optional subscription Cloud memory service supports explicit

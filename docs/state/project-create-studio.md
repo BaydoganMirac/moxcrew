@@ -76,10 +76,10 @@ No new provider account, key, executable dependency or hosted compute was added.
 
 ## Remaining
 
-The owner is considering a chat-centered layout with a futuristic visual style.
-This foundation implements a prompt and job/result flow, not persisted agent
-conversations or threaded follow-up context. Resolve that interaction separately
-without pretending deterministic status cards are model responses.
+[Task0041](connected-project-conversation.md) supersedes this initial prompt
+layout with a durable Project conversation, copied selected-file follow-ups,
+connection diagnostics and saved reduced motion. Its separate evidence records
+the current interface; this file preserves Task0040's original acceptance.
 Live installed-Codex inference, tool-dependent ability quality, native Windows/
 Linux behavior and the rest of the 1.0.0 pipeline remain unverified. No push,
 public package/signing, production installation, Cloud deployment or migration

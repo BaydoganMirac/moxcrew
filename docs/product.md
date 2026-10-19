@@ -24,9 +24,11 @@ Decisions include ordinary choices about a project's audience, evidence or
 delivery, not only software architecture. Notes and generated suggestions remain
 context until explicitly accepted. Decisions stay scoped to their project.
 
-Create now queues project-scoped work in managed local folders without Git,
-using supported Codex control and explicit start. It offers forty inspectable
-recipes and real output preview/export. Ordinary coding tasks, teams and their
+Chat now presents a durable Project conversation, queues work in managed local
+folders without Git, and uses supported Codex control with explicit start.
+Follow-ups can copy selected prior outputs; a side panel previews/exports actual
+files. It offers forty inspectable recipes and eight bundled workflow guides.
+Ordinary coding tasks, teams and their
 Quick start guide keep Git worktrees. Recipes do not establish installed tools
 or verified output quality. The owner selected one broad general-purpose ability
 release, including presentations, video editing and research, under
@@ -34,7 +36,7 @@ release, including presentations, video editing and research, under
 compatible existing skills and tools across documents, images, audio, data,
 web and connected actions. Resource ingestion, tool integration and the full
 ability paths still need bounded implementation and output verification.
-See [Create studio state](state/project-create-studio.md). Current internal
+See [conversation state](state/connected-project-conversation.md). Current internal
 workspace/schema identifiers retain their meaning.
 
 The owner accepted the broad plan as the
@@ -76,7 +78,10 @@ release scope, with tool/access preflight and attributable inputs. A recipe
 alone is not a delivered skill. Expressive Mox/crew motion should clarify real
 connection, work and delivery states, with reduced motion and sparse idle
 rendering. [ADR0042](decisions/0042-owner-providers-default-skills-and-motion.md)
-records these owner requirements and the proposed conversational direction.
+records these owner requirements. [Task0041](plans/0041-connected-project-conversation.md)
+implements the conversation, safe file follow-ups, explicit bounded connection
+diagnostics and saved reduced motion. Bundled guides attach to real jobs; tool
+availability and complete verified output paths remain release work.
 
 Moxcrew has two products with a hard trust boundary:
 

@@ -130,8 +130,9 @@ tool-dependent abilities and resource ingestion remain separate work.
 
 ## Managed Project jobs
 
-The native Create screen submits `project_work_enqueue` with a current project
-revision and an inspectable recipe. The Host creates an exact private
+The native Project conversation submits `project_chat_send` with a current
+project revision and an inspectable recipe; earlier `project_work_enqueue`
+jobs remain readable. The Host creates an exact private
 `project-jobs/<project UUID>/<work UUID>` directory, binds the work to its Project
 and reuses the durable queue and supported Codex lifecycle. Queueing does not
 start a provider. Ordinary coding work keeps its Git validation; only the exact
@@ -147,6 +148,20 @@ fail closed on access. Scoped output reads are bounded; export uses owner-chosen
 destinations and refuses overwrite. No recipe, result body or path is added to
 the default Cloud allowlists. See [ADR0041](decisions/0041-managed-project-job-directories.md)
 and [Create state](state/project-create-studio.md).
+
+Task0041 adds V9 owner audit for chat-send and saved motion preferences. Its
+paged local history derives raw owner goals, parent links and work state from
+cached canonical facts, without provider transcripts. Selected references from
+one terminal same-Project job are copied into fresh inputs/ with a SHA-256
+manifest, at most eight files and 25 MiB total. Exact selected paths stay in the
+immutable request; the manifest is a job file. Originals are preserved. V9
+recovery reuses a proven queue receipt and never repeats filesystem copies.
+Eight bundled skill guides attach to actual job instructions; installed tools
+and output quality remain separate checks. Connection diagnostics are explicit,
+ephemeral, bounded local reads. The desktop language/motion file uses schema2
+and still reads schema1. Conversation, diagnostic and file bodies remain local.
+See [ADR0043](decisions/0043-local-project-conversation.md) and
+[conversation state](state/connected-project-conversation.md).
 
 Unix result access pins directory handles and rejects links. Windows result
 list/read/export fail closed until equivalent protection is implemented and

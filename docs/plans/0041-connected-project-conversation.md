@@ -1,6 +1,6 @@
 # Task 0041: Connected Project conversation
 
-Status: Approved implementation in progress
+Status: Bounded implementation complete; independently reviewed and locally verified
 
 Updated: 2026-10-19
 
@@ -30,7 +30,8 @@ with a persistent reduced-motion control and no perpetual idle animation.
   a SHA-256 manifest. Derive parent/ability provenance from durable commands,
   not display names or prompt parsing. Inputs never become accepted decisions.
 - Reuse existing queue, immutable Project binding, managed directory checks and
-  provider start/cancel. V9 owner audit adds chat-send only; V1/V3/V8 meanings
+  provider start/cancel. V9 owner audit covers chat-send and desktop motion;
+  V1/V3/V8 meanings
   stay fixed. Crash recovery returns a known durable inner queue receipt and
   never repeats an uncertain provider operation or filesystem copy.
 - `project_chat_read` accepts projectId and optional offset/limit (default20,
@@ -98,6 +99,19 @@ No API key creation, provider login, global install, dependency download,
 Cloud mutation/protocol/billing, publication or deployment is authorized here.
 No live inference is needed for fixture checks. Record remaining provider,
 tool-quality and platform evidence without declaring 1.0.0 complete.
+
+## Acceptance evidence
+
+Runtime `3fb10d5`, retry correction `26f0b26`, native UI `4e7b283` and
+cross-skill follow-up/setup correction `4fcd06e` passed independent review.
+The full workspace passed 331 checks with four explicit existing ignored gates;
+the subsequent final desktop run passed all 126 checks. Formatting and strict
+workspace/all-target/all-feature Clippy passed; the final UI correction also
+passed strict desktop Clippy. Thirty-five final actual native GL frames cover
+TR/EN, themes, normal/minimum sizes, file/connection panels and first use.
+The feature-off macOS App/DMG passed signature, isolated launch/normal close,
+writer-lock release and integrity checks. Full evidence and limits are in
+[conversation state](../state/connected-project-conversation.md).
 
 ## Official diagnostic references
 

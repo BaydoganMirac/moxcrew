@@ -39,7 +39,9 @@ that unchanged pre-upgrade backup. Extraction commands add V7 facts requiring
 a 0.11 reader; older readers need the stopped pre-upgrade backup. Create job,
 export and work retry commands now add V8 facts. Pre-Task0040 builds, including
 older 0.12.0 development binaries, cannot read them; rollback restores the full
-unchanged pre-upgrade copy. Never edit log lines to downgrade. Uninstalling must not
+unchanged pre-upgrade copy. Task0041 adds V9 audit facts for conversation sends
+and motion preferences; pre-Task0041 builds also reject these facts. The same
+complete stopped-backup rollback rule applies. Never edit log lines to downgrade. Uninstalling must not
 delete the canonical data directory.
 
 ### macOS opens an entirely white window
@@ -62,18 +64,35 @@ deleted. See the [verified production window](screenshots/native-production-0.5-
 
 ### Create a general-purpose task
 
-The application opens **Create / Üret**. Create or select a Project,
-describe your goal and choose a task type. **Explore abilities** opens the full
-catalog; **Details** contains the optional name and inspectable instructions.
-A blank name is derived from the goal. Select **Prepare task / Görevi hazırla**,
+The application opens the Project conversation in **Chat / Sohbet**. Create or
+select a Project and describe your goal in the composer. Explicit goal terms
+suggest a task type; select one manually when the goal is ambiguous. The full
+catalog and inspectable instructions remain available. Select **Prepare task / Görevi hazırla**,
 then explicitly start Codex when its supported provider is available.
 No Git folder, Moxcrew account or Cloud subscription is required. Provider
 accounts and usage costs remain independently managed. These project-bound jobs
 require Codex 0.155.1+ and its scoped memory connection.
 
-Create, Projects and Tasks are the primary navigation. **More / Diğer** opens
+Chat, Projects and Tasks are the primary navigation. **More / Diğer** opens
 teams, memory, decisions, agent packs, provider setup and Cloud. When Codex is
 unavailable, the queued task shows provider setup next to its start action.
+**Connections / Bağlantılar** separates CLI installation, saved sign-in and
+supported task control. The check runs only on explicit opening/refresh and
+does not sign in, install software or make a model call. Codex and Claude saved
+credential checks do not prove entitlement/quota; Gemini sign-in remains unknown.
+Only Codex currently has supported task control. Provider setup guides open by
+deliberate action. Saved reduced motion disables Mox's active-work animation.
+After installing or updating a provider CLI, restart Moxcrew, then check
+connections again. The running controller retains the program paths resolved
+at launch; a fresh GUI process may also be needed to pick up changed PATH.
+
+Conversation history contains actual owner requests and work status. Open a
+job's file panel to inspect its real outputs. Follow up on a completed, failed
+or interrupted job in the same Project; optionally select up to eight files
+(25 MiB total). The new task receives exact copies and a SHA-256 manifest in
+inputs/, preserving the originals. A follow-up still requires explicit start.
+On Windows, file references remain unavailable with the secure result-access
+limitation below; text-only follow-ups remain supported.
 
 The forty recipes guide the agent; they do not install missing renderers, model
 access or tools. Review any unmet requirements in the output. Task completion

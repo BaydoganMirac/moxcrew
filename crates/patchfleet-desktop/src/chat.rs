@@ -199,7 +199,7 @@ impl Console {
                     .iter()
                     .find(|project| text(project, "projectId") == self.create.project)
                     .map(|project| std::borrow::Cow::Borrowed(text(project, "name")))
-                    .unwrap_or_else(|| t(ui, "Choose…"));
+                    .unwrap_or_else(|| t(ui, "New conversation"));
                 ui.scope(|ui| {
                     ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::NONE;
                     ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
@@ -211,7 +211,7 @@ impl Console {
                             ui.selectable_value(
                                 &mut self.create.project,
                                 String::new(),
-                                t(ui, "None"),
+                                t(ui, "New conversation"),
                             );
                             for project in projects {
                                 ui.selectable_value(

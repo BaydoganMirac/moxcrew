@@ -62,6 +62,22 @@ Across supported workflows, a customer needs to:
 
 ## Product shape
 
+### Provider connection and default experience
+
+Mox works through an owner-connected local Codex, Gemini CLI or Claude Code
+installation; one is sufficient. Provider installation, authentication and
+task/tool readiness are separate onboarding checks. Moxcrew Cloud sign-in is
+optional and does not connect those providers. The local application does not
+imply on-device inference or bundled provider usage. Currently only Codex has
+supported execution control; Claude/Gemini execution remains release work.
+
+The default skills must produce and revise checked outputs across the approved
+release scope, with tool/access preflight and attributable inputs. A recipe
+alone is not a delivered skill. Expressive Mox/crew motion should clarify real
+connection, work and delivery states, with reduced motion and sparse idle
+rendering. [ADR0042](decisions/0042-owner-providers-default-skills-and-motion.md)
+records these owner requirements and the proposed conversational direction.
+
 Moxcrew has two products with a hard trust boundary:
 
 ### Moxcrew

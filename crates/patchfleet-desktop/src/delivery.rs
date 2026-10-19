@@ -58,12 +58,15 @@ pub(super) fn matches_file(artifact: &Value, query: &str, kind: usize) -> bool {
 
 pub(super) fn file_filters(ui: &mut Ui, state: &mut StudioState) {
     ui.horizontal(|ui| {
-        let query = ui.add(
+        let width = (ui.available_width() - 160.0).max(80.0);
+        let query = ui.add_sized(
+            egui::vec2(width, 36.0),
             egui::TextEdit::singleline(&mut state.query)
                 .id_salt("output-file-query")
                 .hint_text(t(ui, "Search outputs…"))
                 .char_limit(200)
-                .desired_width((ui.available_width() - 160.0).max(80.0)),
+                .margin(egui::Margin::symmetric(10, 7))
+                .desired_width(width),
         );
         #[cfg(test)]
         ui.data_mut(|data| {
@@ -71,15 +74,40 @@ pub(super) fn file_filters(ui: &mut Ui, state: &mut StudioState) {
         });
         #[cfg(not(test))]
         let _ = query;
-        egui::ComboBox::from_id_salt("output-file-type")
+        let picker = egui::ComboBox::from_id_salt("output-file-type")
             .width(140.0)
-            .height(320.0)
+            .height(360.0)
             .selected_text(t(ui, TYPES[state.file_type.min(TYPES.len() - 1)]))
             .show_ui(ui, |ui| {
                 for (index, label) in TYPES.iter().enumerate() {
-                    ui.selectable_value(&mut state.file_type, index, t(ui, label));
+                    let response = ui.selectable_value(&mut state.file_type, index, t(ui, label));
+                    if response.clicked() {
+                        ui.close();
+                    }
+                    #[cfg(test)]
+                    ui.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::new(("delivery-type-option", index)),
+                            (response.id, response.rect, ui.clip_rect()),
+                        )
+                    });
+                    #[cfg(not(test))]
+                    let _ = response;
                 }
             });
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new(("test-action", "memory_control", "File type")),
+                picker.response.rect,
+            );
+            data.insert_temp(
+                egui::Id::new(("test-action", "memory_control", "Search outputs")),
+                query.rect,
+            );
+        });
+        #[cfg(not(test))]
+        let _ = picker;
     });
 }
 
@@ -145,8 +173,12 @@ impl Console {
             .packages
             .insert(self.create.project.clone(), files);
     }
-    pub fn take_delivery_export_request(&mut self) -> Option<DeliveryExportRequest> {
-        self.create.studio.delivery_request.take()
+    pub fn take_delivery_export_request(&mut self, ready: bool) -> Option<DeliveryExportRequest> {
+        if ready {
+            self.create.studio.delivery_request.take()
+        } else {
+            None
+        }
     }
 
     pub fn delivery_export_command(
@@ -407,6 +439,89 @@ mod tests {
     }
 
     #[test]
+    fn normal_files_filters_accept_pointer_typing_and_last_type_without_a_parent_popup() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let (mut console, data) = fixture();
+        let size = egui::vec2(800.0, 560.0);
+        assert!(click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Search outputs"
+        )
+        .is_empty());
+        render(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            vec![egui::Event::Text("Özet".into())],
+        );
+        assert_eq!(console.create.studio.query, "Özet");
+        for index in [7usize, 1] {
+            assert!(click_at_size(
+                &ctx,
+                &mut console,
+                &data,
+                size,
+                false,
+                "memory_control",
+                "File type"
+            )
+            .is_empty());
+            render(&ctx, &mut console, &data, size, false, vec![]);
+            let (id, rect, clip) = ctx.data(|d| {
+                d.get_temp::<(egui::Id, egui::Rect, egui::Rect)>(egui::Id::new((
+                    "delivery-type-option",
+                    index,
+                )))
+                .unwrap()
+            });
+            assert!(
+                clip.contains_rect(rect),
+                "option {index}: {rect:?} / {clip:?}"
+            );
+            ctx.memory_mut(|memory| memory.request_focus(id));
+            render(
+                &ctx,
+                &mut console,
+                &data,
+                size,
+                false,
+                vec![egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                }],
+            );
+            assert_eq!(console.create.studio.file_type, index);
+            assert_eq!(console.create.studio.query, "Özet");
+            render(
+                &ctx,
+                &mut console,
+                &data,
+                size,
+                false,
+                vec![egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: None,
+                    pressed: false,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                }],
+            );
+        }
+        assert!(!console.create.studio.package_mode);
+    }
+
+    #[test]
     fn package_selection_filtering_and_native_request_are_minimum_sized_and_frozen() {
         for language in ["tr", "en"] {
             for theme in [egui::Theme::Light, egui::Theme::Dark] {
@@ -490,7 +605,7 @@ mod tests {
                     "Export package"
                 )
                 .is_empty());
-                assert!(console.take_delivery_export_request().is_none());
+                assert!(console.take_delivery_export_request(true).is_none());
                 assert!(click_at_size(
                     &ctx,
                     &mut console,
@@ -501,7 +616,11 @@ mod tests {
                     "Export package"
                 )
                 .is_empty());
-                let request = console.take_delivery_export_request().unwrap();
+                assert!(
+                    console.take_delivery_export_request(false).is_none(),
+                    "Automatic reads cannot consume a frozen save request"
+                );
+                let request = console.take_delivery_export_request(true).unwrap();
                 assert_eq!(
                     request.files.len(),
                     2,
@@ -576,6 +695,6 @@ mod tests {
         data["hostEpoch"] = json!("host:two");
         console.create.sync(&data);
         assert!(console.create.studio.packages.is_empty());
-        assert!(console.take_delivery_export_request().is_none());
+        assert!(console.take_delivery_export_request(true).is_none());
     }
 }

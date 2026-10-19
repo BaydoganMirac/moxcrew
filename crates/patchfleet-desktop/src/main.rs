@@ -622,19 +622,21 @@ impl eframe::App for Patchfleet {
                         });
                 }
             }
-            if let Some(request) = self.console.take_delivery_export_request() {
-                if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
-                    let choice = rfd::AsyncFileDialog::new()
-                        .set_title(i18n::tr(language, "Export package").into_owned())
-                        .set_file_name(&request.name)
-                        .add_filter("ZIP", &["zip"])
-                        .set_parent(frame)
-                        .save_file();
-                    self.bridge
-                        .choose_delivery_export(ctx.clone(), request, async move {
-                            choice.await.map(|file| file.path().to_owned())
-                        });
-                }
+            let delivery_ready = !self.bridge.busy
+                && !self.bridge.closing
+                && !self.bridge.picking_folder
+                && self.bridge.error.is_none();
+            if let Some(request) = self.console.take_delivery_export_request(delivery_ready) {
+                let choice = rfd::AsyncFileDialog::new()
+                    .set_title(i18n::tr(language, "Export package").into_owned())
+                    .set_file_name(&request.name)
+                    .add_filter("ZIP", &["zip"])
+                    .set_parent(frame)
+                    .save_file();
+                self.bridge
+                    .choose_delivery_export(ctx.clone(), request, async move {
+                        choice.await.map(|file| file.path().to_owned())
+                    });
             }
             if let Some(target) = self.console.take_folder_request() {
                 if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {

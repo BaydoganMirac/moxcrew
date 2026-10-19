@@ -1,6 +1,6 @@
 # Task 0038: First-task quick start
 
-Status: Approved; implementation in progress
+Status: Complete for approved implementation; independently reviewed and locally verified
 
 Updated: 2026-10-19
 
@@ -24,7 +24,7 @@ first-project presentation; this card builds on those completed controls.
 Hypothesis: keeping the next useful action visible reduces first-task setup
 confusion. No moderated-user result or activation improvement is claimed.
 
-## Proposed interaction
+## Implemented interaction
 
 Use the Moxcrew theme and a small static Mox illustration. Display `Quick start`
 in English and `Hızlı Başlangıç` in Turkish, with four compact steps:
@@ -105,3 +105,19 @@ The guide is presentation over existing commands. Reverting its UI changes
 restores the previous forms without data migration. Stop or revise the design
 if it hides a recovery, loses owner text, chooses the wrong scope or starts a
 run without an explicit owner action.
+
+## Delivery evidence
+
+Implementation `805281e` and follow-up `b923ff2` are independently accepted.
+The follow-up removes folder-only historical task recommendations and keeps
+failure recovery visible at the minimum size. State reconstruction still
+requires the exact applied start, corresponding run and frozen project context.
+
+The unchanged 175 core checks passed in the full workspace run; all 98 final
+desktop checks, strict Clippy, formatting, release build and development
+packaging pass. Twenty disposable native GL frames cover four guide stages
+and failure in TR/EN and both themes. The feature-off App also passed actual
+macOS launch/window capture, normal close and writer-lock release. See
+[state](../state/first-task-quick-start.md) for hashes, images and limits.
+Moderated-user, live-provider and native Windows/Linux release evidence remain
+uncollected; no activation improvement or public signed release is claimed.

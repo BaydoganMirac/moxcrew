@@ -1,6 +1,6 @@
 # Task 0043: Project crew orchestration
 
-Status: Approved, implementing
+Status: Complete; independently reviewed and locally verified
 
 Updated: 2026-10-19
 
@@ -83,3 +83,13 @@ review. Record what is implemented and any provider/platform limits.
 
 No dependency download, API key, provider login, live inference, Cloud mutation,
 push or deployment is needed for implementation or automated verification.
+
+## Completion
+
+Implementation and evidence are recorded in
+[Project crew orchestration state](../state/project-crew-orchestration.md).
+Independent review approved `b67f54b`; the workspace suite passes 354 tests
+with four documented opt-in exclusions, strict Clippy/formatting pass, native
+TR/EN/theme/minimum captures were inspected, and the feature-off macOS
+development App/DMG passed launch, close, lock-release and signature checks.
+Provider/platform limits remain explicit in the state record.

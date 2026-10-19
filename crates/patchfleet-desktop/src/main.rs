@@ -75,6 +75,13 @@ impl Patchfleet {
                     if scene.starts_with("studio-") {
                         console.studio_smoke(&scene, bridge.snapshot.as_ref().unwrap());
                     }
+                    if scene.starts_with("create-") {
+                        let results = scene == "create-results";
+                        if results {
+                            bridge.create_smoke();
+                        }
+                        console.create_smoke(bridge.snapshot.as_ref().unwrap(), results);
+                    }
                 }
             }
             if !observe
@@ -208,6 +215,31 @@ fn seed_quick_start_scene(directory: &std::path::Path, scene: &str) {
                 }
             }
         }
+        host.shutdown().await;
+    });
+}
+
+#[cfg(feature = "ui-smoke")]
+fn seed_create_scene(directory: &std::path::Path) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        if std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en") {
+            host.action("desktop_language", command::Command::new("desktop_language", serde_json::json!({"language":"en"})).payload).await.unwrap();
+        }
+        let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":"Launch idea · UI fixture"})).payload).await.unwrap();
+        let snapshot = host.snapshot().unwrap();
+        let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
+        let queued = host.action("project_work_enqueue", command::Command::new("project_work_enqueue", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"abilityId":"P1","title":"Launch presentation · UI fixture","instruction":"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."})).payload).await.unwrap();
+        assert_eq!(queued["outcome"], "applied");
+        let snapshot = host.snapshot().unwrap();
+        let work = snapshot["work"]["items"].as_array().unwrap().iter().find(|w|w["workItemId"]==queued["workItemId"]).unwrap();
+        let output = std::path::Path::new(work["workingDirectory"].as_str().unwrap()).join("outputs");
+        std::fs::write(output.join("brief.md"), "# Launch presentation brief\n\nA real text file in this disposable project's output folder.\n\nThe job is queued. No model or presentation renderer was run for this interface fixture.\n\n## Requested deliverables\n\n- Source-backed research\n- Editable presentation\n- Short launch video\n\nOwner review remains explicit.\n").unwrap();
+        std::fs::write(output.join("outline.csv"), "slide,topic\n1,The idea\n2,The audience\n3,The evidence\n").unwrap();
         host.shutdown().await;
     });
 }
@@ -517,6 +549,19 @@ impl eframe::App for Patchfleet {
             if let Some(command) = commands.into_iter().next() {
                 self.bridge.submit(command);
             }
+            if let Some(request) = self.console.take_create_export_request() {
+                if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
+                    let choice = rfd::AsyncFileDialog::new()
+                        .set_title(i18n::tr(language, "Export result").into_owned())
+                        .set_file_name(&request.name)
+                        .set_parent(frame)
+                        .save_file();
+                    self.bridge
+                        .choose_create_export(ctx.clone(), request, async move {
+                            choice.await.map(|file| file.path().to_owned())
+                        });
+                }
+            }
             if let Some(target) = self.console.take_folder_request() {
                 if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
                     let mut dialog = rfd::AsyncFileDialog::new()
@@ -595,6 +640,9 @@ fn main() {
         );
         #[cfg(feature = "ui-smoke")]
         if let Ok(scene) = std::env::var("PATCHFLEET_SMOKE_SCENE") {
+            if scene.starts_with("create-") {
+                seed_create_scene(&directory);
+            }
             if scene.starts_with("quick-") {
                 seed_quick_start_scene(&directory, &scene);
             }

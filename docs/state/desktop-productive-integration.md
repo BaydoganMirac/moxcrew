@@ -73,3 +73,13 @@ QA. Actual disposable files/resources feed output scenes. Model result scenes
 are isolated rendering fixtures and make no provider-execution claim. No live
 provider inference, login, external account mutation or software installation was
 performed by this UI implementation.
+
+## Review corrections
+
+Model-plan acceptance now includes valid owner-edited crew name and concurrency,
+retry and time settings instead of silently restoring the generated values.
+Schedule dates accepted by the native RFC 3339 field are normalized to UTC with
+canonical milliseconds before dispatch, including offset and submillisecond
+input. Saved plans expose the same explicit bounded paging as recipes/schedules.
+All 14 focused crew tests pass, including actual Prepare/Schedule click payloads
+and keyboard-driven plan pagination with exact Project/section/offset.

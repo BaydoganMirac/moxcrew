@@ -756,7 +756,7 @@ impl Console {
             ));
             ui.add_space(4.0);
             ui.label(
-                RichText::new(t(ui, "One idea. Start with a direction."))
+                RichText::new(t(ui, "Tell Mox what you want to do."))
                     .size(if compact { 13.0 } else { 15.0 })
                     .color(colors(ui).muted),
             );

@@ -56,6 +56,8 @@ pub(crate) fn action_fields(action: &str) -> Option<&'static [&'static str]> {
             "providerAssignments",
             "budgets",
             "members",
+            "crewName",
+            "settings",
             "replyToWorkItemId",
             "referencePaths",
         ],
@@ -217,6 +219,26 @@ fn budgets(v: &Value) -> Result<()> {
 }
 fn default_budgets() -> Value {
     json!({"maxJobs":18,"maxElapsedMinutes":120,"maxReviewRounds":1})
+}
+fn instant(value: &Value) -> Result<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(
+        value
+            .as_str()
+            .ok_or_else(|| fail("WORKFLOW_SCHEDULE_INVALID"))?,
+    )
+    .map(|value| value.with_timezone(&chrono::Utc))
+    .map_err(|_| fail("WORKFLOW_SCHEDULE_INVALID"))
+}
+fn canonical_time(value: &Value) -> Result<Value> {
+    Ok(json!(
+        instant(value)?.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    ))
+}
+fn occurrence_mission(schedule: &Value, ordinal: &Value) -> Value {
+    json!(child_id(
+        &stable_command(&format!("{schedule}:{ordinal}")),
+        "mission:"
+    ))
 }
 fn command_id(p: &Value) -> Result<&str> {
     identity(&p["commandId"], "cmd:")?;
@@ -511,6 +533,22 @@ pub(crate) fn validate_event(e: &Value) -> Result<()> {
                 &["commandId"],
             )?;
             identity(&p["directionId"], "direction:")?;
+            number(&p["expectedMissionRevision"], 1, u64::MAX)?;
+            match p["origin"]["kind"].as_str() {
+                Some("owner") => {
+                    exact(&p["origin"], &["kind"], &[])?;
+                    command_id(p)?;
+                }
+                Some("review") => {
+                    exact(&p["origin"], &["kind", "reviewId"], &[])?;
+                    identity(&p["origin"]["reviewId"], "review:")?;
+                    require(
+                        p["commandId"].is_null() && p["result"].is_null(),
+                        "WORKFLOW_REVIEW_INVALID",
+                    )?;
+                }
+                _ => return Err(fail("WORKFLOW_REVIEW_INVALID")),
+            }
             bounded(&p["instruction"], 20000)?;
             for t in list(p, "affectedTaskIds", 6)? {
                 identity(t, "task:")?;
@@ -619,6 +657,7 @@ pub(crate) fn validate_event(e: &Value) -> Result<()> {
                 &[],
             )?;
             identity(&p["missionId"], "mission:")?;
+            number(&p["expectedScheduleRevision"], 1, u64::MAX)?;
             stamp(&p["nextRunAt"])?;
             number(&p["ordinal"], 1, 100)?;
         }
@@ -828,11 +867,58 @@ fn schedule_valid(s: &Value) -> Result<()> {
         "WORKFLOW_SCOPE_INVALID",
     )?;
     stamp(&s["nextRunAt"])?;
+    stamp(&s["createdAt"])?;
+    if !s["activeMissionId"].is_null() {
+        identity(&s["activeMissionId"], "mission:")?;
+    }
     number(&s["intervalMinutes"], 15, 10080)?;
     number(&s["maxOccurrences"], 1, 100)?;
     number(&s["occurrences"], 0, 100)?;
     budgets(&s["budgets"])?;
     Ok(())
+}
+fn saved_schedule(
+    raw: &Value,
+    recipe: &Value,
+    old: Option<&Value>,
+    created_at: &Value,
+) -> Result<Value> {
+    let id = raw
+        .get("scheduleId")
+        .cloned()
+        .unwrap_or(json!(child_id(command_id(raw)?, "schedule:")));
+    require(
+        raw["recipeId"] == recipe["recipeId"]
+            && raw["expectedRecipeRevision"] == recipe["revision"]
+            && (recipe["projectId"].is_null() || recipe["projectId"] == raw["projectId"]),
+        "WORKFLOW_PLAN_CHANGED",
+    )?;
+    let revision = if let Some(old) = old {
+        require(
+            old["scheduleId"] == id && old["projectId"] == raw["projectId"],
+            "WORKFLOW_SCOPE_INVALID",
+        )?;
+        revision(old, "revision", &raw["expectedScheduleRevision"])?;
+        old["revision"].as_u64().unwrap() + 1
+    } else {
+        require(
+            raw["expectedScheduleRevision"].is_null(),
+            "WORKFLOW_STALE_REVISION",
+        )?;
+        1
+    };
+    let schedule = json!({"scheduleId":id,"projectId":raw["projectId"],"revision":revision,"enabled":true,
+        "recipeId":recipe["recipeId"],"recipe":recipe,"nextRunAt":canonical_time(&raw["firstRunAt"])?,
+        "intervalMinutes":raw["intervalMinutes"],"maxOccurrences":raw["maxOccurrences"],
+        "occurrences":old.map(|o|o["occurrences"].clone()).unwrap_or(json!(0)),
+        "activeMissionId":old.map(|o|o["activeMissionId"].clone()).unwrap_or(Value::Null),
+        "budgets":raw["budgets"],"createdAt":created_at,"lastReasonCode":null});
+    schedule_valid(&schedule)?;
+    require(
+        schedule["occurrences"].as_u64() <= schedule["maxOccurrences"].as_u64(),
+        "WORKFLOW_SCHEDULE_INVALID",
+    )?;
+    Ok(schedule)
 }
 fn binding_valid(b: &Value) -> Result<()> {
     exact(
@@ -1002,6 +1088,11 @@ fn prepared_matches(p: &Value, expected: &Value) -> Result<()> {
         .collect();
     require(
         json!(roster) == expected["members"]
+            && p["crew"]["name"]
+                == expected
+                    .get("crewName")
+                    .cloned()
+                    .unwrap_or_else(|| json!(crews::clip(expected["title"].as_str().unwrap(), 80)))
             && ["title", "instruction", "abilityId", "settings", "projectId"]
                 .iter()
                 .all(|key| p["mission"][*key] == expected[*key])
@@ -1179,14 +1270,57 @@ pub(crate) fn apply_crew_event(
                     "WORKFLOW_OWNER_REQUIRED",
                 )?;
             } else {
-                require(
-                    events[..index].iter().any(|e| {
+                exact(&p["origin"], &["kind", "reviewId"], &[])?;
+                require(p["origin"]["kind"] == "review", "WORKFLOW_REVIEW_INVALID")?;
+                let review = events[..index]
+                    .iter()
+                    .find(|e| {
                         e["type"] == "project_workflow.review_reported"
                             && e["payload"]["review"]["reviewId"] == p["origin"]["reviewId"]
-                            && e["payload"]["review"]["missionId"] == p["missionId"]
-                            && e["payload"]["review"]["verdict"] == "return"
-                    }),
+                    })
+                    .map(|e| &e["payload"]["review"])
+                    .ok_or_else(|| fail("WORKFLOW_REVIEW_INVALID"))?;
+                require(
+                    review["missionId"] == m["missionId"]
+                        && review["projectId"] == m["projectId"]
+                        && review["verdict"] == "return"
+                        && array(m, "tasks").iter().any(|t| {
+                            t["taskId"] == review["taskId"]
+                                && t["workItemId"] == review["targetWorkItemId"]
+                                && crews::completed_before(events, index, &t["workItemId"])
+                        })
+                        && crews::historical_agent(
+                            events,
+                            index,
+                            &m["projectId"],
+                            m,
+                            &review["agentId"],
+                            &review["binding"]["runId"],
+                            &review["binding"]["ownerEpoch"],
+                        )
+                        && !events[..index].iter().any(|e| {
+                            e["type"] == "project_workflow.direction_requested"
+                                && e["payload"]["origin"]["kind"] == "review"
+                                && e["payload"]["origin"]["reviewId"] == review["reviewId"]
+                        })
+                        && p["affectedTaskIds"]
+                            == json!(direction_ids(m, &json!([review["taskId"]]))?)
+                        && p["instruction"] == review_instruction(m, &review["feedback"]),
                     "WORKFLOW_REVIEW_INVALID",
+                )?;
+                require(
+                    events[..index]
+                        .iter()
+                        .filter(|e| {
+                            e["type"] == "project_workflow.review_reported"
+                                && e["payload"]["review"]["missionId"] == m["missionId"]
+                                && e["payload"]["review"]["verdict"] == "return"
+                        })
+                        .count()
+                        <= m["workflow"]["budgets"]["maxReviewRounds"]
+                            .as_u64()
+                            .unwrap_or(0) as usize,
+                    "WORKFLOW_REVIEW_BUDGET_EXCEEDED",
                 )?;
             }
             let ids = array(p, "affectedTaskIds");
@@ -1520,7 +1654,10 @@ pub(crate) fn project(events: &[Value], crews_state: &Value, work: &Value) -> Re
                             .get("members")
                             .cloned()
                             .unwrap_or(j["plan"]["members"].clone());
-                        expected["settings"] = j["plan"]["settings"].clone();
+                        expected["settings"] = raw
+                            .get("settings")
+                            .cloned()
+                            .unwrap_or(j["plan"]["settings"].clone());
                         expected["providerId"] = j["providerId"].clone();
                         let files = array(&j["context"], "files");
                         let actual = array(&p["mission"]["inputs"], "files");
@@ -1680,28 +1817,25 @@ pub(crate) fn project(events: &[Value], crews_state: &Value, work: &Value) -> Re
             }
             "project_workflow.schedule_saved" => {
                 let s = &p["schedule"];
-                owner_proof(
+                let raw = owner_input(
                     events,
                     index,
                     &p["commandId"],
                     "project_schedule_save",
                     &s["projectId"],
                 )?;
-                if let Some(old) = schedules.get(text(s, "scheduleId")?) {
-                    require(
-                        old["projectId"] == s["projectId"]
-                            && s["revision"].as_u64()
-                                == Some(old["revision"].as_u64().unwrap() + 1)
-                            && old["activeMissionId"] == s["activeMissionId"]
-                            && old["occurrences"] == s["occurrences"],
-                        "WORKFLOW_STALE_REVISION",
-                    )?;
-                } else {
-                    require(
-                        s["revision"] == 1 && s["occurrences"] == 0,
-                        "WORKFLOW_STALE_REVISION",
-                    )?;
-                }
+                let recipe = recipes
+                    .get(text(raw, "recipeId")?)
+                    .ok_or_else(|| fail("WORKFLOW_RECORD_NOT_FOUND"))?;
+                let old = schedules.get(text(s, "scheduleId")?);
+                require(
+                    *s == saved_schedule(raw, recipe, old, &s["createdAt"])?,
+                    "WORKFLOW_OWNER_REQUIRED",
+                )?;
+                let mut expected = receipt("WORKFLOW_SCHEDULE_SAVED", raw);
+                expected["scheduleId"] = s["scheduleId"].clone();
+                expected["revision"] = s["revision"].clone();
+                require(p["result"] == expected, "WORKFLOW_OWNER_REQUIRED")?;
                 schedules.insert(text(s, "scheduleId")?.into(), s.clone());
             }
             "project_workflow.schedule_enabled" | "project_workflow.occurrence_started" => {
@@ -1711,13 +1845,23 @@ pub(crate) fn project(events: &[Value], crews_state: &Value, work: &Value) -> Re
                 require(s["projectId"] == p["projectId"], "WORKFLOW_SCOPE_INVALID")?;
                 revision(s, "revision", &p["expectedScheduleRevision"])?;
                 if kind.ends_with("enabled") {
-                    owner_proof(
+                    let raw = owner_input(
                         events,
                         index,
                         &p["commandId"],
                         "project_schedule_set_enabled",
                         &p["projectId"],
                     )?;
+                    require(
+                        ["scheduleId", "expectedScheduleRevision", "enabled"]
+                            .iter()
+                            .all(|key| raw[*key] == p[*key]),
+                        "WORKFLOW_OWNER_REQUIRED",
+                    )?;
+                    let mut expected = receipt("WORKFLOW_SCHEDULE_UPDATED", raw);
+                    expected["scheduleId"] = p["scheduleId"].clone();
+                    expected["revision"] = json!(s["revision"].as_u64().unwrap() + 1);
+                    require(p["result"] == expected, "WORKFLOW_OWNER_REQUIRED")?;
                     s["enabled"] = p["enabled"].clone();
                 } else {
                     require(
@@ -1727,6 +1871,32 @@ pub(crate) fn project(events: &[Value], crews_state: &Value, work: &Value) -> Re
                             && p["ordinal"].as_u64() <= s["maxOccurrences"].as_u64(),
                         "WORKFLOW_SCHEDULE_UNAVAILABLE",
                     )?;
+                    let at = instant(&p["at"])?;
+                    require(
+                        instant(&s["nextRunAt"])? <= at
+                            && p["missionId"]
+                                == occurrence_mission(&s["scheduleId"], &p["ordinal"])
+                            && instant(&p["nextRunAt"])?
+                                == at
+                                    + chrono::Duration::minutes(
+                                        s["intervalMinutes"].as_i64().unwrap(),
+                                    ),
+                        "WORKFLOW_SCHEDULE_UNAVAILABLE",
+                    )?;
+                    if !s["activeMissionId"].is_null() {
+                        let prefix = crews::project(&events[..index], &Value::Null)?;
+                        require(
+                            array(&prefix, "missions").iter().any(|m| {
+                                m["missionId"] == s["activeMissionId"]
+                                    && m["projectId"] == s["projectId"]
+                                    && matches!(
+                                        m["status"].as_str(),
+                                        Some("completed" | "failed" | "cancelled" | "timed_out")
+                                    )
+                            }),
+                            "WORKFLOW_SCHEDULE_UNAVAILABLE",
+                        )?;
+                    }
                     s["occurrences"] = p["ordinal"].clone();
                     s["activeMissionId"] = p["missionId"].clone();
                     s["nextRunAt"] = p["nextRunAt"].clone();
@@ -2194,6 +2364,15 @@ fn direction_ids(m: &Value, selected: &Value) -> Result<Vec<Value>> {
     }
     Ok(ids)
 }
+fn review_instruction(mission: &Value, feedback: &Value) -> Value {
+    json!(format!(
+        "{}\n\nReviewer correction request:\n{}",
+        mission["workflow"]["currentInstruction"]
+            .as_str()
+            .unwrap_or(mission["instruction"].as_str().unwrap()),
+        feedback.as_str().unwrap_or("")
+    ))
+}
 fn own_binding(b: &agent_memory::Binding, m: &Value, t: &Value) -> Value {
     json!({"projectId":b.project_id,"missionId":m["missionId"],"agentId":t["agentId"],"workItemId":b.work_item_id,"runId":b.run_id,"ownerEpoch":b.owner_epoch})
 }
@@ -2462,7 +2641,10 @@ impl Host {
                     .get("members")
                     .cloned()
                     .unwrap_or(j["plan"]["members"].clone());
-                payload["settings"] = j["plan"]["settings"].clone();
+                payload["settings"] = p
+                    .get("settings")
+                    .cloned()
+                    .unwrap_or(j["plan"]["settings"].clone());
                 payload["providerId"] = j["providerId"].clone();
                 for key in ["replyToWorkItemId", "referencePaths"] {
                     if let Some(selected) = p.get(key) {
@@ -2576,18 +2758,10 @@ impl Host {
                 let old = array(&state, "schedules")
                     .iter()
                     .find(|s| s["scheduleId"] == id);
-                let rev = if let Some(old) = old {
-                    require(old["projectId"] == p["projectId"], "WORKFLOW_SCOPE_INVALID")?;
-                    revision(old, "revision", &p["expectedScheduleRevision"])?;
-                    old["revision"].as_u64().unwrap() + 1
-                } else {
-                    1
-                };
-                let s = json!({"scheduleId":id,"projectId":p["projectId"],"revision":rev,"enabled":true,"recipeId":r["recipeId"],"recipe":r,"nextRunAt":p["firstRunAt"],"intervalMinutes":p["intervalMinutes"],"maxOccurrences":p["maxOccurrences"],"occurrences":old.map(|o|o["occurrences"].clone()).unwrap_or(json!(0)),"activeMissionId":old.map(|o|o["activeMissionId"].clone()).unwrap_or(Value::Null),"budgets":p["budgets"],"createdAt":now(),"lastReasonCode":null});
-                schedule_valid(&s)?;
+                let s = saved_schedule(p, r, old, &json!(now()))?;
                 let mut result = receipt("WORKFLOW_SCHEDULE_SAVED", p);
                 result["scheduleId"] = id;
-                result["revision"] = json!(rev);
+                result["revision"] = s["revision"].clone();
                 self.store.append(vec![workflow_fact(
                     "project_workflow.schedule_saved",
                     json!({"commandId":p["commandId"],"schedule":s,"result":result}),
@@ -2996,26 +3170,28 @@ impl Host {
             }
         }
         let cstate = crews::state(self)?;
+        let at = json!(now());
+        let at_instant = instant(&at)?;
         if let Some(s) = array(&state, "schedules").iter().find(|s| {
             s["enabled"] == true
                 && s["occurrences"].as_u64() < s["maxOccurrences"].as_u64()
-                && s["nextRunAt"]
-                    .as_str()
-                    .is_some_and(|due| due <= now().as_str())
-                && !array(&cstate, "missions").iter().any(|m| {
-                    m["missionId"] == s["activeMissionId"]
-                        && matches!(
-                            m["status"].as_str(),
-                            Some("prepared" | "active" | "cancelling")
-                        )
-                })
+                && instant(&s["nextRunAt"]).is_ok_and(|due| due <= at_instant)
+                && (s["activeMissionId"].is_null()
+                    || array(&cstate, "missions").iter().any(|m| {
+                        m["missionId"] == s["activeMissionId"]
+                            && m["projectId"] == s["projectId"]
+                            && matches!(
+                                m["status"].as_str(),
+                                Some("completed" | "failed" | "cancelled" | "timed_out")
+                            )
+                    }))
         }) {
             let ordinal = s["occurrences"].as_u64().unwrap() + 1;
             let command = stable_command(&format!("{}:{ordinal}", s["scheduleId"]));
-            let next = (chrono::Utc::now()
+            let next = (at_instant
                 + chrono::Duration::minutes(s["intervalMinutes"].as_i64().unwrap()))
             .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-            self.store.append(vec![workflow_fact("project_workflow.occurrence_started",json!({"projectId":s["projectId"],"scheduleId":s["scheduleId"],"expectedScheduleRevision":s["revision"],"ordinal":ordinal,"missionId":child_id(&command,"mission:"),"nextRunAt":next,"at":now()}))])?;
+            self.store.append(vec![workflow_fact("project_workflow.occurrence_started",json!({"projectId":s["projectId"],"scheduleId":s["scheduleId"],"expectedScheduleRevision":s["revision"],"ordinal":ordinal,"missionId":child_id(&command,"mission:"),"nextRunAt":next,"at":at}))])?;
         }
         Ok(())
     }
@@ -3232,7 +3408,7 @@ impl Host {
                         "WORKFLOW_REVIEW_BUDGET_EXCEEDED",
                     )?;
                     let ids = direction_ids(m, &json!([target["taskId"]]))?;
-                    facts.push(workflow_fact("project_workflow.direction_requested",json!({"directionId":format!("direction:{}",uuid::Uuid::new_v4()),"projectId":b.project_id,"missionId":m["missionId"],"expectedMissionRevision":m["revision"],"instruction":format!("{}\n\nReviewer correction request:\n{}",m["workflow"]["currentInstruction"].as_str().unwrap_or(m["instruction"].as_str().unwrap()),args["feedback"].as_str().unwrap_or("")),"affectedTaskIds":ids,"origin":{"kind":"review","reviewId":id},"at":now(),"result":null})));
+                    facts.push(workflow_fact("project_workflow.direction_requested",json!({"directionId":format!("direction:{}",uuid::Uuid::new_v4()),"projectId":b.project_id,"missionId":m["missionId"],"expectedMissionRevision":m["revision"],"instruction":review_instruction(m,&args["feedback"]),"affectedTaskIds":ids,"origin":{"kind":"review","reviewId":id},"at":now(),"result":null})));
                 }
                 self.store.append(facts)?;
                 Ok(json!({"reasonCode":"WORKFLOW_REVIEW_RECORDED","offerId":null,"reviewId":id}))
@@ -3307,6 +3483,18 @@ mod tests {
             json!({"enqueue":"invalid"}),
         );
         assert!(validate_event(&bad).is_err());
+        assert_eq!(
+            canonical_time(&json!("2026-10-19T15:00:00.000+03:00")).unwrap(),
+            "2026-10-19T12:00:00.000Z"
+        );
+        assert_eq!(
+            canonical_time(&json!("2026-10-19T09:00:00-03:00")).unwrap(),
+            "2026-10-19T12:00:00.000Z"
+        );
+        assert_eq!(
+            instant(&json!("2026-10-19T15:00:00.000+03:00")).unwrap(),
+            instant(&json!("2026-10-19T12:00:00Z")).unwrap()
+        );
     }
     #[cfg(unix)]
     #[tokio::test]
@@ -3316,8 +3504,20 @@ mod tests {
         assert_eq!(job["status"], "completed", "{job}");
         assert_eq!(job["reasonCode"], "PROJECT_CREW_PLAN_READ");
         let accept = command(
-            json!({"projectId":p,"expectedProjectRevision":project_revision(&host,&p),"planJobId":job["planJobId"],"expectedPlanRevision":job["revision"],"budgets":{"maxJobs":3,"maxElapsedMinutes":20,"maxReviewRounds":0}}),
+            json!({"projectId":p,"expectedProjectRevision":project_revision(&host,&p),"planJobId":job["planJobId"],"expectedPlanRevision":job["revision"],"crewName":"Edited crew name","settings":{"concurrency":1,"retryLimit":0,"timeoutMinutes":17},"budgets":{"maxJobs":3,"maxElapsedMinutes":20,"maxReviewRounds":0}}),
         );
+        let mut invalid = command(accept.clone());
+        invalid["settings"]["concurrency"] = json!(4);
+        assert!(host
+            .action("project_crew_plan_accept", invalid)
+            .await
+            .is_err());
+        let mut invalid = command(accept.clone());
+        invalid["crewName"] = json!("x".repeat(81));
+        assert!(host
+            .action("project_crew_plan_accept", invalid)
+            .await
+            .is_err());
         let receipt = host
             .action("project_crew_plan_accept", accept.clone())
             .await
@@ -3330,6 +3530,25 @@ mod tests {
         );
         let m = mission(&host, &receipt["missionId"]);
         assert_eq!(m["status"], "prepared");
+        assert_eq!(m["settings"], accept["settings"]);
+        assert_eq!(
+            array(&host.snapshot().unwrap()["projectCrews"], "crews")[0]["name"],
+            "Edited crew name"
+        );
+        let events = host.store.read_events().unwrap();
+        let prepared = events
+            .iter()
+            .position(|e| e["type"] == "project_workflow.mission_prepared")
+            .unwrap();
+        for field in ["name", "settings"] {
+            let mut changed = events.clone();
+            if field == "name" {
+                changed[prepared]["payload"]["crew"]["name"] = json!("Other name");
+            } else {
+                changed[prepared]["payload"]["mission"]["settings"]["timeoutMinutes"] = json!(18);
+            }
+            assert!(crate::domain::project_events(&changed).is_err(), "{field}");
+        }
         assert!(array(&host.snapshot().unwrap()["work"], "items").is_empty());
         host.action("project_crew_start", lifecycle(&p, &m))
             .await
@@ -3458,6 +3677,7 @@ mod tests {
         let m = host.action("project_crew_prepare", payload).await.unwrap();
         let saved=host.action("project_recipe_save",command(json!({"projectId":p,"missionId":m["missionId"],"expectedMissionRevision":mission(&host,&m["missionId"])["revision"],"name":"A recurring report"}))).await.unwrap();
         let due = (chrono::Utc::now() - chrono::Duration::days(3))
+            .with_timezone(&chrono::FixedOffset::east_opt(10800).unwrap())
             .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         let request = command(
             json!({"projectId":p,"expectedProjectRevision":project_revision(&host,&p),"recipeId":saved["recipeId"],"expectedRecipeRevision":saved["revision"],"intervalMinutes":15,"firstRunAt":due,"maxOccurrences":2,"budgets":{"maxJobs":1,"maxElapsedMinutes":10,"maxReviewRounds":0}}),
@@ -3470,6 +3690,27 @@ mod tests {
             host.action("project_schedule_save", request).await.unwrap(),
             result
         );
+        assert_eq!(
+            runtime_state(&host).unwrap()["schedules"][0]["nextRunAt"],
+            canonical_time(&json!(due)).unwrap()
+        );
+        let saved_events = host.store.read_events().unwrap();
+        let saved_index = saved_events
+            .iter()
+            .position(|e| e["type"] == "project_workflow.schedule_saved")
+            .unwrap();
+        for field in ["recipe", "budgets", "count", "time", "target"] {
+            let mut bad = saved_events.clone();
+            let s = &mut bad[saved_index]["payload"]["schedule"];
+            match field {
+                "recipe" => s["recipe"]["description"] = json!("An unapproved replacement goal"),
+                "budgets" => s["budgets"]["maxJobs"] = json!(2),
+                "count" => s["maxOccurrences"] = json!(3),
+                "time" => s["nextRunAt"] = json!(now()),
+                _ => s["scheduleId"] = json!(format!("schedule:{}", uuid::Uuid::new_v4())),
+            }
+            assert!(crate::domain::project_events(&bad).is_err(), "{field}");
+        }
         for _ in 0..12 {
             host.background_tick(false).await.unwrap();
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -3485,6 +3726,13 @@ mod tests {
             .unwrap();
         let s = runtime_state(&host).unwrap()["schedules"][0].clone();
         host.action("project_schedule_set_enabled",command(json!({"projectId":p,"scheduleId":s["scheduleId"],"expectedScheduleRevision":s["revision"],"enabled":false}))).await.unwrap();
+        let mut changed = host.store.read_events().unwrap();
+        let enabled_index = changed
+            .iter()
+            .rposition(|e| e["type"] == "project_workflow.schedule_enabled")
+            .unwrap();
+        changed[enabled_index]["payload"]["enabled"] = json!(true);
+        assert!(crate::domain::project_events(&changed).is_err());
         host.background_tick(false).await.unwrap();
         assert_eq!(
             runtime_state(&host).unwrap()["schedules"][0]["occurrences"],
@@ -3508,6 +3756,55 @@ mod tests {
             .filter(|e| e["type"] == "project_workflow.occurrence_started")
             .count();
         assert_eq!(jobs, 2);
+        let events = host.store.read_events().unwrap();
+        let first = events
+            .iter()
+            .position(|e| e["type"] == "project_workflow.occurrence_started")
+            .unwrap();
+        for field in ["early", "next", "identity", "budget"] {
+            let mut bad = events[..=first].to_vec();
+            let occurrence = &mut bad[first]["payload"];
+            match field {
+                "early" => {
+                    occurrence["at"] = json!((instant(&json!(due)).unwrap()
+                        - chrono::Duration::milliseconds(1))
+                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+                }
+                "next" => occurrence["nextRunAt"] = occurrence["at"].clone(),
+                "identity" => {
+                    occurrence["missionId"] = json!(format!("mission:{}", uuid::Uuid::new_v4()))
+                }
+                _ => occurrence["ordinal"] = json!(3),
+            }
+            assert!(crate::domain::project_events(&bad).is_err(), "{field}");
+        }
+        let mut overlap = events[first]["payload"].clone();
+        overlap["expectedScheduleRevision"] =
+            json!(overlap["expectedScheduleRevision"].as_u64().unwrap() + 1);
+        overlap["ordinal"] = json!(2);
+        overlap["missionId"] = occurrence_mission(&overlap["scheduleId"], &overlap["ordinal"]);
+        overlap["at"] = overlap["nextRunAt"].clone();
+        overlap["nextRunAt"] = json!((instant(&overlap["at"]).unwrap()
+            + chrono::Duration::minutes(15))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+        let prepared = events
+            .iter()
+            .enumerate()
+            .skip(first + 1)
+            .find(|(_, e)| e["type"] == "project_workflow.mission_prepared")
+            .unwrap()
+            .0;
+        for prefix_end in [first, prepared] {
+            let mut bad = events[..=prefix_end].to_vec();
+            bad.push(workflow_fact(
+                "project_workflow.occurrence_started",
+                overlap.clone(),
+            ));
+            assert!(
+                crate::domain::project_events(&bad).is_err(),
+                "overlap prefix {prefix_end}"
+            );
+        }
         update["expectedScheduleRevision"] = json!(1);
         assert!(host
             .action("project_schedule_save", command(update))
@@ -3714,6 +4011,22 @@ mod tests {
             "{returned}"
         );
         assert_eq!(rpc(&credentials, "crew_review", review).await, returned);
+        let review_events = host.store.read_events().unwrap();
+        let direction_index = review_events
+            .iter()
+            .rposition(|e| e["type"] == "project_workflow.direction_requested")
+            .unwrap();
+        for field in ["instruction", "affected", "origin", "revision"] {
+            let mut bad = review_events.clone();
+            let direction = &mut bad[direction_index]["payload"];
+            match field {
+                "instruction" => direction["instruction"] = json!("Run an unrelated replacement."),
+                "affected" => direction["affectedTaskIds"] = json!([first["tasks"][0]["taskId"]]),
+                "origin" => direction["origin"]["unapproved"] = json!(true),
+                _ => direction["expectedMissionRevision"] = Value::Null,
+            }
+            assert!(crate::domain::project_events(&bad).is_err(), "{field}");
+        }
         for _ in 0..20 {
             tokio::time::sleep(Duration::from_millis(20)).await;
             host.background_tick(false).await.unwrap();
@@ -3726,6 +4039,20 @@ mod tests {
         assert_eq!(corrected["tasks"][0]["attempt"], 2, "{corrected}");
         assert_eq!(corrected["tasks"][0]["status"], "completed");
         assert_eq!(corrected["tasks"][1]["status"], "running");
+        let mut reused = review_events[direction_index]["payload"].clone();
+        reused["directionId"] = json!(format!("direction:{}", uuid::Uuid::new_v4()));
+        reused["expectedMissionRevision"] = corrected["revision"].clone();
+        reused["instruction"] =
+            review_instruction(&corrected, &json!("The source needs a correction."));
+        let mut bad = host.store.read_events().unwrap();
+        bad.push(workflow_fact(
+            "project_workflow.direction_requested",
+            reused,
+        ));
+        assert!(
+            crate::domain::project_events(&bad).is_err(),
+            "a consumed return must not create a new correction after replacement"
+        );
         let bundle = host.snapshot().unwrap();
         let writer = array(&bundle["work"], "items")
             .iter()
@@ -3792,6 +4119,86 @@ mod tests {
         .await
         .unwrap();
         mission(host, &r["missionId"])
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn configured_workflow_agents_use_real_scoped_message_transport() {
+        let (temporary, _peer, host, p) = fixture("hold").await;
+        let mut payload = prepare(&host, &p);
+        payload["members"] = json!([
+            crews::default_member("document", "D1"),
+            crews::default_member("image", "I1")
+        ]);
+        let result = host.action("project_crew_prepare", payload).await.unwrap();
+        configure(&host, &p, &result["missionId"], 4).await;
+        host.action(
+            "project_crew_start",
+            lifecycle(&p, &mission(&host, &result["missionId"])),
+        )
+        .await
+        .unwrap();
+        let m = mission(&host, &result["missionId"]);
+        assert!(
+            array(&m, "tasks").iter().all(|t| t["status"] == "running"),
+            "{m}"
+        );
+        assert!(
+            host.store
+                .read_events()
+                .unwrap()
+                .iter()
+                .filter(|e| e["type"] == "project_workflow.task_allocated")
+                .count()
+                >= 2
+        );
+        let (_sender_ticket, sender) = ticket_credentials(&host, &m["tasks"][0]).await;
+        let (_recipient_ticket, recipient) = ticket_credentials(&host, &m["tasks"][1]).await;
+        let args = json!({"toMissionId":m["missionId"],"toAgentId":m["tasks"][1]["agentId"],"body":"Use the verified input.","nonce":"v11-message"});
+        let sent = rpc(&sender, "crew_message", args.clone()).await;
+        assert_eq!(sent["delivery"], "pending", "{sent}");
+        assert_eq!(rpc(&sender, "crew_message", args.clone()).await, sent);
+        let inbox = rpc(&recipient, "crew_messages", json!({})).await;
+        assert_eq!(inbox["items"][0]["delivery"], "read", "{inbox}");
+        assert_eq!(inbox["items"][0]["fromAgentId"], m["tasks"][0]["agentId"]);
+        let mut changed = args.clone();
+        changed["body"] = json!("Different body");
+        assert!(rpc(&sender, "crew_message", changed)
+            .await
+            .to_string()
+            .contains("NONCE"));
+        let foreign = host
+            .action(
+                "project_create",
+                command(json!({"name":"Separate Project"})),
+            )
+            .await
+            .unwrap()["projectId"]
+            .clone();
+        let foreign_mission = host
+            .action("project_crew_prepare", prepare(&host, &foreign))
+            .await
+            .unwrap();
+        let foreign_mission = mission(&host, &foreign_mission["missionId"]);
+        let mut denied = args;
+        denied["toMissionId"] = foreign_mission["missionId"].clone();
+        denied["toAgentId"] = foreign_mission["tasks"][0]["agentId"].clone();
+        denied["nonce"] = json!("foreign-v11");
+        assert!(rpc(&sender, "crew_message", denied)
+            .await
+            .to_string()
+            .contains("SCOPE"));
+        host.shutdown().await;
+        drop(host);
+        let reopened = Host::open(temporary.path().join("data")).unwrap();
+        let messages = reopened
+            .action(
+                "project_crew_messages_read",
+                json!({"projectId":p,"missionId":m["missionId"]}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(messages["items"][0]["delivery"], "read");
+        reopened.shutdown().await;
     }
     #[cfg(unix)]
     #[tokio::test]

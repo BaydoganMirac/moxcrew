@@ -12,7 +12,8 @@ Decision: [ADR0045](../decisions/0045-productive-crews-and-explicit-tools.md).
 The selected local provider generates a bounded structured crew plan through a
 durable asynchronous planning job. Questions produce `needs_input`; they do not
 become a fabricated completed plan. The owner can answer in a new planning job,
-edit members and accept a plan into a prepared mission. Starting is separate.
+edit members, crew name and validated mission limits, and accept a plan into a
+prepared mission. Starting is separate.
 Planning includes bounded, explicitly partial accepted-decision context and
 selected same-Project terminal-file previews. Accept verifies those file hashes
 before freezing the mission inputs; changed sources are rejected.
@@ -46,6 +47,11 @@ provider assignments are configured on the prepared mission. Recurring local
 recipes currently use Codex. Durable schedules pause/resume, retain exact occurrence
 identity, prevent overlap and skip missed intervals. They run only while the Host
 is awake, with at most one new occurrence per tick and at most 100 occurrences.
+RFC3339 schedule inputs are normalized to UTC milliseconds; due checks compare
+instants. Replay binds saved/enabled schedules to the exact owner payload and
+frozen recipe. Each occurrence checks due time, terminal previous mission,
+deterministic identity, interval and occurrence budget. A return review authorizes
+one exact current-task correction and its descendants within the review budget.
 
 ## Bounds and state
 
@@ -65,7 +71,7 @@ rollback requires an unchanged stopped pre-upgrade copy.
 
 ## Verification
 
-Ten workflow tests use real native fake-provider child processes, authenticated
+Eleven workflow tests use real native fake-provider child processes, authenticated
 loopback MCP and real files. They cover model questions/cancel/accept, exact
 receipts and crash prefixes, immutable selected inputs, affected-only direction,
 bounded review/correction with retained originals, recurring pause/resume/restart,
@@ -73,6 +79,13 @@ cross-mission offer/delivery and verified delivery consumption by a production
 tool. Active MCP document creation produces an actual DOCX whose file/header/hash
 are checked; nonce changes and foreign-Project reads are rejected. V1/V2 Cloud
 canaries exclude the selected private source content.
+
+The final focused workflow run passes all eleven tests with local loopback MCP
+enabled. Added regressions cover configured V11 agent messages through HTTP and
+restart, edited model-plan names/limits, schedule offset normalization and altered
+owner facts, early/overlapping/forged occurrences, and altered/reused review
+corrections. Sandboxed runs without a loopback listener cannot exercise managed
+provider starts and do not count as transport evidence.
 
 All 23 tests selected by `cargo test --offline -p patchfleet-core --lib project_`
 pass, including the six prior crew tests and coordinator Studio/Project fixtures.

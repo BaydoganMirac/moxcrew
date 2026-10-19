@@ -499,12 +499,20 @@ impl Console {
                     );
                 });
             });
-            ui.add_space(if compact { 16.0 } else { 24.0 });
+            ui.add_space(if compact {
+                f32::from(studio::metrics::PADDING)
+            } else {
+                studio::metrics::SECTION_GAP
+            });
             let height = (ui.available_height()
                 - if self.create.studio.tab == 0 && self.create.studio.package_mode {
-                    96.0
+                    studio::metrics::CONTROL_HEIGHT
+                        + f32::from(studio::metrics::PADDING) * 2.0
+                        + studio::metrics::SECTION_GAP
                 } else {
-                    64.0
+                    studio::metrics::CONTROL_HEIGHT
+                        + studio::metrics::CONTROL_GAP
+                        + studio::metrics::GAP
                 })
             .max(60.0);
             egui::ScrollArea::vertical()

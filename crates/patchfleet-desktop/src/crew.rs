@@ -598,10 +598,14 @@ impl Console {
         } else {
             1
         };
-        let width = (ui.available_width() - 12.0 * (columns - 1) as f32) / columns as f32;
+        let width = (ui.available_width() - studio::metrics::CONTROL_GAP * (columns - 1) as f32)
+            / columns as f32;
         egui::Grid::new(("crew-plan-cards", &key))
             .num_columns(columns)
-            .spacing(egui::vec2(12.0, 12.0))
+            .spacing(egui::vec2(
+                studio::metrics::CONTROL_GAP,
+                studio::metrics::CONTROL_GAP,
+            ))
             .show(ui, |ui| {
                 for (index, member) in plan.members.iter().enumerate() {
                     let role = text(member, "role");
@@ -626,17 +630,23 @@ impl Console {
                             .unwrap_or("connections")
                     };
                     let cell = ui.allocate_ui_with_layout(
-                        egui::vec2(width, 132.0),
+                        egui::vec2(width, studio::metrics::CONTROL_HEIGHT * 3.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             egui::Frame::new()
                                 .fill(p.surface)
                                 .stroke(egui::Stroke::new(1.0, p.border))
-                                .corner_radius(14)
-                                .inner_margin(12)
+                                .corner_radius(studio::metrics::CARD_RADIUS)
+                                .inner_margin(studio::metrics::PADDING)
                                 .show(ui, |ui| {
-                                    ui.set_width((width - 24.0).max(40.0));
-                                    ui.set_min_height(108.0);
+                                    ui.set_width(
+                                        (width - f32::from(studio::metrics::PADDING) * 2.0)
+                                            .max(studio::metrics::CONTROL_HEIGHT),
+                                    );
+                                    ui.set_min_height(
+                                        studio::metrics::CONTROL_HEIGHT * 3.0
+                                            - f32::from(studio::metrics::PADDING) * 2.0,
+                                    );
                                     ui.spacing_mut().item_spacing.y = 5.0;
                                     ui.spacing_mut().interact_size.y = 20.0;
                                     ui.horizontal(|ui| {
@@ -1860,17 +1870,29 @@ impl Console {
                     );
                 });
             });
-            ui.add_space(if compact { 16.0 } else { 24.0 });
+            ui.add_space(if compact {
+                f32::from(studio::metrics::PADDING)
+            } else {
+                studio::metrics::SECTION_GAP
+            });
             let reserve = match self.create.crew.workflow.tab {
-                0 => 100.0,
-                1 | 2 => 64.0,
+                0 => {
+                    studio::metrics::CONTROL_HEIGHT
+                        + f32::from(studio::metrics::PADDING) * 2.0
+                        + studio::metrics::SECTION_GAP
+                }
+                1 | 2 => {
+                    studio::metrics::CONTROL_HEIGHT
+                        + studio::metrics::CONTROL_GAP
+                        + studio::metrics::GAP
+                }
                 _ => 0.0,
             };
             egui::ScrollArea::vertical().id_salt(("mission-workflow-body",&project,self.create.crew.workflow.tab)).auto_shrink([false,self.create.crew.workflow.tab==0]).max_height((ui.available_height()-reserve).max(60.0)).show(ui,|ui| {
                 match self.create.crew.workflow.tab {
                     0=>{
                         let ready=self.create.crew.plans.contains_key(&key);
-                        if ready{self.crew_roster_summary(ui,snapshot,false);self.model_plan_card(ui,snapshot,commands);}
+                        if ready{self.model_plan_card(ui,snapshot,commands);self.crew_roster_summary(ui,snapshot,false);}
                         else if self.create.crew.workflow.models.contains_key(&key){self.model_plan_card(ui,snapshot,commands);}
                         else{self.workflow_plan_request(ui,snapshot);}
                         ui.add_space(16.0);
@@ -1911,98 +1933,73 @@ impl Console {
                 let preparation = egui::Frame::new()
                     .fill(colors(ui).raised)
                     .stroke(egui::Stroke::new(1.0, colors(ui).border))
-                    .corner_radius(14)
-                    .inner_margin(14)
+                    .corner_radius(studio::metrics::CARD_RADIUS)
+                    .inner_margin(studio::metrics::PADDING)
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            let explanation_width = (ui.available_width()
-                                - if compact { 288.0 } else { 310.0 })
-                            .max(110.0);
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(explanation_width, 44.0),
-                                egui::Layout::top_down(egui::Align::Min),
-                                |ui| {
-                                    ui.label(
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if self.create.crew.plans.contains_key(&key) {
+                                self.crew_prepare_action(ui, snapshot, commands);
+                                if view_control(ui, "Edit roster", true, false).clicked() {
+                                    self.create.crew.roster_open = true;
+                                }
+                            } else if self
+                                .create
+                                .crew
+                                .workflow
+                                .models
+                                .get(&key)
+                                .is_some_and(|model| text(&model.job, "status") == "needs_input")
+                            {
+                                self.model_answer_action(ui, snapshot, commands);
+                            } else if !self.create.crew.workflow.models.get(&key).is_some_and(
+                                |model| matches!(text(&model.job, "status"), "queued" | "running"),
+                            ) {
+                                let enabled = valid_input(&self.create.draft().goal, 20_000)
+                                    && self.create.crew.workflow.request.is_none()
+                                    && connect::can_attempt_provider(
+                                        snapshot,
+                                        &self.create.crew.workflow.provider,
+                                    );
+                                if view_control(ui, "Generate plan", enabled, true).clicked() {
+                                    self.begin_model_plan(snapshot, commands, None);
+                                }
+                            }
+
+                            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                                ui.set_max_width(ui.available_width());
+                                ui.label(
+                                    RichText::new(t(
+                                        ui,
+                                        if self.create.crew.plans.contains_key(&key) {
+                                            "Ready to prepare"
+                                        } else {
+                                            "Plan before you start"
+                                        },
+                                    ))
+                                    .size(13.0)
+                                    .strong(),
+                                );
+                                let guidance = ui.add(
+                                    egui::Label::new(
                                         RichText::new(t(
                                             ui,
-                                            if self.create.crew.plans.contains_key(&key) {
-                                                "Ready to prepare"
-                                            } else {
-                                                "Plan before you start"
-                                            },
+                                            "Prepare now. Start the crew when you’re ready.",
                                         ))
-                                        .size(13.0)
-                                        .strong(),
-                                    );
-                                    let guidance = ui.add(
-                                        egui::Label::new(
-                                            RichText::new(t(
-                                                ui,
-                                                "Prepare now. Start the crew when you’re ready.",
-                                            ))
-                                            .size(11.0)
-                                            .color(colors(ui).muted),
-                                        )
-                                        .wrap(),
-                                    );
-                                    #[cfg(test)]
-                                    ui.data_mut(|data| {
-                                        data.insert_temp(
-                                            egui::Id::new("workflow-footer-guidance"),
-                                            (guidance.rect, ui.clip_rect()),
-                                        )
-                                    });
-                                    #[cfg(not(test))]
-                                    let _ = guidance;
-                                },
-                            );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if self.create.crew.plans.contains_key(&key) {
-                                        self.crew_prepare_action(ui, snapshot, commands);
-                                        if view_control(ui, "Edit roster", true, false).clicked() {
-                                            self.create.crew.roster_open = true;
-                                        }
-                                    } else if self
-                                        .create
-                                        .crew
-                                        .workflow
-                                        .models
-                                        .get(&key)
-                                        .is_some_and(|model| {
-                                            text(&model.job, "status") == "needs_input"
-                                        })
-                                    {
-                                        self.model_answer_action(ui, snapshot, commands);
-                                    } else if !self
-                                        .create
-                                        .crew
-                                        .workflow
-                                        .models
-                                        .get(&key)
-                                        .is_some_and(|model| {
-                                            matches!(
-                                                text(&model.job, "status"),
-                                                "queued" | "running"
-                                            )
-                                        })
-                                    {
-                                        let enabled =
-                                            valid_input(&self.create.draft().goal, 20_000)
-                                                && self.create.crew.workflow.request.is_none()
-                                                && connect::can_attempt_provider(
-                                                    snapshot,
-                                                    &self.create.crew.workflow.provider,
-                                                );
-                                        if view_control(ui, "Generate plan", enabled, true)
-                                            .clicked()
-                                        {
-                                            self.begin_model_plan(snapshot, commands, None);
-                                        }
-                                    }
-                                },
-                            );
+                                        .size(11.0)
+                                        .color(colors(ui).muted),
+                                    )
+                                    .wrap(),
+                                );
+                                #[cfg(test)]
+                                ui.data_mut(|data| {
+                                    data.insert_temp(
+                                        egui::Id::new("workflow-footer-guidance"),
+                                        (guidance.rect, ui.clip_rect()),
+                                    )
+                                });
+                                #[cfg(not(test))]
+                                let _ = guidance;
+                            });
                         });
                     });
                 #[cfg(test)]
@@ -3281,6 +3278,73 @@ mod tests {
         );
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].payload["offset"], 0);
+    }
+
+    #[test]
+    fn right_inspector_keeps_prepare_and_guidance_inside_its_real_panel() {
+        let size = egui::vec2(1280.0, 820.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        for language in ["en", "tr"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"]["language"] = json!(language);
+                let mut console = console();
+                console.create.crew.workflow.read = Some(("project:one".into(), 0));
+                console.create.select_productive_view(1);
+                for _ in 0..3 {
+                    let commands = render(&ctx, &mut console, &data, size, false, vec![]).0;
+                    assert!(commands
+                        .iter()
+                        .all(|command| command.action.ends_with("_read")));
+                }
+                let (bar, clip) = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new("crew-preparation-bar"))
+                        .unwrap()
+                });
+                assert!(
+                    bar.width() <= 620.0 && bar.left() >= size.x - 652.0,
+                    "{language}/{theme:?} must use the bounded right inspector: {bar:?}"
+                );
+                assert!(
+                    screen.contains_rect(bar) && clip.contains_rect(bar),
+                    "{language}/{theme:?} preparation bar clipped {bar:?}/{clip:?}"
+                );
+                let (enabled, button, clip) = ctx.data(|data| {
+                    data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                        "test-action-state",
+                        "project_crew_prepare",
+                        "Prepare crew",
+                    )))
+                    .unwrap()
+                });
+                assert!(enabled && screen.contains_rect(button) && clip.contains_rect(button));
+                let (guidance, clip) = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new(
+                        "workflow-footer-guidance",
+                    ))
+                    .unwrap()
+                });
+                assert!(bar.contains_rect(guidance) && clip.contains_rect(guidance));
+                let commands = click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    size,
+                    false,
+                    "project_crew_prepare",
+                    "Prepare crew",
+                );
+                assert_eq!(commands.len(), 1);
+                assert_eq!(commands[0].action, "project_crew_prepare");
+                assert_eq!(commands[0].payload["projectId"], "project:one");
+                assert!(commands
+                    .iter()
+                    .all(|command| command.action != "project_crew_start"));
+            }
+        }
     }
 
     #[test]

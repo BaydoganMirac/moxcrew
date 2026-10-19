@@ -42,6 +42,13 @@ They do not establish redistributed engines, task isolation or live model output
 
 ## Next executable work
 
+The owner reaffirmed provider onboarding, quality default skills and animation
+requirements in [ADR0042](../decisions/0042-owner-providers-default-skills-and-motion.md).
+One of local Codex, Gemini CLI or Claude Code is sufficient; all three are
+execution targets. Only Codex control exists today. Authentication/readiness,
+other provider control, automatic skill selection, complete skill/tool packages,
+motion and the proposed persisted chat/revision flow remain unimplemented.
+
 Finish F0 production tool/access selection and licenses, then source ingestion,
 tool availability/preflight and artifact revisions on the Create foundation.
 Task0040 is bounded F1/F3 groundwork, not the complete source/skill pipeline.

@@ -22,6 +22,13 @@ queue, provider, single-writer, receipt and native UI foundations. General work
 must not require a Git repository, branch or terminal knowledge. Existing coding
 execution and stored data must remain compatible.
 
+The owner reaffirmed local Codex, Gemini CLI and Claude Code as integration
+targets, with at least one connected provider required for inference. First-use
+connection, strong default skills and expressive state-driven motion are release
+requirements under [ADR0042](../decisions/0042-owner-providers-default-skills-and-motion.md).
+Current Claude/Gemini observation does not establish their execution support.
+The conversational UI proposal must preserve Project scope and actual artifacts.
+
 ## Ability acceptance matrix
 
 All rows start **planned / unverified**. For each row record the implementation
@@ -163,6 +170,14 @@ release baseline supplies product scope; do not ask again about the eight areas.
 
 ## Definition of 1.0.0 ready
 
+- Clean setup succeeds independently with each of the three supported local
+  providers: detect/install guidance, sign-in, capability check, a real job,
+  cancellation, restart and scoped revision. Users need only connect one.
+- Default skills include compatible tools/templates and actual output checks;
+  capability evidence distinguishes provider/tool/account limitations. Preserve
+  all forty abilities rather than counting catalog metadata as implementation.
+- Connection/work/handoff/result motion follows actual state, supports reduced
+  motion and keyboard navigation, and does not introduce continuous idle redraw.
 - All forty IDs have real input → output/action and revision/failure evidence;
   all ten composition proofs pass using the release candidate.
 - Non-Git first use, supported provider/tool setup, clear costs/access and TR/EN

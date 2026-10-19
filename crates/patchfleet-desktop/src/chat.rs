@@ -1,7 +1,5 @@
 use super::*;
 
-const COMPOSER_ROW_WIDTH: f32 = 640.0;
-
 fn composer_frame(ui: &Ui, focused: bool) -> egui::Frame {
     studio::card(ui)
         .fill(colors(ui).surface)
@@ -183,8 +181,13 @@ impl Console {
         snapshot: &Value,
         commands: &mut Vec<Command>,
     ) {
+        self.sync_conversation_project(snapshot, commands);
         let projects = array(&snapshot["projectMemory"]["projects"]);
-        if self.create.project.is_empty() && projects.len() == 1 {
+        if self.create.project.is_empty()
+            && projects.len() == 1
+            && !self.create.conversation_creating()
+            && self.create.draft().goal.is_empty()
+        {
             self.create.project = text(&projects[0], "projectId").into();
         }
         let compact = ui.ctx().viewport_rect().height() < 700.0;
@@ -266,50 +269,21 @@ impl Console {
             });
         });
         ui.add_space(if compact { 12.0 } else { 24.0 });
-        if projects.is_empty() {
-            centered(ui, 820.0, |ui| {
-                ui.add_space(if compact {
-                    f32::from(studio::metrics::PADDING)
-                } else {
-                    48.0
-                });
-                ui.vertical_centered(|ui| {
-                    crate::motion::mox(
-                        ui,
-                        if compact { 120.0 } else { 180.0 },
-                        false,
-                        snapshot["desktopPreferences"]["reduceMotion"] == true,
-                    );
-                    ui.add_space(f32::from(studio::metrics::PADDING));
-                    ui.label(studio::title(
-                        t(ui, "What would you like to make?"),
-                        if compact { 32.0 } else { 36.0 },
-                    ));
-                    ui.add_space(studio::metrics::GAP);
-                    hint(
-                        ui,
-                        "Create a project to keep your work together. No folder setup needed.",
-                    );
-                    ui.add_space(studio::metrics::SECTION_GAP);
-                    if submit(ui, "Create project", "create-project") {
-                        self.new_project_open = true;
-                    }
-                });
-            });
-            return;
-        }
         if previous != self.create.project {
             self.create.result_path.clear();
             self.create.chat.files_open = false;
             self.create.select_productive_view(0);
         }
-        if !projects
-            .iter()
-            .any(|project| text(project, "projectId") == self.create.project)
+        if !self.create.project.is_empty()
+            && !projects
+                .iter()
+                .any(|project| text(project, "projectId") == self.create.project)
         {
             hint(ui, "Choose the project for this idea.");
             return;
         }
+        self.create.restore_latest_planner(snapshot);
+        self.restore_conversation(snapshot);
         let context = self.create.productive_view();
         if context != 0 {
             if ui.ctx().viewport_rect().width() >= 1280.0 {
@@ -342,11 +316,12 @@ impl Console {
                     self.chat_files(ui, snapshot, commands);
                 });
         }
-        let welcome = self
-            .create
-            .chat_page(snapshot)
-            .is_some_and(|page| array(&page["items"]).is_empty())
-            && !self.create.crew_has_history(snapshot);
+        let welcome = self.create.project.is_empty()
+            || self
+                .create
+                .chat_page(snapshot)
+                .is_some_and(|page| array(&page["items"]).is_empty())
+                && !self.create.crew_has_history(snapshot);
         if !welcome {
             let has_reply = self
                 .create
@@ -356,16 +331,7 @@ impl Console {
             egui::Panel::bottom("conversation-composer")
                 .resizable(false)
                 .show_separator_line(false)
-                .exact_size(
-                    if ui.available_width().min(820.0)
-                        - composer_frame(ui, false).total_margin().sum().x
-                        < COMPOSER_ROW_WIDTH
-                    {
-                        224.0
-                    } else {
-                        174.0
-                    } + if has_reply { 52.0 } else { 0.0 },
-                )
+                .exact_size(180.0 + if has_reply { 52.0 } else { 0.0 })
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
                     centered(ui, 820.0, |ui| {
@@ -402,6 +368,15 @@ impl Console {
             }
         }
         self.chat_details(ui, snapshot);
+        if commands.is_empty()
+            && !self.hold_automatic_reads
+            && ui.is_enabled()
+            && !self.create.chat.connection_requested
+            && connect::connections(snapshot).is_empty()
+        {
+            self.create.chat.connection_requested = true;
+            commands.push(Command::new("provider_connections_read", json!({})));
+        }
         if commands.is_empty() {
             if let Some(command) = self
                 .create
@@ -488,14 +463,24 @@ impl Console {
         }
         let goal_id = egui::Id::new(("chat-goal", &self.create.project, &self.create.ability));
         // This unframed editor's compact inset is included in the measured composer reservation.
+        let limit = if self.create.crew.single {
+            20_000
+        } else {
+            self.create.conversation_limit()
+        };
+        let input = if self.create.crew.single {
+            &mut self.create.draft().goal
+        } else {
+            self.create.conversation_input()
+        };
         let response = ui.add(
-            egui::TextEdit::multiline(&mut self.create.draft().goal)
+            egui::TextEdit::multiline(input)
                 .id(goal_id)
                 .frame(egui::Frame::NONE)
                 .hint_text(t(ui, "Describe your idea or ask for a change…"))
                 .desired_width(f32::INFINITY)
                 .desired_rows(2)
-                .char_limit(20_000)
+                .char_limit(limit)
                 .margin(egui::Margin::symmetric(8, 6)),
         );
         let shortcut = response.has_focus()
@@ -510,7 +495,7 @@ impl Console {
                 .any(|ability| text(ability, "id") == *id)
         });
         let payload = self.create.chat_payload(snapshot);
-        let two_rows = ui.available_width() < COMPOSER_ROW_WIDTH;
+
         ui.horizontal_wrapped(|ui| {
             if self.create.crew.single {
                 let enabled = payload.is_some() && self.create.pending.is_none();
@@ -541,14 +526,30 @@ impl Console {
                     }
                 }
             } else {
-                self.crew_plan_button(ui, snapshot, commands, shortcut);
+                crew::provider_picker(ui, "chat-provider", self.create.planner_provider());
+                let enabled = self.create.conversation_send_enabled(snapshot);
+                let clicked = ui
+                    .add_enabled_ui(enabled, |ui| submit(ui, "Send", "conversation-send"))
+                    .inner;
+                if clicked || (shortcut && enabled) {
+                    self.send_conversation(snapshot, commands);
+                }
             }
-            if !two_rows {
-                self.chat_composer_options(ui);
-            }
+            self.chat_composer_options(ui, snapshot, commands);
         });
-        if two_rows {
-            self.chat_composer_options(ui);
+        if !self.create.crew.single {
+            let id = self.create.planner_provider().clone();
+            let reason = connect::selection_status(snapshot, &id);
+            ui.horizontal_wrapped(|ui| {
+                hint(ui, reason);
+                if !connect::can_attempt_provider(snapshot, &id)
+                    && studio::quiet_button(ui, t(ui, "Set up provider").as_ref()).clicked()
+                {
+                    self.create.chat.connections_open = true;
+                }
+            });
+            self.conversation_feedback(ui);
+            return;
         }
         if let Some(selected) = array(&snapshot["abilities"])
             .iter()
@@ -590,40 +591,52 @@ impl Console {
         }
     }
 
-    fn chat_composer_options(&mut self, ui: &mut Ui) {
-        let id = egui::Id::new(("chat-composer-options", &self.create.project));
-        ui.scope_builder(egui::UiBuilder::new().id(id), |ui| {
-            ui.horizontal(|ui| {
-                if view_control(ui, "Skills", true, false).clicked() {
-                    self.create.crew.catalog_target = None;
-                    self.create.catalog_open = true;
-                }
-                if view_control(ui, "Details", true, false).clicked() {
-                    self.create.chat.details_open = true;
-                }
-                egui::ComboBox::from_id_salt("conversation-work-mode")
-                    .selected_text(t(
-                        ui,
-                        if self.create.crew.single {
-                            "Single task"
-                        } else {
-                            "Crew"
-                        },
-                    ))
-                    .width(94.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.create.crew.single, false, t(ui, "Crew"));
-                        ui.selectable_value(
-                            &mut self.create.crew.single,
-                            true,
-                            t(ui, "Single task"),
-                        );
-                    });
-            });
+    fn chat_composer_options(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let menu = ui.menu_button(t(ui, "More"), |ui| {
+            if view_control(ui, "Skills", true, false).clicked() {
+                self.create.crew.catalog_target = None;
+                self.create.catalog_open = true;
+                ui.close();
+            }
+            if view_control(ui, "Details", true, false).clicked() {
+                self.create.chat.details_open = true;
+                ui.close();
+            }
+            if ui
+                .selectable_value(&mut self.create.crew.single, false, t(ui, "Conversation"))
+                .clicked()
+            {
+                ui.close();
+            }
+            if !self.create.crew.single {
+                self.crew_plan_button(ui, snapshot, commands, false);
+            }
+            if ui
+                .selectable_value(&mut self.create.crew.single, true, t(ui, "Single task"))
+                .clicked()
+            {
+                ui.close();
+            }
+        });
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new(("test-action", "memory_control", "More")),
+                menu.response.rect,
+            )
         });
     }
 
     fn chat_history(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        if self.create.project.is_empty() {
+            self.chat_welcome(ui, snapshot, commands);
+            return;
+        }
         let page = self.create.chat_page(snapshot);
         if page.is_none_or(|page| !array(&page["items"]).is_empty()) || self.create.chat.offset > 0
         {
@@ -735,149 +748,6 @@ impl Console {
         });
         ui.add_space(if compact { 12.0 } else { 24.0 });
         self.chat_composer_frame(ui, snapshot, commands);
-        ui.add_space(if compact {
-            studio::metrics::CONTROL_GAP
-        } else {
-            studio::metrics::SECTION_GAP
-        });
-        let columns = if ui.available_width() >= 500.0 { 4 } else { 2 };
-        let width =
-            (ui.available_width() - studio::metrics::GAP * (columns - 1) as f32) / columns as f32;
-        let selected_category = array(&snapshot["abilities"])
-            .iter()
-            .find(|ability| text(ability, "id") == self.create.ability)
-            .map(|ability| text(ability, "category"));
-        egui::Grid::new("conversation-categories")
-            .num_columns(columns)
-            .spacing(egui::vec2(studio::metrics::GAP, studio::metrics::GAP))
-            .show(ui, |ui| {
-                for (index, category) in [
-                    "presentations",
-                    "video",
-                    "images",
-                    "audio",
-                    "research",
-                    "documents",
-                    "data",
-                    "web",
-                ]
-                .iter()
-                .enumerate()
-                {
-                    let available = array(&snapshot["abilities"])
-                        .iter()
-                        .find(|ability| text(ability, "category") == *category);
-                    let selected = selected_category == Some(category);
-                    let label = t(
-                        ui,
-                        if *category == "web" {
-                            "Web"
-                        } else {
-                            category_name(category)
-                        },
-                    );
-                    let response = ui
-                        .add_enabled_ui(available.is_some(), |ui| {
-                            ui.allocate_exact_size(
-                                egui::vec2(width, if compact { 48.0 } else { 64.0 }),
-                                egui::Sense::click(),
-                            )
-                            .1
-                        })
-                        .inner
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    response.widget_info(|| {
-                        egui::WidgetInfo::selected(
-                            egui::WidgetType::Button,
-                            response.enabled(),
-                            selected,
-                            &label,
-                        )
-                    });
-                    let p = colors(ui);
-                    let focused = response.has_focus() || response.hovered();
-                    ui.painter().rect(
-                        response.rect,
-                        10,
-                        if selected {
-                            p.info_surface
-                        } else if focused {
-                            p.raised
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        },
-                        egui::Stroke::new(
-                            1.0,
-                            if selected || focused {
-                                p.primary
-                            } else {
-                                egui::Color32::TRANSPARENT
-                            },
-                        ),
-                        egui::StrokeKind::Inside,
-                    );
-                    let icon_size = if compact { 16.0 } else { 20.0 };
-                    let icon_rect = egui::Rect::from_center_size(
-                        egui::pos2(
-                            response.rect.center().x,
-                            response.rect.top() + if compact { 13.0 } else { 20.0 },
-                        ),
-                        egui::vec2(icon_size, icon_size),
-                    );
-                    let mut icon_ui = ui.new_child(egui::UiBuilder::new().max_rect(icon_rect));
-                    studio::icon(
-                        &mut icon_ui,
-                        category,
-                        icon_size,
-                        if selected { p.primary } else { p.muted },
-                    );
-                    ui.painter().text(
-                        egui::pos2(
-                            response.rect.center().x,
-                            response.rect.bottom() - if compact { 11.0 } else { 15.0 },
-                        ),
-                        egui::Align2::CENTER_CENTER,
-                        &label,
-                        egui::FontId::new(
-                            if compact { 12.0 } else { 13.0 },
-                            egui::FontFamily::Name("studio-display".into()),
-                        ),
-                        if selected { p.text } else { p.muted },
-                    );
-                    #[cfg(test)]
-                    ui.data_mut(|data| {
-                        data.insert_temp(
-                            egui::Id::new(("test-action", "category", category)),
-                            response.rect,
-                        );
-                        data.insert_temp(
-                            egui::Id::new(("test-category-state", category)),
-                            (response.enabled(), selected, response.rect, ui.clip_rect()),
-                        );
-                        data.insert_temp(
-                            egui::Id::new(("test-category-id", category)),
-                            response.id,
-                        );
-                    });
-                    if response.enabled()
-                        && (response.clicked()
-                            || (response.has_focus()
-                                && ui.input(|input| {
-                                    input.key_pressed(egui::Key::Enter)
-                                        || input.key_pressed(egui::Key::Space)
-                                })))
-                    {
-                        if let Some(ability) = available {
-                            self.create.select_ability(text(ability, "id"));
-                            self.create.category = (*category).into();
-                        }
-                    }
-                    if (index + 1) % columns == 0 {
-                        ui.end_row();
-                    }
-                }
-            });
-        ui.add_space(f32::from(studio::metrics::PADDING));
     }
 
     fn chat_work_card(

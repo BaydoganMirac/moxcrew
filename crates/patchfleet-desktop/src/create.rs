@@ -3,6 +3,8 @@ use super::*;
 mod chat;
 #[path = "connect.rs"]
 mod connect;
+#[path = "conversation.rs"]
+mod conversation;
 #[path = "crew.rs"]
 mod crew;
 #[path = "output_studio.rs"]
@@ -143,6 +145,7 @@ struct ChatState {
     details_open: bool,
     replies: HashMap<(String, String), ReplyDraft>,
     pending_reply: Option<(String, Option<ReplyDraft>)>,
+    conversation: conversation::ConversationState,
 }
 
 #[derive(Default)]
@@ -171,6 +174,7 @@ impl CreateState {
                 .as_ref()
                 .is_some_and(|epoch| *epoch != snapshot["hostEpoch"])
             {
+                self.chat.conversation.preserve_inputs(&mut self.drafts);
                 self.crew = Default::default();
                 self.studio = Default::default();
                 self.chat = Default::default();
@@ -594,6 +598,10 @@ impl Console {
                             #[cfg(test)]
                             ui.data_mut(|data| {
                                 data.insert_temp(
+                                    egui::Id::new(("test-ability-id", text(ability, "id"))),
+                                    response.id,
+                                );
+                                data.insert_temp(
                                     egui::Id::new(("test-action", "ability", text(ability, "id"))),
                                     response.rect,
                                 )
@@ -816,6 +824,7 @@ mod tests {
                 "description":{"en":"Build a deck","tr":"Sunum hazırlayın"},"starter":{"en":"Present my idea","tr":"Fikrimi sun"},"instruction":"Prepare useful files."},
                 {"id":"V1","category":"video","name":{"en":"Edit video","tr":"Video düzenle"},"description":{"en":"Trim a recording","tr":"Kaydı kesin"}}],
             "projectJobs":[{"projectId":"project:one","workItemId":"work:one"}],
+            "providerConnections":{"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[{"id":"codex","version":"0.163.0","installed":true,"authentication":"present","controlSupported":true}]},
             "work":{"items":[{"workItemId":"work:one","title":"Existing work","revision":2,"status":"queued"}]},"projectChat":{"reasonCode":"PROJECT_CHAT_READ","projectId":"project:one","offset":0,"nextOffset":null,"total":0,"items":[]}})
     }
 
@@ -904,6 +913,11 @@ mod tests {
         action: &str,
         label: &str,
     ) -> Vec<Command> {
+        if matches!(label, "Skills" | "Plan crew" | "Details") && !egui::Popup::is_any_open(ctx) {
+            assert!(
+                click_at_size(ctx, console, data, size, busy, "memory_control", "More").is_empty()
+            );
+        }
         render(ctx, console, data, size, busy, vec![]);
         let rect = ctx.data(|d| {
             d.get_temp::<egui::Rect>(egui::Id::new(("test-action", action, label)))
@@ -943,7 +957,7 @@ mod tests {
     }
 
     #[test]
-    fn welcome_cards_fit_the_minimum_viewport_and_keyboard_selection_only_changes_the_draft() {
+    fn optional_catalog_fits_the_minimum_viewport_and_keyboard_selection_only_changes_the_draft() {
         let size = egui::vec2(800.0, 560.0);
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
         for language in ["tr", "en"] {
@@ -957,62 +971,43 @@ mod tests {
                         create: state(),
                         ..Default::default()
                     };
+                    console.create.crew.single = false;
                     let mut data = snapshot();
                     data["desktopPreferences"] = json!({"language":language});
                     data["abilities"] = patchfleet_core::abilities::catalog();
+                    let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+                    assert!(commands.is_empty());
+                    assert!(!copy.join("\n").contains("Search abilities"));
+                    assert!(!console.create.catalog_open);
+                    assert!(click_at_size(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        "memory_control",
+                        "Skills"
+                    )
+                    .is_empty());
+                    console.create.search = "V1".into();
                     for _ in 0..3 {
                         assert!(render(&ctx, &mut console, &data, size, false, vec![])
                             .0
                             .is_empty());
                     }
-                    let (_, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
-                    assert!(!copy.iter().any(|text| text == "Previous messages"
-                        || text == "Önceki mesajlar"
-                        || text == "Refresh conversation"
-                        || text == "Sohbeti yenile"));
-                    let mut rectangles = Vec::new();
-                    for category in [
-                        "presentations",
-                        "video",
-                        "images",
-                        "audio",
-                        "research",
-                        "documents",
-                        "data",
-                        "web",
-                    ] {
-                        let (enabled, selected, rect, clip) = ctx.data(|data| {
-                            data.get_temp::<(bool, bool, egui::Rect, egui::Rect)>(egui::Id::new((
-                                "test-category-state",
-                                category,
-                            )))
-                            .unwrap()
-                        });
-                        assert!(enabled);
-                        assert_eq!(selected, category == "presentations");
-                        assert!(
-                            screen.contains_rect(rect) && clip.contains_rect(rect),
-                            "{language} {theme:?} {category} clipped {rect:?} {clip:?}"
-                        );
-                        rectangles.push(rect);
-                    }
-                    assert!((rectangles[0].top() - rectangles[3].top()).abs() < 1.0);
-                    assert!((rectangles[4].top() - rectangles[7].top()).abs() < 1.0);
-                    assert!(rectangles[4].top() > rectangles[0].bottom());
-                    for row in rectangles.chunks(4) {
-                        for pair in row.windows(2) {
-                            assert!(
-                                (pair[1].left() - pair[0].right() - studio::metrics::GAP).abs()
-                                    < 1.0,
-                                "grid cells must not allocate extra icon columns"
-                            );
-                        }
-                    }
-                    let focus = ctx.data(|data| {
-                        data.get_temp::<egui::Id>(egui::Id::new(("test-category-id", "video")))
+                    let rect = ctx.data(|data| {
+                        data.get_temp::<egui::Rect>(egui::Id::new(("test-action", "ability", "V1")))
                             .unwrap()
                     });
-                    ctx.memory_mut(|memory| memory.request_focus(focus));
+                    assert!(
+                        screen.contains_rect(rect),
+                        "{language}/{theme:?} catalog option clipped {rect:?}"
+                    );
+                    let id = ctx.data(|data| {
+                        data.get_temp::<egui::Id>(egui::Id::new(("test-ability-id", "V1")))
+                            .unwrap()
+                    });
+                    ctx.memory_mut(|memory| memory.request_focus(id));
                     let (commands, _) = render(
                         &ctx,
                         &mut console,
@@ -1029,7 +1024,7 @@ mod tests {
                     );
                     assert!(
                         commands.is_empty(),
-                        "a capability selection must not prepare or execute work"
+                        "skill selection must never prepare or start work"
                     );
                     assert_eq!(console.create.ability, "V1");
                     assert_eq!(
@@ -1037,6 +1032,7 @@ mod tests {
                         "Owner goal"
                     );
                     assert!(console.create.draft().goal.is_empty());
+                    assert!(!console.create.catalog_open);
                 }
             }
         }
@@ -1406,15 +1402,9 @@ mod tests {
                 .0
             });
             assert!(!enabled);
-            assert!(click(
-                &ctx,
-                &mut console,
-                &data,
-                false,
-                "category",
-                "presentations"
-            )
-            .is_empty());
+            assert!(click(&ctx, &mut console, &data, false, "memory_control", "Skills").is_empty());
+            console.create.search = "P1".into();
+            assert!(click(&ctx, &mut console, &data, false, "ability", "P1").is_empty());
             assert_eq!(console.create.ability, "P1");
             assert_eq!(console.create.draft().goal, "Owner launch idea");
             assert_eq!(
@@ -1580,6 +1570,7 @@ mod tests {
             ..Default::default()
         };
         let mut data = snapshot();
+        data["providerConnections"]["providers"][0]["authentication"] = json!("missing");
         data["desktopPreferences"] = json!({"language":"en"});
         console.create.chat.files_open = false;
         chat_entry(&mut data, "queued");
@@ -2116,7 +2107,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_console_opens_general_create_with_visible_project_action() {
+    fn fresh_console_opens_a_general_composer_without_requiring_project_or_folder_setup() {
         for language in ["tr", "en"] {
             for theme in [egui::Theme::Light, egui::Theme::Dark] {
                 let ctx = egui::Context::default();
@@ -2132,7 +2123,8 @@ mod tests {
                     false,
                     vec![],
                 );
-                assert!(commands.is_empty());
+                assert_eq!(commands.len(), 1);
+                assert_eq!(commands[0].action, "provider_connections_read");
                 assert!(console.tab == Tab::Create);
                 assert!(!console.quick_start.open);
                 assert!(console.folder_request.is_none());
@@ -2145,30 +2137,26 @@ mod tests {
                 let action = ctx.data(|data| {
                     data.get_temp::<egui::Rect>(egui::Id::new((
                         "test-action",
-                        "create-project",
-                        "Create project",
+                        "conversation-send",
+                        "Send",
                     )))
                     .unwrap()
                 });
                 assert!(
                     egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 560.0))
-                        .contains_rect(action),
-                    "first action clipped: {action:?}"
+                        .contains_rect(action)
                 );
                 assert!(click(
                     &ctx,
                     &mut console,
                     &data,
                     false,
-                    "create-project",
-                    "Create project"
+                    "conversation-send",
+                    "Send"
                 )
                 .is_empty());
-                assert!(
-                    console.new_project_open,
-                    "project form opens only after its explicit button click"
-                );
-                assert!(console.folder_request.is_none());
+                assert!(!console.new_project_open);
+                assert!(!console.create.conversation_creating());
             }
         }
     }
@@ -2177,7 +2165,7 @@ mod tests {
     fn initial_route_preserves_owner_navigation_populated_data_and_coding_guide() {
         let ctx = egui::Context::default();
         studio::install(&ctx);
-        let empty = json!({"desktopPreferences":{"language":"en"}});
+        let empty = json!({"desktopPreferences":{"language":"en"},"providerConnections":{"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[{"id":"codex","version":"0.163.0","installed":true,"authentication":"present","controlSupported":true}]}});
         let mut console = Console::launch();
         assert!(render(
             &ctx,

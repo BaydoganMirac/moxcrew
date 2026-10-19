@@ -523,8 +523,17 @@ impl Host {
         let mut request = base;
         request["payload"] = json!({"workItem":item});
         domain::validate_command_intent(&request)?;
+        let inputs = crate::conversation::retry_inputs(
+            &events,
+            work,
+            Path::new(text(work, "workingDirectory")?),
+            &project,
+        )?;
         if request["expiresAt"].as_str().unwrap_or("") > crate::now().as_str() {
             create_job_directory(&directory)?;
+            if let Some(inputs) = inputs {
+                write_input_bytes(&directory, &inputs.files, &inputs.manifest)?;
+            }
         }
         let mut receipt = self.apply_queue_intent_project(request, &project, revision)?;
         receipt["projectId"] = json!(project);
@@ -753,6 +762,14 @@ impl Host {
 }
 
 fn write_inputs(directory: &Path, inputs: &[(String, Vec<u8>)], manifest: &Value) -> Result<()> {
+    write_input_bytes(directory, inputs, &serde_json::to_vec(manifest)?)
+}
+
+fn write_input_bytes(
+    directory: &Path,
+    inputs: &[(String, Vec<u8>)],
+    manifest: &[u8],
+) -> Result<()> {
     if inputs.len() > 8
         || inputs
             .iter()
@@ -781,7 +798,7 @@ fn write_inputs(directory: &Path, inputs: &[(String, Vec<u8>)], manifest: &Value
         destination.sync_all()?;
     }
     let mut file = export_destination(&input_directory, std::ffi::OsStr::new("manifest.json"))?;
-    file.write_all(&serde_json::to_vec(manifest)?)?;
+    file.write_all(manifest)?;
     file.sync_all()?;
     File::open(&input_directory)?.sync_all()?;
     Ok(())

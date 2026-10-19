@@ -99,6 +99,36 @@ async fn terminal_fixture() -> (
     (temporary, host, project, work, path)
 }
 
+#[cfg(unix)]
+async fn failed_referenced_fixture() -> (
+    tempfile::TempDir,
+    std::sync::Arc<Host>,
+    Value,
+    Value,
+    PathBuf,
+    PathBuf,
+) {
+    let (temporary, host, project, parent, parent_directory) = terminal_fixture().await;
+    let mut request = send(&host, &project, "Revise the original report.");
+    request["replyToWorkItemId"] = parent;
+    request["referencePaths"] = json!(["outputs/report.md"]);
+    let child = host.action("project_chat_send", request).await.unwrap()["workItemId"].clone();
+    let child_directory = directory(&host, &child);
+    host.shutdown().await;
+    drop(host);
+    let data = temporary.path().join("data");
+    complete(&data, &child, "failed");
+    let host = Host::open(data).unwrap();
+    (
+        temporary,
+        host,
+        project,
+        child,
+        parent_directory,
+        child_directory,
+    )
+}
+
 #[tokio::test]
 async fn history_keeps_exact_v8_v9_goals_scoped_paged_and_durable() {
     let temporary = tempfile::tempdir().unwrap();
@@ -404,6 +434,145 @@ async fn retry_of_a_failed_chat_job_keeps_its_exact_v9_owner_goal() {
     for item in history["items"].as_array().unwrap() {
         assert_eq!(item["goal"], request["instruction"]);
         assert_eq!(item["abilityId"], "D1");
+    }
+    host.shutdown().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn retry_preserves_referenced_followup_inputs_without_rereading_grandparent() {
+    let (temporary, host, project, child, parent_directory, child_directory) =
+        failed_referenced_fixture().await;
+    let bytes = std::fs::read(child_directory.join("inputs/reference-01.md")).unwrap();
+    let manifest = std::fs::read(child_directory.join("inputs/manifest.json")).unwrap();
+    std::fs::remove_dir_all(parent_directory).unwrap();
+    let revision = host.snapshot().unwrap()["work"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["workItemId"] == child)
+        .unwrap()["revision"]
+        .clone();
+    let request = command(json!({"workItemId":child,"expectedItemRevision":revision}));
+    let receipt = host.action("work_retry", request.clone()).await.unwrap();
+    assert_eq!(receipt["outcome"], "applied");
+    assert_eq!(receipt["projectId"], project);
+    let copied = directory(&host, &receipt["workItemId"]);
+    assert_eq!(
+        std::fs::read(copied.join("inputs/reference-01.md")).unwrap(),
+        bytes
+    );
+    assert_eq!(
+        std::fs::read(copied.join("inputs/manifest.json")).unwrap(),
+        manifest
+    );
+    assert_eq!(
+        std::fs::read(child_directory.join("inputs/reference-01.md")).unwrap(),
+        bytes
+    );
+    assert_eq!(
+        std::fs::read(child_directory.join("inputs/manifest.json")).unwrap(),
+        manifest
+    );
+    host.shutdown().await;
+    drop(host);
+    let host = Host::open(temporary.path().join("data")).unwrap();
+    assert_eq!(host.action("work_retry", request).await.unwrap(), receipt);
+    assert_eq!(
+        std::fs::read(copied.join("inputs/reference-01.md")).unwrap(),
+        bytes
+    );
+    assert_eq!(
+        std::fs::read(copied.join("inputs/manifest.json")).unwrap(),
+        manifest
+    );
+    host.shutdown().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn retry_rejects_missing_changed_or_aliased_frozen_inputs_before_creating_a_job() {
+    use std::os::unix::fs::symlink;
+    let (_temporary, host, _project, child, _parent_directory, path) =
+        failed_referenced_fixture().await;
+    let source = path.join("inputs/reference-01.md");
+    let manifest_path = path.join("inputs/manifest.json");
+    let bytes = std::fs::read(&source).unwrap();
+    let manifest = std::fs::read(&manifest_path).unwrap();
+    let revision = host.snapshot().unwrap()["work"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["workItemId"] == child)
+        .unwrap()["revision"]
+        .clone();
+    let jobs = host.snapshot().unwrap()["work"]["items"]
+        .as_array()
+        .unwrap()
+        .len();
+    for variant in [
+        "missing_manifest",
+        "missing_file",
+        "changed_file",
+        "manifest_scope",
+        "manifest_path",
+        "manifest_reference",
+        "symlink_file",
+        "symlink_manifest",
+    ] {
+        std::fs::write(&source, &bytes).unwrap();
+        std::fs::write(&manifest_path, &manifest).unwrap();
+        match variant {
+            "missing_manifest" => std::fs::remove_file(&manifest_path).unwrap(),
+            "missing_file" => std::fs::remove_file(&source).unwrap(),
+            "changed_file" => std::fs::write(&source, b"Different copied content").unwrap(),
+            "symlink_file" => {
+                std::fs::remove_file(&source).unwrap();
+                symlink(path.join("outputs/does-not-exist"), &source).unwrap();
+            }
+            "symlink_manifest" => {
+                std::fs::remove_file(&manifest_path).unwrap();
+                symlink(path.join("outputs/does-not-exist"), &manifest_path).unwrap();
+            }
+            _ => {
+                let mut value: Value = serde_json::from_slice(&manifest).unwrap();
+                match variant {
+                    "manifest_scope" => {
+                        value["projectId"] = json!(format!("project:{}", uuid::Uuid::new_v4()))
+                    }
+                    "manifest_path" => value["files"][0]["inputPath"] = json!("../../events.jsonl"),
+                    _ => value["files"][0]["referencePath"] = json!("outputs/other.md"),
+                };
+                std::fs::write(&manifest_path, serde_json::to_vec(&value).unwrap()).unwrap();
+            }
+        }
+        let request = command(json!({"workItemId":child,"expectedItemRevision":revision}));
+        let target = path.parent().unwrap().join(
+            request["commandId"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("cmd:")
+                .unwrap(),
+        );
+        let error = host.action("work_retry", request).await.unwrap_err();
+        assert!(
+            ["PROJECT_INPUT_UNAVAILABLE", "PROJECT_INPUT_CHANGED"].contains(&error.0.as_str()),
+            "{variant}: {error}"
+        );
+        assert!(!target.exists(), "{variant}");
+        assert_eq!(
+            host.snapshot().unwrap()["work"]["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            jobs
+        );
+        if std::fs::symlink_metadata(&source).is_ok() {
+            std::fs::remove_file(&source).unwrap();
+        }
+        if std::fs::symlink_metadata(&manifest_path).is_ok() {
+            std::fs::remove_file(&manifest_path).unwrap();
+        }
     }
     host.shutdown().await;
 }

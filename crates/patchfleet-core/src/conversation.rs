@@ -36,6 +36,107 @@ fn origin<'a>(events: &'a [Value], work_id: &str) -> Option<&'a Value> {
     None
 }
 
+pub(crate) struct FrozenInputs {
+    pub files: Vec<(String, Vec<u8>)>,
+    pub manifest: Vec<u8>,
+}
+
+fn copied_name(index: usize, path: &Path) -> String {
+    let extension = path
+        .extension()
+        .and_then(|v| v.to_str())
+        .filter(|v| v.len() <= 12 && v.bytes().all(|b| b.is_ascii_alphanumeric()))
+        .map(|v| format!(".{v}"))
+        .unwrap_or_default();
+    format!("reference-{:02}{extension}", index + 1)
+}
+
+fn copied_bytes(directory: &Path, path: &Path, remaining: u64) -> Result<Vec<u8>> {
+    let file = creation::open_result(directory, path)?;
+    let before = file.metadata()?;
+    if before.len() > remaining {
+        return Err(invalid("PROJECT_INPUT_LIMIT_EXCEEDED"));
+    }
+    let mut bytes = Vec::new();
+    (&file).take(remaining + 1).read_to_end(&mut bytes)?;
+    let after = file.metadata()?;
+    if bytes.len() as u64 > remaining {
+        return Err(invalid("PROJECT_INPUT_LIMIT_EXCEEDED"));
+    }
+    if before.len() != bytes.len() as u64
+        || before.len() != after.len()
+        || before.modified()? != after.modified()?
+    {
+        return Err(invalid("PROJECT_INPUT_CHANGED"));
+    }
+    Ok(bytes)
+}
+
+/// The manifest is a checked job file, not an immutable canonical hash record.
+pub(crate) fn retry_inputs(
+    events: &[Value],
+    work: &Value,
+    directory: &Path,
+    project: &str,
+) -> Result<Option<FrozenInputs>> {
+    let owner = origin(events, text(work, "workItemId")?)
+        .ok_or_else(|| invalid("PROJECT_JOB_SCOPE_INVALID"))?;
+    let references = owner["payload"]
+        .get("referencePaths")
+        .and_then(Value::as_array);
+    let Some(references) = references.filter(|references| !references.is_empty()) else {
+        return Ok(None);
+    };
+    if owner["action"] != "project_chat_send" || references.len() > 8 {
+        return Err(invalid("PROJECT_INPUT_CHANGED"));
+    }
+    let manifest_bytes = copied_bytes(directory, Path::new("inputs/manifest.json"), 64 * 1024)
+        .map_err(|_| invalid("PROJECT_INPUT_UNAVAILABLE"))?;
+    let manifest: Value =
+        serde_json::from_slice(&manifest_bytes).map_err(|_| invalid("PROJECT_INPUT_CHANGED"))?;
+    if manifest.as_object().is_none_or(|fields| fields.len() != 4)
+        || manifest["schemaVersion"] != 1
+        || manifest["projectId"] != project
+        || manifest["replyToWorkItemId"] != owner["payload"]["replyToWorkItemId"]
+    {
+        return Err(invalid("PROJECT_INPUT_CHANGED"));
+    }
+    let entries = manifest["files"]
+        .as_array()
+        .filter(|entries| entries.len() == references.len())
+        .ok_or_else(|| invalid("PROJECT_INPUT_CHANGED"))?;
+    let mut files = Vec::new();
+    let mut total = 0u64;
+    for (index, (reference, entry)) in references.iter().zip(entries).enumerate() {
+        let reference = reference
+            .as_str()
+            .ok_or_else(|| invalid("PROJECT_INPUT_CHANGED"))?;
+        let path =
+            creation::relative_result(reference).map_err(|_| invalid("PROJECT_INPUT_CHANGED"))?;
+        let name = copied_name(index, &path);
+        let expected = format!("inputs/{name}");
+        if entry.as_object().is_none_or(|fields| fields.len() != 4)
+            || entry["referencePath"] != reference
+            || entry["inputPath"] != expected
+        {
+            return Err(invalid("PROJECT_INPUT_CHANGED"));
+        }
+        let bytes = copied_bytes(directory, Path::new(&expected), INPUT_LIMIT - total)
+            .map_err(|_| invalid("PROJECT_INPUT_UNAVAILABLE"))?;
+        if entry["bytes"].as_u64() != Some(bytes.len() as u64)
+            || entry["sha256"] != format!("{:x}", Sha256::digest(&bytes))
+        {
+            return Err(invalid("PROJECT_INPUT_CHANGED"));
+        }
+        total += bytes.len() as u64;
+        files.push((name, bytes));
+    }
+    Ok(Some(FrozenInputs {
+        files,
+        manifest: manifest_bytes,
+    }))
+}
+
 pub(crate) fn read(
     data_dir: &Path,
     events: &[Value],
@@ -169,33 +270,9 @@ impl Host {
         let mut total = 0u64;
         for (index, reference) in references.iter().enumerate() {
             let path = creation::relative_result(reference)?;
-            let file = creation::open_result(&directory, &path)?;
-            let before = file.metadata()?;
-            if before.len() > INPUT_LIMIT - total {
-                return Err(invalid("PROJECT_INPUT_LIMIT_EXCEEDED"));
-            }
-            let mut bytes = Vec::new();
-            (&file)
-                .take(INPUT_LIMIT - total + 1)
-                .read_to_end(&mut bytes)?;
-            let after = file.metadata()?;
-            if bytes.len() as u64 > INPUT_LIMIT - total {
-                return Err(invalid("PROJECT_INPUT_LIMIT_EXCEEDED"));
-            }
-            if before.len() != bytes.len() as u64
-                || before.len() != after.len()
-                || before.modified()? != after.modified()?
-            {
-                return Err(invalid("PROJECT_INPUT_CHANGED"));
-            }
+            let bytes = copied_bytes(&directory, &path, INPUT_LIMIT - total)?;
             total += bytes.len() as u64;
-            let extension = path
-                .extension()
-                .and_then(|v| v.to_str())
-                .filter(|v| v.len() <= 12 && v.bytes().all(|b| b.is_ascii_alphanumeric()))
-                .map(|v| format!(".{v}"))
-                .unwrap_or_default();
-            let name = format!("reference-{:02}{extension}", index + 1);
+            let name = copied_name(index, &path);
             files.push(json!({"referencePath":reference,"inputPath":format!("inputs/{name}"),"bytes":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}));
             copies.push((name, bytes));
         }

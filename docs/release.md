@@ -64,7 +64,12 @@ baseline preserves 0.11 readability. Subsequent Task0040 development changes
 write V8 Create/retry/export audit facts; a pre-Task0040 reader cannot read those
 facts even though the source version remains 0.12.0. Existing V6/V7 and the V8
 backup/rollback requirements below apply. See [interface state](state/product-studio-interface.md)
-and [Create state](state/project-create-studio.md).
+and [Create state](state/project-create-studio.md). Task0041 adds V9 chat/motion
+audit and schema2 desktop preferences (schema1 remains readable). Verify durable
+history, selected-input hash/original preservation, exact receipt scope, all
+connection failure states and reduced-motion/idle repaint behavior. Preserve a
+stopped pre-upgrade backup before the first V9 command; older development
+builds cannot read the new log. See [conversation state](state/connected-project-conversation.md).
 
 ## Native rendering proof
 
@@ -110,6 +115,13 @@ The `create-catalog` and `create-results` scenes seed a disposable non-Git
 Project and queued job. The results scene writes deterministic Markdown/CSV
 fixtures to its real outputs directory and reads them through the Host. Neither
 scene runs a model or renderer; filenames/content explicitly identify fixtures.
+
+The `chat-compose`, `chat-history`, `chat-results`, `chat-connections`,
+`chat-reduced` and `chat-empty` scenes exercise the conversation using fresh
+disposable canonical Project/job data. History and output reads go through the
+Host. The connection scene injects explicitly fixture-only provider DTOs; no
+installed CLI is probed. These images establish native rendering and containment,
+not a model result, provider sign-in or verified ability output.
 
 Windows installer templates are pinned to cargo-packager0.11.8 under
 `crates/patchfleet-desktop/assets/windows/`. Moxcrew display labels deliberately
@@ -163,3 +175,7 @@ directory before the first such command. Readers without V8 support reject
 those events. Rollback restores the complete unchanged pre-upgrade data copy;
 never delete or rewrite V8 lines to make an old reader open the directory.
 Create does not bump the current development source to 1.0.0.
+
+Task0041 adds V9 owner audit for project_chat_send and desktop_motion. Rollback
+uses the complete stopped pre-upgrade copy, including preferences. Never remove
+new audit lines or downgrade the preferences file in place.

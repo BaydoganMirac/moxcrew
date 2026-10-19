@@ -134,6 +134,13 @@ their redistribution licenses, shipped integration and cross-platform execution
 remain unresolved. Forty localized recipes are guidance, not F2 tool availability
 or forty completed abilities. See [Create state](../state/project-create-studio.md).
 
+Owner-approved Task0041 adds durable Project request history, selected-file
+follow-ups/retry preservation, eight versioned guides, explicit local-provider
+diagnostics and bounded reduced-motion support. This is additional F1/F2/F3
+groundwork; it does not complete tool availability, verified artifact renderers
+or the ability/composition matrix. See
+[conversation state](../state/connected-project-conversation.md).
+
 No shipped presentation/video tool environment has been chosen yet. Reuse candidates
 that require Python, Node or a headless browser do not silently change ADR 0024.
 A changed execution environment needs an accepted architecture record before

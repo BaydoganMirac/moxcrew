@@ -1,6 +1,6 @@
 # Moxcrew 1.0.0 release state
 
-Status: Scope approved; Create foundation implemented, ability/release evidence pending
+Status: Scope approved; Create/conversation foundation implemented, ability/release evidence pending
 
 Updated: 2026-10-19
 
@@ -34,6 +34,13 @@ entry does not complete any row above. Source remains 0.12.0; V8 local audit
 facts require the documented stopped-backup rollback procedure. Cloud runtime,
 model credentials and production installation are unchanged.
 
+[Task0041](connected-project-conversation.md) adds a durable native Project
+conversation, bounded selected-file follow-ups, explicit connection diagnostics,
+eight versioned guides attached to real jobs, and saved reduced motion. These
+guides define produce/revise/verify rules; they do not complete any ability row.
+Chat and motion commands add V9 owner audit facts with the same backup rollback
+requirement. Claude/Gemini execution and the broad tool pipeline remain open.
+
 Development feasibility produced an editable four-shape PPTX (20,027 bytes,
 reopened/rendered with LibreOffice) and a reordered/cut two-second MP4 (320×180,
 24 fps, 48 frames, 189,712 bytes; decoded and frame-order checked). These used
@@ -45,9 +52,10 @@ They do not establish redistributed engines, task isolation or live model output
 The owner reaffirmed provider onboarding, quality default skills and animation
 requirements in [ADR0042](../decisions/0042-owner-providers-default-skills-and-motion.md).
 One of local Codex, Gemini CLI or Claude Code is sufficient; all three are
-execution targets. Only Codex control exists today. Authentication/readiness,
-other provider control, automatic skill selection, complete skill/tool packages,
-motion and the proposed persisted chat/revision flow remain unimplemented.
+execution targets. Only Codex control exists today. Connection diagnostics,
+explicit-term skill suggestions, durable request history, selected-file revisions
+and bounded motion are implemented in Task0041. Entitlement/tool readiness,
+other provider control and complete verified skill/tool packages remain open.
 
 Finish F0 production tool/access selection and licenses, then source ingestion,
 tool availability/preflight and artifact revisions on the Create foundation.

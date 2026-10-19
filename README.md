@@ -37,7 +37,8 @@ detail view with Back to chat. A new conversation groups the request composer
 and capability choices. Crew presents the goal, role cards and explicit Prepare/
 Start controls; Outputs keeps real previews and delivery packages available.
 Shared native buttons, input fields, cards and spacing follow the
-[Moxcrew UI kit](design/moxcrew/UI-KIT.md). See
+[Moxcrew UI kit](design/moxcrew/UI-KIT.md) across all nine native destinations
+and their dialogs. See [screen migration](docs/state/ui-kit-screen-migration.md) and
 [chat-centered studio state](docs/state/chat-centered-ui-kit.md).
 
 Find outputs by name/path or file type, then choose **Create package** to select

@@ -739,6 +739,49 @@ mod tests {
         payload
     }
 
+    #[tokio::test]
+    async fn later_owner_request_cannot_authorize_an_older_queue_command() {
+        let temporary = tempfile::tempdir().unwrap();
+        let host = Host::open(temporary.path().join("data")).unwrap();
+        let project = host
+            .action("project_create", command(json!({"name":"Scope proof"})))
+            .await
+            .unwrap()["projectId"]
+            .clone();
+        let request = command(
+            json!({"projectId":project,"expectedProjectRevision":1,"abilityId":"D1","title":"A brief","instruction":"Write a brief."}),
+        );
+        let queued = host
+            .action("project_work_enqueue", request.clone())
+            .await
+            .unwrap();
+        let mut events = host.store.read_events().unwrap();
+        assert!(authorized_job(
+            &events,
+            project.as_str().unwrap(),
+            queued["workItemId"].as_str().unwrap()
+        ));
+        let index = events
+            .iter()
+            .position(|e| {
+                e["type"] == "owner.command.requested"
+                    && e["payload"]["commandId"] == request["commandId"]
+            })
+            .unwrap();
+        let owner_request = events.remove(index);
+        let outer_receipt = events.pop().unwrap();
+        assert_eq!(outer_receipt["type"], "owner.command.receipted");
+        events.push(owner_request);
+        events.push(outer_receipt);
+        assert!(domain::project_events(&events).is_ok());
+        assert!(!authorized_job(
+            &events,
+            project.as_str().unwrap(),
+            queued["workItemId"].as_str().unwrap()
+        ));
+        host.shutdown().await;
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn host_runs_a_managed_job_to_a_real_artifact_and_retains_terminal_state() {

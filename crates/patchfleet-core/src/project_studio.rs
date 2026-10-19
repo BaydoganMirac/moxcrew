@@ -1,4 +1,7 @@
 //! Local Project resources, immutable revisions and typed production jobs.
+#[path = "delivery.rs"]
+mod delivery;
+
 use crate::{
     agent_memory, conversation, creation, domain, event, production, store,
     work::{array, text},
@@ -69,6 +72,7 @@ fn fact(kind: &str, p: Value) -> Value {
 pub(crate) fn action_fields(action: &str) -> Option<&'static [&'static str]> {
     Some(match action {
         "project_studio_read" => &["projectId"],
+        "project_delivery_export" => &["projectId", "files", "targetPath"],
         "project_artifact_read" => &["projectId", "workItemId", "path", "expectedSha256"],
         "project_artifact_revise" => &[
             "projectId",
@@ -140,6 +144,9 @@ pub(crate) fn validate_event(e: &Value) -> Result<()> {
                 &[fields, &["commandId", "createdAt", "expiresAt"]].concat(),
             )?;
             require(p["payload"]["commandId"] == p["commandId"])?;
+            if a == "project_delivery_export" {
+                delivery::validate_request(&p["payload"])?;
+            }
         }
         "owner.command.receipted" => {
             exact(p, &["commandId", "result"], &[])?;
@@ -819,6 +826,7 @@ impl Host {
         }
         let state = project(&self.store.read_events()?)?;
         match action {
+            "project_delivery_export" => delivery::export(self, p),
             "project_studio_read" => {
                 let mut artifacts = Vec::new();
                 let mut scanned_bytes = 0u64;

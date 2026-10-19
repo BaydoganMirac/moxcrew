@@ -837,6 +837,32 @@ pub fn validate_event(v: &Value) -> Result<()> {
     let p = &v["payload"];
     let kind = string(&v["type"])?;
     object(p)?;
+    if v["schemaVersion"] == 10 {
+        match kind {
+            "owner.command.requested" => {
+                exact(p, &["commandId", "action", "payload"])?;
+                opaque(&p["commandId"])?;
+                one_of(
+                    &p["action"],
+                    &[
+                        "project_crew_prepare",
+                        "project_crew_start",
+                        "project_crew_cancel",
+                        "project_crew_retry",
+                    ],
+                )?;
+                bounded_object(&p["payload"])?;
+                Ok(())
+            }
+            "owner.command.receipted" => {
+                exact(p, &["commandId", "result"])?;
+                opaque(&p["commandId"])?;
+                bounded_object(&p["result"])
+            }
+            _ => crate::project_crews::validate_event(v),
+        }?;
+        return Ok(());
+    }
     if v["schemaVersion"] == 9 {
         match kind {
             "owner.command.requested" => {
@@ -2319,6 +2345,10 @@ pub fn project_events(events: &[Value]) -> Result<Value> {
     let extraction = crate::extraction::project_validated(events)?;
     if !extraction.is_null() {
         bundle["projectExtraction"] = extraction;
+    }
+    let crews = crate::project_crews::project(events, &bundle["work"])?;
+    if crews["revision"].as_u64().unwrap_or(0) > 0 {
+        bundle["projectCrews"] = crews;
     }
     let memory = crate::agent_memory::project(events)?;
     if !memory.is_null() {

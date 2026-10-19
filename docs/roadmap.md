@@ -9,6 +9,11 @@ commitments.
 
 ## Now
 
+- Complete the approved [Project crew orchestration](plans/0043-project-crew-orchestration.md):
+  conversational planning, reusable teams, bounded runs and same-Project
+  communication. Keep actual provider/output evidence in
+  [crew state](state/project-crew-orchestration.md).
+
 - Execute the owner-approved [1.0.0 master release](plans/0039-version-one-release.md):
   eight capability areas, forty abilities and ten composed Project workflows
   in one release. The [Create studio](state/project-create-studio.md) implements

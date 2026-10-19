@@ -1005,19 +1005,20 @@ impl Console {
                     .max_height(nav_height)
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        for tab in [Tab::Create, Tab::Projects, Tab::Work] {
+                        for tab in [Tab::Create, Tab::Projects, Tab::Teams, Tab::Work] {
                             self.sidebar_route(ui, snapshot, tab, reveal_navigation);
                         }
                         ui.add_space(8.0);
-                        let secondary =
-                            !matches!(self.tab, Tab::Create | Tab::Projects | Tab::Work);
+                        let secondary = !matches!(
+                            self.tab,
+                            Tab::Create | Tab::Projects | Tab::Teams | Tab::Work
+                        );
                         let more = egui::CollapsingHeader::new(t(ui, "More"))
                             .id_salt("sidebar-more")
                             .default_open(secondary)
                             .open(secondary.then_some(true))
                             .show(ui, |ui| {
                                 for tab in [
-                                    Tab::Teams,
                                     Tab::Memory,
                                     Tab::Decisions,
                                     Tab::Agents,
@@ -1275,7 +1276,14 @@ impl Console {
                                 Tab::Memory => self.project_memory(ui, snapshot, &mut commands),
                                 Tab::Decisions => self.decision_panel(ui, snapshot, &mut commands),
                                 Tab::Work => self.work_panel(ui, snapshot, &mut commands),
-                                Tab::Teams => self.teams(ui, snapshot, &mut commands),
+                                Tab::Teams => {
+                                    self.crew_hub(ui, snapshot, &mut commands);
+                                    ui.add_space(16.0);
+                                    egui::CollapsingHeader::new(t(ui, "Coding teams"))
+                                        .id_salt("legacy-coding-teams")
+                                        .default_open(!items(&snapshot["teams"]).is_empty())
+                                        .show(ui, |ui| self.teams(ui, snapshot, &mut commands));
+                                }
                                 Tab::Agents => self.agents(ui, snapshot, &mut commands),
                                 Tab::Providers => self.providers(ui, snapshot),
                                 Tab::Cloud => self.cloud(ui, snapshot, &mut commands),
@@ -1343,7 +1351,9 @@ impl Console {
         let count = match tab {
             Tab::Projects => array(&snapshot["projectMemory"]["projects"]).len(),
             Tab::Work => items(&snapshot["work"]).len(),
-            Tab::Teams => items(&snapshot["teams"]).len(),
+            Tab::Teams => {
+                array(&snapshot["projectCrews"]["crews"]).len() + items(&snapshot["teams"]).len()
+            }
             Tab::Decisions => array(&snapshot["projectDecisions"]["projects"])
                 .iter()
                 .map(|project| project["decisionCount"].as_u64().unwrap_or(0) as usize)

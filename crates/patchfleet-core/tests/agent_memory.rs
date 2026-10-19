@@ -274,6 +274,37 @@ fn tool_arguments_are_bounded_read_only_and_never_select_scope() {
         assert!(memory::validate_arguments(tool, &args).is_err(), "{tool}");
     }
 }
+#[test]
+fn crew_tool_arguments_cannot_forge_sender_or_project() {
+    for tool in ["crew_context", "crew_messages"] {
+        memory::validate_arguments(tool, &json!({"offset":0,"limit":50})).unwrap();
+        for args in [
+            json!({"projectId":OTHER}),
+            json!({"limit":51}),
+            json!({"offset":-1}),
+            json!({"agentId":"forged"}),
+        ] {
+            assert!(memory::validate_arguments(tool, &args).is_err());
+        }
+    }
+    let valid = json!({"toMissionId":"mission:recipient","toAgentId":"agent:recipient","body":"A scoped work message","nonce":"retry-1"});
+    memory::validate_arguments("crew_message", &valid).unwrap();
+    for field in ["projectId", "fromAgentId", "fromRunId", "ownerEpoch"] {
+        let mut bad = valid.clone();
+        bad[field] = json!("forged");
+        assert!(memory::validate_arguments("crew_message", &bad).is_err());
+    }
+    for (key, value) in [
+        ("body", json!("x".repeat(2001))),
+        ("body", json!(" ")),
+        ("nonce", json!("x".repeat(129))),
+        ("nonce", json!("bad value")),
+    ] {
+        let mut bad = valid.clone();
+        bad[key] = value;
+        assert!(memory::validate_arguments("crew_message", &bad).is_err());
+    }
+}
 fn ticket(path: &Path) -> Value {
     serde_json::from_slice(&patchfleet_core::store::read_private_file(path).unwrap()).unwrap()
 }
@@ -512,7 +543,7 @@ async fn stdio_inventory_is_static_first_valid_call_consumes_and_repeated_calls_
         .send(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))
         .await;
     let tools = runtime.next().await;
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 3);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 6);
     assert!(grant.path.exists());
     let mut probe = Mcp::spawn(&grant.path, dir.path());
     probe.initialize().await;
@@ -524,7 +555,7 @@ async fn stdio_inventory_is_static_first_valid_call_consumes_and_repeated_calls_
             .as_array()
             .unwrap()
             .len(),
-        3
+        6
     );
     probe.finish().await;
     assert!(grant.path.exists());

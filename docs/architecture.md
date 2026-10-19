@@ -163,6 +163,24 @@ and still reads schema1. Conversation, diagnostic and file bodies remain local.
 See [ADR0043](decisions/0043-local-project-conversation.md) and
 [conversation state](state/connected-project-conversation.md).
 
+Task0043 adds V10 Project crews alongside the existing V2 coding teams. An
+immutable reusable roster and a mission plan are committed together. Explicit
+start authorizes the bounded scheduler; each task attempt durably allocates its
+work identity, enqueue payload and input manifest before reusing the V1 managed
+job runner. No synthetic owner request is written for an internal task. Prepare,
+start, cancel and retry retain exact expiring owner receipts. Restart recovers
+acknowledged facts and treats interrupted provider work visibly.
+
+Crew tools use the existing authenticated MCP lease. The Host derives sender
+identity from the live run's allocation, serializes mutations through its
+operation lock and rechecks the scope after locking. Only same-Project mission
+members can exchange bounded messages; inbox reads record attribution. Message
+storage never claims a closed agent resumed. The snapshot includes crews and
+missions; bodies require a scoped paginated read. Selected inputs are frozen
+before preparation and upstream outputs are copied after completion, with
+immutable provenance/hashes, eight-file and 25 MiB bounds. New local fields remain
+outside explicit V1/V2 Cloud serializers. See [ADR0044](decisions/0044-project-crews-and-scoped-communication.md).
+
 The native studio uses shared semantic tokens, bounded ambient meshes and
 embedded Mox assets. The welcome, conversation and composer adapt to the
 available window; visual effects do not add a background service or idle

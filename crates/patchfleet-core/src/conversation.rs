@@ -41,7 +41,7 @@ pub(crate) struct FrozenInputs {
     pub manifest: Vec<u8>,
 }
 
-fn copied_name(index: usize, path: &Path) -> String {
+pub(crate) fn copied_name(index: usize, path: &Path) -> String {
     let extension = path
         .extension()
         .and_then(|v| v.to_str())
@@ -51,7 +51,7 @@ fn copied_name(index: usize, path: &Path) -> String {
     format!("reference-{:02}{extension}", index + 1)
 }
 
-fn copied_bytes(directory: &Path, path: &Path, remaining: u64) -> Result<Vec<u8>> {
+pub(crate) fn copied_bytes(directory: &Path, path: &Path, remaining: u64) -> Result<Vec<u8>> {
     let file = creation::open_result(directory, path)?;
     let before = file.metadata()?;
     if before.len() > remaining {

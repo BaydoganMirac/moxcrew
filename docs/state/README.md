@@ -53,3 +53,4 @@ version0.9 adds optional native account sign-in. version0.10 adds scoped Local a
 
 State files are resumable handoffs. Update the relevant file whenever a work
 session changes implementation status, blockers, decisions, or next steps.
+| Project crew orchestration | Implementing; validation and review underway | 2026-10-19 | [project-crew-orchestration.md](project-crew-orchestration.md) |

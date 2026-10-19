@@ -63,7 +63,10 @@ Local V8 Create/retry/export audit facts also negotiate no Cloud version or
 remote ability command. V9 chat-send/motion audit likewise adds no Cloud
 capability. `abilities`, `projectJobs`, `projectResults`, `projectResult`,
 `projectChat`, `providerConnections` and `desktopPreferences` are local-only
-fields. V1/V2 boundary tests inject these private fields and require
+fields. V10 Project crew events add no remote command or protocol version.
+`projectCrews`, `projectCrewPlan`, `projectCrewReceipt`, `projectCrewMessages`
+and `projectCrewError` are also local-only; names, goals, rosters, message bodies
+and input manifests never enter operational Cloud payloads. V1/V2 boundary tests inject these private fields and require
 byte-identical sanitized payloads. Selected inputs, raw goals and bundled skill
 content are never ordinary operational Cloud data.
 

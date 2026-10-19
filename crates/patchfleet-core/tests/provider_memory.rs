@@ -40,7 +40,7 @@ fn main(){
    if mode.contains("paged")&&!line.contains("page2"){send(&id,r#"{"data":[],"nextCursor":"page2"}"#);continue}
    let extra=if mode.contains("extra"){r#", "write_decision":{"name":"write_decision"}"#}else{""};
    let error=if mode.contains("tool-error"){r#""startup failed""#}else{"null"};
-   send(&id,&format!(r#"{{"data":[{{"name":"patchfleet_memory","runtimeStatus":"connected","toolsError":{error},"tools":{{"project_context":{{"name":"project_context"}},"memory_search":{{"name":"memory_search"}},"decision_read":{{"name":"decision_read"}}{extra}}}}}],"nextCursor":null}}"#));
+   send(&id,&format!(r#"{{"data":[{{"name":"patchfleet_memory","runtimeStatus":"connected","toolsError":{error},"tools":{{"project_context":{{"name":"project_context"}},"memory_search":{{"name":"memory_search"}},"decision_read":{{"name":"decision_read"}},"crew_context":{{"name":"crew_context"}},"crew_messages":{{"name":"crew_messages"}},"crew_message":{{"name":"crew_message"}}{extra}}}}}],"nextCursor":null}}"#));
   }else if line.contains("\"mcpServer/tool/call\""){
    assert!(inventories>0);assert!(line.contains("\"project_context\""));assert!(line.contains("\"limit\":20"));
    let error=mode.contains("call-error");let body=if mode.contains("call-malformed"){r#""invalid""#}else{r#"{"schemaVersion":1,"privateContext":"CONTEXT_BODY_CANARY"}"#};
@@ -111,7 +111,7 @@ fn work() -> (tempfile::TempDir, Value, Value) {
 }
 fn memory(ticket: &str) -> (MemoryConfig, Arc<AtomicBool>, Value) {
     let active = Arc::new(AtomicBool::new(true));
-    let config = json!({"mcp_servers":{"patchfleet_memory":{"command":"patchfleet","args":["--memory-mcp",ticket],"required":true,"enabled_tools":["project_context","memory_search","decision_read"],"startup_timeout_sec":5,"tool_timeout_sec":5}}});
+    let config = json!({"mcp_servers":{"patchfleet_memory":{"command":"patchfleet","args":["--memory-mcp",ticket],"required":true,"enabled_tools":["project_context","memory_search","decision_read","crew_context","crew_messages","crew_message"],"startup_timeout_sec":5,"tool_timeout_sec":5}}});
     (
         MemoryConfig {
             config: config.clone(),

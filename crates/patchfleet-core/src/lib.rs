@@ -9,6 +9,7 @@ mod desktop_preferences;
 pub mod domain;
 pub mod extraction;
 mod host;
+mod project_crews;
 pub mod project_memory;
 pub mod providers;
 pub mod retrieval;

@@ -22,6 +22,12 @@ fn receipt() -> Value {
 fn pure_allowlist_has_no_private_data() {
     for version in [1, 2] {
         let p = cloud::build_projection(&bundle(), version, 1, "install:test").unwrap();
+        let mut with_creation = bundle();
+        with_creation["abilities"] = json!([{"instruction":"PRIVATE_RECIPE_CANARY"}]);
+        with_creation["projectJobs"] = json!([{"projectId":"PRIVATE_PROJECT_CANARY","workItemId":"work:one"}]);
+        with_creation["projectResults"] = json!({"items":[{"path":"PRIVATE_RESULT_PATH_CANARY"}]});
+        with_creation["projectResult"] = json!({"text":"PRIVATE_RESULT_BODY_CANARY"});
+        assert_eq!(cloud::build_projection(&with_creation, version, 1, "install:test").unwrap(), p);
         let s = p.to_string();
         assert!(!s.contains("SECRET"));
         assert!(!s.contains("/secret"));

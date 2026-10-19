@@ -1544,6 +1544,25 @@ impl Controller {
                 .ok_or("WORKSPACE_NOT_ALLOWED")?,
         )
         .await?;
+        self.prepare_in_directory(work, run, memory, cwd).await
+    }
+    pub(crate) async fn prepare_managed_with_memory(
+        &self,
+        work: &Value,
+        run: &Value,
+        directory: &Path,
+        memory: Option<MemoryConfig>,
+    ) -> Result<String> {
+        let cwd = validate_managed_directory(work, directory)?;
+        self.prepare_in_directory(work, run, memory, cwd).await
+    }
+    async fn prepare_in_directory(
+        &self,
+        _work: &Value,
+        run: &Value,
+        memory: Option<MemoryConfig>,
+        cwd: String,
+    ) -> Result<String> {
         let intent = run
             .get("intentId")
             .or_else(|| run.get("runId"))
@@ -1630,6 +1649,24 @@ impl Controller {
                 .ok_or("WORKSPACE_NOT_ALLOWED")?,
         )
         .await?;
+        self.start_prepared_in_directory(work, run, session).await
+    }
+    pub(crate) async fn start_prepared_managed(
+        &self,
+        work: &Value,
+        run: &Value,
+        directory: &Path,
+        session: &str,
+    ) -> Result<(String, String)> {
+        validate_managed_directory(work, directory)?;
+        self.start_prepared_in_directory(work, run, session).await
+    }
+    async fn start_prepared_in_directory(
+        &self,
+        work: &Value,
+        run: &Value,
+        session: &str,
+    ) -> Result<(String, String)> {
         let instruction = work["instruction"]
             .as_str()
             .filter(|s| !s.is_empty() && s.encode_utf16().count() <= 50_000)
@@ -1774,6 +1811,29 @@ impl Controller {
         let mut guard = self.server.lock().await;
         self.discard(&mut guard).await;
     }
+}
+fn validate_managed_directory(work: &Value, expected: &Path) -> Result<String> {
+    let directory = work["workingDirectory"]
+        .as_str()
+        .ok_or("WORKSPACE_NOT_ALLOWED")?;
+    if !expected.is_absolute() || Path::new(directory) != expected {
+        return Err("WORKSPACE_NOT_ALLOWED".into());
+    }
+    let metadata = std::fs::symlink_metadata(expected).map_err(|_| "WORKSPACE_NOT_ALLOWED")?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("WORKSPACE_NOT_ALLOWED".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("WORKSPACE_NOT_ALLOWED".into());
+        }
+    }
+    if std::fs::canonicalize(expected).map_err(|_| "WORKSPACE_NOT_ALLOWED")? != expected {
+        return Err("WORKSPACE_NOT_ALLOWED".into());
+    }
+    Ok(directory.to_owned())
 }
 pub async fn validate_workspace(value: &str) -> Result<String> {
     validate_workspace_for_registration(value)
@@ -2059,4 +2119,125 @@ pub fn write_gemini_inbox(data_dir: &Path, signal: &Value) -> Result<()> {
         &serde_json::to_vec(signal).map_err(|_| "GEMINI_HOOK_INVALID")?,
     )
     .map_err(|_| "GEMINI_INBOX_FAILED".into())
+}
+
+#[cfg(test)]
+pub(crate) mod managed_tests {
+    use super::*;
+
+    pub(crate) fn peer(mode: &str) -> (tempfile::TempDir, Programs) {
+        static BUILT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        let built = BUILT.get_or_init(|| {
+            let directory = tempfile::tempdir().unwrap().keep();
+            let executable = directory.join(if cfg!(windows) { "peer.exe" } else { "peer" });
+            let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| {
+                PathBuf::from(env!("CARGO"))
+                    .with_file_name(if cfg!(windows) { "rustc.exe" } else { "rustc" })
+                    .into_os_string()
+            });
+            assert!(std::process::Command::new(rustc)
+                .args([
+                    "--edition=2021",
+                    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/provider_fake.rs"),
+                    "-o"
+                ])
+                .arg(&executable)
+                .status()
+                .unwrap()
+                .success());
+            executable
+        });
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory
+            .path()
+            .join(format!("{mode}{}", if cfg!(windows) { ".exe" } else { "" }));
+        std::fs::copy(built, &executable).unwrap();
+        (
+            directory,
+            Programs {
+                codex: executable,
+                claude: "unused".into(),
+                gemini: "unused".into(),
+                timeout: Duration::from_secs(2),
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn managed_prepare_start_completion_and_cancel_keep_git_validation_separate() {
+        for mode in ["codex-complete", "codex-cancel"] {
+            let (_peer, programs) = peer(mode);
+            let controller = Controller::with_programs(programs);
+            let directory = tempfile::tempdir().unwrap();
+            let root = std::fs::canonicalize(directory.path()).unwrap();
+            let work =
+                json!({"workingDirectory":root,"instruction":"Write a useful brief in outputs/."});
+            let run = json!({"intentId":"cmd:managed-test","runId":"run:managed-test"});
+            assert_eq!(
+                controller.prepare(&work, &run).await.unwrap_err(),
+                "WORKSPACE_NOT_ALLOWED"
+            );
+            let session = controller
+                .prepare_managed_with_memory(&work, &run, &root, None)
+                .await
+                .unwrap();
+            let mut foreign = work.clone();
+            foreign["workingDirectory"] = json!(root.parent().unwrap());
+            assert_eq!(
+                controller
+                    .start_prepared_managed(&foreign, &run, &root, &session)
+                    .await
+                    .unwrap_err(),
+                "WORKSPACE_NOT_ALLOWED"
+            );
+            let (session, turn) = controller
+                .start_prepared_managed(&work, &run, &root, &session)
+                .await
+                .unwrap();
+            if mode == "codex-cancel" {
+                controller
+                    .cancel(&json!({"providerSessionId":session,"providerTurnId":turn}))
+                    .await
+                    .unwrap();
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let signals = controller.drain_signals().await;
+            assert_eq!(
+                signals.last().unwrap()["status"],
+                if mode == "codex-complete" {
+                    "completed"
+                } else {
+                    "interrupted"
+                }
+            );
+            controller.shutdown().await;
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_start_rechecks_a_replaced_directory() {
+        let (_peer, programs) = peer("codex-cancel");
+        let controller = Controller::with_programs(programs);
+        let directory = tempfile::tempdir().unwrap();
+        let parent = std::fs::canonicalize(directory.path()).unwrap();
+        let root = parent.join("job");
+        std::fs::create_dir(&root).unwrap();
+        let work = json!({"workingDirectory":root,"instruction":"Create an artifact."});
+        let run = json!({"intentId":"cmd:managed-replace"});
+        let session = controller
+            .prepare_managed_with_memory(&work, &run, &root, None)
+            .await
+            .unwrap();
+        std::fs::rename(&root, parent.join("original")).unwrap();
+        std::os::unix::fs::symlink(parent.join("original"), &root).unwrap();
+        assert_eq!(
+            controller
+                .start_prepared_managed(&work, &run, &root, &session)
+                .await
+                .unwrap_err(),
+            "WORKSPACE_NOT_ALLOWED"
+        );
+        controller.shutdown().await;
+    }
 }

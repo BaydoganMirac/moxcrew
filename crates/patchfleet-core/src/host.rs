@@ -88,6 +88,16 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
         "workspace_register" => &["workingDirectory", "displayName"],
         "workspace_remove" => &["workspaceId", "expectedWorkspaceRevision"],
         "project_create" => &["name"],
+        "project_work_enqueue" => &[
+            "projectId",
+            "expectedProjectRevision",
+            "abilityId",
+            "title",
+            "instruction",
+        ],
+        "project_results_read" => &["projectId", "workItemId"],
+        "project_result_read" => &["projectId", "workItemId", "path"],
+        "project_result_export" => &["projectId", "workItemId", "path", "targetPath"],
         "project_link_workspace" | "project_unlink_workspace" => {
             &["projectId", "workspaceId", "expectedProjectRevision"]
         }
@@ -184,6 +194,9 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
 }
 
 impl Host {
+    pub(crate) fn creation_data_dir(&self) -> &std::path::Path {
+        &self.data_dir
+    }
     pub fn action_payload_limit(action: &str) -> usize {
         if matches!(
             action,
@@ -197,7 +210,7 @@ impl Host {
     pub fn open(data_dir: PathBuf) -> Result<Arc<Self>> {
         Self::open_with_controller(data_dir, providers::Controller::new())
     }
-    fn open_with_controller(
+    pub(crate) fn open_with_controller(
         data_dir: PathBuf,
         controller: providers::Controller,
     ) -> Result<Arc<Self>> {
@@ -290,6 +303,8 @@ impl Host {
 
     pub fn snapshot(&self) -> Result<Value> {
         let mut bundle = self.store.runtime_projections()?;
+        bundle["abilities"] = crate::abilities::catalog();
+        bundle["projectJobs"] = self.store.creation_jobs(&self.data_dir)?;
         self.extraction_overlay(&mut bundle);
         if let Some(contexts) = bundle["agentMemory"]["contexts"].as_array_mut() {
             let progress = self
@@ -463,15 +478,27 @@ impl Host {
                 .store
                 .transaction(|events| decisions::apply(events, action, &payload));
         }
-        if action.starts_with("project_") {
+        if matches!(action, "project_results_read" | "project_result_read") {
+            return self.creation_action(action, &payload).await;
+        }
+        let creation_mutation = matches!(action, "project_work_enqueue" | "project_result_export");
+        if action.starts_with("project_") && !creation_mutation {
             return self
                 .store
                 .transaction(|events| project_memory::apply(events, action, &payload));
         }
         let audit = action.starts_with("team_")
             || action.starts_with("pack_")
-            || action == "desktop_language";
-        let audit_version = if action == "desktop_language" { 3 } else { 2 };
+            || action == "desktop_language"
+            || creation_mutation
+            || action == "work_retry";
+        let audit_version = if creation_mutation || action == "work_retry" {
+            8
+        } else if action == "desktop_language" {
+            3
+        } else {
+            2
+        };
         let mut command = Value::Null;
         if audit {
             let base = intent("owner_action", Value::Null, &payload);
@@ -517,6 +544,15 @@ impl Host {
         if audit {
             let recorded = match &result {
                 Ok(v) => v.clone(),
+                Err(error)
+                    if audit_version == 8
+                        && error
+                            .0
+                            .bytes()
+                            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_') =>
+                {
+                    json!({"outcome":"rejected","reasonCode":error.0})
+                }
                 Err(_) => json!({"outcome":"rejected","reasonCode":"INVALID_ACTION"}),
             };
             self.store.append(vec![owner_event(
@@ -544,6 +580,7 @@ impl Host {
             }
         }
         match action {
+            "project_work_enqueue"|"project_result_export"=>self.creation_action(action,p).await,
             "desktop_language" => {
                 let value = crate::desktop_preferences::save(&self.data_dir, text(p,"language")?)?;
                 *self.desktop_preferences.lock().map_err(|_| Error("HOST_STATE_UNAVAILABLE".into()))? = value.clone();
@@ -567,6 +604,7 @@ impl Host {
             "work_start"|"work_remove"=>self.apply_work_intent(intent(if action=="work_start" {"start_work"} else {"remove_queued_work"},json!({"workItemId":p["workItemId"],"expectedItemRevision":p["expectedItemRevision"]}),p)).await,
             "work_cancel"=>self.apply_work_intent(intent("cancel_run",json!({"runId":p["runId"],"expectedRunRevision":p["expectedRunRevision"]}),p)).await,
             "work_retry"=>{
+                if let Some(receipt)=self.creation_retry(p)? {return Ok(receipt);}
                 let item=find(&self.store.runtime_projections()?["work"],"workItemId",&p["workItemId"]).ok_or_else(||Error("WORK_ITEM_NOT_FOUND".into()))?;
                 if !matches!(item["status"].as_str(),Some("failed"|"interrupted"|"blocked")) || item["revision"]!=p["expectedItemRevision"] {return Err(Error("WORK_RETRY_UNAVAILABLE".into()));}
                 let mut new=item.clone();let base=intent("enqueue_work",Value::Null,p);

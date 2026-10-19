@@ -44,7 +44,14 @@ fn main() {
         } else if mode.contains("malformed") {
             println!("SECRET_TOKEN should never leak");
         } else {
-            println!("codex-cli 0.144.1");
+            println!(
+                "codex-cli {}",
+                if mode.contains("managed") {
+                    "0.155.1"
+                } else {
+                    "0.144.1"
+                }
+            );
         }
         return;
     }
@@ -61,6 +68,7 @@ fn main() {
         }
         return;
     }
+    let mut managed_directory = None;
     for line in io::stdin().lock().lines() {
         let line = line.unwrap();
         if !line.contains("\"id\":") {
@@ -87,11 +95,33 @@ fn main() {
             assert!(line.contains("\"approvalPolicy\":\"never\""));
             let cwd = token(&line, "cwd");
             let source = token(&line, "threadSource");
+            if mode.contains("managed") {
+                managed_directory = Some(std::path::PathBuf::from(
+                    cwd.trim_matches('"').replace("\\\\", "\\"),
+                ));
+            }
             send(&id,&format!("{{\"thread\":{{\"id\":\"owned-thread\",\"cwd\":{cwd},\"threadSource\":{source},\"ephemeral\":false}}}}"));
+        } else if line.contains("\"mcpServerStatus/list\"") && mode.contains("managed") {
+            send(
+                &id,
+                r#"{"data":[{"name":"patchfleet_memory","runtimeStatus":"connected","toolsError":null,"tools":{"project_context":{"name":"project_context"},"memory_search":{"name":"memory_search"},"decision_read":{"name":"decision_read"}}}],"nextCursor":null}"#,
+            );
+        } else if line.contains("\"mcpServer/tool/call\"") && mode.contains("managed") {
+            send(
+                &id,
+                r#"{"isError":false,"structuredContent":{"schemaVersion":1},"content":[]}"#,
+            );
         } else if line.contains("\"turn/start\"") {
             if mode.contains("start-hang") {
                 thread::sleep(Duration::from_secs(10));
                 continue;
+            }
+            if let Some(directory) = &managed_directory {
+                std::fs::write(
+                    directory.join("outputs/summary.md"),
+                    "# Native fixture artifact\nA real file from the controlled provider peer.\n",
+                )
+                .unwrap();
             }
             send(
                 &id,

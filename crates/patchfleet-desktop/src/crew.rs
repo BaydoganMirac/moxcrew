@@ -517,7 +517,7 @@ impl Console {
                             payload["planJobId"]=model.job["planJobId"].clone();
                             payload["expectedPlanRevision"]=model.job["revision"].clone();
                             payload["providerAssignments"]=json!(plan.members.iter().enumerate().map(|(index,member)|json!({"memberIndex":index,"providerId":model.assignments.get(text(member,"_uiId")).map(String::as_str).unwrap_or(text(&model.job,"providerId"))})).collect::<Vec<_>>());
-                            for key in ["abilityId","crewName","crewId","title","instruction","settings"] {payload.as_object_mut().unwrap().remove(key);}
+                            for key in ["abilityId","crewId","title","instruction"] {payload.as_object_mut().unwrap().remove(key);}
                         }
                         payload
                     });
@@ -1608,6 +1608,7 @@ impl Console {
                                         });
                                     });
                                 }
+                                self.workflow_page_controls(ui,snapshot,commands,"plans");
                             });
 
                         },
@@ -1897,15 +1898,20 @@ impl Console {
         ui.collapsing(t(ui, "Mission limits"), |ui| {
             budgets_ui(ui, &mut state.schedule_budgets)
         });
-        let valid_date = chrono::DateTime::parse_from_rfc3339(&state.first_run).is_ok();
+        let first_run = chrono::DateTime::parse_from_rfc3339(&state.first_run)
+            .ok()
+            .map(|time| {
+                time.with_timezone(&chrono::Utc)
+                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            });
         if let Some(recipe) = recipe {
             action(
                 ui,
                 commands,
                 "Create enabled schedule",
                 "project_schedule_save",
-                valid_date,
-                || json!({"projectId":project,"expectedProjectRevision":output_studio::project_revision(snapshot,&project),"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"],"intervalMinutes":state.schedule_interval,"firstRunAt":state.first_run,"maxOccurrences":state.schedule_count,"budgets":state.schedule_budgets}),
+                first_run.is_some(),
+                || json!({"projectId":project,"expectedProjectRevision":output_studio::project_revision(snapshot,&project),"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"],"intervalMinutes":state.schedule_interval,"firstRunAt":first_run,"maxOccurrences":state.schedule_count,"budgets":state.schedule_budgets}),
             );
         }
         for schedule in workflow_values(snapshot, &project, "schedules") {
@@ -2160,6 +2166,9 @@ mod tests {
             .get_mut(&key)
             .unwrap()
             .read_revision = Some(3);
+        let edited = console.create.crew.plans.get_mut(&key).unwrap();
+        edited.name = "Owner edited crew name".into();
+        edited.settings = json!({"concurrency":1,"retryLimit":2,"timeoutMinutes":45});
         let accepted = click(
             &ctx,
             &mut console,
@@ -2171,6 +2180,11 @@ mod tests {
         assert_eq!(accepted.len(), 1);
         assert_eq!(accepted[0].action, "project_crew_plan_accept");
         assert_eq!(accepted[0].payload["expectedPlanRevision"], 3);
+        assert_eq!(accepted[0].payload["crewName"], "Owner edited crew name");
+        assert_eq!(
+            accepted[0].payload["settings"],
+            json!({"concurrency":1,"retryLimit":2,"timeoutMinutes":45})
+        );
         assert_eq!(
             accepted[0].payload["providerAssignments"][1],
             json!({"memberIndex":1,"providerId":"gemini"})
@@ -2185,6 +2199,85 @@ mod tests {
         console.create.sync(&data);
         assert_eq!(console.create.draft().goal, "Later unsent owner draft");
         assert!(console.create.chat.replies.contains_key(&key));
+    }
+
+    #[test]
+    fn saved_plan_paging_uses_explicit_keyboard_action_and_exact_project_section_offset() {
+        fn frame(
+            ctx: &egui::Context,
+            console: &Console,
+            data: &Value,
+            events: Vec<egui::Event>,
+        ) -> Vec<Command> {
+            let mut commands = Vec::new();
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 560.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| console.workflow_page_controls(ui, data, &mut commands, "plans"),
+            )
+            .drop_without_applying_deltas();
+            commands
+        }
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let console = console();
+        let mut data = fixture();
+        data["projectWorkflowRead"] = json!({"reasonCode":"PROJECT_WORKFLOWS_READ","projectId":"project:one","plans":(0..20).map(|index|json!({"projectId":"project:one","planJobId":format!("plan:{index}")})).collect::<Vec<_>>()});
+        assert!(frame(&ctx, &console, &data, vec![]).is_empty());
+        let next = ctx.data(|data| {
+            data.get_temp::<egui::Id>(egui::Id::new(("test-action-id", "memory_control", "Next")))
+                .unwrap()
+        });
+        ctx.memory_mut(|memory| memory.request_focus(next));
+        let commands = frame(
+            &ctx,
+            &console,
+            &data,
+            vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_workflows_read");
+        assert_eq!(commands[0].payload["projectId"], "project:one");
+        assert_eq!(commands[0].payload["section"], "plans");
+        assert_eq!(commands[0].payload["offset"], 20);
+        data["projectWorkflowRead"] = json!({"reasonCode":"PROJECT_WORKFLOWS_READ","projectId":"project:one","section":"plans","offset":20,"total":21,"nextOffset":null,"items":[{"projectId":"project:one","planJobId":"plan:20"}]});
+        assert_eq!(workflow_values(&data, "project:one", "plans").len(), 1);
+        assert!(frame(&ctx, &console, &data, vec![]).is_empty());
+        let previous = ctx.data(|data| {
+            data.get_temp::<egui::Id>(egui::Id::new((
+                "test-action-id",
+                "memory_control",
+                "Previous",
+            )))
+            .unwrap()
+        });
+        ctx.memory_mut(|memory| memory.request_focus(previous));
+        let commands = frame(
+            &ctx,
+            &console,
+            &data,
+            vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].payload["offset"], 0);
     }
 
     #[test]
@@ -2380,6 +2473,24 @@ mod tests {
         );
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].payload["expectedRecipeRevision"], 3);
+        assert_eq!(
+            commands[0].payload["firstRunAt"],
+            "2100-01-01T10:00:00.000Z"
+        );
+        console.create.crew.workflow.first_run = "2100-01-01T10:00:00.123456+03:00".into();
+        let offset_commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_schedule_save",
+            "Create enabled schedule",
+        );
+        assert_eq!(offset_commands.len(), 1);
+        assert_eq!(
+            offset_commands[0].payload["firstRunAt"],
+            "2100-01-01T07:00:00.123Z"
+        );
         assert!(commands
             .iter()
             .all(|command| command.action != "project_crew_start"));

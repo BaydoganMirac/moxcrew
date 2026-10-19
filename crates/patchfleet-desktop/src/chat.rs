@@ -183,13 +183,6 @@ impl Console {
     ) {
         self.sync_conversation_project(snapshot, commands);
         let projects = array(&snapshot["projectMemory"]["projects"]);
-        if self.create.project.is_empty()
-            && projects.len() == 1
-            && !self.create.conversation_creating()
-            && self.create.draft().goal.is_empty()
-        {
-            self.create.project = text(&projects[0], "projectId").into();
-        }
         let compact = ui.ctx().viewport_rect().height() < 700.0;
         let previous = self.create.project.clone();
         ui.horizontal(|ui| {
@@ -203,16 +196,25 @@ impl Console {
                 ui.scope(|ui| {
                     ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::NONE;
                     ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-                    egui::ComboBox::from_id_salt("create-project-picker")
+                    let picker = egui::ComboBox::from_id_salt("create-project-picker")
                         .selected_text(name)
                         .truncate()
                         .width((ui.available_width() - 340.0).clamp(110.0, 240.0))
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(
+                            let new = ui.selectable_value(
                                 &mut self.create.project,
                                 String::new(),
                                 t(ui, "New conversation"),
                             );
+                            #[cfg(test)]
+                            ui.data_mut(|data| {
+                                data.insert_temp(
+                                    egui::Id::new("conversation-project-new"),
+                                    new.rect,
+                                )
+                            });
+                            #[cfg(not(test))]
+                            let _ = new;
                             for project in projects {
                                 ui.selectable_value(
                                     &mut self.create.project,
@@ -221,6 +223,19 @@ impl Console {
                                 );
                             }
                         });
+                    #[cfg(test)]
+                    ui.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::new((
+                                "test-action",
+                                "memory_control",
+                                "Conversation project",
+                            )),
+                            picker.response.rect,
+                        )
+                    });
+                    #[cfg(not(test))]
+                    let _ = picker;
                 });
                 ui.add_space(studio::metrics::GAP);
                 ui.scope(|ui| {

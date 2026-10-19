@@ -58,7 +58,6 @@ struct Turn {
 
 struct Session {
     original: CreateDraft,
-    reply: Option<ReplyDraft>,
     input: String,
     answers: Vec<Value>,
     turns: Vec<Turn>,
@@ -189,7 +188,6 @@ impl Console {
             key,
             Session {
                 original,
-                reply,
                 input,
                 answers,
                 turns,
@@ -211,7 +209,6 @@ impl Console {
                         body: draft.goal.clone(),
                     }],
                     original: draft,
-                    reply: None,
                     input: String::new(),
                     answers: Vec::new(),
                 },
@@ -219,6 +216,8 @@ impl Console {
         } else {
             self.create_smoke(snapshot, false);
             if scene == "conversation-empty" {
+                self.create.project.clear();
+                self.create.ability.clear();
                 self.create.draft().goal.clear();
             }
         }
@@ -268,10 +267,12 @@ impl Console {
             return;
         }
         self.create.project = project.to_owned();
+        self.create.drafts.remove(&pending.key);
         self.create
             .drafts
             .insert(next.clone(), pending.draft.clone());
         if let Some(reply) = pending.reply {
+            self.create.chat.replies.remove(&pending.key);
             self.create.chat.replies.insert(next, reply);
         }
         if !connect::can_attempt_provider(snapshot, &pending.provider) {
@@ -333,7 +334,8 @@ impl Console {
             })
             .unwrap_or_default();
         let existing = self.create.chat.conversation.sessions.get(&key);
-        let (draft, reply, answers) = if let Some(session) = existing {
+        let reply = self.create.chat.replies.get(&key).cloned();
+        let (draft, answers) = if let Some(session) = existing {
             if !valid_input(&input, 2000) {
                 return;
             }
@@ -343,13 +345,9 @@ impl Console {
                 );
                 return;
             };
-            (session.original.clone(), session.reply.clone(), answers)
+            (session.original.clone(), answers)
         } else {
-            (
-                self.create.draft().clone(),
-                self.create.chat.replies.get(&key).cloned(),
-                Vec::new(),
-            )
+            (self.create.draft().clone(), Vec::new())
         };
         if self.create.draft().goal.is_empty() {
             *self.create.draft() = draft.clone();
@@ -358,7 +356,7 @@ impl Console {
             snapshot,
             commands,
             draft.clone(),
-            reply.clone(),
+            reply,
             provider,
             answers.clone(),
         );
@@ -376,7 +374,6 @@ impl Console {
             .entry(key)
             .or_insert_with(|| Session {
                 original: draft,
-                reply,
                 input: String::new(),
                 answers: Vec::new(),
                 turns: Vec::new(),
@@ -469,6 +466,137 @@ mod tests {
     fn acknowledge(data: &mut Value, command: &Command, id: &str, status: &str) {
         data["projectWorkflowReceipt"] = json!({"commandId":command.payload["commandId"],"projectId":command.payload["projectId"],"planJobId":id,"revision":1,"outcome":"applied"});
         data["projectCrewPlanJob"] = json!({"reasonCode":"PROJECT_CREW_PLAN_READ","projectId":command.payload["projectId"],"planJobId":id,"revision":2,"providerId":command.payload["providerId"],"status":status,"questions":[{"id":"audience","question":"Who is this for?"}]});
+    }
+
+    fn choose_new_conversation(ctx: &egui::Context, console: &mut Console, data: &Value) {
+        let size = egui::vec2(1280.0, 880.0);
+        assert!(click_at_size(
+            ctx,
+            console,
+            data,
+            size,
+            false,
+            "memory_control",
+            "Conversation project"
+        )
+        .is_empty());
+        for _ in 0..2 {
+            assert!(render(ctx, console, data, size, false, vec![]).0.is_empty());
+        }
+        let rect = ctx.data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new("conversation-project-new"))
+                .unwrap()
+        });
+        for pressed in [true, false] {
+            assert!(render(
+                ctx,
+                console,
+                data,
+                size,
+                false,
+                vec![
+                    egui::Event::PointerMoved(rect.center()),
+                    egui::Event::PointerButton {
+                        pos: rect.center(),
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::default()
+                    }
+                ]
+            )
+            .0
+            .is_empty());
+        }
+    }
+
+    #[test]
+    fn new_conversation_stays_selected_with_one_project_and_never_resurrects_a_sent_draft() {
+        for language in ["en", "tr"] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut data = fixture();
+            data["desktopPreferences"] = json!({"language":language});
+            data["projectMemory"]["projects"]
+                .as_array_mut()
+                .unwrap()
+                .truncate(1);
+            let mut console = console();
+            choose_new_conversation(&ctx, &mut console, &data);
+            for _ in 0..3 {
+                assert!(render(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    egui::vec2(1280.0, 880.0),
+                    false,
+                    vec![]
+                )
+                .0
+                .is_empty());
+            }
+            assert!(console.create.project.is_empty());
+            assert!(console.create.draft().goal.is_empty());
+            assert_eq!(
+                console.create.drafts[&("project:one".into(), String::new())].goal,
+                "Prepare a useful launch deck"
+            );
+            console.create.draft().goal = "A completely new conversation".into();
+            let commands = click_at_size(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(1280.0, 880.0),
+                false,
+                "conversation-send",
+                "Send",
+            );
+            assert_eq!(commands.len(), 1);
+            assert_eq!(commands[0].action, "project_create");
+            let create = commands[0].clone();
+            data["projectCreateReceipt"] = json!({"commandId":create.payload["commandId"],"projectId":"project:new","outcome":"applied"});
+            data["projectMemory"]["projects"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"projectId":"project:new","name":"New","revision":1}));
+            let (commands, _) = render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(1280.0, 880.0),
+                false,
+                vec![],
+            );
+            assert_eq!(commands.len(), 1);
+            assert_eq!(commands[0].action, "project_crew_plan_start");
+            assert!(!console
+                .create
+                .drafts
+                .contains_key(&(String::new(), String::new())));
+            assert_eq!(console.create.project, "project:new");
+            choose_new_conversation(&ctx, &mut console, &data);
+            for _ in 0..3 {
+                assert!(render(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    egui::vec2(1280.0, 880.0),
+                    false,
+                    vec![]
+                )
+                .0
+                .is_empty());
+            }
+            assert!(console.create.project.is_empty());
+            assert!(console.create.conversation_input().is_empty());
+            assert_eq!(
+                console.create.drafts[&("project:one".into(), String::new())].goal,
+                "Prepare a useful launch deck"
+            );
+            assert_eq!(
+                console.create.drafts[&("project:new".into(), String::new())].goal,
+                "A completely new conversation"
+            );
+        }
     }
 
     #[test]

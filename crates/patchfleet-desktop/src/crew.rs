@@ -1719,16 +1719,7 @@ impl Console {
         } else {
             self.create.draft().clone()
         };
-        let reply = if answers.is_some() {
-            self.create
-                .crew
-                .workflow
-                .models
-                .get(&key)
-                .and_then(|model| model.reply.clone())
-        } else {
-            self.create.chat.replies.get(&key).cloned()
-        };
+        let reply = self.create.chat.replies.get(&key).cloned();
         let provider = self.create.crew.workflow.provider.clone();
         self.begin_conversation_plan(
             snapshot,
@@ -2892,6 +2883,169 @@ mod tests {
             create: state,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn conversation_clear_and_file_replacement_affect_only_future_sends() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectCrews"]["missions"] = json!([]);
+        data["work"]["items"][0]["status"] = json!("completed");
+        data["work"]["items"].as_array_mut().unwrap().push(
+            json!({"workItemId":"work:two","title":"New source","revision":3,"status":"completed"}),
+        );
+        data["projectJobs"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"projectId":"project:one","workItemId":"work:two"}));
+        let mut console = console();
+        let key = console.create.crew_key();
+        let old = ReplyDraft {
+            parent: "work:one".into(),
+            references: HashSet::from(["outputs/old.md".into()]),
+        };
+        console.create.chat.replies.insert(key.clone(), old.clone());
+        let mut commands = Vec::new();
+        console.send_conversation(&data, &mut commands);
+        let first = commands.remove(0);
+        assert!(
+            console
+                .create
+                .crew
+                .workflow
+                .request
+                .as_ref()
+                .unwrap()
+                .reply
+                .as_ref()
+                == Some(&old)
+        );
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Clear follow-up"
+        )
+        .is_empty());
+        assert!(!console.create.chat.replies.contains_key(&key));
+        assert!(
+            console
+                .create
+                .crew
+                .workflow
+                .request
+                .as_ref()
+                .unwrap()
+                .reply
+                .as_ref()
+                == Some(&old),
+            "in-flight request remains frozen"
+        );
+        console
+            .create
+            .selected_work
+            .insert("project:one".into(), "work:two".into());
+        console.create.chat.files_open = true;
+        data["projectResults"] = json!({"reasonCode":"PROJECT_RESULTS_READ","projectId":"project:one","workItemId":"work:two","items":[{"path":"outputs/new.md","name":"new.md","bytes":42,"textPreview":true}]});
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "reference",
+            "outputs/new.md"
+        )
+        .is_empty());
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Close files"
+        )
+        .is_empty());
+        let replacement = console.create.chat.replies[&key].clone();
+        assert_eq!(replacement.parent, "work:two");
+        assert!(replacement.references.contains("outputs/new.md"));
+        assert!(
+            console
+                .create
+                .crew
+                .workflow
+                .request
+                .as_ref()
+                .unwrap()
+                .reply
+                .as_ref()
+                == Some(&old)
+        );
+        data["projectWorkflowReceipt"] = json!({"commandId":first.payload["commandId"],"projectId":"project:one","planJobId":"plan:old","revision":1,"outcome":"applied"});
+        data["projectCrewPlanJob"] = json!({"reasonCode":"PROJECT_CREW_PLAN_READ","projectId":"project:one","planJobId":"plan:old","revision":2,"status":"needs_input","questions":[]});
+        console.create.sync(&data);
+        assert!(console.create.crew.workflow.models[&key].reply.as_ref() == Some(&old));
+        *console.create.conversation_input() = "Use my newly selected source".into();
+        console.send_conversation(&data, &mut commands);
+        let second = commands.remove(0);
+        assert_eq!(second.payload["instruction"], first.payload["instruction"]);
+        assert_eq!(second.payload["replyToWorkItemId"], "work:two");
+        assert_eq!(second.payload["referencePaths"], json!(["outputs/new.md"]));
+        assert!(
+            console
+                .create
+                .crew
+                .workflow
+                .request
+                .as_ref()
+                .unwrap()
+                .reply
+                .as_ref()
+                == Some(&replacement)
+        );
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "memory_control",
+            "Clear follow-up"
+        )
+        .is_empty());
+        assert!(
+            console
+                .create
+                .crew
+                .workflow
+                .request
+                .as_ref()
+                .unwrap()
+                .reply
+                .as_ref()
+                == Some(&replacement)
+        );
+        data["projectWorkflowReceipt"] = json!({"commandId":second.payload["commandId"],"projectId":"project:one","planJobId":"plan:new","revision":1,"outcome":"applied"});
+        data["projectCrewPlanJob"] = json!({"reasonCode":"PROJECT_CREW_PLAN_READ","projectId":"project:one","planJobId":"plan:new","revision":2,"status":"needs_input","questions":[]});
+        console.create.sync(&data);
+        *console.create.conversation_input() = "Continue without attached files".into();
+        console.send_conversation(&data, &mut commands);
+        let third = commands.remove(0);
+        assert!(third.payload.get("replyToWorkItemId").is_none());
+        assert!(third.payload.get("referencePaths").is_none());
+        assert!(console
+            .create
+            .crew
+            .workflow
+            .request
+            .as_ref()
+            .unwrap()
+            .reply
+            .is_none());
+        assert_eq!(first.payload["referencePaths"], json!(["outputs/old.md"]));
+        assert_eq!(second.payload["referencePaths"], json!(["outputs/new.md"]));
+        assert_eq!(third.action, "project_crew_plan_start");
     }
 
     #[test]

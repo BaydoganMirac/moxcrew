@@ -80,6 +80,9 @@ fn inline_surface(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
         ui.add_space(((ui.available_width() - width) * 0.5).max(0.0));
         ui.vertical(|ui| {
             ui.set_width(width);
+            if ui.ctx().viewport_rect().height() < 700.0 {
+                ui.spacing_mut().item_spacing.y = 4.0;
+            }
             content(ui);
         });
     });

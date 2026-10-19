@@ -92,6 +92,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Save current crew as recipe" => "Bu ekibi tarif olarak kaydet",
         "Crew plan" => "Ekip planı",
         "Prepare now. Start the crew when you’re ready." => "Hazırla. Hazır olduğunda Takımı başlat’ı seç.",
+        "Affected tasks · {0} selected" => "Etkilenen görevler · {0} seçildi",
         "Planning request" => "Planlama isteği",
         "Agent providers" => "Ajan sağlayıcıları",
         "Choose an output" => "Çıktı seç",

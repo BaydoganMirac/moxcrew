@@ -7,6 +7,8 @@ mod i18n;
 mod motion;
 mod studio;
 mod ui;
+#[cfg(feature = "ui-smoke")]
+mod ui_kit;
 
 use bridge::Bridge;
 use eframe::egui;
@@ -538,6 +540,11 @@ impl eframe::App for Patchfleet {
             .map(i18n::Language::from_snapshot)
             .unwrap_or(i18n::Language::Tr);
         let ctx = ui.ctx().clone();
+        #[cfg(feature = "ui-smoke")]
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("ui-kit") {
+            ui_kit::show(ui);
+            return;
+        }
         let preference_error = self
             .bridge
             .snapshot

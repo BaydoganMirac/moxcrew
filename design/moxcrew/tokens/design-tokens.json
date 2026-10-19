@@ -2,7 +2,7 @@
   "brand": "Moxcrew",
   "mascot": "Mox",
   "domain": "moxcrew.com",
-  "version": "1.1",
+  "version": "1.2",
   "approvedMascotConcept": 4,
   "naming": {
     "structure": "Mox + crew",
@@ -113,7 +113,10 @@
   "control": {
     "defaultHeight": 44,
     "compactHeight": 36,
-    "touchTarget": 44
+    "touchTarget": 44,
+    "horizontalPadding": 16,
+    "inputHorizontalPadding": 12,
+    "inputVerticalPadding": 10
   },
   "motion": {
     "fastMs": 160,
@@ -127,5 +130,13 @@
     "minimumSymbolPx": 24,
     "minimumLockupPx": 128,
     "minimumAppIconPx": 32
+  },
+  "layout": {
+    "controlGap": 8,
+    "groupGap": 12,
+    "sectionGap": 24,
+    "cardPadding": 16,
+    "pagePadding": 24,
+    "narrowPagePadding": 16
   }
 }

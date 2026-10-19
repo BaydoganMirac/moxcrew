@@ -21,6 +21,8 @@ Normal text pairs in tokens/contrast-checks.json meet 4.5:1 in both themes.
 Control/focus boundaries meet 3:1; card borders remain decorative.
 The portable CSS export includes the local WOFF2 and its OFL license in fonts/.
 Primary controls 44px; compact native secondary controls 36px. Radii8/12/16/24.
+UI-KIT.md defines the production component system: shared action variants,
+inputs, cards, control heights, padding, spacing and keyboard feedback.
 Follow the OS light/dark preference; light is the deterministic fallback.
 No idle animation. Keep real status labels and evidence/receipt behavior.
 

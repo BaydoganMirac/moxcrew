@@ -965,8 +965,9 @@ impl Console {
         let mut commands = Vec::new();
         let reveal_navigation = self.navigation_tab != Some(self.tab);
         self.navigation_tab = Some(self.tab);
-        let compact_navigation = ui.ctx().viewport_rect().width() < 1000.0
-            && matches!(self.tab, Tab::Create | Tab::Teams);
+        let compact_navigation = matches!(self.tab, Tab::Create | Tab::Teams)
+            && (ui.ctx().viewport_rect().width() < 1000.0
+                || (self.tab == Tab::Create && self.create.productive_view() != 0));
         egui::Panel::left("console-navigation")
             .resizable(false)
             .exact_size(if compact_navigation { 72.0 } else { 192.0 })
@@ -1116,9 +1117,9 @@ impl Console {
             .frame(egui::Frame::new().fill(colors(ui).canvas).inner_margin(
                 egui::Margin::symmetric(
                     if ui.ctx().viewport_rect().width() < 1000.0 {
-                        16
+                        studio::metrics::PADDING
                     } else {
-                        24
+                        studio::metrics::PAGE_PADDING
                     },
                     20,
                 ),
@@ -3166,10 +3167,6 @@ impl Console {
             }
             match text(decision, "status") {
                 "proposed" => {
-                    hint(
-                        ui,
-                        "Accept makes this decision active. Reject preserves its history.",
-                    );
                     ui.horizontal_wrapped(|ui| {
                         action(
                             ui,
@@ -3188,6 +3185,10 @@ impl Console {
                             || decision_target(decision),
                         );
                     });
+                    hint(
+                        ui,
+                        "Accept makes this decision active. Reject preserves its history.",
+                    );
                 }
                 "accepted" => {
                     hint(ui,"This is an active decision. Replace it only with an explicitly selected draft.");
@@ -5325,15 +5326,10 @@ fn studio_flow(ui: &mut Ui) {
         });
 }
 fn card(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
-    egui::Frame::new()
-        .fill(colors(ui).surface)
-        .stroke(egui::Stroke::new(1.0, colors(ui).border))
-        .corner_radius(12)
-        .inner_margin(20)
-        .show(ui, |ui| {
-            ui.set_min_width((ui.available_width() - 1.0).max(0.0));
-            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), contents);
-        });
+    studio::card(ui).show(ui, |ui| {
+        ui.set_min_width((ui.available_width() - 1.0).max(0.0));
+        ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), contents);
+    });
 }
 fn empty(ui: &mut Ui, title: &str, description: &str) {
     card(ui, |ui| {
@@ -5352,15 +5348,8 @@ fn field(ui: &mut Ui, label: &str, value: &mut String, max: usize, password: boo
             .size(12.0)
             .color(colors(ui).muted),
     );
-    ui.add(
-        egui::TextEdit::singleline(value)
-            .desired_width(f32::INFINITY)
-            .font(egui::TextStyle::Body)
-            .margin(egui::Margin::symmetric(10, 7))
-            .char_limit(max)
-            .password(password),
-    );
-    ui.add_space(8.0);
+    studio::input(ui, value, max, "", password);
+    ui.add_space(studio::metrics::GAP);
 }
 fn multiline(ui: &mut Ui, label: &str, value: &mut String, max: usize, rows: usize) {
     ui.label(
@@ -5372,7 +5361,7 @@ fn multiline(ui: &mut Ui, label: &str, value: &mut String, max: usize, rows: usi
         egui::TextEdit::multiline(value)
             .desired_width(f32::INFINITY)
             .font(egui::TextStyle::Body)
-            .margin(egui::Margin::symmetric(10, 7))
+            .margin(studio::metrics::INPUT_MARGIN)
             .desired_rows(rows)
             .char_limit(max),
     );
@@ -5490,16 +5479,12 @@ fn choose_refs(
     ui.add_space(8.0);
 }
 fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
-    let response = ui.add_enabled(
+    let response = studio::button(
+        ui,
+        t(ui, label).as_ref(),
+        studio::ButtonKind::Secondary,
         enabled,
-        egui::Button::new(
-            RichText::new(t(ui, label))
-                .font(ui.style().text_styles[&egui::TextStyle::Button].clone()),
-        )
-        .fill(colors(ui).raised)
-        .stroke(egui::Stroke::NONE),
     );
-    keyboard_focus(ui, &response, 12);
     #[cfg(test)]
     let visibility = (ui.clip_rect(), ui.is_visible());
     #[cfg(test)]
@@ -5516,30 +5501,8 @@ fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
     });
     response
 }
-fn keyboard_focus(ui: &Ui, response: &egui::Response, radius: u8) {
-    if response.has_focus() {
-        ui.painter().rect_stroke(
-            response.rect.expand(3.0),
-            radius,
-            egui::Stroke::new(2.0, colors(ui).focus),
-            egui::StrokeKind::Inside,
-        );
-    }
-}
 fn submit(ui: &mut Ui, label: &str, action: &str) -> bool {
-    let response = ui.add(
-        egui::Button::new(
-            RichText::new(t(ui, label))
-                .size(12.0)
-                .strong()
-                .color(colors(ui).on_primary),
-        )
-        .fill(colors(ui).primary)
-        .stroke(egui::Stroke::NONE)
-        .corner_radius(12)
-        .min_size(egui::vec2(128.0, 44.0)),
-    );
-    keyboard_focus(ui, &response, 12);
+    let response = studio::button(ui, t(ui, label).as_ref(), studio::ButtonKind::Primary, true);
     #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(egui::Id::new(("test-action", action, label)), response.rect);
@@ -5559,19 +5522,20 @@ fn action(
     enabled: bool,
     payload: impl FnOnce() -> Value,
 ) {
-    let response = ui.add_enabled(
-        enabled,
-        egui::Button::new(
-            RichText::new(t(ui, label))
-                .size(12.0)
-                .color(colors(ui).text),
-        )
-        .fill(Color32::TRANSPARENT)
-        .stroke(egui::Stroke::new(1.0, colors(ui).control_border))
-        .corner_radius(8)
-        .min_size(egui::vec2(74.0, 36.0)),
-    );
-    keyboard_focus(ui, &response, 8);
+    let kind = if matches!(
+        name,
+        "work_cancel"
+            | "work_remove"
+            | "workspace_remove"
+            | "pack_remove"
+            | "team_cancel"
+            | "team_cancel_agent"
+    ) {
+        studio::ButtonKind::Danger
+    } else {
+        studio::ButtonKind::Secondary
+    };
+    let response = studio::compact_button(ui, t(ui, label).as_ref(), kind, enabled);
     #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(egui::Id::new(("test-action", name, label)), response.rect);
@@ -5603,15 +5567,8 @@ fn field_hint(ui: &mut Ui, label: &str, value: &mut String, max: usize, placehol
             .size(12.0)
             .color(colors(ui).muted),
     );
-    ui.add(
-        egui::TextEdit::singleline(value)
-            .desired_width(f32::INFINITY)
-            .font(egui::TextStyle::Body)
-            .margin(egui::Margin::symmetric(10, 7))
-            .char_limit(max)
-            .hint_text(t(ui, placeholder)),
-    );
-    ui.add_space(12.0);
+    studio::input(ui, value, max, t(ui, placeholder).as_ref(), false);
+    ui.add_space(studio::metrics::CONTROL_GAP);
 }
 fn source_kind_label(kind: &str) -> &'static str {
     match kind {
@@ -5632,7 +5589,10 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
             tab.name()
         },
     );
-    let (_, rect) = ui.allocate_space(egui::vec2(ui.available_width(), 42.0));
+    let (_, rect) = ui.allocate_space(egui::vec2(
+        ui.available_width(),
+        studio::metrics::CONTROL_HEIGHT,
+    ));
     let response = ui.interact(
         rect,
         egui::Id::new(("console-route", tab.name())),
@@ -5878,7 +5838,7 @@ mod tests {
                 });
                 if frame == 2 {
                     assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
-                        egui::Shape::Rect(outline) if outline.rect == rect.expand(3.0)
+                        egui::Shape::Rect(outline) if outline.rect == rect.expand(2.0)
                             && outline.stroke == egui::Stroke::new(2.0, studio::palette(&ctx).focus)
                     )), "{theme:?}: focused control must have a visible outline");
                     assert!(!clicked, "focus alone must never activate a control");

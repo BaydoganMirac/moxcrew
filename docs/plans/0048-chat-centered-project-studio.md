@@ -1,4 +1,4 @@
-# Task0048: Chat-centered Project studio
+# Task0048: Shared UI kit and chat-centered Project studio
 
 Status: Owner-selected direction, implementing
 
@@ -7,9 +7,18 @@ Updated: 2026-10-19
 Authorization: the owner selected “Chat centered + lightly futuristic” and the
 recommended approach where files open beside the conversation. Preserve the
 accepted visual system, agent orchestration and newly delivered ZIP workflow.
+The owner then explicitly requested a UI kit to correct inconsistent buttons,
+padding and spacing across the application. Establish shared production controls
+and metrics first; use them for the chat-centered layout.
 
 ## Observable result
 
+- Use one native UI kit for primary, secondary, ghost and destructive buttons,
+  input fields, cards, spacing, corner radii and focus/disabled feedback. Preserve
+  the brand's44px normal and36px compact controls and4px spacing scale. Migrate
+  common helpers used throughout the app and the main chat/crew/output surfaces.
+  A real native component gallery and concise design documentation expose the
+  same implementation for review; no disconnected mockup or web UI engine.
 - Chat is the Project's primary work surface. Crew and Outputs become contextual
   toggles rather than three equal destinations; clicking an active toggle closes
   it and returns focus to the conversation. Project switching closes the context.
@@ -28,7 +37,8 @@ accepted visual system, agent orchestration and newly delivered ZIP workflow.
 
 ## Ownership and acceptance
 
-Coordinator owns chat.rs, create.rs, ui.rs, i18n.rs, task/shared docs and fixture
+Coordinator owns studio.rs, chat.rs, create.rs, ui.rs, i18n.rs, main.rs,
+design/moxcrew UI kit documentation/tokens, task/shared docs and fixture
 capture/package integration. Builder owns crew.rs, output_studio.rs and delivery.rs
 only for bounded right-panel fitting and related tests. Reviewer is read-only
 after stable source and actual native captures exist. No core/runtime/Cloud change,

@@ -24,6 +24,148 @@ pub struct Palette {
 }
 include!("../assets/brand/palette.rs");
 
+pub mod metrics {
+    use eframe::egui;
+    pub const CONTROL_HEIGHT: f32 = 44.0;
+    pub const COMPACT_HEIGHT: f32 = 36.0;
+    pub const GAP: f32 = 8.0;
+    pub const CONTROL_GAP: f32 = 12.0;
+    pub const SECTION_GAP: f32 = 24.0;
+    pub const PADDING: i8 = 16;
+    pub const PAGE_PADDING: i8 = 24;
+    pub const CONTROL_RADIUS: u8 = 12;
+    pub const CARD_RADIUS: u8 = 16;
+    pub const INPUT_MARGIN: egui::Margin = egui::Margin::symmetric(12, 10);
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ButtonKind {
+    Primary,
+    Secondary,
+    Ghost,
+    Danger,
+}
+
+pub fn button(ui: &mut egui::Ui, label: &str, kind: ButtonKind, enabled: bool) -> egui::Response {
+    kit_button(ui, label, kind, metrics::CONTROL_HEIGHT, enabled)
+}
+
+pub fn compact_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    kind: ButtonKind,
+    enabled: bool,
+) -> egui::Response {
+    kit_button(ui, label, kind, metrics::COMPACT_HEIGHT, enabled)
+}
+
+fn kit_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    kind: ButtonKind,
+    height: f32,
+    enabled: bool,
+) -> egui::Response {
+    let p = palette(ui.ctx());
+    let previous = ui.style().clone();
+    ui.spacing_mut().button_padding = egui::vec2(16.0, 8.0);
+    let (fill, hover, pressed, foreground, border) = match kind {
+        ButtonKind::Primary => (
+            p.primary,
+            p.primary.gamma_multiply(0.94),
+            p.primary.gamma_multiply(0.86),
+            p.on_primary,
+            Color32::TRANSPARENT,
+        ),
+        ButtonKind::Secondary => (
+            p.surface,
+            p.raised,
+            p.info_surface,
+            p.text,
+            p.control_border,
+        ),
+        ButtonKind::Ghost => (
+            Color32::TRANSPARENT,
+            p.raised,
+            p.info_surface,
+            p.muted,
+            Color32::TRANSPARENT,
+        ),
+        ButtonKind::Danger => (
+            p.danger_surface,
+            p.danger_surface.gamma_multiply(0.94),
+            p.danger_surface.gamma_multiply(0.86),
+            p.danger,
+            p.danger,
+        ),
+    };
+    let widgets = &mut ui.visuals_mut().widgets;
+    for (widget, background) in [
+        (&mut widgets.inactive, fill),
+        (&mut widgets.hovered, hover),
+        (&mut widgets.active, pressed),
+        (&mut widgets.open, pressed),
+    ] {
+        widget.bg_fill = background;
+        widget.weak_bg_fill = background;
+        widget.bg_stroke = egui::Stroke::new(1.0, border);
+        widget.fg_stroke = egui::Stroke::new(1.0, foreground);
+        widget.corner_radius = egui::CornerRadius::same(metrics::CONTROL_RADIUS);
+    }
+    widgets.hovered.bg_stroke.color = if matches!(kind, ButtonKind::Ghost) {
+        p.border
+    } else {
+        border
+    };
+    widgets.noninteractive.bg_fill = p.raised;
+    widgets.noninteractive.weak_bg_fill = p.raised;
+    widgets.noninteractive.fg_stroke.color = p.muted;
+    // Add directly to the parent so wrapped rows measure the whole button.
+    let response = ui.add_enabled(
+        enabled,
+        egui::Button::new(RichText::new(label).size(14.0))
+            .wrap_mode(egui::TextWrapMode::Extend)
+            .min_size(egui::vec2(0.0, height)),
+    );
+    ui.set_style(previous);
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect.expand(2.0),
+            metrics::CONTROL_RADIUS,
+            egui::Stroke::new(2.0, p.focus),
+            egui::StrokeKind::Inside,
+        );
+    }
+    response
+}
+
+pub fn input(
+    ui: &mut egui::Ui,
+    value: &mut String,
+    max: usize,
+    hint: &str,
+    password: bool,
+) -> egui::Response {
+    ui.add_sized(
+        egui::vec2(ui.available_width(), metrics::CONTROL_HEIGHT),
+        egui::TextEdit::singleline(value)
+            .desired_width(f32::INFINITY)
+            .font(egui::TextStyle::Body)
+            .margin(metrics::INPUT_MARGIN)
+            .char_limit(max)
+            .hint_text(hint)
+            .password(password),
+    )
+}
+
+pub fn card(ui: &egui::Ui) -> egui::Frame {
+    egui::Frame::new()
+        .fill(palette(ui.ctx()).surface)
+        .stroke(egui::Stroke::new(1.0, palette(ui.ctx()).border))
+        .corner_radius(metrics::CARD_RADIUS)
+        .inner_margin(metrics::PADDING)
+}
+
 pub fn palette(ctx: &egui::Context) -> Palette {
     match ctx.theme() {
         egui::Theme::Light => LIGHT,
@@ -75,21 +217,7 @@ pub fn section_nav(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Resp
 }
 
 pub fn quiet_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    let p = palette(ui.ctx());
-    let response = ui.add(
-        egui::Button::new(RichText::new(label).size(12.0).color(p.muted))
-            .frame(false)
-            .min_size(egui::vec2(0.0, 32.0)),
-    );
-    if response.has_focus() {
-        ui.painter().rect_stroke(
-            response.rect,
-            5,
-            egui::Stroke::new(2.0, p.focus),
-            egui::StrokeKind::Inside,
-        );
-    }
-    response
+    compact_button(ui, label, ButtonKind::Ghost, true)
 }
 
 pub fn view_switch(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
@@ -107,7 +235,7 @@ pub fn view_switch(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Resp
         })
         .stroke(egui::Stroke::NONE)
         .corner_radius(7)
-        .min_size(egui::vec2(66.0, 30.0)),
+        .min_size(egui::vec2(66.0, metrics::COMPACT_HEIGHT)),
     );
     response.widget_info(|| {
         egui::WidgetInfo::selected(
@@ -173,9 +301,9 @@ fn style(p: Palette, dark: bool) -> egui::Style {
         },
         ..Default::default()
     };
-    style.spacing.item_spacing = egui::vec2(12.0, 8.0);
-    style.spacing.button_padding = egui::vec2(12.0, 7.0);
-    style.spacing.interact_size.y = 36.0;
+    style.spacing.item_spacing = egui::vec2(metrics::CONTROL_GAP, metrics::GAP);
+    style.spacing.button_padding = egui::vec2(12.0, 8.0);
+    style.spacing.interact_size.y = metrics::COMPACT_HEIGHT;
     for (kind, size, family) in [
         (egui::TextStyle::Body, 14.0, FontFamily::Proportional),
         (
@@ -451,6 +579,68 @@ pub fn mascot(ui: &mut egui::Ui, width: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn kit_metrics_match_the_brand_contract_and_controls_keep_one_height() {
+        let contract: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../design/moxcrew/tokens/design-tokens.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            contract["control"]["defaultHeight"].as_f64().unwrap(),
+            metrics::CONTROL_HEIGHT as f64
+        );
+        assert_eq!(
+            contract["control"]["compactHeight"].as_f64().unwrap(),
+            metrics::COMPACT_HEIGHT as f64
+        );
+        assert_eq!(contract["radius"]["control"], metrics::CONTROL_RADIUS);
+        assert_eq!(contract["radius"]["card"], metrics::CARD_RADIUS);
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let ctx = egui::Context::default();
+            install(&ctx);
+            ctx.set_theme(theme);
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 560.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    for kind in [
+                        ButtonKind::Primary,
+                        ButtonKind::Secondary,
+                        ButtonKind::Ghost,
+                        ButtonKind::Danger,
+                    ] {
+                        ui.horizontal(|ui| {
+                            let normal = button(ui, "Action", kind, true);
+                            let compact = compact_button(ui, "Action", kind, true);
+                            let disabled = button(ui, "Unavailable", kind, false);
+                            assert_eq!(
+                                normal.rect.height(),
+                                metrics::CONTROL_HEIGHT,
+                                "{theme:?}/{kind:?}"
+                            );
+                            assert_eq!(compact.rect.height(), metrics::COMPACT_HEIGHT);
+                            assert!(!disabled.enabled() && !disabled.clicked());
+                        });
+                    }
+                    let mut value = String::new();
+                    let field = input(ui, &mut value, 160, "Project name", false);
+                    assert_eq!(field.rect.height(), metrics::CONTROL_HEIGHT);
+                    let frame = card(ui);
+                    assert_eq!(frame.inner_margin, egui::Margin::same(metrics::PADDING));
+                    assert_eq!(
+                        frame.corner_radius,
+                        egui::CornerRadius::same(metrics::CARD_RADIUS)
+                    );
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+    }
     #[test]
     fn system_theme_switches_semantic_styles_with_light_fallback() {
         let ctx = egui::Context::default();

@@ -43,3 +43,4 @@ supersedes the old one.
 | [0037](0037-dobbly-display-identity.md) | Accepted | Moxcrew display identity and Mox mascot with stable installation, data and protocol identifiers |
 | [0038](0038-general-purpose-projects.md) | Accepted product direction; implementation gap explicit | General-purpose audience with Project as the primary scope; current Git/Codex execution remains narrower |
 | [0039](0039-broad-general-purpose-ability-release.md) | Accepted product/release direction; implementation pending | One broad general-purpose ability release, including presentations, video editing and research; reuse compatible skills and tools |
+| [0040](0040-version-one-release-baseline.md) | Accepted release scope; implementation pending | Target 1.0.0 with eight areas, forty abilities and ten composed workflows under one master release plan |

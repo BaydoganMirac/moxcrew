@@ -5,7 +5,7 @@
 
 # Moxcrew
 
-Your AI team. On it.
+One idea. A whole crew.
 
 Moxcrew helps people turn goals into outcomes with AI agents, organized in
 projects with persistent context and decisions. Its intended uses include
@@ -16,6 +16,12 @@ required. See the [product direction](docs/decisions/0038-general-purpose-projec
 The current execution implementation remains coding-oriented: Git worktrees
 and supported Codex control are required to run tasks/teams. The broader uses
 above are product direction, not verified end-to-end capabilities yet.
+
+The approved [1.0.0 release target](docs/plans/0039-version-one-release.md)
+covers eight capability areas, forty abilities and ten composed project workflows,
+including presentations and video editing. See the
+[release state](docs/state/version-one-release.md) for implementation evidence;
+1.0.0 is a future target, not the current application version.
 
 Moxcrew 0.12 runs its interface and host in Rust. egui/eframe renders the native
 window through one Glow backend; the installed application contains no WebView,

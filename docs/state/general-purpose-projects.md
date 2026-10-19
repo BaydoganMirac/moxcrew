@@ -35,3 +35,9 @@ this direction. Detailed capabilities, skill/tool compatibility and execution
 environment remain to be scoped in bounded cards within one release. No broader
 runtime, end-user validation, universal skill compatibility, push or deployment
 is implied by this documentation change.
+
+The owner then accepted the broad plan for version 1.0.0.
+[ADR 0040](../decisions/0040-version-one-release-baseline.md) and the
+[master plan](../plans/0039-version-one-release.md) now define the eight-area,
+forty-ability, ten-workflow baseline. Continue using
+[release state](version-one-release.md) for concrete implementation progress.

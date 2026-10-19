@@ -95,6 +95,17 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
             "title",
             "instruction",
         ],
+        "project_chat_send" => &[
+            "projectId",
+            "expectedProjectRevision",
+            "abilityId",
+            "title",
+            "instruction",
+            "replyToWorkItemId",
+            "referencePaths",
+        ],
+        "project_chat_read" => &["projectId", "offset", "limit"],
+        "provider_connections_read" => &[],
         "project_results_read" => &["projectId", "workItemId"],
         "project_result_read" => &["projectId", "workItemId", "path"],
         "project_result_export" => &["projectId", "workItemId", "path", "targetPath"],
@@ -152,6 +163,7 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
         "memory_cloud_read" => &["projectId", "offset", "limit"],
         "memory_cloud_decision_read" => &["projectId", "decisionId", "revision"],
         "desktop_language" => &["language"],
+        "desktop_motion" => &["reduceMotion"],
         "work_enqueue" => &["title", "instruction", "workspaceId", "workingDirectory"],
         "work_start" | "work_retry" | "work_remove" => &["workItemId", "expectedItemRevision"],
         "work_cancel" => &["runId", "expectedRunRevision"],
@@ -302,7 +314,7 @@ impl Host {
                     })
             });
             let additions = pending.map(|e| {
-                let result = (e["schemaVersion"] == 8)
+                let result = matches!(e["schemaVersion"].as_u64(), Some(8 | 9))
                     .then(|| crate::creation::recovered_owner_result(events, &e["payload"]))
                     .flatten()
                     .unwrap_or_else(|| json!({"outcome":"failed","reasonCode":"OWNER_COMMAND_OUTCOME_UNKNOWN"}));
@@ -452,6 +464,14 @@ impl Host {
         if action == "project_memory_read" {
             return self.store.read_memory(&payload);
         }
+        if action == "provider_connections_read" {
+            let mut status = self.controller.connection_status().await;
+            status["reasonCode"] = json!("PROVIDER_CONNECTIONS_READ");
+            return Ok(status);
+        }
+        if action == "project_chat_read" {
+            return self.conversation_action(action, &payload).await;
+        }
         if action == "memory_cloud_read" {
             return self
                 .store
@@ -493,7 +513,10 @@ impl Host {
         if matches!(action, "project_results_read" | "project_result_read") {
             return self.creation_action(action, &payload).await;
         }
-        let creation_mutation = matches!(action, "project_work_enqueue" | "project_result_export");
+        let creation_mutation = matches!(
+            action,
+            "project_work_enqueue" | "project_result_export" | "project_chat_send"
+        );
         if action.starts_with("project_") && !creation_mutation {
             return self
                 .store
@@ -502,9 +525,12 @@ impl Host {
         let audit = action.starts_with("team_")
             || action.starts_with("pack_")
             || action == "desktop_language"
+            || action == "desktop_motion"
             || creation_mutation
             || action == "work_retry";
-        let audit_version = if creation_mutation || action == "work_retry" {
+        let audit_version = if matches!(action, "project_chat_send" | "desktop_motion") {
+            9
+        } else if creation_mutation || action == "work_retry" {
             8
         } else if action == "desktop_language" {
             3
@@ -557,7 +583,7 @@ impl Host {
             let recorded = match &result {
                 Ok(v) => v.clone(),
                 Err(error)
-                    if audit_version == 8
+                    if matches!(audit_version, 8 | 9)
                         && error
                             .0
                             .bytes()
@@ -592,6 +618,13 @@ impl Host {
             }
         }
         match action {
+            "project_chat_send"=>self.conversation_action(action,p).await,
+            "desktop_motion"=>{
+                let reduce = p["reduceMotion"].as_bool().ok_or_else(|| Error("INVALID_DESKTOP_MOTION".into()))?;
+                let value = crate::desktop_preferences::save_motion(&self.data_dir, reduce)?;
+                *self.desktop_preferences.lock().map_err(|_| Error("HOST_STATE_UNAVAILABLE".into()))? = value;
+                Ok(json!({"reasonCode":"DESKTOP_MOTION_SET","reduceMotion":reduce}))
+            },
             "project_work_enqueue"|"project_result_export"=>self.creation_action(action,p).await,
             "desktop_language" => {
                 let value = crate::desktop_preferences::save(&self.data_dir, text(p,"language")?)?;

@@ -343,7 +343,7 @@ async fn language_preferences_persist_without_changing_sources_or_cloud() {
     let host = Host::open(directory.path().to_owned()).unwrap();
     assert_eq!(
         host.snapshot().unwrap()["desktopPreferences"],
-        json!({"language":"tr","error":true})
+        json!({"language":"tr","reduceMotion":false,"error":true})
     );
     assert_eq!(
         std::fs::read_to_string(directory.path().join("desktop-preferences.json")).unwrap(),
@@ -355,6 +355,56 @@ async fn language_preferences_persist_without_changing_sources_or_cloud() {
     assert_eq!(
         host.snapshot().unwrap()["desktopPreferences"]["error"],
         false
+    );
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn reduced_motion_persists_with_language_and_reads_legacy_preferences() {
+    let temporary = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temporary.path().join("desktop-preferences.json"),
+        r#"{"schemaVersion":1,"language":"en"}"#,
+    )
+    .unwrap();
+    let host = Host::open(temporary.path().to_owned()).unwrap();
+    assert_eq!(
+        host.snapshot().unwrap()["desktopPreferences"],
+        json!({"language":"en","reduceMotion":false,"error":false})
+    );
+    let request = command(json!({"reduceMotion":true}));
+    let receipt = host
+        .action("desktop_motion", request.clone())
+        .await
+        .unwrap();
+    assert_eq!(receipt["reasonCode"], "DESKTOP_MOTION_SET");
+    host.action("desktop_language", command(json!({"language":"tr"})))
+        .await
+        .unwrap();
+    assert_eq!(
+        host.action("desktop_motion", request.clone())
+            .await
+            .unwrap(),
+        receipt
+    );
+    assert_eq!(
+        host.snapshot().unwrap()["desktopPreferences"],
+        json!({"language":"tr","reduceMotion":true,"error":false})
+    );
+    assert!(host
+        .action("desktop_motion", command(json!({"reduceMotion":"true"})))
+        .await
+        .is_err());
+    host.shutdown().await;
+    drop(host);
+    let host = Host::open(temporary.path().to_owned()).unwrap();
+    assert_eq!(
+        host.snapshot().unwrap()["desktopPreferences"],
+        json!({"language":"tr","reduceMotion":true,"error":false})
+    );
+    assert_eq!(
+        host.action("desktop_motion", request).await.unwrap(),
+        receipt
     );
     host.shutdown().await;
 }

@@ -28,6 +28,10 @@ fn pure_allowlist_has_no_private_data() {
             json!([{"projectId":"PRIVATE_PROJECT_CANARY","workItemId":"work:one"}]);
         with_creation["projectResults"] = json!({"items":[{"path":"PRIVATE_RESULT_PATH_CANARY"}]});
         with_creation["projectResult"] = json!({"text":"PRIVATE_RESULT_BODY_CANARY"});
+        with_creation["projectChat"] = json!({"items":[{"goal":"PRIVATE_CHAT_CANARY"}]});
+        with_creation["providerConnections"] =
+            json!({"providers":[{"authentication":"PRIVATE_AUTH_CANARY"}]});
+        with_creation["desktopPreferences"] = json!({"reduceMotion":true});
         assert_eq!(
             cloud::build_projection(&with_creation, version, 1, "install:test").unwrap(),
             p

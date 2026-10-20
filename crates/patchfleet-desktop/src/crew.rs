@@ -133,10 +133,25 @@ impl CreateState {
     }
 
     pub(super) fn planner_provider(&mut self) -> &mut String {
-        if self.crew.workflow.provider.is_empty() {
-            self.crew.workflow.provider = "codex".into();
-        }
         &mut self.crew.workflow.provider
+    }
+
+    pub(super) fn resolved_planner_provider(&self, snapshot: &Value) -> Option<&'static str> {
+        connect::planning_provider(snapshot, &self.crew.workflow.provider)
+    }
+
+    pub(super) fn active_planner_provider(&self) -> Option<&str> {
+        self.crew
+            .workflow
+            .request
+            .as_ref()
+            .filter(|request| request.key == self.crew_key())
+            .map(|request| request.provider.as_str())
+            .or_else(|| {
+                self.planner_job()
+                    .filter(|job| matches!(text(job, "status"), "queued" | "running"))
+                    .map(|job| text(job, "providerId"))
+            })
     }
 
     pub(super) fn planner_job(&self) -> Option<&Value> {
@@ -1573,34 +1588,85 @@ pub(super) fn provider_picker(
     id: impl std::hash::Hash + std::fmt::Debug,
     value: &mut String,
 ) {
-    if value.is_empty() {
+    connection_picker(ui, id, value, false);
+}
+
+pub(super) fn planning_picker(
+    ui: &mut Ui,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    value: &mut String,
+) -> bool {
+    connection_picker(ui, id, value, true)
+}
+
+pub(super) fn planning_options(ui: &mut Ui, value: &mut String) -> bool {
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = studio::metrics::GAP * 0.5;
+        let mut chosen = false;
+        for (id, label) in [
+            ("", "Automatic"),
+            ("codex", "Codex"),
+            ("claude", "Claude Code"),
+            ("gemini", "Gemini CLI"),
+        ] {
+            chosen |= provider_option(ui, value, id, t(ui, label));
+        }
+        chosen
+    })
+    .inner
+}
+
+fn provider_option(
+    ui: &mut Ui,
+    value: &mut String,
+    id: &str,
+    label: impl Into<egui::WidgetText>,
+) -> bool {
+    let response = ui.selectable_value(value, id.into(), label);
+    #[cfg(test)]
+    ui.data_mut(|data| {
+        data.insert_temp(
+            egui::Id::new(("chat-provider-option", id)),
+            (response.rect, response.id),
+        )
+    });
+    response.clicked()
+}
+
+fn connection_picker(
+    ui: &mut Ui,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    value: &mut String,
+    automatic: bool,
+) -> bool {
+    if value.is_empty() && !automatic {
         *value = "codex".into();
     }
+    let selected = t(
+        ui,
+        if automatic && value.is_empty() {
+            "Automatic"
+        } else {
+            connect::provider_name(value)
+        },
+    )
+    .into_owned();
+    let mut chosen = false;
     let picker = form_combo(
         ui,
         egui::ComboBox::from_id_salt(id)
-            .selected_text(match value.as_str() {
-                "claude" => "Claude Code",
-                "gemini" => "Gemini CLI",
-                _ => "Codex",
-            })
+            .selected_text(selected)
             .width(125.0),
         |ui| {
+            if automatic {
+                chosen |= provider_option(ui, value, "", t(ui, "Automatic"));
+            }
             for (id, label) in [
                 ("codex", "Codex"),
                 ("claude", "Claude Code"),
                 ("gemini", "Gemini CLI"),
             ] {
-                let response = ui.selectable_value(value, id.into(), label);
-                #[cfg(test)]
-                ui.data_mut(|data| {
-                    data.insert_temp(
-                        egui::Id::new(("chat-provider-option", id)),
-                        (response.rect, response.id),
-                    )
-                });
-                #[cfg(not(test))]
-                let _ = response;
+                chosen |= provider_option(ui, value, id, label);
             }
         },
     );
@@ -1613,6 +1679,7 @@ pub(super) fn provider_picker(
     });
     #[cfg(not(test))]
     let _ = picker;
+    chosen
 }
 fn budgets_ui(ui: &mut Ui, budgets: &mut Value) {
     for (key, label, min, max) in [
@@ -1720,7 +1787,13 @@ impl Console {
             self.create.draft().clone()
         };
         let reply = self.create.chat.replies.get(&key).cloned();
-        let provider = self.create.crew.workflow.provider.clone();
+        let Some(provider) = self
+            .create
+            .resolved_planner_provider(snapshot)
+            .map(str::to_owned)
+        else {
+            return;
+        };
         self.begin_conversation_plan(
             snapshot,
             commands,
@@ -1965,7 +2038,8 @@ impl Console {
                     .map(|answer| json!({"id":question["id"],"answer":answer.trim()}))
             })
             .collect();
-        let enabled = !answers.is_empty()
+        let enabled = self.create.resolved_planner_provider(snapshot).is_some()
+            && !answers.is_empty()
             && answers.len() == questions.len()
             && answers
                 .iter()
@@ -2101,7 +2175,7 @@ impl Console {
                             if let Some(model)=self.create.crew.workflow.models.get(&key).cloned().filter(|model|text(&model.job,"status")=="completed"){self.model_plan_details(ui,commands,&key,&model);}
                             if ready{
                                 ui.add_space(f32::from(studio::metrics::PADDING));self.workflow_plan_request(ui,snapshot);
-                                let enabled=valid_input(&self.create.draft().goal,20_000)&&self.create.crew.workflow.request.is_none()&&connect::can_attempt_provider(snapshot,&self.create.crew.workflow.provider);
+                                let enabled=valid_input(&self.create.draft().goal,20_000)&&self.create.crew.workflow.request.is_none()&&self.create.resolved_planner_provider(snapshot).is_some();
                                 if view_control(ui,"Generate plan",enabled,false).clicked(){self.begin_model_plan(snapshot,commands,None);}
                             }
                             ui.add_space(f32::from(studio::metrics::PADDING));ui.label(RichText::new(t(ui,"Saved plans")).strong());
@@ -2149,10 +2223,7 @@ impl Console {
                             ) {
                                 let enabled = valid_input(&self.create.draft().goal, 20_000)
                                     && self.create.crew.workflow.request.is_none()
-                                    && connect::can_attempt_provider(
-                                        snapshot,
-                                        &self.create.crew.workflow.provider,
-                                    );
+                                    && self.create.resolved_planner_provider(snapshot).is_some();
                                 if view_control(ui, "Generate plan", enabled, true).clicked() {
                                     self.begin_model_plan(snapshot, commands, None);
                                 }
@@ -2221,7 +2292,7 @@ impl Console {
                     .size(12.0)
                     .color(colors(ui).muted),
             );
-            provider_picker(
+            planning_picker(
                 ui,
                 "model-planner-provider",
                 &mut self.create.crew.workflow.provider,
@@ -2231,7 +2302,7 @@ impl Console {
             ui,
             "Planning calls the selected provider and can consume your account quota.",
         );
-        if !connect::can_attempt_provider(snapshot, &self.create.crew.workflow.provider) {
+        if self.create.resolved_planner_provider(snapshot).is_none() {
             hint(ui, "Check the assigned providers before starting.");
             if view_control(ui, "Connections", true, false).clicked() {
                 self.create.chat.connections_open = true;
@@ -2883,6 +2954,36 @@ mod tests {
             create: state,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn advanced_planning_resolves_automatic_but_member_assignments_stay_concrete() {
+        let mut data = fixture();
+        data["providerConnections"]["providers"] = json!([{"id":"claude","version":"2.1.170","installed":true,"authentication":"present","controlSupported":true}]);
+        let mut console = console();
+        let mut commands = Vec::new();
+        console.begin_model_plan(&data, &mut commands, None);
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].payload["providerId"], "claude");
+        assert!(console.create.crew.workflow.provider.is_empty());
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut member_provider = String::new();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            provider_picker(ui, "member-provider-fixture", &mut member_provider)
+        })
+        .drop_without_applying_deltas();
+        assert_eq!(
+            member_provider, "codex",
+            "per-agent assignment never stores Automatic"
+        );
+        *console.create.planner_provider() = "codex".into();
+        commands.clear();
+        console.begin_model_plan(&data, &mut commands, None);
+        assert!(
+            commands.is_empty(),
+            "an explicit unavailable provider cannot use ready Claude"
+        );
     }
 
     #[test]
@@ -3562,6 +3663,7 @@ mod tests {
     #[test]
     fn model_planning_acceptance_preserves_async_scope_answers_and_manual_member_providers() {
         let mut data = fixture();
+        data["providerConnections"]["providers"].as_array_mut().unwrap().push(json!({"id":"claude","version":"2.1.170","installed":true,"authentication":"present","controlSupported":true}));
         let ctx = egui::Context::default();
         studio::install(&ctx);
         let mut console = console();

@@ -69,6 +69,7 @@ struct ProjectRequest {
     draft: CreateDraft,
     reply: Option<ReplyDraft>,
     provider: String,
+    preference: String,
 }
 
 #[derive(Default)]
@@ -89,6 +90,17 @@ impl ConversationState {
 }
 
 impl CreateState {
+    pub(super) fn displayed_planner_provider(&self, snapshot: &Value) -> Option<&str> {
+        self.chat
+            .conversation
+            .creation
+            .as_ref()
+            .filter(|request| request.key == self.conversation_key())
+            .map(|request| request.provider.as_str())
+            .or_else(|| self.active_planner_provider())
+            .or_else(|| self.resolved_planner_provider(snapshot))
+    }
+
     fn conversation_key(&self) -> Scope {
         (self.project.clone(), self.ability.clone())
     }
@@ -132,7 +144,7 @@ impl CreateState {
                 .sessions
                 .get(&self.conversation_key())
                 .is_none_or(|session| pack_context(&session.answers, "", &session.input).is_some())
-            && connect::can_attempt_provider(snapshot, self.planner_provider())
+            && self.resolved_planner_provider(snapshot).is_some()
     }
 }
 
@@ -222,6 +234,7 @@ impl Console {
             }
         }
         self.create.crew.single = false;
+        self.create.planner_provider().clear();
         self.hold_automatic_reads = true;
         self.create.select_productive_view(0);
     }
@@ -258,7 +271,7 @@ impl Console {
         if self.create.conversation_key() != pending.key
             || self.create.drafts.get(&pending.key) != Some(&pending.draft)
             || self.create.chat.replies.get(&pending.key) != pending.reply.as_ref()
-            || *self.create.planner_provider() != pending.provider
+            || *self.create.planner_provider() != pending.preference
         {
             return;
         }
@@ -288,7 +301,13 @@ impl Console {
             return;
         }
         self.create.chat.conversation.error = None;
-        let provider = self.create.planner_provider().to_owned();
+        let Some(provider) = self
+            .create
+            .resolved_planner_provider(snapshot)
+            .map(str::to_owned)
+        else {
+            return;
+        };
         if output_studio::project_revision(snapshot, &self.create.project).is_none() {
             let draft = self.create.draft().clone();
             let Some(name) = draft_title(&CreateDraft {
@@ -305,6 +324,7 @@ impl Console {
                 key,
                 draft,
                 provider,
+                preference: self.create.planner_provider().clone(),
             });
             commands.push(command);
             return;
@@ -466,6 +486,95 @@ mod tests {
     fn acknowledge(data: &mut Value, command: &Command, id: &str, status: &str) {
         data["projectWorkflowReceipt"] = json!({"commandId":command.payload["commandId"],"projectId":command.payload["projectId"],"planJobId":id,"revision":1,"outcome":"applied"});
         data["projectCrewPlanJob"] = json!({"reasonCode":"PROJECT_CREW_PLAN_READ","projectId":command.payload["projectId"],"planJobId":id,"revision":2,"providerId":command.payload["providerId"],"status":status,"questions":[{"id":"audience","question":"Who is this for?"}]});
+    }
+
+    #[test]
+    fn automatic_send_resolves_the_only_usable_provider_before_dispatch() {
+        for provider in ["claude", "gemini"] {
+            let mut data = fixture();
+            data["providerConnections"]["providers"] = json!([{"id":provider,"version":if provider=="claude"{"2.1.170"}else{"0.43.0"},"installed":true,"authentication":"unknown","controlSupported":true}]);
+            let mut console = console();
+            let mut commands = Vec::new();
+            console.send_conversation(&data, &mut commands);
+            assert_eq!(commands.len(), 1);
+            assert_eq!(commands[0].action, "project_crew_plan_start");
+            assert_eq!(commands[0].payload["providerId"], provider);
+            assert!(console.create.planner_provider().is_empty());
+            assert_eq!(
+                console.create.displayed_planner_provider(&data),
+                Some(provider)
+            );
+        }
+    }
+
+    #[test]
+    fn automatic_diagnostic_changes_never_retarget_a_frozen_project_chain() {
+        for original_still_ready in [true, false] {
+            let mut data = fixture();
+            data["projectMemory"]["projects"] = json!([]);
+            data["providerConnections"]["providers"][0]["installed"] = json!(false);
+            let mut console = Console::launch();
+            console.create.draft().goal = "Keep this exact intent".into();
+            let mut commands = Vec::new();
+            console.send_conversation(&data, &mut commands);
+            let create = commands.remove(0);
+            assert_eq!(
+                console
+                    .create
+                    .chat
+                    .conversation
+                    .creation
+                    .as_ref()
+                    .unwrap()
+                    .provider,
+                "claude"
+            );
+            data["providerConnections"]["providers"][0]["installed"] = json!(true);
+            data["providerConnections"]["providers"][1]["installed"] = json!(original_still_ready);
+            assert_eq!(
+                console.create.resolved_planner_provider(&data),
+                Some("codex")
+            );
+            assert_eq!(
+                console.create.displayed_planner_provider(&data),
+                Some("claude")
+            );
+            data["projectMemory"]["projects"] =
+                json!([{"projectId":"project:new","revision":1,"name":"New"}]);
+            data["projectCreateReceipt"] = json!({"commandId":create.payload["commandId"],"projectId":"project:new","outcome":"applied"});
+            console.sync_conversation_project(&data, &mut commands);
+            assert_eq!(console.create.project, "project:new");
+            if original_still_ready {
+                assert_eq!(commands.len(), 1);
+                assert_eq!(commands[0].payload["providerId"], "claude");
+                assert_eq!(
+                    console.create.displayed_planner_provider(&data),
+                    Some("claude")
+                );
+            } else {
+                assert!(
+                    commands.is_empty(),
+                    "no automatic retry on a different connection"
+                );
+                assert_eq!(console.create.draft().goal, "Keep this exact intent");
+                console.send_conversation(&data, &mut commands);
+                assert_eq!(commands.len(), 1);
+                assert_eq!(commands[0].action, "project_crew_plan_start");
+                assert_eq!(
+                    commands[0].payload["providerId"], "codex",
+                    "only a new explicit Send resolves the new connection"
+                );
+            }
+            let sent = commands.remove(0);
+            data["providerConnections"]["providers"][0]["installed"] = json!(false);
+            data["providerConnections"]["providers"][1]["installed"] = json!(false);
+            assert_eq!(
+                console.create.displayed_planner_provider(&data),
+                sent.payload["providerId"].as_str()
+            );
+            console.sync_conversation_project(&data, &mut commands);
+            assert!(commands.is_empty());
+        }
     }
 
     fn choose_new_conversation(ctx: &egui::Context, console: &mut Console, data: &Value) {
@@ -723,8 +832,8 @@ mod tests {
         );
         assert_eq!(
             console.create.planner_provider(),
-            "codex",
-            "selection remains sticky"
+            "",
+            "automatic remains selected after resolving the actual provider"
         );
         assert_eq!(console.create.productive_view(), 0);
         commands.clear();
@@ -777,6 +886,7 @@ mod tests {
         let mut data = fixture();
         data["projectMemory"]["projects"] = json!([]);
         let mut console = Console::launch();
+        *console.create.planner_provider() = "codex".into();
         console.create.draft().goal = "Keep my first message".into();
         let mut commands = Vec::new();
         console.send_conversation(&data, &mut commands);
@@ -1027,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    fn no_project_composer_and_provider_choice_are_keyboard_reachable_at_minimum_size() {
+    fn automatic_composer_and_optional_override_are_keyboard_reachable_at_minimum_size() {
         let size = egui::vec2(800.0, 560.0);
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
         for language in ["en", "tr"] {
@@ -1045,6 +1155,16 @@ mod tests {
                     assert!(commands.is_empty());
                     assert!(!copy.join("\n").contains("Prepare task"));
                 }
+                assert!(console.create.planner_provider().is_empty());
+                assert!(
+                    ctx.data(|data| data.get_temp::<egui::Rect>(egui::Id::new((
+                        "test-action",
+                        "memory_control",
+                        "Choose provider"
+                    ))))
+                    .is_none(),
+                    "the primary composer must not ask for a provider"
+                );
                 let (enabled, button, clip) = ctx.data(|data| {
                     data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
                         "test-action-state",
@@ -1064,17 +1184,21 @@ mod tests {
                     size,
                     false,
                     "memory_control",
-                    "Choose provider"
+                    "More"
                 )
                 .is_empty());
                 render(&ctx, &mut console, &data, size, false, vec![]);
-                let (_, id) = ctx.data(|data| {
+                let (option, id) = ctx.data(|data| {
                     data.get_temp::<(egui::Rect, egui::Id)>(egui::Id::new((
                         "chat-provider-option",
                         "gemini",
                     )))
                     .unwrap()
                 });
+                assert!(
+                    screen.contains_rect(option),
+                    "{language}/{theme:?} manual option clipped {option:?}"
+                );
                 ctx.memory_mut(|memory| memory.request_focus(id));
                 assert!(render(
                     &ctx,
@@ -1095,9 +1219,52 @@ mod tests {
                 assert_eq!(console.create.planner_provider(), "gemini");
                 assert!(
                     !console.create.conversation_send_enabled(&data),
-                    "selection does not bypass readiness"
+                    "an unavailable override cannot fall back to ready Codex"
                 );
-                *console.create.planner_provider() = "codex".into();
+                assert!(click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    size,
+                    false,
+                    "memory_control",
+                    "More"
+                )
+                .is_empty());
+                render(&ctx, &mut console, &data, size, false, vec![]);
+                let (option, _) = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, egui::Id)>(egui::Id::new((
+                        "chat-provider-option",
+                        "",
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    screen.contains_rect(option),
+                    "{language}/{theme:?} Automatic clipped {option:?}"
+                );
+                for pressed in [true, false] {
+                    assert!(render(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(option.center()),
+                            egui::Event::PointerButton {
+                                pos: option.center(),
+                                button: egui::PointerButton::Primary,
+                                pressed,
+                                modifiers: egui::Modifiers::default()
+                            }
+                        ]
+                    )
+                    .0
+                    .is_empty());
+                }
+                assert!(console.create.planner_provider().is_empty());
+                assert!(console.create.conversation_send_enabled(&data));
                 let commands = click_at_size(
                     &ctx,
                     &mut console,
@@ -1109,6 +1276,17 @@ mod tests {
                 );
                 assert_eq!(commands.len(), 1);
                 assert_eq!(commands[0].action, "project_create");
+                assert_eq!(
+                    console
+                        .create
+                        .chat
+                        .conversation
+                        .creation
+                        .as_ref()
+                        .unwrap()
+                        .provider,
+                    "codex"
+                );
             }
         }
     }

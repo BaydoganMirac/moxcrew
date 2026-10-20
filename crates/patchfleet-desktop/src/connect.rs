@@ -8,6 +8,21 @@ pub(super) fn connections(snapshot: &Value) -> &[Value] {
     array(&diagnostic["providers"])
 }
 
+pub(super) fn planning_provider(snapshot: &Value, preference: &str) -> Option<&'static str> {
+    ["codex", "claude", "gemini"].into_iter().find(|id| {
+        (preference.is_empty() || preference == *id) && can_attempt_provider(snapshot, id)
+    })
+}
+
+pub(super) fn provider_name(id: &str) -> &str {
+    match id {
+        "codex" => "Codex",
+        "claude" => "Claude Code",
+        "gemini" => "Gemini CLI",
+        _ => id,
+    }
+}
+
 pub(super) fn selection_status(snapshot: &Value, id: &str) -> &'static str {
     match connections(snapshot)
         .iter()
@@ -179,6 +194,35 @@ impl Console {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn automatic_planning_uses_stable_readiness_order_and_never_falls_back_from_override() {
+        let codex = json!({"id":"codex","installed":true,"version":"0.163.0","authentication":"present","controlSupported":true});
+        let claude = json!({"id":"claude","installed":true,"version":"2.1.170","authentication":"present","controlSupported":true});
+        let gemini = json!({"id":"gemini","installed":true,"version":"0.43.0","authentication":"unknown","controlSupported":true});
+        let mut data = json!({"providerConnections":{"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[claude]}});
+        assert_eq!(planning_provider(&data, ""), Some("claude"));
+        assert_eq!(planning_provider(&data, "codex"), None);
+        data["providerConnections"]["providers"] = json!([gemini]);
+        assert_eq!(planning_provider(&data, ""), Some("gemini"));
+        data["providerConnections"]["providers"] = json!([gemini, claude, codex]);
+        assert_eq!(planning_provider(&data, ""), Some("codex"));
+        assert_eq!(planning_provider(&data, "claude"), Some("claude"));
+        for version in ["0.155.0", "0.invalid.155.1"] {
+            data["providerConnections"]["providers"][2]["version"] = json!(version);
+            assert_eq!(planning_provider(&data, ""), Some("claude"));
+            assert_eq!(planning_provider(&data, "codex"), None);
+        }
+        data["providerConnections"]["providers"][2]["version"] = json!("0.163.0");
+        data["providerConnections"]["providers"][2]["authentication"] = json!("missing");
+        assert_eq!(planning_provider(&data, ""), Some("claude"));
+        data["providerConnections"]["providers"][1]["controlSupported"] = json!(false);
+        assert_eq!(planning_provider(&data, ""), Some("gemini"));
+        assert_eq!(planning_provider(&data, "claude"), None);
+        data["providerConnections"]["providers"][0]["installed"] = json!(false);
+        assert_eq!(planning_provider(&data, ""), None);
+        assert_eq!(planning_provider(&data, "auto"), None);
+    }
 
     #[test]
     fn saved_auth_alone_never_enables_an_unsupported_provider_or_old_codex() {

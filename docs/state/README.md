@@ -26,7 +26,7 @@
 | Optional desktop account | Implemented; compatible hosted service/provider release checks pending | 2026-10-15 | [desktop-account.md](desktop-account.md) |
 | First-task quick start | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [first-task-quick-start.md](first-task-quick-start.md) |
 | General-purpose Project direction | Accepted; broader execution pending | 2026-10-19 | [general-purpose-projects.md](general-purpose-projects.md) |
-| Moxcrew 1.0.0 | Productive crews and bounded production implemented; complete ability/release evidence pending | 2026-10-19 | [version-one-release.md](version-one-release.md) |
+| Moxcrew 1.0.0 | Productive crews and bounded production implemented; complete ability/release evidence pending | 2026-10-20 | [version-one-release.md](version-one-release.md) |
 | Project Create studio | Complete bounded foundation; independently reviewed and locally verified | 2026-10-19 | [project-create-studio.md](project-create-studio.md) |
 | Connected Project conversation | Complete bounded implementation; independently reviewed and macOS development package verified | 2026-10-19 | [connected-project-conversation.md](connected-project-conversation.md) |
 | Futuristic native studio | Complete; independently reviewed and locally verified | 2026-10-19 | [futuristic-native-studio.md](futuristic-native-studio.md) |
@@ -44,6 +44,7 @@
 | UI kit across native screens | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [ui-kit-screen-migration.md](ui-kit-screen-migration.md) |
 | Conversation-first orchestration and provider selection | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [conversation-first-orchestration.md](conversation-first-orchestration.md) |
 | Automatic planning connection | Complete; independently reviewed and macOS development package verified | 2026-10-20 | [automatic-planning-provider.md](automatic-planning-provider.md) |
+| Eleven local product capabilities | Complete; independently reviewed, integrated tests and macOS development package verified | 2026-10-20 | [eleven-product-capabilities.md](eleven-product-capabilities.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

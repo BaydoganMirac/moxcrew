@@ -25,15 +25,29 @@ accept checked results or request bounded corrections. Saved recipes and local
 schedules reuse this workflow. See [workflow state](docs/state/workflow-controls.md)
 and [provider execution](docs/state/provider-execution.md).
 
-Output Studio keeps files, versions, imported Project resources, tool setup and
-app actions beside Chat. Typed local tools create editable PPTX/DOCX/XLSX files,
-clean and analyze CSV, resize images, edit short videos and clean audio. Office/data
-tools require Python 3.9+; media operations require owner-installed FFmpeg/FFprobe.
-PDF text extraction additionally uses Poppler. Native Office previews show extracted
-structure; media previews show metadata and a thumbnail. Original files remain
-exportable. These bounded operations do not imply arbitrary format compatibility,
-full document rendering, media playback or forty verified end-to-end abilities.
-See [Output Studio state](docs/state/output-studio.md).
+Attach files to Chat or drop them into the composer. Mox freezes their Project
+copies before planning; images, recordings and documents can feed real OCR,
+transcription and production tools. In Outputs, render an Office/PDF page, select
+an image region or video interval, then describe the revision in Chat. Each
+revision freezes its source version and preserves the original.
+
+**More → Project tools** holds the Project's brand profile, taught skills,
+folder/page-change triggers, alternative crews, source evidence and typed output
+requests. Accepted skills and brand guidance carry into future work. Prepare two
+to four independent alternatives, compare their files, then reuse selected outputs
+together in a new request. Evidence opens literal excerpts from immutable sources.
+
+Typed tools create editable Office/data files, generate/edit images through local
+ComfyUI, package videos in three aspect ratios with burned captions and covers,
+inspect static public pages or prepare unsent form drafts in isolated Chrome,
+and create standalone interactive tables, charts and budget tools. Deliberately
+open interactive output in the system browser or export its original file.
+Engines are installed separately: Python 3.9+, FFmpeg/FFprobe, LibreOffice/Poppler,
+Tesseract, whisper.cpp with a compatible local model, Chrome and/or ComfyUI as
+needed. Configure tools through Outputs; image engine settings are Project scoped.
+Missing tools show setup errors. Protocol peers verify image/speech integration;
+live model quality and Windows/Linux runtime proof remain separate release gates.
+See [capabilities and limits](docs/state/eleven-product-capabilities.md).
 
 Chat is the Project's primary surface. Crew and Outputs open one context beside
 the conversation at normal/wide desktop widths; narrow windows keep a readable
@@ -70,7 +84,7 @@ including presentations and video editing. See the
 
 Moxcrew 0.12 runs its interface and host in Rust. egui/eframe renders the native
 window through one Glow backend; the installed application contains no WebView,
-HTML/JavaScript bundle or Node server. Local canonical state remains useful
+HTML/JavaScript UI bundle or Node server. Local canonical state remains useful
 without Cloud. Accessibility support is enabled.
 
 The Moxcrew interface groups Chat, projects, tasks and teams beside project memory and
@@ -151,7 +165,8 @@ Read [installation and recovery](docs/install.md), [architecture](docs/architect
 and [release checks](docs/release.md). Create/retry/export commands write V8 local
 events; chat-send and motion preferences add V9 audit facts. Project crews add
 V10 local mission and communication facts. Productive crews add V11 workflow,
-V12 resource/artifact/action and V13 multi-provider execution/usage facts. Older builds need
+V12 resource/artifact/action, V13 multi-provider execution/usage and V14 local
+profile/skill/trigger/alternative/evidence facts. Older builds need
 an unchanged pre-upgrade backup for rollback.
 [Project Memory](docs/state/project-memory.md)
 supports durable sources, message revisions, sourced ADR lifecycle and scoped

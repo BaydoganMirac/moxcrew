@@ -1,6 +1,6 @@
 # Task0052: Eleven conversation-first product capabilities
 
-Status: Owner-approved, implementing
+Status: Complete; independently reviewed and locally verified
 
 Updated: 2026-10-20
 
@@ -91,3 +91,11 @@ native TR/EN dark/light and minimum-window interactions/captures. Independently
 review and package a feature-off macOS development artifact. No remote task intake,
 Git push, Cloud deployment, public release or installation into user applications.
 Use synthetic inputs; never inspect private credentials or browser profiles.
+
+## Completion
+
+Completed 2026-10-20. The final runtime source, 504-test workspace result,
+real output/browser evidence, native matrix and feature-off macOS development
+package are recorded in [capability state](../state/eleven-product-capabilities.md).
+Optional engine/live-model and platform limits remain explicit; remote intake
+and public release remain outside this task.

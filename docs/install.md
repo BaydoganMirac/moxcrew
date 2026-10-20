@@ -41,7 +41,10 @@ export and work retry commands now add V8 facts. Pre-Task0040 builds, including
 older 0.12.0 development binaries, cannot read them; rollback restores the full
 unchanged pre-upgrade copy. Task0041 adds V9 audit facts for conversation sends
 and motion preferences; pre-Task0041 builds also reject these facts. The same
-complete stopped-backup rollback rule applies. Never edit log lines to downgrade. Uninstalling must not
+complete stopped-backup rollback rule applies. Task0052 adds V14 Project profile,
+skill, trigger, alternative and evidence facts. Preserve the complete stopped
+pre-upgrade copy before first use; builds without V14 support cannot read those
+facts. Never edit log lines to downgrade. Uninstalling must not
 delete the canonical data directory.
 
 ### macOS opens an entirely white window

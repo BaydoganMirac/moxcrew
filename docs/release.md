@@ -174,6 +174,15 @@ export and work retry (including ordinary retries). Close and back up the data
 directory before the first such command. Readers without V8 support reject
 those events. Rollback restores the complete unchanged pre-upgrade data copy;
 never delete or rewrite V8 lines to make an old reader open the directory.
+
+Task0052 adds V14 Project capability facts. Preserve a complete stopped backup
+before first capability mutation. Rollback to an earlier development build restores
+that unchanged copy; never remove V14 events or partial mission allocations.
+Verify exact Project/hash input batches, accepted-only skill context, literal
+evidence, trigger pause/expiry/re-arm recovery and applied allocation receipts.
+Engine protocol peers establish integration only. Native macOS media/browser
+proof and separate live-model/Windows/Linux gates are recorded in
+[capability state](state/eleven-product-capabilities.md).
 Create does not bump the current development source to 1.0.0.
 
 Task0041 adds V9 owner audit for project_chat_send and desktop_motion. Rollback

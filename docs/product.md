@@ -32,6 +32,14 @@ composer while preserving the original goal and bounded prior context. Recipes,
 work modes and roster configuration are optional details. Actual plans remain
 inspectable and require explicit preparation and start before agents execute.
 The bundled-guide recommendation remains available as a labelled alternative.
+Files can be attached in the composer; targeted output selections return to the
+same conversation. Optional Project tools contain brand guidance, taught skills,
+bounded folder/URL triggers, parallel alternatives and inspectable source evidence.
+Typed requests for images, video packages, static browser work and interactive
+outputs enter this same plan/prepare/start flow. An armed trigger is explicit
+time- and count-bounded delegation for its frozen recipe while the Host is awake.
+It watches a source condition; it does not import an entire folder automatically.
+See [eleven capabilities](state/eleven-product-capabilities.md) for engine and format limits.
 Reusable rosters belong to Projects. Real agents exchange
 attributed messages within the same Project and receive checked upstream files.
 Closed agents do not automatically wake when sent a message. Single task remains

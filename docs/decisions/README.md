@@ -53,3 +53,4 @@ supersedes the old one.
 | [0047](0047-chat-centered-project-context.md) | Accepted; Task0048 | Chat as the primary Project surface with responsive Crew/Outputs context |
 | [0048](0048-conversation-first-orchestration.md) | Accepted; Task0050 | One conversation composer, visible provider choice and exact first-request Project creation |
 | [0049](0049-automatic-planning-connection.md) | Accepted; Task0051 | Automatic usable planning connection with optional manual override; freeze actual provider before sending |
+| [0050](0050-local-product-capabilities.md) | Accepted; Task0052 | Eleven local capabilities through the existing Project/Chat authority, optional engines and V14 facts; remote intake excluded |

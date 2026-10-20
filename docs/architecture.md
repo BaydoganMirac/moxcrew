@@ -323,6 +323,10 @@ It is not a V0 dependency.
 Productive Project crews add V11 workflow facts (plans, direction, offers,
 reviews and schedules), V12 Studio facts (frozen resources, artifact provenance,
 production jobs and explicit app actions), and V13 provider execution/usage facts.
+V14 adds Project profiles, accepted skills, bounded trigger delegations and
+occurrences, alternative allocations and literal source evidence. Scoped reads
+carry full local content; routine snapshots retain metadata. Accepted profiles
+and skills enter planner/run context; proposed sources cannot grant permissions.
 They retain the same writer and work queue. Older event versions keep their exact
 meaning and projection shapes. Routine snapshots carry workflow metadata;
 Project-scoped reads supply full plans and resources. Existing Cloud content and
@@ -335,6 +339,16 @@ Provider adapters share the owned-process runner. App credentials live in privat
 per-Project files, outside events and snapshots. App previews freeze both typed
 arguments and the credential revision; a durable dispatch precedes the remote
 request. An uncertain outcome is recorded without automatic repetition.
+
+The eleven local capabilities reuse this authority. Batch resource imports commit
+one ordered fact after all inputs are frozen; mixed-crew follow-ups validate each
+Project/work/hash reference. Visual revision manifests freeze canonical page,
+region or time selections. Optional ComfyUI uses a fixed graph, private per-Project
+loopback configuration and job-scoped cancellation. External Chrome uses a fresh
+profile, disabled page scripts, fixed inspection expressions and DNS-pinned public
+GET/HEAD requests; form drafts never submit. Generated interactive HTML contains
+fixed offline scripts and a restrictive CSP; opening requires an exact checked
+artifact from a completed typed production job. See [ADR0050](decisions/0050-local-product-capabilities.md).
 
 ## Read and write paths
 

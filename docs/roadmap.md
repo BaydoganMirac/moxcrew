@@ -2,12 +2,20 @@
 
 Status: active
 
-Updated: 2026-10-19
+Updated: 2026-10-20
 
 This roadmap describes public technical direction, not dates or commercial
 commitments.
 
 ## Now
+
+- Continue live-model and platform release evidence for the delivered
+  [eleven local product capabilities](plans/0052-eleven-product-capabilities.md):
+  rich inputs, visual revisions, image/video production, Project style, browser
+  work, taught skills, bounded triggers, alternatives, source evidence and
+  interactive outputs. Keep the main Chat composer simple and provider selection
+  optional. [State and evidence](state/eleven-product-capabilities.md) distinguish
+  real media/browser proof from protocol peers and unverified live models.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

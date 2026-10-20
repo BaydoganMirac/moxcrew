@@ -2,7 +2,7 @@
 
 Status: Scope approved; productive crews and bounded production implemented, complete ability/release evidence pending
 
-Updated: 2026-10-19
+Updated: 2026-10-20
 
 ## Approved baseline
 
@@ -19,11 +19,11 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Research | R1–R5 | Frozen sources and bounded text extraction implemented; full research quality proof pending |
 | Documents | D1–D5 | DOCX creation/paragraph revision; real LibreOffice open proof; full area pending |
 | Presentations | P1–P5 | Editable PPTX creation/slide revision; real LibreOffice open proof; full area pending |
-| Video | V1–V5 | Checked clip edits and SRT sidecars with FFmpeg; full area pending |
-| Images | I1–I5 | Real image resize/native preview; generation and full area pending |
-| Audio | A1–A5 | Real bounded cleanup to WAV; full area pending |
+| Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
+| Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits and PNG validation; live model quality/full area pending |
+| Audio | A1–A5 | Real bounded cleanup to WAV; timed whisper.cpp transcription adapter with CLI-peer evidence; live model/full area pending |
 | Data | T1–T5 | CSV cleanup/statistics and XLSX output/open proof; full area pending |
-| Web/actions | W1–W5 | Explicit Drive import, Notion page, Calendar event with loopback proof; live accounts/full area pending |
+| Web/actions | W1–W5 | Explicit app actions, isolated static public-page/form-draft browser and offline interactive tools; live accounts/full area pending |
 | Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery, local schedules and checked multi-file delivery packages implemented; full ten-workflow release proof pending |
 
 The first [Create studio slice](project-create-studio.md) reuses Project/decision,
@@ -33,6 +33,11 @@ implemented. Ordinary coding tasks/teams retain their Git workflow. A catalog
 entry does not complete any row above. Source remains 0.12.0; V8 local audit
 facts require the documented stopped-backup rollback procedure. Cloud runtime,
 model credentials and production installation are unchanged.
+
+[Task0052](eleven-product-capabilities.md) adds rich inputs, visual revisions,
+Project style/accepted skills, bounded triggers, alternatives and literal evidence
+through the same Chat. This extends the productive implementation without
+claiming completion of every ability, workflow, model-quality or release gate.
 
 [Task0041](connected-project-conversation.md) adds a durable native Project
 conversation, bounded selected-file follow-ups, explicit connection diagnostics,

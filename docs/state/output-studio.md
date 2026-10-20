@@ -1,6 +1,11 @@
 # Output Studio and local production
 
-Updated: 2026-10-19. Task0044; integrated tests and independent review passed.
+Updated: 2026-10-20. Task0044 baseline; Task0052 extensions linked below.
+
+Task0052 extends this baseline with real Office/PDF page rendering, native
+region/time selection, typed image generation, OCR/transcription, video packages,
+static browser work and offline interactive outputs. Its current implementation,
+engine limits and verification are in [eleven capabilities](eleven-product-capabilities.md).
 
 The native Project Outputs view opens Project-scoped Output Studio. It lists actual
 files, SHA-256 versions and revision parents. A selected revision freezes the

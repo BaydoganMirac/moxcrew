@@ -8,6 +8,11 @@ use std::{
     time::Duration,
 };
 
+#[path = "production_image.rs"]
+mod image_engine;
+pub(crate) use image_engine::{configure_image_engine, image_readiness, remove_image_engine};
+
+const CAPABILITIES: &str = include_str!("../assets/tools/production_capabilities.py");
 const SCRIPT: &str = include_str!("../assets/tools/production.py");
 const LIMIT: usize = 25 * 1024 * 1024;
 pub(crate) const OPERATIONS: &[&str] = &[
@@ -19,9 +24,20 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "data.analyze",
     "data.xlsx",
     "images.resize",
+    "images.mask",
     "video.edit",
     "audio.cleanup",
     "resources.extract",
+    "resources.ocr",
+    "audio.transcribe",
+    "documents.render",
+    "video.frame",
+    "video.package",
+    "interactive.create",
+    "images.generate",
+    "images.edit",
+    "browser.inspect",
+    "browser.draft",
 ];
 fn error(code: &str) -> Error {
     Error(code.into())
@@ -57,11 +73,26 @@ pub(crate) fn paths(data: &Path) -> Result<Value> {
         ("ffmpeg", "ffmpeg"),
         ("ffprobe", "ffprobe"),
         ("pdftotext", "pdftotext"),
+        ("pdftoppm", "pdftoppm"),
+        ("tesseract", "tesseract"),
+        ("whisper", "whisper-cli"),
+        ("whisperModel", "moxcrew-no-default-whisper-model"),
+        ("libreoffice", "soffice"),
+        ("chrome", "google-chrome"),
     ] {
         let path = configured[id]
             .as_str()
             .map(PathBuf::from)
-            .or_else(|| discover(binary));
+            .or_else(|| discover(binary))
+            .or_else(|| match id {
+                "libreoffice" => Some(PathBuf::from(
+                    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+                )),
+                "chrome" => Some(PathBuf::from(
+                    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                )),
+                _ => None,
+            });
         if let Some(path) = path.filter(|p| p.is_absolute() && p.is_file()) {
             paths[id] = json!(path);
         }
@@ -69,7 +100,19 @@ pub(crate) fn paths(data: &Path) -> Result<Value> {
     Ok(paths)
 }
 pub(crate) fn configure(data: &Path, id: &str, selected: &str) -> Result<()> {
-    if !["python", "ffmpeg", "ffprobe", "pdftotext"].contains(&id)
+    if ![
+        "python",
+        "ffmpeg",
+        "ffprobe",
+        "pdftotext",
+        "pdftoppm",
+        "tesseract",
+        "whisper",
+        "whisperModel",
+        "libreoffice",
+        "chrome",
+    ]
+    .contains(&id)
         || selected.len() > 4096
         || !Path::new(selected).is_absolute()
     {
@@ -82,9 +125,14 @@ pub(crate) fn configure(data: &Path, id: &str, selected: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if fs::metadata(&path)?.permissions().mode() & 0o111 == 0 {
+        if id != "whisperModel" && fs::metadata(&path)?.permissions().mode() & 0o111 == 0 {
             return Err(error("PRODUCTION_TOOL_NOT_EXECUTABLE"));
         }
+    }
+    if id == "whisperModel"
+        && (fs::metadata(&path)?.len() < 4 || fs::metadata(&path)?.len() > 8 * 1024 * 1024 * 1024)
+    {
+        return Err(error("PRODUCTION_MODEL_INVALID"));
     }
     let mut value = configured(data)?;
     value[id] = json!(path);
@@ -95,8 +143,8 @@ pub(crate) fn configure(data: &Path, id: &str, selected: &str) -> Result<()> {
 }
 pub(crate) async fn readiness(data: &Path) -> Result<Value> {
     let paths = paths(data)?;
-    let mut result = Vec::new();
-    for (id, name, setup) in [
+    let mut tasks = tokio::task::JoinSet::new();
+    for (index, (id, name, setup)) in [
         (
             "python",
             "Python 3.9+ · Office / data",
@@ -117,32 +165,112 @@ pub(crate) async fn readiness(data: &Path) -> Result<Value> {
             "Poppler · PDF text",
             "https://poppler.freedesktop.org/",
         ),
-    ] {
-        let available = if let Some(path) = paths[id].as_str() {
-            let mut command = tokio::process::Command::new(path);
-            if id == "python" {
-                command.args([
-                    "-I",
-                    "-B",
-                    "-c",
-                    "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)",
-                ]);
+        (
+            "pdftoppm",
+            "Poppler · page previews",
+            "https://poppler.freedesktop.org/",
+        ),
+        (
+            "tesseract",
+            "Tesseract · image text",
+            "https://tesseract-ocr.github.io/tessdoc/Installation.html",
+        ),
+        (
+            "whisper",
+            "whisper.cpp · transcription",
+            "https://github.com/ggml-org/whisper.cpp",
+        ),
+        (
+            "whisperModel",
+            "whisper.cpp · local model file",
+            "https://github.com/ggml-org/whisper.cpp/tree/master/models",
+        ),
+        (
+            "libreoffice",
+            "LibreOffice · document rendering",
+            "https://www.libreoffice.org/download/",
+        ),
+        (
+            "chrome",
+            "Chrome · isolated browser work",
+            "https://www.google.com/chrome/",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let path = paths[id].as_str().map(str::to_owned);
+        tasks.spawn(async move {
+            let available = if let Some(path) = path {
+                if id == "whisperModel" {
+                    fs::metadata(path).is_ok_and(|m| m.len() >= 4 && m.len() <= 8 * 1024 * 1024 * 1024)
+                } else {
+                    let mut command = tokio::process::Command::new(path);
+                    match id {
+                        "python" => { command.args(["-I", "-B", "-c", "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)"]); }
+                        "pdftotext" | "pdftoppm" => { command.arg("-v"); }
+                        "whisper" => { command.arg("--help"); }
+                        "libreoffice" | "tesseract" | "chrome" => { command.arg("--version"); }
+                        _ => { command.arg("-version"); }
+                    }
+                    crate::providers::typed_process(command, Vec::new(), Arc::new(AtomicBool::new(true)), Duration::from_secs(2), 64 * 1024).await.is_ok()
+                }
+            } else { false };
+            (index, json!({"id":id,"name":name,"available":available,"reasonCode":if available {"PRODUCTION_TOOL_AVAILABLE"} else {"PRODUCTION_TOOL_SETUP_REQUIRED"},"setupUrl":setup}))
+        });
+    }
+    let mut result = Vec::new();
+    while let Some(entry) = tasks.join_next().await {
+        result.push(entry.map_err(|_| error("PRODUCTION_TOOL_FAILED"))?);
+    }
+    result.sort_by_key(|entry| entry.0);
+    let mut result: Vec<Value> = result.into_iter().map(|entry| entry.1).collect();
+    let available = |id: &str| {
+        result
+            .iter()
+            .any(|entry| entry["id"] == id && entry["available"] == true)
+    };
+    let office = available("libreoffice") && available("pdftoppm");
+    let ffmpeg = available("ffmpeg");
+    let mut libass = false;
+    let mut overlay = false;
+    if ffmpeg {
+        let mut command = tokio::process::Command::new(paths["ffmpeg"].as_str().unwrap());
+        command.args(["-hide_banner", "-filters"]);
+        if let Ok(bytes) = crate::providers::typed_process(
+            command,
+            vec![],
+            Arc::new(AtomicBool::new(true)),
+            Duration::from_secs(2),
+            128 * 1024,
+        )
+        .await
+        {
+            let text = String::from_utf8_lossy(&bytes);
+            let filters: Vec<_> = text
+                .lines()
+                .filter_map(|line| line.split_whitespace().nth(1))
+                .collect();
+            libass = filters.contains(&"subtitles");
+            overlay = filters.contains(&"overlay");
+        }
+    }
+    for entry in &mut result {
+        if entry["id"] == "ffmpeg" {
+            entry["burnedCaptionsAvailable"] = json!(ffmpeg && (libass || (office && overlay)));
+            entry["captionRenderer"] = json!(if libass {
+                Some("libass")
+            } else if ffmpeg && office && overlay {
+                Some("office_overlay")
             } else {
-                command.arg(if id == "pdftotext" { "-v" } else { "-version" });
-            }
-            crate::providers::typed_process(
-                command,
-                Vec::new(),
-                Arc::new(AtomicBool::new(true)),
-                Duration::from_secs(2),
-                64 * 1024,
-            )
-            .await
-            .is_ok()
-        } else {
-            false
-        };
-        result.push(json!({"id":id,"name":name,"available":available,"reasonCode":if available {"PRODUCTION_TOOL_AVAILABLE"} else {"PRODUCTION_TOOL_SETUP_REQUIRED"},"setupUrl":setup}));
+                None
+            });
+            entry["captionFallbackLimits"] =
+                json!({"maxCaptions":20,"maxCharacters":120,"maxLines":3});
+        }
+        if entry["id"] == "whisperModel" {
+            entry["modelValidation"] = json!("file_presence_only");
+        }
     }
     Ok(json!(result))
 }
@@ -237,6 +365,24 @@ pub(crate) fn remap_sources(value: &mut Value, mapping: &[(String, String)]) {
     }
 }
 
+pub(crate) async fn run_for_project(
+    data: &Path,
+    project: &str,
+    operation: &str,
+    arguments: &Value,
+    inputs: &[(String, Vec<u8>)],
+    active: Option<Arc<AtomicBool>>,
+) -> Result<Output> {
+    if matches!(operation, "images.generate" | "images.edit") {
+        input_paths(arguments)?;
+        if inputs.len() > 12 || inputs.iter().map(|(_, b)| b.len()).sum::<usize>() > LIMIT {
+            return Err(error("PRODUCTION_INPUT_LIMIT"));
+        }
+        return image_engine::run(data, project, operation, arguments, inputs, active).await;
+    }
+    run(data, operation, arguments, inputs, active).await
+}
+
 pub(crate) async fn run(
     data: &Path,
     operation: &str,
@@ -244,7 +390,13 @@ pub(crate) async fn run(
     inputs: &[(String, Vec<u8>)],
     active: Option<Arc<AtomicBool>>,
 ) -> Result<Output> {
-    if !OPERATIONS.contains(&operation) && operation != "inspect" {
+    if matches!(operation, "browser.inspect" | "browser.draft") {
+        return crate::browser::run(data, operation, arguments, inputs, active).await;
+    }
+    if matches!(operation, "images.generate" | "images.edit") {
+        return Err(error("PRODUCTION_IMAGE_PROJECT_REQUIRED"));
+    }
+    if !OPERATIONS.contains(&operation) && !["inspect", "images.verify"].contains(&operation) {
         return Err(error("PRODUCTION_OPERATION_UNSUPPORTED"));
     }
     if inputs.len() > 12 || inputs.iter().map(|(_, bytes)| bytes.len()).sum::<usize>() > LIMIT {
@@ -278,6 +430,10 @@ pub(crate) async fn run(
     }
     remap_sources(&mut args, &mapping);
     store::atomic_write(&scratch.0.join("production.py"), SCRIPT.as_bytes())?;
+    store::atomic_write(
+        &scratch.0.join("production_capabilities.py"),
+        CAPABILITIES.as_bytes(),
+    )?;
     let request =
         serde_json::to_vec(&json!({"operation":operation,"arguments":args,"tools":tools}))?;
     let mut command = tokio::process::Command::new(python);
@@ -480,3 +636,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "production_capabilities_tests.rs"]
+mod capabilities_tests;

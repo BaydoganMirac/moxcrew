@@ -89,7 +89,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Image engine settings" => "Görsel motoru ayarları",
         "Image prompt" => "Görsel açıklaması",
         "Immediate files only: up to 32 files and 64 MiB; linked files are excluded." => "Yalnızca klasörün içindeki dosyalar: en fazla 32 dosya ve 64 MiB; bağlantılar dahil edilmez.",
-        "Import a source in Outputs → Resources first." => "Önce Çıktılar → Kaynaklar bölümünden bir kaynak ekle.",
+        "Import a source in Outputs / Resources first." => "Önce Çıktılar / Kaynaklar bölümünden bir kaynak ekle.",
         "Importing the frozen attachments before planning…" => "Planlama öncesinde seçilen dosyalar ekleniyor…",
         "Jobs" => "İşler",
         "Language (optional)" => "Dil (isteğe bağlı)",

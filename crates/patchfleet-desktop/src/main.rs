@@ -78,6 +78,11 @@ impl Patchfleet {
                     if scene.starts_with("studio-") {
                         console.studio_smoke(&scene, bridge.snapshot.as_ref().unwrap());
                     }
+                    if scene.starts_with("capabilities-") {
+                        bridge.chat_smoke(false);
+                        bridge.capabilities_smoke(&scene);
+                        console.capabilities_smoke(bridge.snapshot.as_ref().unwrap(), &scene);
+                    }
                     if scene.starts_with("conversation-") {
                         if matches!(
                             scene.as_str(),
@@ -313,6 +318,12 @@ fn seed_create_scene(directory: &std::path::Path) {
         let snapshot = host.snapshot().unwrap();
         let work = snapshot["work"]["items"].as_array().unwrap().iter().find(|w|w["workItemId"]==queued["workItemId"]).unwrap();
         let output = std::path::Path::new(work["workingDirectory"].as_str().unwrap()).join("outputs");
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-canvas") {
+            let source=PathBuf::from(std::env::var("PATCHFLEET_SMOKE_ARTIFACT_FROM").expect("An actual PNG rendering fixture is required"));
+            assert!(source.is_absolute());let bytes=std::fs::read(source).unwrap();
+            assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n")&&bytes.len()<=2*1024*1024);
+            std::fs::write(output.join("canvas.png"),bytes).unwrap();
+        }
         std::fs::write(output.join("brief.md"), "# Launch presentation brief\n\nA real text file in this disposable project's output folder.\n\nThe job is queued. No model or presentation renderer was run for this interface fixture.\n\n## Requested deliverables\n\n- Source-backed research\n- Editable presentation\n- Short launch video\n\nOwner review remains explicit.\n").unwrap();
         std::fs::write(output.join("outline.csv"), "slide,topic\n1,The idea\n2,The audience\n3,The evidence\n").unwrap();
         host.shutdown().await;
@@ -532,6 +543,27 @@ impl eframe::App for Patchfleet {
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.bridge.poll();
+        if let Some((request, paths)) = self.bridge.capability_paths.take() {
+            self.console.complete_capability_paths(request, paths);
+        }
+        if let Some(path) = self.bridge.take_artifact_open() {
+            #[cfg(target_os = "macos")]
+            let opened = std::process::Command::new("/usr/bin/open")
+                .arg(&path)
+                .spawn();
+            #[cfg(target_os = "windows")]
+            let opened = std::process::Command::new("explorer.exe")
+                .arg(&path)
+                .spawn();
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            let opened = std::process::Command::new("xdg-open").arg(&path).spawn();
+            if opened.is_err() {
+                self.bridge.feedback = Some(command::Notice::error(
+                    "project_artifact_open",
+                    "PROJECT_ARTIFACT_OPEN_FAILED",
+                ));
+            }
+        }
         if let Some((target, selection)) = self.bridge.folder_selection.take() {
             self.console.accept_folder(target, selection);
         }
@@ -629,8 +661,12 @@ impl eframe::App for Patchfleet {
             if let Some(command) = commands.into_iter().next() {
                 self.bridge.submit(command);
             }
-            if let Some(request) = self.console.take_studio_path_request() {
-                if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
+            if !self.bridge.busy
+                && !self.bridge.closing
+                && !self.bridge.picking_folder
+                && self.bridge.error.is_none()
+            {
+                if let Some(request) = self.console.take_studio_path_request() {
                     let title = match &request.kind {
                         ui::StudioPathKind::Resource => "Import resource",
                         ui::StudioPathKind::Tool { .. } => "Choose executable",
@@ -645,8 +681,45 @@ impl eframe::App for Patchfleet {
                         });
                 }
             }
-            if let Some(request) = self.console.take_create_export_request() {
-                if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
+            if !self.bridge.busy
+                && !self.bridge.closing
+                && !self.bridge.picking_folder
+                && self.bridge.error.is_none()
+            {
+                if let Some(request) = self.console.take_capability_path_request() {
+                    let kind = request.kind.clone();
+                    let title = match kind {
+                        ui::CapabilityPathKind::Resources => "Attach files",
+                        ui::CapabilityPathKind::TriggerFolder => "Choose folder",
+                    };
+                    let dialog = rfd::AsyncFileDialog::new()
+                        .set_title(i18n::tr(language, title).into_owned())
+                        .set_parent(frame);
+                    self.bridge
+                        .choose_capability_paths(ctx.clone(), request, async move {
+                            match kind {
+                                ui::CapabilityPathKind::Resources => {
+                                    dialog.pick_files().await.map(|files| {
+                                        files
+                                            .into_iter()
+                                            .map(|f| f.path().to_string_lossy().into_owned())
+                                            .collect()
+                                    })
+                                }
+                                ui::CapabilityPathKind::TriggerFolder => dialog
+                                    .pick_folder()
+                                    .await
+                                    .map(|f| vec![f.path().to_string_lossy().into_owned()]),
+                            }
+                        });
+                }
+            }
+            if !self.bridge.busy
+                && !self.bridge.closing
+                && !self.bridge.picking_folder
+                && self.bridge.error.is_none()
+            {
+                if let Some(request) = self.console.take_create_export_request() {
                     let choice = rfd::AsyncFileDialog::new()
                         .set_title(i18n::tr(language, "Export result").into_owned())
                         .set_file_name(&request.name)
@@ -674,8 +747,12 @@ impl eframe::App for Patchfleet {
                         choice.await.map(|file| file.path().to_owned())
                     });
             }
-            if let Some(target) = self.console.take_folder_request() {
-                if !self.bridge.busy && !self.bridge.closing && !self.bridge.picking_folder {
+            if !self.bridge.busy
+                && !self.bridge.closing
+                && !self.bridge.picking_folder
+                && self.bridge.error.is_none()
+            {
+                if let Some(target) = self.console.take_folder_request() {
                     let mut dialog = rfd::AsyncFileDialog::new()
                         .set_title(
                             i18n::tr(language, "Choose your Git repository folder").into_owned(),
@@ -757,6 +834,7 @@ fn main() {
                 || scene.starts_with("chat-")
                 || scene.starts_with("crew-")
                 || scene.starts_with("productive-")
+                || scene.starts_with("capabilities-")
             {
                 seed_create_scene(&directory);
             }

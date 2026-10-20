@@ -8,7 +8,10 @@ use std::collections::{HashMap, HashSet};
 
 #[path = "create.rs"]
 mod create;
-pub use create::{CreateExportRequest, DeliveryExportRequest, StudioPathKind, StudioPathRequest};
+pub use create::{
+    CapabilityPathKind, CapabilityPathRequest, CreateExportRequest, DeliveryExportRequest,
+    StudioPathKind, StudioPathRequest,
+};
 
 macro_rules! localized_format {
     ($ui:expr,$key:literal,$($value:expr),+ $(,)?) => {

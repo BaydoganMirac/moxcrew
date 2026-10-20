@@ -1,6 +1,7 @@
 pub mod abilities;
 pub mod agent_memory;
 mod app_connections;
+mod browser;
 pub mod cloud;
 mod conversation;
 mod creation;
@@ -11,6 +12,7 @@ pub mod domain;
 pub mod extraction;
 mod host;
 mod production;
+mod project_capabilities;
 mod project_crews;
 pub mod project_memory;
 mod project_studio;
@@ -20,6 +22,7 @@ pub mod retrieval;
 pub mod shared_memory;
 pub mod store;
 mod teams;
+mod web_access;
 mod work;
 
 pub use host::Host;

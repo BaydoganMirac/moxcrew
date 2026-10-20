@@ -52,3 +52,4 @@ supersedes the old one.
 | [0046](0046-project-delivery-archives.md) | Accepted; Task0047 | Explicit hash-pinned Project output ZIP archives with provenance |
 | [0047](0047-chat-centered-project-context.md) | Accepted; Task0048 | Chat as the primary Project surface with responsive Crew/Outputs context |
 | [0048](0048-conversation-first-orchestration.md) | Accepted; Task0050 | One conversation composer, visible provider choice and exact first-request Project creation |
+| [0049](0049-automatic-planning-connection.md) | Accepted; Task0051 | Automatic usable planning connection with optional manual override; freeze actual provider before sending |

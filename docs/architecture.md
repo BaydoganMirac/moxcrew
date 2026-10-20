@@ -2,7 +2,7 @@
 
 Status: Native Rust desktop architecture
 
-Updated: 2026-10-19
+Updated: 2026-10-20
 
 ## System boundary
 
@@ -136,6 +136,11 @@ the desktop bridge exposes the actual creation receipt before the UI can dispatc
 the dependent frozen plan. Unknown creation outcomes retain the exact retry
 identity. This adds no canonical event format or Cloud surface. Prepare and
 Start remain separate owner actions. See [ADR0048](decisions/0048-conversation-first-orchestration.md).
+The default Chat route resolves a usable local planning connection from existing
+diagnostics, with optional manual override. It freezes the actual provider before
+the first dependent command; availability changes cannot redirect pending work.
+This is desktop orchestration over the same Host contract, not a new model router
+or automatic cross-account retry. See [ADR0049](decisions/0049-automatic-planning-connection.md).
 
 The native Project conversation submits `project_chat_send` with a current
 project revision and an inspectable recipe; earlier `project_work_enqueue`

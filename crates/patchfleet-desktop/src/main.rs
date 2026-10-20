@@ -91,7 +91,13 @@ impl Patchfleet {
                         } else {
                             bridge.chat_smoke(false);
                         }
-                        bridge.smoke_provider_connections(scene != "conversation-offline");
+                        let provider = match scene.as_str() {
+                            "conversation-claude" => "claude",
+                            "conversation-gemini" => "gemini",
+                            _ => "codex",
+                        };
+                        bridge
+                            .smoke_provider_connections(scene != "conversation-offline", provider);
                         console.conversation_smoke(bridge.snapshot.as_ref().unwrap(), &scene);
                     }
                     if scene.starts_with("create-") {
@@ -200,7 +206,7 @@ impl Patchfleet {
                 assert!(!bridge.picking_folder, "Native folder check did not finish");
             }
             if !observe {
-                bridge.smoke_provider_connections(false);
+                bridge.smoke_provider_connections(false, "codex");
             }
             console
         };

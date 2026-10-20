@@ -53,6 +53,9 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
     }
     let translated = match text {
         "Send" => "Gönder",
+        "Automatic" => "Otomatik",
+        "Planning connection · {0}" => "Bağlantı · {0}",
+        "Connect one provider to send your request." => "İsteğini göndermek için bir sağlayıcı bağla.",
         "New conversation" => "Yeni sohbet",
         "Selected provider is unavailable. Check connections, then send again." => "Seçtiğiniz sağlayıcı kullanılamıyor. Bağlantıyı kontrol edip tekrar gönderin.",
         "Conversation" => "Sohbet",

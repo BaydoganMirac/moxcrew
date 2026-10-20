@@ -2,7 +2,7 @@
 
 Status: working product contract
 
-Updated: 2026-10-19
+Updated: 2026-10-20
 
 ## One-line promise
 
@@ -24,8 +24,9 @@ Decisions include ordinary choices about a project's audience, evidence or
 delivery, not only software architecture. Notes and generated suggestions remain
 context until explicitly accepted. Decisions stay scoped to their project.
 
-Chat starts with one message box and a visible local provider choice. An explicit
-first Send can create its Project through an exact applied receipt. The selected
+Chat starts with one message box and Send. Mox uses an available local connection
+automatically; provider selection is an optional secondary override. An explicit
+first Send can create its Project through an exact applied receipt. The resolved
 provider plans the work; clarification replies and revisions use the same
 composer while preserving the original goal and bounded prior context. Recipes,
 work modes and roster configuration are optional details. Actual plans remain
@@ -84,6 +85,9 @@ supported Claude/Gemini headless adapters provide selected-provider execution;
 live account/model access remains separately unverified. See
 [provider execution state](state/provider-execution.md) and
 [conversation-first state](state/conversation-first-orchestration.md).
+The default connection choice uses existing readiness diagnostics rather than
+asking the owner which engine fits the task. The real planner infers abilities
+and crew members from the goal. See [automatic connection state](state/automatic-planning-provider.md).
 
 The default skills must produce and revise checked outputs across the approved
 release scope, with tool/access preflight and attributable inputs. A recipe

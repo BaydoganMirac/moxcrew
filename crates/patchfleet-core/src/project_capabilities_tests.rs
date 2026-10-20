@@ -26,6 +26,16 @@ fn url_bytes(host: &Host, url: &str, bytes: &[u8]) {
         (url.into(), bytes.to_vec()),
     );
 }
+fn allocation_failures() -> &'static Mutex<HashSet<PathBuf>> {
+    static FAILURES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    FAILURES.get_or_init(Mutex::default)
+}
+pub(super) fn take_allocation_failure(host: &Host) -> bool {
+    allocation_failures()
+        .lock()
+        .unwrap()
+        .remove(host.creation_data_dir())
+}
 async fn local() -> (tempfile::TempDir, Arc<Host>, Value) {
     let tmp = tempfile::tempdir().unwrap();
     let host = Host::open(tmp.path().join("data")).unwrap();
@@ -407,6 +417,223 @@ async fn committed_variant_allocations_recover_without_duplicate_missions_after_
     assert!(array(&reopened.snapshot().unwrap()["work"], "items").is_empty());
     reopened.shutdown().await;
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn committed_variants_keep_applied_receipt_when_mission_preparation_fails() {
+    let (tmp, _peer, host, p) = provider_fixture("hold").await;
+    let recipe = saved_recipe(&host, &p).await;
+    let request = command(
+        json!({"projectId":p,"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"],"instruction":"Recover committed alternatives after a preparation failure.","labels":["One","Two"],"providerId":"codex","budgets":{"maxJobs":1,"maxElapsedMinutes":10,"maxReviewRounds":0}}),
+    );
+    allocation_failures()
+        .lock()
+        .unwrap()
+        .insert(host.creation_data_dir().to_owned());
+    let result = host
+        .action("project_variants_prepare", request.clone())
+        .await
+        .unwrap();
+    assert_eq!(result["outcome"], "applied");
+    let events = host.store.read_events().unwrap();
+    let receipt = events
+        .iter()
+        .find(|e| {
+            e["type"] == "owner.command.receipted"
+                && e["payload"]["commandId"] == request["commandId"]
+        })
+        .unwrap();
+    assert_eq!(receipt["payload"]["result"], result);
+    assert!(
+        !array(&host.snapshot().unwrap()["projectCrews"], "missions")
+            .iter()
+            .any(|m| array(&result, "variants")
+                .iter()
+                .any(|v| v["missionId"] == m["missionId"]))
+    );
+    assert_eq!(
+        host.action("project_variants_prepare", request.clone())
+            .await
+            .unwrap(),
+        result
+    );
+    host.shutdown().await;
+    drop(host);
+    let reopened = Host::open(tmp.path().join("data")).unwrap();
+    assert_eq!(
+        reopened
+            .action("project_variants_prepare", request)
+            .await
+            .unwrap(),
+        result
+    );
+    reopened.advance_capabilities().await.unwrap();
+    reopened.advance_capabilities().await.unwrap();
+    for variant in array(&result, "variants") {
+        assert_eq!(
+            mission(&reopened, &variant["missionId"])["status"],
+            "prepared"
+        );
+    }
+    assert_eq!(
+        array(&reopened.snapshot().unwrap()["projectCrews"], "missions")
+            .iter()
+            .filter(|m| array(&result, "variants")
+                .iter()
+                .any(|v| v["missionId"] == m["missionId"]))
+            .count(),
+        2
+    );
+    assert!(array(&reopened.snapshot().unwrap()["work"], "items").is_empty());
+    reopened.shutdown().await;
+}
+
+#[cfg(unix)]
+fn after(start: chrono::DateTime<chrono::Utc>, seconds: i64) -> Value {
+    json!((start + chrono::Duration::seconds(seconds))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+}
+
+#[cfg(unix)]
+async fn prepared_folder_occurrence(host: &Host, p: &Value, folder: &Path) -> (Value, Value) {
+    let recipe = saved_recipe(host, p).await;
+    fs::create_dir(folder).unwrap();
+    fs::write(folder.join("input.txt"), b"Original").unwrap();
+    let saved = host.action("project_trigger_save", command(json!({"projectId":p,"name":"Bounded folder trigger","kind":"folder","source":folder,"recipeId":recipe["recipeId"],"expectedRecipeRevision":1,"providerId":"codex","debounceSeconds":10,"maxOccurrences":3,"budgets":{"maxJobs":1,"maxElapsedMinutes":10,"maxReviewRounds":0}}))).await.unwrap();
+    host.action("project_trigger_set_armed", command(json!({"projectId":p,"triggerId":saved["triggerId"],"expectedTriggerRevision":1,"armed":true,"armedForMinutes":1}))).await.unwrap();
+    let trigger = state(host).unwrap()["triggers"][0].clone();
+    let start = instant(&trigger["lastCheckedAt"]).unwrap();
+    fs::write(folder.join("input.txt"), b"A real changed input").unwrap();
+    host.advance_capabilities_at(after(start, 11))
+        .await
+        .unwrap();
+    host.advance_capabilities_at(after(start, 22))
+        .await
+        .unwrap();
+    let trigger = state(host).unwrap()["triggers"][0].clone();
+    assert_eq!(trigger["occurrences"], 1);
+    assert_eq!(
+        mission(host, &trigger["activeMissionId"])["status"],
+        "prepared"
+    );
+    let occurrence = host
+        .store
+        .read_events()
+        .unwrap()
+        .into_iter()
+        .find(|e| e["type"] == "project_capability.occurrence_started")
+        .unwrap();
+    (trigger, occurrence)
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn pausing_and_rearming_does_not_start_an_old_prepared_occurrence() {
+    let (tmp, _peer, host, p) = provider_fixture("hold").await;
+    let folder = tmp.path().join("watched");
+    let (trigger, occurrence) = prepared_folder_occurrence(&host, &p, &folder).await;
+    let old_mission = trigger["activeMissionId"].clone();
+    host.action("project_trigger_set_armed", command(json!({"projectId":p,"triggerId":trigger["triggerId"],"expectedTriggerRevision":trigger["revision"],"armed":false}))).await.unwrap();
+    let paused = state(&host).unwrap()["triggers"][0].clone();
+    assert!(paused["activeMissionId"].is_null());
+    host.action("project_trigger_set_armed", command(json!({"projectId":p,"triggerId":trigger["triggerId"],"expectedTriggerRevision":paused["revision"],"armed":true,"armedForMinutes":1}))).await.unwrap();
+    let rearmed = state(&host).unwrap()["triggers"][0].clone();
+    let start = instant(&rearmed["lastCheckedAt"]).unwrap();
+    host.advance_capabilities_at(after(start, 30))
+        .await
+        .unwrap();
+    assert_eq!(mission(&host, &old_mission)["status"], "prepared");
+    assert_eq!(state(&host).unwrap()["triggers"][0]["occurrences"], 1);
+    assert!(array(&host.snapshot().unwrap()["work"], "items").is_empty());
+    let events = host.store.read_events().unwrap();
+    let forged = json!({"projectId":p,"missionId":old_mission,"expectedMissionRevision":1,"origin":{"kind":"capability","allocationId":occurrence["payload"]["allocationId"]},"at":after(start,30)});
+    assert!(automatic_start(&events, events.len(), &forged).is_err());
+    fs::write(
+        folder.join("input.txt"),
+        b"A new change under the new consent",
+    )
+    .unwrap();
+    host.advance_capabilities_at(after(start, 41))
+        .await
+        .unwrap();
+    host.advance_capabilities_at(after(start, 52))
+        .await
+        .unwrap();
+    let fresh = state(&host).unwrap()["triggers"][0].clone();
+    assert_eq!(fresh["occurrences"], 2);
+    assert_ne!(fresh["activeMissionId"], old_mission);
+    host.advance_capabilities_at(after(start, 53))
+        .await
+        .unwrap();
+    host.advance_crews().await.unwrap();
+    let running = mission(&host, &fresh["activeMissionId"]);
+    assert_eq!(running["tasks"][0]["status"], "running", "{running}");
+    let current = state(&host).unwrap()["triggers"][0].clone();
+    host.action("project_trigger_set_armed", command(json!({"projectId":p,"triggerId":trigger["triggerId"],"expectedTriggerRevision":current["revision"],"armed":false}))).await.unwrap();
+    let paused = state(&host).unwrap()["triggers"][0].clone();
+    assert_eq!(paused["activeMissionId"], fresh["activeMissionId"]);
+    host.action("project_trigger_set_armed", command(json!({"projectId":p,"triggerId":trigger["triggerId"],"expectedTriggerRevision":paused["revision"],"armed":true,"armedForMinutes":1}))).await.unwrap();
+    assert_eq!(
+        state(&host).unwrap()["triggers"][0]["activeMissionId"],
+        fresh["activeMissionId"]
+    );
+    assert_eq!(
+        mission(&host, &fresh["activeMissionId"])["tasks"][0]["workItemId"],
+        running["tasks"][0]["workItemId"]
+    );
+    assert_eq!(mission(&host, &old_mission)["status"], "prepared");
+    host.shutdown().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn expired_prepared_occurrence_stays_retired_after_rearm_and_restart() {
+    let (tmp, _peer, host, p) = provider_fixture("hold").await;
+    let folder = tmp.path().join("watched");
+    let (trigger, _) = prepared_folder_occurrence(&host, &p, &folder).await;
+    let old_mission = trigger["activeMissionId"].clone();
+    let events = host.store.read_events().unwrap();
+    let armed = events
+        .iter()
+        .find(|e| e["type"] == "project_capability.trigger_armed")
+        .unwrap();
+    host.advance_capabilities_at(after(instant(&armed["payload"]["at"]).unwrap(), 65))
+        .await
+        .unwrap();
+    let expired = state(&host).unwrap()["triggers"][0].clone();
+    assert_eq!(expired["armed"], false);
+    assert!(expired["activeMissionId"].is_null());
+    assert_eq!(expired["lastReasonCode"], "CAPABILITY_TRIGGER_EXPIRED");
+    host.action("project_trigger_set_armed", command(json!({"projectId":p,"triggerId":trigger["triggerId"],"expectedTriggerRevision":expired["revision"],"armed":true,"armedForMinutes":1}))).await.unwrap();
+    let start = instant(&state(&host).unwrap()["triggers"][0]["lastCheckedAt"]).unwrap();
+    host.shutdown().await;
+    drop(host);
+    let reopened = Host::open(tmp.path().join("data")).unwrap();
+    reopened
+        .advance_capabilities_at(after(start, 30))
+        .await
+        .unwrap();
+    assert_eq!(mission(&reopened, &old_mission)["status"], "prepared");
+    assert_eq!(state(&reopened).unwrap()["triggers"][0]["occurrences"], 1);
+    assert!(array(&reopened.snapshot().unwrap()["work"], "items").is_empty());
+    fs::write(folder.join("input.txt"), b"Changed after fresh arming").unwrap();
+    reopened
+        .advance_capabilities_at(after(start, 41))
+        .await
+        .unwrap();
+    reopened
+        .advance_capabilities_at(after(start, 52))
+        .await
+        .unwrap();
+    let fresh = state(&reopened).unwrap()["triggers"][0].clone();
+    assert_eq!(fresh["occurrences"], 2);
+    assert_ne!(fresh["activeMissionId"], old_mission);
+    assert_eq!(
+        mission(&reopened, &fresh["activeMissionId"])["status"],
+        "prepared"
+    );
+    reopened.shutdown().await;
+}
 #[cfg(unix)]
 #[tokio::test]
 async fn armed_folder_trigger_detects_real_bytes_debounces_and_expires_without_storms() {
@@ -679,6 +906,70 @@ async fn actual_bound_mcp_proposes_but_never_accepts_skills_and_records_literal_
         .as_str()
         .unwrap()
         .contains("Actual extracted source for citation."));
+
+    let python = crate::production::paths(host.creation_data_dir()).unwrap()["python"].clone();
+    assert!(
+        python.is_string(),
+        "this real production fixture needs Python3.9+"
+    );
+    host.action(
+        "project_tool_configure",
+        command(json!({"projectId":p,"toolId":"python","executablePath":python})),
+    )
+    .await
+    .unwrap();
+    let args = json!({"operation":"interactive.create","arguments":{"kind":"table","title":"Actual interactive artifact","columns":["Name"],"rows":[["Checked source"]]},"nonce":"interactive-1"});
+    let started = call(&credentials, "production_run", args.clone()).await;
+    assert_eq!(started["status"], "running", "{started}");
+    assert_eq!(
+        call(&credentials, "production_run", args.clone()).await["jobId"],
+        started["jobId"]
+    );
+    let mut completed = Value::Null;
+    for _ in 0..80 {
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        host.background_tick(false).await.unwrap();
+        let job = call(
+            &credentials,
+            "production_read",
+            json!({"jobId":started["jobId"]}),
+        )
+        .await;
+        if job["status"] != "running" {
+            completed = job;
+            break;
+        }
+    }
+    assert_eq!(completed["status"], "completed", "{completed}");
+    let artifact = &completed["artifacts"][0];
+    assert!(artifact["path"].as_str().unwrap().ends_with(".html"));
+    let bytes = crate::conversation::copied_bytes(
+        &directory,
+        &crate::creation::relative_result(artifact["path"].as_str().unwrap()).unwrap(),
+        25 * 1024 * 1024,
+    )
+    .unwrap();
+    assert_eq!(artifact["sha256"], format!("{:x}", Sha256::digest(&bytes)));
+    assert!(std::str::from_utf8(&bytes)
+        .unwrap()
+        .contains("Checked source"));
+    let opened = host
+        .action(
+            "project_artifact_open",
+            json!({"projectId":p,"workItemId":work_id,"path":artifact["path"],"expectedSha256":artifact["sha256"]}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(opened["reasonCode"], "PROJECT_ARTIFACT_OPEN");
+    assert_eq!(opened["sha256"], artifact["sha256"]);
+    assert_eq!(
+        fs::read(opened["openPath"].as_str().unwrap()).unwrap(),
+        bytes
+    );
+    assert_eq!(
+        call(&credentials, "production_run", args).await["jobId"],
+        started["jobId"]
+    );
     let mut stale = binding.clone();
     stale.owner_epoch = "epoch:stale".into();
     assert!(host

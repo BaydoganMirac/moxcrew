@@ -715,6 +715,33 @@ fn terminal_mission(events: &[Value], id: &Value, project: &Value) -> bool {
         })
 }
 
+fn mission_has_started(events: &[Value], id: &Value, project: &Value) -> bool {
+    events.iter().any(|e| {
+        e["payload"]["missionId"] == *id
+            && e["payload"]["projectId"] == *project
+            && matches!(
+                e["type"].as_str(),
+                Some("project_crew.started" | "project_workflow.mission_started")
+            )
+    })
+}
+
+fn latest_arming(events: &[Value], project: &Value, trigger: &Value) -> Option<usize> {
+    events.iter().rposition(|e| {
+        e["type"] == "project_capability.trigger_armed"
+            && e["payload"]["projectId"] == *project
+            && e["payload"]["triggerId"] == *trigger
+    })
+}
+
+fn retire_unstarted_trigger_mission(events: &[Value], trigger: &mut Value) {
+    // The prepared mission remains inspectable, but a new arming must wait for a new change.
+    // A started mission retains its pointer so pausing never authorizes overlapping jobs.
+    if !mission_has_started(events, &trigger["activeMissionId"], &trigger["projectId"]) {
+        trigger["activeMissionId"] = Value::Null;
+    }
+}
+
 pub(crate) fn project(events: &[Value]) -> Result<Value> {
     let mut profiles = BTreeMap::<String, Value>::new();
     let mut skills = BTreeMap::<String, Value>::new();
@@ -884,6 +911,7 @@ pub(crate) fn project(events: &[Value]) -> Result<Value> {
                 for key in ["armed", "armedUntil", "baseline", "rootIdentity"] {
                     t[key] = p[key].clone();
                 }
+                retire_unstarted_trigger_mission(&events[..index], t);
                 t["pendingHash"] = Value::Null;
                 t["pendingSince"] = Value::Null;
                 t["lastCheckedAt"] = p["at"].clone();
@@ -904,6 +932,7 @@ pub(crate) fn project(events: &[Value]) -> Result<Value> {
                 if instant(&p["at"])? >= instant(&t["armedUntil"])? {
                     t["armed"] = json!(false);
                     t["lastReasonCode"] = json!("CAPABILITY_TRIGGER_EXPIRED");
+                    retire_unstarted_trigger_mission(&events[..index], t);
                 } else if !p["fingerprint"].is_null() {
                     if p["fingerprint"] == t["baseline"] {
                         t["pendingHash"] = Value::Null;
@@ -1187,14 +1216,23 @@ pub(crate) fn automatic_start(events: &[Value], index: usize, p: &Value) -> Resu
             .trim_start_matches("allocation:")
     ));
     need(
-        p["origin"]["kind"] == "capability"
-            && events[..index].iter().any(|e| {
-                e["type"] == "project_capability.occurrence_started"
-                    && e["payload"]["projectId"] == p["projectId"]
-                    && e["payload"]["allocationId"] == p["origin"]["allocationId"]
-                    && p["missionId"] == child(&command, "mission:")
-            }),
+        p["origin"]["kind"] == "capability" && p["missionId"] == child(&command, "mission:"),
         "CAPABILITY_OWNER_REQUIRED",
+    )?;
+    let occurrence = events[..index]
+        .iter()
+        .position(|e| {
+            e["type"] == "project_capability.occurrence_started"
+                && e["payload"]["projectId"] == p["projectId"]
+                && e["payload"]["allocationId"] == p["origin"]["allocationId"]
+        })
+        .ok_or_else(|| fail("CAPABILITY_OWNER_REQUIRED"))?;
+    let trigger_id = &events[occurrence]["payload"]["triggerId"];
+    let original_arming = latest_arming(&events[..occurrence], &p["projectId"], trigger_id);
+    need(
+        original_arming.is_some()
+            && original_arming == latest_arming(&events[..index], &p["projectId"], trigger_id),
+        "CAPABILITY_TRIGGER_UNAVAILABLE",
     )?;
     let capabilities = project(&events[..index])?;
     need(
@@ -1501,7 +1539,8 @@ impl Host {
         }
         self.store.append(vec![fact(event_kind(action), payload)])?;
         if action == "project_variants_prepare" {
-            self.finish_capability_allocations().await?;
+            // The allocation fact is already authoritative. Awake ticks finish missing missions.
+            let _ = self.finish_capability_allocations().await;
         }
         Ok(result)
     }
@@ -1626,6 +1665,10 @@ impl Host {
         )
     }
     async fn finish_capability_allocations(&self) -> Result<()> {
+        #[cfg(test)]
+        if tests::take_allocation_failure(self) {
+            return Err(fail("CAPABILITY_TEST_PREPARATION_FAILED"));
+        }
         let events = self.store.read_events()?;
         let capabilities = project(&events)?;
         let mut allocations = Vec::new();

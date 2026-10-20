@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import re
+import runpy
 import statistics
 import subprocess
 import tempfile
@@ -322,6 +323,13 @@ def main(request):
     exact(request,('operation','arguments','tools'))
     OUT.mkdir(exist_ok=True)
     operation=request['operation'];args=request['arguments'];tools=request['tools']
+    if operation in ('images.verify','images.mask','resources.ocr','audio.transcribe','documents.render','video.frame','video.package','interactive.create'):
+        extras=runpy.run_path(str(ROOT/'production_capabilities.py'),init_globals=globals())
+        result=extras['execute'](operation,args,tools)
+        files=[{'name':p.name,'bytes':p.stat().st_size} for p in sorted(OUT.iterdir()) if p.is_file()]
+        require(files and len(files)<=16 and sum(f['bytes'] for f in files)<=MAX_FILE,'PRODUCTION_OUTPUT_LIMIT')
+        result.update(files=files,verified=True)
+        return result
     if operation=='inspect': return inspect(args,tools)
     if operation=='resources.extract':
         result=inspect(args,tools)

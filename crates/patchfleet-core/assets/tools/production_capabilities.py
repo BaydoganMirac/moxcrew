@@ -1,0 +1,316 @@
+"""Fixed production capabilities loaded only from the bundled worker's private scratch."""
+import base64
+import binascii
+import hashlib
+import html
+import struct
+import textwrap
+import zlib
+
+
+def png(data, expected=None):
+    require(8 <= len(data) <= MAX_FILE and data[:8] == b'\x89PNG\r\n\x1a\n', 'PRODUCTION_IMAGE_FORMAT_UNSUPPORTED')
+    offset=8; chunks=[]; compressed=bytearray(); dimensions=None; ended=False; palette=0; transparent=False; idat=False; after_idat=False
+    while offset < len(data):
+        require(offset+12 <= len(data), 'PRODUCTION_IMAGE_INVALID')
+        size=struct.unpack('>I',data[offset:offset+4])[0]; kind=data[offset+4:offset+8]
+        require(size <= MAX_FILE and offset+size+12 <= len(data), 'PRODUCTION_IMAGE_INVALID')
+        body=data[offset+8:offset+8+size]; checksum=struct.unpack('>I',data[offset+8+size:offset+12+size])[0]
+        require(binascii.crc32(kind+body)&0xffffffff == checksum, 'PRODUCTION_IMAGE_INVALID')
+        require(all(65<=c<=90 or 97<=c<=122 for c in kind) and kind[2]&32==0, 'PRODUCTION_IMAGE_INVALID')
+        require(not ended and kind not in (b'acTL',b'fcTL',b'fdAT'), 'PRODUCTION_IMAGE_INVALID')
+        if idat and kind!=b'IDAT': after_idat=True
+        if kind==b'IHDR':
+            require(dimensions is None and offset==8 and size==13, 'PRODUCTION_IMAGE_INVALID')
+            w,h,depth,color,compression,filtering,interlace=struct.unpack('>IIBBBBB',body)
+            require(0<w<=4096 and 0<h<=4096 and depth==8 and color in (0,2,3,4,6)
+                    and compression==filtering==interlace==0, 'PRODUCTION_IMAGE_FORMAT_UNSUPPORTED')
+            if expected: require((w,h)==expected, 'PRODUCTION_IMAGE_DIMENSIONS_MISMATCH')
+            dimensions=(w,h); channels={0:1,2:3,3:1,4:2,6:4}[color]
+        elif kind==b'IDAT':
+            require(dimensions is not None and not after_idat and (color!=3 or palette), 'PRODUCTION_IMAGE_INVALID')
+            compressed.extend(body);idat=True
+        elif kind==b'PLTE':
+            require(dimensions is not None and not idat and not palette and color in (2,3,6) and 0<size<=768 and size%3==0, 'PRODUCTION_IMAGE_INVALID');palette=size//3
+        elif kind==b'tRNS':
+            require(dimensions is not None and not idat and not transparent and
+                    ((color==0 and size==2) or (color==2 and size==6) or (color==3 and 0<size<=palette)), 'PRODUCTION_IMAGE_INVALID')
+            transparent=True
+        elif kind==b'IEND':
+            require(size==0 and offset+12==len(data), 'PRODUCTION_IMAGE_INVALID'); ended=True
+        elif kind[0]&32==0:
+            raise ValueError('PRODUCTION_IMAGE_FORMAT_UNSUPPORTED')
+        if kind in (b'IHDR',b'PLTE',b'tRNS',b'IDAT',b'IEND'):
+            chunks.append(data[offset:offset+size+12])
+        offset+=size+12
+    require(ended and dimensions is not None and compressed and (color!=3 or palette), 'PRODUCTION_IMAGE_INVALID')
+    expected_size=(w*channels+1)*h; decoder=zlib.decompressobj()
+    decoded=decoder.decompress(bytes(compressed),expected_size+1)
+    require(len(decoded)==expected_size and decoder.eof and not decoder.unused_data and not decoder.unconsumed_tail,
+            'PRODUCTION_IMAGE_INVALID')
+    require(all(decoded[row*(w*channels+1)]<=4 for row in range(h)), 'PRODUCTION_IMAGE_INVALID')
+    return b'\x89PNG\r\n\x1a\n'+b''.join(chunks),w,h
+
+
+def make_mask(args, tools):
+    exact(args,('source','region')); region=args['region']; exact(region,('x','y','width','height'))
+    x=number(region['x'],0,1);y=number(region['y'],0,1)
+    rw=number(region['width'],0.000001,1);rh=number(region['height'],0.000001,1)
+    require(x+rw<=1.000000001 and y+rh<=1.000000001)
+    path=source(args['source'])
+    if path.suffix.lower()=='.png': _,w,h=png(path.read_bytes())
+    else:
+        require(path.suffix.lower() in ('.jpg','.jpeg','.webp'),'PRODUCTION_IMAGE_FORMAT_UNSUPPORTED')
+        info=media_info(tools,path); streams=info.get('streams',[])
+        require(len(streams)==1 and streams[0].get('codec_type')=='video','PRODUCTION_IMAGE_INVALID')
+        w=int(number(streams[0]['width'],1,4096));h=int(number(streams[0]['height'],1,4096))
+    left=int(x*w);top=int(y*h);right=min(w,math.ceil((x+rw)*w));bottom=min(h,math.ceil((y+rh)*h))
+    raw=b''.join(b'\0'+(b'\0'*left+b'\xff'*(right-left)+b'\0'*(w-right) if top<=row<bottom else b'\0'*w) for row in range(h))
+    def chunk(kind,body): return struct.pack('>I',len(body))+kind+body+struct.pack('>I',binascii.crc32(kind+body)&0xffffffff)
+    result=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,0,0,0,0))+chunk(b'IDAT',zlib.compress(raw))+chunk(b'IEND',b'')
+    png(result,(w,h));(OUT/'mask.png').write_bytes(result)
+    return {'kind':'mask','width':w,'height':h,'region':region,'file':'mask.png'}
+
+
+def stamp(value):
+    ms=round(value*1000)
+    return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02},{ms%1000:03}'
+
+
+def captions_file(captions,duration,path):
+    require(isinstance(captions,list) and len(captions)<=1000)
+    last=0;lines=[]
+    for i,cap in enumerate(captions,1):
+        exact(cap,('start','end','text'));start=number(cap['start'],last,duration);end=number(cap['end'],start+0.001,duration);last=end
+        caption=text(cap['text'],500)
+        # Plain SRT text only: do not allow ASS override tags or SRT/HTML formatting.
+        caption=caption.replace('{','(').replace('}',')').replace('<','‹').replace('>','›').replace('\\','／')
+        caption='\n'.join(line for line in caption.replace('\r','').split('\n') if line.strip())
+        lines.append(f'{i}\n{stamp(start)} --> {stamp(end)}\n{caption}\n')
+    path.write_text('\n'.join(lines),encoding='utf-8')
+
+
+def ocr(args,tools):
+    exact(args,('source',),('language',));language=text(args.get('language','eng'),40)
+    require(re.fullmatch(r'[a-zA-Z_]{2,20}(\+[a-zA-Z_]{2,20})?',language) is not None)
+    path=source(args['source']);require(path.suffix.lower() in ('.png','.jpg','.jpeg','.webp'),'PRODUCTION_IMAGE_FORMAT_UNSUPPORTED')
+    # Force a checked single raster before OCR, excluding multipage containers and lists.
+    if path.suffix.lower()=='.png':
+        checked,_,_=png(path.read_bytes()); path=ROOT/'ocr-input.png';path.write_bytes(checked)
+    else:
+        checked=ROOT/'ocr-input.png'
+        run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-n',*input_format(path),'-i',str(path),'-vf','scale=4096:4096:force_original_aspect_ratio=decrease','-frames:v','1',str(checked)])
+        png(checked.read_bytes());path=checked
+    require(tools.get('tesseract'),'PRODUCTION_OCR_ENGINE_REQUIRED')
+    result=run_tool(tools,'tesseract',[str(path),'stdout','-l',language,'--psm','3']).decode('utf-8')
+    text(result,150000)
+    value={'kind':'ocr','text':result,'language':language,'engine':'tesseract'}
+    (OUT/'extracted.txt').write_text(result,encoding='utf-8');(OUT/'ocr.json').write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8')
+    return value
+
+
+def transcribe(args,tools):
+    exact(args,('source',),('language',));language=text(args.get('language','auto'),12)
+    require(language=='auto' or re.fullmatch(r'[a-z]{2,3}',language) is not None)
+    require(tools.get('whisper'),'PRODUCTION_TRANSCRIPTION_ENGINE_REQUIRED')
+    model=tools.get('whisperModel');require(isinstance(model,str) and Path(model).is_absolute() and Path(model).is_file(),'PRODUCTION_TRANSCRIPTION_MODEL_REQUIRED')
+    path=source(args['source']);info=media_info(tools,path)
+    duration=number(float(info.get('format',{}).get('duration',0)),0.02,1200)
+    require(any(s.get('codec_type')=='audio' for s in info.get('streams',[])),'PRODUCTION_AUDIO_REQUIRED')
+    wav=ROOT/'speech.wav'
+    run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-n',*input_format(path),'-i',str(path),'-vn','-ar','16000','-ac','1','-c:a','pcm_s16le',str(wav)])
+    target=ROOT/'speech-result'
+    run_tool(tools,'whisper',['-m',model,'-f',str(wav),'-l',language,'-oj','-of',str(target),'-np'])
+    result=target.with_suffix('.json');require(result.is_file() and result.stat().st_size<=1024*1024,'PRODUCTION_TRANSCRIPTION_INVALID')
+    native=json.loads(result.read_text(encoding='utf-8'));items=native.get('transcription')
+    require(isinstance(items,list) and len(items)<=1000,'PRODUCTION_TRANSCRIPTION_INVALID')
+    segments=[];last=0
+    for item in items:
+        offsets=item.get('offsets',{});start=number(offsets.get('from'),0,duration*1000+50)/1000;end=number(offsets.get('to'),0,duration*1000+50)/1000
+        require(start>=last and end>start,'PRODUCTION_TRANSCRIPTION_INVALID');last=start
+        segments.append({'start':start,'end':min(end,duration),'text':text(item.get('text'),500).strip()})
+    result_language=text(native.get('result',{}).get('language',language),12)
+    require(re.fullmatch(r'[a-z]{2,3}|auto',result_language) is not None,'PRODUCTION_TRANSCRIPTION_INVALID')
+    value={'kind':'transcript','text':'\n'.join(s['text'] for s in segments),'segments':segments,'durationSeconds':duration,'language':result_language,'engine':'whisper.cpp'}
+    text(value['text'],150000)
+    (OUT/'transcript.json').write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');(OUT/'transcript.txt').write_text(value['text'],encoding='utf-8')
+    captions_file(segments,duration,OUT/'captions.srt')
+    return value
+
+
+def render(args,tools):
+    exact(args,('source',),('pages',));pages=args.get('pages',[1])
+    require(isinstance(pages,list) and 1<=len(pages)<=8 and len(set(pages))==len(pages)
+            and all(type(p) is int and 1<=p<=100 for p in pages))
+    path=source(args['source']);require(path.suffix.lower() in ('.pptx','.docx','.xlsx','.pdf'),'PRODUCTION_RENDER_FORMAT_UNSUPPORTED')
+    require(tools.get('pdftoppm'),'PRODUCTION_PAGE_RENDERER_REQUIRED')
+    if path.suffix.lower()!='.pdf':
+        require(tools.get('libreoffice'),'PRODUCTION_OFFICE_RENDERER_REQUIRED')
+        parts=read_zip(path)
+        require(not any(any(bad in name.lower() for bad in ('vbaproject','activex/','embeddings/')) for name in parts),'PRODUCTION_UNSAFE_DOCUMENT')
+        for name,part in parts.items():
+            require(not name.lower().endswith(('.svg','.html','.htm','.js','.bin')),'PRODUCTION_UNSAFE_DOCUMENT')
+            if name.endswith(('.xml','.rels')):
+                for node in xml(part).iter():
+                    local=node.tag.rsplit('}',1)[-1]
+                    require(local not in ('instrText','fldSimple','altChunk','ddeLink','oleLink','externalBook'),'PRODUCTION_EXTERNAL_REFERENCE')
+                    if local=='f':
+                        formula=(node.text or '').upper()
+                        require(not any(word in formula for word in ('WEBSERVICE','HYPERLINK','DDE','RTD','[',']')),'PRODUCTION_EXTERNAL_REFERENCE')
+        profile=ROOT/'office-profile';(profile/'user').mkdir(parents=True)
+        # A new private profile: highest macro security and no external-link updates.
+        (profile/'user'/'registrymodifications.xcu').write_text('<?xml version="1.0"?><oor:items xmlns:oor="http://openoffice.org/2001/registry"><item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item><item oor:path="/org.openoffice.Office.Common/Load"><prop oor:name="UpdateMode" oor:op="fuse"><value>0</value></prop></item></oor:items>')
+        directory=ROOT/'rendered';directory.mkdir()
+        run_tool(tools,'libreoffice',['-env:UserInstallation='+profile.as_uri(),'--headless','--nologo','--nodefault','--norestore','--convert-to','pdf','--outdir',str(directory),str(path)])
+        pdf=directory/(path.stem+'.pdf');require(pdf.is_file() and pdf.stat().st_size<=MAX_FILE,'PRODUCTION_RENDER_FAILED')
+        (OUT/'document.pdf').write_bytes(pdf.read_bytes())
+    else: (OUT/'document.pdf').write_bytes(path.read_bytes())
+    require((OUT/'document.pdf').read_bytes().startswith(b'%PDF-'),'PRODUCTION_RENDER_FAILED')
+    output=[]
+    for page in pages:
+        prefix=OUT/f'page-{page}'
+        run_tool(tools,'pdftoppm',['-f',str(page),'-l',str(page),'-singlefile','-scale-to','1280','-png',str(OUT/'document.pdf'),str(prefix)])
+        image=prefix.with_suffix('.png');require(image.is_file(),'PRODUCTION_PAGE_NOT_FOUND')
+        checked,w,h=png(image.read_bytes());image.write_bytes(checked)
+        output.append({'id':f'page:{page}','page':page,'file':image.name,'width':w,'height':h})
+    return {'kind':'rendered_pages','pages':output,'pdf':'document.pdf','fidelity':'rendered'}
+
+
+def frame(args,tools):
+    exact(args,('source','time'));path=source(args['source']);info=media_info(tools,path)
+    duration=number(float(info.get('format',{}).get('duration',0)),0.001,86400)
+    require(any(s.get('codec_type')=='video' for s in info.get('streams',[])),'PRODUCTION_VIDEO_REQUIRED')
+    at=number(args['time'],0,max(0,duration-0.001))
+    run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-n',*input_format(path),'-ss',str(at),'-i',str(path),'-frames:v','1','-vf','scale=1280:1280:force_original_aspect_ratio=decrease',str(OUT/'preview.png')])
+    require((OUT/'preview.png').is_file(),'PRODUCTION_FRAME_UNAVAILABLE')
+    checked,w,h=png((OUT/'preview.png').read_bytes());(OUT/'preview.png').write_bytes(checked)
+    return {'kind':'frame','time':at,'durationSeconds':duration,'file':'preview.png','width':w,'height':h}
+
+
+
+def caption_cards(captions,tools):
+    require(tools.get('libreoffice') and tools.get('pdftoppm'),'PRODUCTION_CAPTION_RENDERER_REQUIRED')
+    require(len(captions)<=20 and all(len(c['text'])<=120 for c in captions),'PRODUCTION_CAPTION_RENDERER_LIMIT')
+    profile=ROOT/'caption-profile';(profile/'user').mkdir(parents=True)
+    (profile/'user'/'registrymodifications.xcu').write_text('<?xml version="1.0"?><oor:items xmlns:oor="http://openoffice.org/2001/registry"><item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item></oor:items>')
+    cards=[]
+    for i,caption in enumerate(captions):
+        lines=textwrap.wrap(' '.join(caption['text'].split()),width=40,break_long_words=True,break_on_hyphens=False)
+        require(1<=len(lines)<=3,'PRODUCTION_CAPTION_RENDERER_LIMIT')
+        paragraphs=''.join('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="32"/></w:rPr><w:t xml:space="preserve">'+escape(line)+'</w:t></w:r></w:p>' for line in lines)
+        parts={'[Content_Types].xml':content_types([('word/document.xml','wordprocessingml.document.main')]),'_rels/.rels':rels([(1,'officeDocument','word/document.xml')]),'word/document.xml':f'<w:document xmlns:w="{NS["w"]}"><w:body>{paragraphs}<w:sectPr><w:pgSz w:w="9600" w:h="1800"/><w:pgMar w:top="160" w:right="320" w:bottom="160" w:left="320" w:header="0" w:footer="0"/></w:sectPr></w:body></w:document>'}
+        doc=ROOT/f'caption-{i}.docx'
+        with zipfile.ZipFile(doc,'x',compression=zipfile.ZIP_DEFLATED) as archive:
+            for name,body in parts.items():archive.writestr(name,body)
+        read_zip(doc)
+        run_tool(tools,'libreoffice',['-env:UserInstallation='+profile.as_uri(),'--headless','--nologo','--nodefault','--norestore','--convert-to','pdf','--outdir',str(ROOT),str(doc)])
+        pdf=doc.with_suffix('.pdf');require(pdf.is_file() and pdf.stat().st_size<=MAX_FILE,'PRODUCTION_CAPTION_RENDER_FAILED')
+        prefix=ROOT/f'caption-card-{i}'
+        run_tool(tools,'pdftoppm',['-f','1','-l','2','-scale-to-x','640','-scale-to-y','-1','-png',str(pdf),str(prefix)])
+        pages=list(ROOT.glob(prefix.name+'-*.png'));require(len(pages)==1,'PRODUCTION_CAPTION_RENDERER_LIMIT')
+        checked,w,h=png(pages[0].read_bytes());require(w==640 and 1<=h<=160,'PRODUCTION_CAPTION_RENDER_FAILED')
+        pages[0].write_bytes(checked);cards.append(pages[0])
+    return cards
+
+
+def package(args,tools):
+    exact(args,('clips','aspects','captions','title'),('description','hashtags'))
+    aspects=args['aspects'];require(isinstance(aspects,list) and 1<=len(aspects)<=3 and len(set(aspects))==len(aspects)
+                                 and all(a in ('portrait','square','landscape') for a in aspects))
+    title=text(args['title'],160);description=text(args.get('description',''),10000);tags=args.get('hashtags',[])
+    require(isinstance(tags,list) and len(tags)<=20)
+    for tag in tags: require(re.fullmatch(r'#[\w]{1,60}',text(tag,64)) is not None)
+    require(isinstance(args['clips'],list) and 1<=len(args['clips'])<=12)
+    duration=0
+    for clip in args['clips']:
+        exact(clip,('source','start','end'));start=number(clip['start'],0,86400);end=number(clip['end'],start+0.02,start+1200);duration+=end-start
+    require(duration<=1200)
+    captions_file(args['captions'],duration,OUT/'captions.srt')
+    caption_renderer=None;cards=[]
+    if args['captions']:
+        filters=run_tool(tools,'ffmpeg',['-hide_banner','-filters']).decode('utf-8',errors='replace')
+        caption_renderer='libass' if re.search(r'\bsubtitles\s',filters) is not None else 'office_overlay'
+        if caption_renderer=='office_overlay':
+            require(re.search(r'\boverlay\s',filters) is not None,'PRODUCTION_CAPTION_RENDERER_REQUIRED')
+            cards=caption_cards(args['captions'],tools)
+    # Existing checked clip path supplies range validation, safe demuxers and normalized audio.
+    media({'clips':args['clips'],'width':1280,'height':720},'video.edit',tools)
+    base=ROOT/'package-base.mp4';(OUT/'video.mp4').rename(base)
+    for name in ('validation.json','edit-recipe.json'): (OUT/name).unlink(missing_ok=True)
+    result=[]
+    for aspect in aspects:
+        w,h={'portrait':(720,1280),'square':(720,720),'landscape':(1280,720)}[aspect]
+        vf=f'scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1'
+        if caption_renderer=='libass': vf+=",subtitles=filename=outputs/captions.srt:force_style='FontName=Arial,FontSize=22,Outline=2,MarginV=32'"
+        video=OUT/f'{aspect}.mp4'
+        encode=['-nostdin','-hide_banner','-loglevel','error','-n',*input_format(base),'-i',str(base)]
+        if cards:
+            for card in cards: encode+=input_format(card)+['-i',str(card)]
+            graph=[f'[0:v]{vf}[v0]']
+            for i,caption in enumerate(args['captions']):
+                graph.append(f"[v{i}][{i+1}:v]overlay=(main_w-overlay_w)/2:main_h-overlay_h-32:enable='gte(t,{caption['start']})*lt(t,{caption['end']})'[v{i+1}]")
+            encode+=['-filter_complex',';'.join(graph),'-map',f'[v{len(cards)}]','-map','0:a?']
+        else: encode+=['-vf',vf]
+        run_tool(tools,'ffmpeg',encode+['-t',str(duration),'-c:v','mpeg4','-q:v','3','-pix_fmt','yuv420p','-c:a','aac','-movflags','+faststart',str(video)])
+        info=media_info(tools,video);streams=[s for s in info.get('streams',[]) if s.get('codec_type')=='video']
+        require(len(streams)==1 and (streams[0].get('width'),streams[0].get('height'))==(w,h),'PRODUCTION_OUTPUT_INVALID')
+        actual=float(info.get('format',{}).get('duration',0));require(abs(actual-duration)<max(0.2,duration*0.005),'PRODUCTION_DURATION_MISMATCH')
+        cover=OUT/f'{aspect}-cover.png'
+        run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-n',*input_format(video),'-ss',str(min(duration/2,1.0)),'-i',str(video),'-frames:v','1',str(cover)])
+        checked,_,_=png(cover.read_bytes(),(w,h));cover.write_bytes(checked)
+        result.append({'aspect':aspect,'file':video.name,'cover':cover.name,'width':w,'height':h,'durationSeconds':actual,'captionsBurned':bool(args['captions']),'captionRenderer':caption_renderer})
+    (OUT/'content.txt').write_text(title+'\n\n'+description+'\n\n'+' '.join(tags),encoding='utf-8')
+    value={'kind':'video_package','title':title,'durationSeconds':duration,'exports':result,'captions':'captions.srt','content':'content.txt'}
+    (OUT/'package.json').write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8')
+    return value
+
+
+STYLE='''*{box-sizing:border-box}body{font:16px system-ui,sans-serif;background:#f5f7fb;color:#152333;margin:0;padding:32px}main{max-width:1080px;margin:auto}h1{font-size:32px;margin:0 0 12px}p{color:#506273}section{background:white;border:1px solid #d5dee8;border-radius:16px;padding:24px;margin:20px 0;overflow:auto}input,button{font:inherit;padding:10px 12px;border:1px solid #bccbd8;border-radius:8px;background:white;color:#152333}input:focus,button:focus{outline:3px solid #5296ff;outline-offset:2px}table{border-collapse:collapse;width:100%;margin-top:16px}td,th{text-align:left;padding:12px;border-bottom:1px solid #e3e9ef}th button{border:0;font-weight:bold}label{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:12px 0}progress{height:28px;flex:1;min-width:120px;accent-color:#4278df}.metric{font-size:24px;font-weight:bold}output{display:block;margin:20px 0}footer{color:#506273;font-size:13px}@media(max-width:600px){body{padding:16px}section{padding:16px}h1{font-size:26px}}'''
+JS='''"use strict";const d=JSON.parse(document.getElementById("data").textContent);const root=document.getElementById("tool");function el(tag,value){const n=document.createElement(tag);if(value!==undefined)n.textContent=String(value);return n}function input(type,label,value){const l=el("label",label),i=el("input");i.type=type;i.value=value;l.append(i);root.append(l);return i}if(d.kind==="table"){const filter=input("search","Filter rows","");const table=el("table"),head=el("thead"),body=el("tbody");table.append(head,body);root.append(table);let rows=d.rows.slice(),direction=1;const tr=el("tr");d.columns.forEach((name,index)=>{const th=el("th"),b=el("button",name);b.type="button";b.addEventListener("click",()=>{rows.sort((a,c)=>String(a[index]).localeCompare(String(c[index]),undefined,{numeric:true})*direction);direction*=-1;draw()});th.append(b);tr.append(th)});head.append(tr);const count=el("output");root.append(count);function draw(){body.replaceChildren();const found=rows.filter(row=>row.some(cell=>String(cell).toLocaleLowerCase().includes(filter.value.toLocaleLowerCase())));found.forEach(row=>{const tr=el("tr");row.forEach(cell=>tr.append(el("td",cell)));body.append(tr)});count.textContent=found.length+" / "+rows.length+" rows"}filter.addEventListener("input",draw);draw()}else if(d.kind==="chart"){const max=Math.max(1,...d.series.map(s=>s.value));d.series.forEach(s=>{const row=el("label",s.label),bar=el("progress"),value=el("span",s.value);bar.max=max;bar.value=s.value;bar.setAttribute("aria-label",s.label);row.append(bar,value);root.append(row)})}else{const budget=input("number","Budget ("+d.currency+")",d.budget);budget.min="0";budget.step="0.01";const amounts=d.items.map(item=>{const i=input("number",item.label,item.amount);i.min="0";i.step="0.01";return i});const total=el("output"),remaining=el("output"),progress=el("progress");total.className="metric";remaining.className="metric";progress.setAttribute("aria-label","Budget used");root.append(total,remaining,progress);function draw(){const cap=Number(budget.value),values=amounts.map(i=>Number(i.value));if(!Number.isFinite(cap)||cap<0||values.some(v=>!Number.isFinite(v)||v<0)){remaining.textContent="Enter valid non-negative amounts";return}const spent=values.reduce((a,b)=>a+b,0);total.textContent="Total: "+spent.toFixed(2)+" "+d.currency;remaining.textContent="Remaining: "+(cap-spent).toFixed(2)+" "+d.currency;progress.max=Math.max(1,cap);progress.value=Math.min(spent,progress.max)}[budget,...amounts].forEach(i=>i.addEventListener("input",draw));draw()}'''
+
+
+def interactive(args):
+    exact(args,('kind','title'),('columns','rows','series','currency','budget','items'))
+    kind=args['kind'];require(kind in ('table','chart','budget'));title=text(args['title'],160)
+    data={'kind':kind}
+    if kind=='table':
+        require(set(args)=={'kind','title','columns','rows'})
+        columns=args['columns'];rows=args['rows'];require(isinstance(columns,list) and 1<=len(columns)<=30 and isinstance(rows,list) and len(rows)<=2000)
+        for name in columns: text(name,160)
+        require(len(set(columns))==len(columns) and len(rows)*len(columns)<=20000)
+        for row in rows:
+            require(isinstance(row,list) and len(row)==len(columns))
+            for cell in row:
+                if isinstance(cell,str): text(cell,2000)
+                else: number(cell,-1e12,1e12)
+        data.update(columns=columns,rows=rows)
+    elif kind=='chart':
+        require(set(args)=={'kind','title','series'});series=args['series'];require(isinstance(series,list) and 1<=len(series)<=100)
+        for item in series: exact(item,('label','value'));text(item['label'],160);number(item['value'],0,1e12)
+        data['series']=series
+    else:
+        require(set(args)=={'kind','title','currency','budget','items'});currency=text(args['currency'],3);require(re.fullmatch('[A-Z]{3}',currency) is not None)
+        number(args['budget'],0,1e12);items=args['items'];require(isinstance(items,list) and 1<=len(items)<=100)
+        for item in items: exact(item,('label','amount'));text(item['label'],160);number(item['amount'],0,1e12)
+        data.update(currency=currency,budget=args['budget'],items=items)
+    def digest(value): return base64.b64encode(hashlib.sha256(value.encode()).digest()).decode()
+    csp="default-src 'none'; script-src 'sha256-"+digest(JS)+"'; style-src 'sha256-"+digest(STYLE)+"'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+    payload=json.dumps(data,ensure_ascii=True,allow_nan=False).replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')
+    document='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="'+html.escape(csp,quote=True)+'"><title>'+html.escape(title)+'</title><style>'+STYLE+'</style></head><body><main><h1>'+html.escape(title)+'</h1><p>Interactive local '+kind+' · changes stay in this browser tab</p><section id="tool" aria-label="Interactive '+kind+'"></section><footer>Standalone Moxcrew output. No network requests or external libraries.</footer></main><script id="data" type="application/json">'+payload+'</script><script>'+JS+'</script></body></html>'
+    (OUT/'interactive.html').write_text(document,encoding='utf-8')
+    return {'kind':'interactive','type':kind,'file':'interactive.html','offline':True}
+
+
+def execute(operation,args,tools):
+    if operation=='images.verify':
+        exact(args,('source','width','height'));w=int(number(args['width'],1,4096));h=int(number(args['height'],1,4096))
+        checked,w,h=png(source(args['source']).read_bytes(),(w,h));(OUT/'image.png').write_bytes(checked)
+        return {'kind':'image','width':w,'height':h}
+    if operation=='images.mask': return make_mask(args,tools)
+    if operation=='resources.ocr': return ocr(args,tools)
+    if operation=='audio.transcribe': return transcribe(args,tools)
+    if operation=='documents.render': return render(args,tools)
+    if operation=='video.frame': return frame(args,tools)
+    if operation=='video.package': return package(args,tools)
+    if operation=='interactive.create': return interactive(args)
+    raise ValueError('PRODUCTION_OPERATION_UNSUPPORTED')

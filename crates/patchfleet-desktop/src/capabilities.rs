@@ -594,30 +594,66 @@ impl Console {
     pub(super) fn attachment_controls(&mut self, ui: &mut Ui, snapshot: &Value) {
         let key = (self.create.project.clone(), self.create.ability.clone());
         let paths = self.create.attachment_paths();
+        if let Some(selection) = self.create.capabilities.selection.get(&key).cloned() {
+            ui.horizontal_wrapped(|ui| {
+                if paths.is_empty() {
+                    hint(ui, &tf(ui, "Selected output · {0}", &[&selection.section]));
+                } else {
+                    hint(ui, "Attachments and a revision are selected.");
+                }
+                let clear = studio::quiet_button(ui, t(ui, "Clear selection").as_ref());
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new("composer-clear-selection"),
+                        (clear.rect, ui.clip_rect()),
+                    );
+                });
+                if clear.clicked() {
+                    self.create.capabilities.selection.remove(&key);
+                }
+            });
+        }
         if !paths.is_empty() {
             ui.horizontal_wrapped(|ui| {
                 hint(
                     ui,
                     &tf(ui, "{0} files ready to attach", &[&paths.len().to_string()]),
                 );
+                let label = if self.create.capabilities.attachments_expanded {
+                    "Hide files"
+                } else {
+                    "Attached files"
+                };
+                if studio::quiet_button(ui, t(ui, label).as_ref()).clicked() {
+                    self.create.capabilities.attachments_expanded =
+                        !self.create.capabilities.attachments_expanded;
+                }
                 if studio::quiet_button(ui, t(ui, "Remove attachments").as_ref()).clicked() {
                     self.create.capabilities.attachments.remove(&key);
                 }
             });
-            egui::CollapsingHeader::new(t(ui,"Attached files")).id_salt(("composer-attached-files",&key)).default_open(self.create.capabilities.attachments_expanded).show(ui,|ui|{
-                for path in &paths {ui.horizontal_wrapped(|ui| {ui.label(std::path::Path::new(path).file_name().unwrap_or_default().to_string_lossy());if studio::quiet_button(ui,t(ui,"Remove").as_ref()).clicked(){if let Some(paths)=self.create.capabilities.attachments.get_mut(&key){paths.retain(|p|p!=path);}}});}
-                hint(ui,"Files are imported as Project resources before planning. Nothing runs on drop.");
-            });
-        }
-        if let Some(selection) = self.create.capabilities.selection.get(&key).cloned() {
-            ui.horizontal_wrapped(|ui| {
-                hint(ui, &tf(ui, "Selected output · {0}", &[&selection.section]));
-                if studio::quiet_button(ui, t(ui, "Clear selection").as_ref()).clicked() {
-                    self.create.capabilities.selection.remove(&key);
+            if self.create.capabilities.selection.contains_key(&key) {
+                hint(ui, "Clear the output selection to send attachments, or remove attachments to prepare this revision.");
+            }
+            if self.create.capabilities.attachments_expanded {
+                for path in &paths {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(
+                            std::path::Path::new(path)
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy(),
+                        );
+                        if studio::quiet_button(ui, t(ui, "Remove").as_ref()).clicked() {
+                            if let Some(paths) = self.create.capabilities.attachments.get_mut(&key)
+                            {
+                                paths.retain(|p| p != path);
+                            }
+                        }
+                    });
                 }
-            });
-            if !paths.is_empty() {
-                hint(ui,"Clear the output selection to send attachments, or remove attachments to prepare this revision.");
+                hint(ui, "Files are imported as Project resources before planning. Nothing runs on drop.");
             }
         }
         let _ = snapshot;
@@ -2106,6 +2142,16 @@ mod tests {
                 });
                 assert!(rect.height() <= 76.1);
                 assert!(clip.contains_rect(rect));
+                let (clear, clear_clip) = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new(
+                        "composer-clear-selection",
+                    ))
+                    .unwrap()
+                });
+                assert!(
+                    clear_clip.contains_rect(clear),
+                    "The conflict can be cleared without scrolling: {language}/{theme:?}"
+                );
                 let primary = ctx.data(|d| {
                     d.get_temp::<egui::Rect>(egui::Id::new((
                         "test-action",

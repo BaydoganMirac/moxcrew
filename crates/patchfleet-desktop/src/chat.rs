@@ -541,7 +541,6 @@ impl Console {
                     }
                 }
             } else {
-                crew::provider_picker(ui, "chat-provider", self.create.planner_provider());
                 let enabled = self.create.conversation_send_enabled(snapshot);
                 let clicked = ui
                     .add_enabled_ui(enabled, |ui| submit(ui, "Send", "conversation-send"))
@@ -553,13 +552,44 @@ impl Console {
             self.chat_composer_options(ui, snapshot, commands);
         });
         if !self.create.crew.single {
-            let id = self.create.planner_provider().clone();
-            let reason = connect::selection_status(snapshot, &id);
+            let preference = self.create.planner_provider().clone();
+            let target = self
+                .create
+                .displayed_planner_provider(snapshot)
+                .map(str::to_owned);
+            let ready = self.create.resolved_planner_provider(snapshot).is_some();
             ui.horizontal_wrapped(|ui| {
-                hint(ui, reason);
-                if !connect::can_attempt_provider(snapshot, &id)
-                    && studio::quiet_button(ui, t(ui, "Set up provider").as_ref()).clicked()
-                {
+                if let Some(target) = target {
+                    raw_hint(
+                        ui,
+                        &tf(
+                            ui,
+                            "Planning connection · {0}",
+                            &[connect::provider_name(&target)],
+                        ),
+                    );
+                } else if preference.is_empty() {
+                    hint(
+                        ui,
+                        if text(&snapshot["providerConnections"], "reasonCode")
+                            == "PROVIDER_CONNECTIONS_READ"
+                        {
+                            "Connect one provider to send your request."
+                        } else {
+                            "Checking provider availability…"
+                        },
+                    );
+                } else {
+                    raw_hint(
+                        ui,
+                        &format!(
+                            "{} · {}",
+                            connect::provider_name(&preference),
+                            t(ui, connect::selection_status(snapshot, &preference))
+                        ),
+                    );
+                }
+                if !ready && studio::quiet_button(ui, t(ui, "Connections").as_ref()).clicked() {
                     self.create.chat.connections_open = true;
                 }
             });
@@ -613,6 +643,14 @@ impl Console {
         commands: &mut Vec<Command>,
     ) {
         let _menu = ui.menu_button(t(ui, "More"), |ui| {
+            ui.label(
+                RichText::new(t(ui, "Planning provider"))
+                    .size(12.0)
+                    .color(colors(ui).muted),
+            );
+            if crew::planning_options(ui, self.create.planner_provider()) {
+                ui.close();
+            }
             if view_control(ui, "Skills", true, false).clicked() {
                 self.create.crew.catalog_target = None;
                 self.create.catalog_open = true;

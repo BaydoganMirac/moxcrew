@@ -1,6 +1,6 @@
 # Task0051: Automatic planning connection
 
-Status: Owner-approved, implementing
+Status: Complete; independently reviewed, native captures and macOS development package verified
 
 Updated: 2026-10-20
 
@@ -37,3 +37,9 @@ frozen pending receipts/requests, and actual minimum-window TR/EN interactions.
 Run the full desktop suite, strict formatting/Clippy, affected native captures
 and a smoke-free macOS development package. No live inference, login, install,
 push or deployment.
+
+## Completion
+
+Implemented and verified locally. See [feature state](../state/automatic-planning-provider.md)
+for the 187-test desktop result, independent source/native review, 44 native
+captures, package hashes and live-provider/platform limits. No push or installation.

@@ -112,7 +112,7 @@ async fn peer(mode: &'static str) -> Peer {
     Peer { url, calls, task }
 }
 fn project() -> String {
-    uuid::Uuid::new_v4().to_string()
+    format!("project:{}", uuid::Uuid::new_v4())
 }
 #[test]
 fn image_configuration_is_private_project_scoped_and_loopback_only() {
@@ -148,7 +148,10 @@ fn image_configuration_is_private_project_scoped_and_loopback_only() {
     assert!(!value.to_string().contains("127.0.0.1"));
     assert!(!data
         .path()
-        .join(format!("image-engine-{other}.json"))
+        .join(format!(
+            "image-engine-{}.json",
+            other.trim_start_matches("project:")
+        ))
         .exists());
     assert_eq!(
         remove_image_engine(data.path(), &p).unwrap()["configured"],

@@ -27,7 +27,7 @@ pub const MAX_OUTPUT: usize = 512 * 1024;
 pub const MCP_MAX_OUTPUT: usize = 192 * 1024;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 const TICKETS: &str = "agent-memory-tickets";
-pub(crate) const TOOLS: [&str; 13] = [
+pub(crate) const TOOLS: [&str; 17] = [
     "project_context",
     "memory_search",
     "decision_read",
@@ -41,6 +41,10 @@ pub(crate) const TOOLS: [&str; 13] = [
     "production_run",
     "production_read",
     "project_resources",
+    "project_resource_publish",
+    "project_capabilities",
+    "project_skill_propose",
+    "project_evidence_add",
 ];
 fn invalid(code: &str) -> Error {
     Error(code.into())
@@ -123,6 +127,9 @@ fn safe_code(code: &str) -> &str {
         || code.starts_with("WORKFLOW_")
         || code.starts_with("PRODUCTION_")
         || code.starts_with("PROJECT_STUDIO_")
+        || code.starts_with("CAPABILITY_")
+        || code.starts_with("PROJECT_CAPABILITY_")
+        || code.starts_with("BROWSER_")
         || code.starts_with("PROJECT_RESOURCE_"))
         && code.len() <= 64
         && code
@@ -370,13 +377,19 @@ fn validate_binding(binding: &Binding) -> Result<()> {
 pub fn validate_arguments(tool: &str, args: &Value) -> Result<()> {
     if matches!(
         tool,
+        "project_capabilities" | "project_skill_propose" | "project_evidence_add"
+    ) {
+        return crate::project_capabilities::validate_agent_arguments(tool, args);
+    }
+    if matches!(
+        tool,
         "crew_task_offer" | "crew_task_accept" | "crew_task_deliver" | "crew_review"
     ) {
         return crate::project_workflows::validate_agent_arguments(tool, args);
     }
     if matches!(
         tool,
-        "production_run" | "production_read" | "project_resources"
+        "production_run" | "production_read" | "project_resources" | "project_resource_publish"
     ) {
         return crate::project_studio::validate_agent_arguments(tool, args);
     }
@@ -654,6 +667,10 @@ fn tools() -> Value {
         .as_array_mut()
         .unwrap()
         .extend(crate::project_studio::tool_schema());
+    result["tools"]
+        .as_array_mut()
+        .unwrap()
+        .extend(crate::project_capabilities::tool_schema());
     result
 }
 async fn line<R: AsyncBufRead + Unpin>(input: &mut R) -> Result<Option<Vec<u8>>> {

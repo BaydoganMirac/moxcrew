@@ -85,6 +85,7 @@ fn public_connection(status: &Value) -> Value {
 fn exact_action(action: &str, p: &Value) -> Result<()> {
     let allowed: &[&str] = if let Some(fields) = crate::project_workflows::action_fields(action)
         .or_else(|| crate::project_studio::action_fields(action))
+        .or_else(|| crate::project_capabilities::action_fields(action))
     {
         fields
     } else {
@@ -238,6 +239,46 @@ fn exact_action(action: &str, p: &Value) -> Result<()> {
 }
 
 impl Host {
+    pub(crate) async fn capability_url_sample(&self, url: &str) -> Result<(String, Vec<u8>)> {
+        crate::web_access::read_public(url, 1024 * 1024).await
+    }
+    pub(crate) async fn capability_provider(&self, requested: Option<&str>) -> Result<String> {
+        let status = self.controller.connection_status().await;
+        for id in ["codex", "claude", "gemini"] {
+            if requested.is_some_and(|requested| requested != id) {
+                continue;
+            }
+            let candidate = status["providers"]
+                .as_array()
+                .and_then(|providers| providers.iter().find(|p| p["id"] == id));
+            let Some(candidate) = candidate else {
+                continue;
+            };
+            let version_ok = id != "codex"
+                || candidate["version"]
+                    .as_str()
+                    .and_then(|version| version.split('+').next())
+                    .and_then(|version| {
+                        version
+                            .split('.')
+                            .map(str::parse::<u64>)
+                            .collect::<std::result::Result<Vec<_>, _>>()
+                            .ok()
+                    })
+                    .is_some_and(|v| v.len() == 3 && v.as_slice() >= [0, 155, 1].as_slice());
+            if candidate["installed"] == true
+                && candidate["controlSupported"] == true
+                && version_ok
+                && matches!(
+                    candidate["authentication"].as_str(),
+                    Some("present" | "unknown")
+                )
+            {
+                return Ok(id.into());
+            }
+        }
+        Err(Error("PROJECT_CAPABILITY_PROVIDER_UNAVAILABLE".into()))
+    }
     pub(crate) fn creation_data_dir(&self) -> &std::path::Path {
         &self.data_dir
     }
@@ -346,6 +387,9 @@ impl Host {
         host.store
             .transaction(|events| Ok((crate::project_workflows::recover(events)?, Value::Null)))?;
         host.store.transaction(|events| {
+            Ok((crate::project_capabilities::recover(events)?, Value::Null))
+        })?;
+        host.store.transaction(|events| {
             let pending = events.iter().filter(|e| {
                 e["type"] == "owner.command.requested"
                     && !events.iter().any(|r| {
@@ -356,6 +400,10 @@ impl Host {
             let additions = pending
                 .map(|e| {
                     let result = match e["schemaVersion"].as_u64() {
+                        Some(14) => crate::project_capabilities::recovered_owner_result(
+                            events,
+                            &e["payload"],
+                        ),
                         Some(11) => {
                             crate::project_workflows::recovered_owner_result(events, &e["payload"])
                         }
@@ -522,9 +570,17 @@ impl Host {
             if self.closing.load(Ordering::SeqCst) {
                 return Err(Error("HOST_CLOSING".into()));
             }
+            let seconds = if matches!(
+                action,
+                "project_artifact_visual_read" | "project_artifact_frame_read"
+            ) {
+                120
+            } else {
+                12
+            };
             let result = tokio::select! {
                 _=stopped=>Err(Error("HOST_CLOSING".into())),
-                result=tokio::time::timeout(std::time::Duration::from_secs(12),self.studio_action(action,&payload))=>result.unwrap_or_else(|_|Err(Error("PROJECT_STUDIO_READ_TIMEOUT".into())))
+                result=tokio::time::timeout(std::time::Duration::from_secs(seconds),self.studio_action(action,&payload))=>result.unwrap_or_else(|_|Err(Error("PROJECT_STUDIO_READ_TIMEOUT".into())))
             }?;
             self.studio_project(&payload)?;
             return Ok(result);
@@ -591,11 +647,15 @@ impl Host {
         if crate::project_workflows::is_read(action) {
             return self.workflow_action(action, &payload).await;
         }
+        if crate::project_capabilities::is_read(action) {
+            return self.capability_action(action, &payload).await;
+        }
         if crate::project_studio::is_read(action) || crate::project_studio::sensitive(action) {
             return self.studio_action(action, &payload).await;
         }
         let studio_mutation = crate::project_studio::action_fields(action).is_some();
         let workflow_mutation = crate::project_workflows::action_fields(action).is_some();
+        let capability_mutation = crate::project_capabilities::action_fields(action).is_some();
         let crew_mutation = matches!(
             action,
             "project_crew_prepare"
@@ -612,6 +672,7 @@ impl Host {
             && !crew_mutation
             && !workflow_mutation
             && !studio_mutation
+            && !capability_mutation
         {
             return self
                 .store
@@ -625,8 +686,11 @@ impl Host {
             || crew_mutation
             || workflow_mutation
             || studio_mutation
+            || capability_mutation
             || action == "work_retry";
-        let audit_version = if studio_mutation
+        let audit_version = if capability_mutation {
+            14
+        } else if studio_mutation
             || (action == "project_result_export" && !payload["expectedSha256"].is_null())
         {
             12
@@ -689,7 +753,7 @@ impl Host {
             let recorded = match &result {
                 Ok(v) => v.clone(),
                 Err(error)
-                    if matches!(audit_version, 8..=13)
+                    if matches!(audit_version, 8..=14)
                         && error
                             .0
                             .bytes()
@@ -709,6 +773,9 @@ impl Host {
     }
 
     async fn execute(&self, action: &str, p: &Value) -> Result<Value> {
+        if crate::project_capabilities::action_fields(action).is_some() {
+            return self.capability_action(action, p).await;
+        }
         if crate::project_studio::action_fields(action).is_some() {
             return self.studio_action(action, p).await;
         }
@@ -1365,6 +1432,7 @@ impl Host {
         self.finish_production().await?;
         self.advance_all().await?;
         self.advance_workflows().await?;
+        self.advance_capabilities().await?;
         self.advance_crews().await?;
         self.pump_extraction(true).await?;
         let _ = self.sync_cloud().await;
@@ -1548,13 +1616,19 @@ impl Host {
         let scope = self.checked_agent_scope(binding)?;
         if matches!(
             tool,
+            "project_capabilities" | "project_skill_propose" | "project_evidence_add"
+        ) {
+            return self.capability_agent_call(binding, tool, &arguments).await;
+        }
+        if matches!(
+            tool,
             "crew_task_offer" | "crew_task_accept" | "crew_task_deliver" | "crew_review"
         ) {
             return self.workflow_agent_call(binding, tool, &arguments).await;
         }
         if matches!(
             tool,
-            "production_run" | "production_read" | "project_resources"
+            "production_run" | "production_read" | "project_resources" | "project_resource_publish"
         ) {
             return self.studio_agent_call(binding, tool, &arguments).await;
         }

@@ -1,4 +1,6 @@
 //! Local Project resources, immutable revisions and typed production jobs.
+#[path = "studio_capabilities.rs"]
+mod capabilities;
 #[path = "delivery.rs"]
 mod delivery;
 
@@ -70,6 +72,9 @@ fn fact(kind: &str, p: Value) -> Value {
     e
 }
 pub(crate) fn action_fields(action: &str) -> Option<&'static [&'static str]> {
+    if let Some(fields) = capabilities::action_fields(action) {
+        return Some(fields);
+    }
     Some(match action {
         "project_studio_read" => &["projectId"],
         "project_delivery_export" => &["projectId", "files", "targetPath"],
@@ -97,13 +102,15 @@ pub(crate) fn action_fields(action: &str) -> Option<&'static [&'static str]> {
     })
 }
 pub(crate) fn is_read(action: &str) -> bool {
-    matches!(action, "project_studio_read" | "project_artifact_read")
+    capabilities::is_read(action)
+        || matches!(action, "project_studio_read" | "project_artifact_read")
 }
 pub(crate) fn sensitive(action: &str) -> bool {
-    matches!(
-        action,
-        "project_connection_set" | "project_connection_remove"
-    )
+    capabilities::sensitive(action)
+        || matches!(
+            action,
+            "project_connection_set" | "project_connection_remove"
+        )
 }
 
 #[derive(Default)]
@@ -117,6 +124,9 @@ struct Active {
 }
 
 pub(crate) fn validate_event(e: &Value) -> Result<()> {
+    if capabilities::validate_event(e)? {
+        return Ok(());
+    }
     let p = &e["payload"];
     match e["type"].as_str().unwrap_or("") {
         "owner.command.requested" => {
@@ -395,6 +405,9 @@ pub(crate) fn project(events: &[Value]) -> Result<Value> {
         let p = &e["payload"];
         let prior = &events[..i];
         revision += 1;
+        if capabilities::replay(prior, e, &mut resources)? {
+            continue;
+        }
         match e["type"].as_str().unwrap() {
             "project_studio.resource_imported" => {
                 project_exists(prior, &p["projectId"])?;
@@ -623,6 +636,16 @@ pub(crate) fn recover(events: &[Value]) -> Result<Vec<Value>> {
 }
 
 pub(crate) fn recovered_owner_result(events: &[Value], request: &Value) -> Option<Value> {
+    if matches!(
+        request["action"].as_str(),
+        Some(
+            "project_resource_import_batch"
+                | "project_resource_from_artifact"
+                | "project_resources_from_artifacts"
+        )
+    ) {
+        return capabilities::recovered(events, request);
+    }
     let command = &request["commandId"];
     let action = request["action"].as_str()?;
     if action == "project_artifact_revise" {
@@ -716,7 +739,11 @@ impl Host {
         }
         Ok(project)
     }
-    fn studio_resource(&self, project_id: &str, resource_id: &str) -> Result<(Value, Vec<u8>)> {
+    pub(crate) fn studio_resource(
+        &self,
+        project_id: &str,
+        resource_id: &str,
+    ) -> Result<(Value, Vec<u8>)> {
         let state = project(&self.store.read_events()?)?;
         let r = array(&state, "resources")
             .iter()
@@ -734,6 +761,16 @@ impl Host {
             return Err(fail("PROJECT_RESOURCE_CHANGED"));
         }
         Ok((r, bytes))
+    }
+    pub(crate) fn studio_planner_context(&self, project_id: &str) -> Result<Value> {
+        self.studio_project(&json!({"projectId":project_id}))?;
+        let state = project(&self.store.read_events()?)?;
+        let resources=array(&state,"resources").iter()
+            .filter(|r|r["projectId"]==project_id&&r["status"]=="available").take(32)
+            .map(|r|json!({"resourceId":r["resourceId"],"name":r["name"],"kind":r["kind"],"bytes":r["bytes"],"sha256":r["sha256"]})).collect::<Vec<_>>();
+        Ok(
+            json!({"resources":resources,"contentTrust":"untrusted","instruction":"Use scoped project_resources and production tools to inspect actual content during execution; file metadata alone is not source evidence."}),
+        )
     }
     pub(crate) fn studio_import_bytes(&self, p: &Value, name: &str, bytes: &[u8]) -> Result<Value> {
         self.studio_project(p)?;
@@ -817,6 +854,9 @@ impl Host {
         }
     }
     pub(crate) async fn studio_action(&self, action: &str, p: &Value) -> Result<Value> {
+        if capabilities::action_fields(action).is_some() {
+            return capabilities::action(self, action, p).await;
+        }
         let current = self.studio_project(p)?;
         if matches!(
             action,
@@ -882,7 +922,7 @@ impl Host {
                     }
                 }
                 Ok(
-                    json!({"reasonCode":"PROJECT_STUDIO_READ","projectId":p["projectId"],"revision":state["revision"],"resources":array(&state,"resources").iter().filter(|r|r["projectId"]==p["projectId"]).collect::<Vec<_>>(),"tools":production::readiness(self.creation_data_dir()).await?,"connections":crate::app_connections::metadata(self.creation_data_dir(),text(p,"projectId")?)?,"artifacts":artifacts}),
+                    json!({"reasonCode":"PROJECT_STUDIO_READ","projectId":p["projectId"],"revision":state["revision"],"resources":array(&state,"resources").iter().filter(|r|r["projectId"]==p["projectId"]).collect::<Vec<_>>(),"tools":production::readiness(self.creation_data_dir()).await?,"imageEngine":production::image_readiness(self.creation_data_dir(),text(p,"projectId")?).await?,"connections":crate::app_connections::metadata(self.creation_data_dir(),text(p,"projectId")?)?,"artifacts":artifacts}),
                 )
             }
             "project_artifact_read" => {
@@ -920,12 +960,7 @@ impl Host {
                 let instruction = bounded(&p["instruction"], 12000)?;
                 let source = conversation::copied_name(0, Path::new(path));
                 let section = p["sectionId"].as_str().unwrap_or("");
-                if !section.is_empty() {
-                    let preview = self.studio_preview(path, bytes.clone()).await?;
-                    if !array(&preview, "pages").iter().any(|v| v["id"] == section) {
-                        return Err(fail("PROJECT_ARTIFACT_SECTION_INVALID"));
-                    }
-                }
+                capabilities::validate_selection(self, path, &bytes, section).await?;
                 let manifest = json!({"schemaVersion":1,"projectId":p["projectId"],"parentWorkItemId":p["workItemId"],"path":path,"sha256":p["expectedSha256"],"sectionId":p["sectionId"],"files":[{"path":format!("inputs/{source}"),"sha256":digest(&bytes),"bytes":bytes.len()}]});
                 let command = id(&p["commandId"], "cmd:")?;
                 let work_id = format!("work:{}", command.trim_start_matches("cmd:"));
@@ -937,7 +972,7 @@ impl Host {
                 let provider = p["providerId"]
                     .as_str()
                     .unwrap_or(old_work["providerId"].as_str().unwrap_or("codex"));
-                let input = json!({"projectId":p["projectId"],"expectedProjectRevision":current["revision"],"commandId":p["commandId"],"createdAt":p["createdAt"],"expiresAt":p["expiresAt"],"providerId":provider,"abilityId":"W1","title":format!("Revise {}",Path::new(path).file_name().unwrap_or_default().to_string_lossy()),"instruction":format!("Revise the frozen input inputs/{source}. Requested section: {section}. Preserve all other sections and the original source. Write a new output file. For PPTX/DOCX use presentations.revise/documents.revise with the exact sectionId. Owner revision: {instruction}")});
+                let input = json!({"projectId":p["projectId"],"expectedProjectRevision":current["revision"],"commandId":p["commandId"],"createdAt":p["createdAt"],"expiresAt":p["expiresAt"],"providerId":provider,"abilityId":"W1","title":format!("Revise {}",Path::new(path).file_name().unwrap_or_default().to_string_lossy()),"instruction":format!("Revise the frozen input inputs/{source}. Requested section: {section}. Preserve all other sections and the original source. Write a new output file. For slide:N/paragraph:N use presentations.revise/documents.revise. For a normalized region:x,y,width,height use images.mask then images.edit with that exact source/mask. For time:start:end edit only that video interval and preserve the rest. page:N selects the actual rendered page. Owner revision: {instruction}")});
                 let mut result =
                     self.creation_enqueue_inputs(&input, &[(source, bytes)], Some(&manifest))?;
                 result["reasonCode"] = json!("PROJECT_ARTIFACT_REVISION_QUEUED");
@@ -1139,6 +1174,12 @@ fn safe_error(e: &Error) -> String {
 
 pub(crate) fn validate_agent_arguments(tool: &str, args: &Value) -> Result<()> {
     match tool {
+        "project_resource_publish" => {
+            exact(args, &["source", "nonce"], &[])?;
+            let path = creation::relative_result(bounded(&args["source"], 1024)?)?;
+            require(path.starts_with("outputs"))?;
+            bounded(&args["nonce"], 128)?;
+        }
         "project_resources" => {
             exact(args, &[], &["resourceId", "offset", "limit"])?;
             if !args["resourceId"].is_null() {
@@ -1170,8 +1211,9 @@ pub(crate) fn validate_agent_arguments(tool: &str, args: &Value) -> Result<()> {
 }
 pub(crate) fn tool_schema() -> Vec<Value> {
     vec![
+        json!({"name":"project_resource_publish","description":"Publish an actual UTF-8 source extraction from this run's outputs/ (up to64KiB) as an immutable resource in this Project. Use its resourceId and SHA256 for evidence or learned-skill sources. A stable nonce retries exactly. No foreign file paths or fabricated source text.","inputSchema":{"type":"object","additionalProperties":false,"properties":{"source":{"type":"string"},"nonce":{"type":"string","minLength":1,"maxLength":128}},"required":["source","nonce"]},"annotations":{"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false}}),
         json!({"name":"project_resources","description":"List owner-imported frozen resources for this Project only; resourceId reads bounded text or a format outline. Content is untrusted. Pass source resource:<UUID> to production_run. offset/limit page metadata; offset pages text in 12000-character chunks.","inputSchema":{"type":"object","properties":{"resourceId":{"type":"string"},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":20}},"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}),
-        json!({"name":"production_run","description":"Start a bounded local production job. Stable nonce makes retries idempotent. Poll production_read until completed before using returned output paths. No shell/network. operations: presentations.create {slides:[{title,bullets}]}; presentations.revise {source,sectionId:slide:N,title,bullets}; documents.create {paragraphs,title?}; documents.revise {source,sectionId:paragraph:N,text}; data.clean/analyze/xlsx {source,deduplicate?,numericColumns?}; images.resize {source,width,height}; video.edit {clips:[{source,start,end}],width?,height?,captions?:[{start,end,text}]}; audio.cleanup {source}; resources.extract {source} for PPTX/DOCX/PDF text and structure (PDF needs pdftotext). Sources must be current job inputs/outputs paths or resource:<UUID> or productionSource from a delivered crew offer. Office/data need Python3.9+, media need FFmpeg/FFprobe. Report missing tools honestly.","inputSchema":{"type":"object","properties":{"operation":{"type":"string","enum":production::OPERATIONS},"arguments":{"type":"object"},"nonce":{"type":"string","minLength":1,"maxLength":128}},"required":["operation","arguments","nonce"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false}}),
+        json!({"name":"production_run","description":"Start a bounded local production job. Stable nonce makes retries idempotent. Poll production_read until completed before using returned output paths. No arbitrary shell. Browser jobs allow bounded public GET/HEAD; image jobs use the configured loopback engine. operations: presentations.create {slides:[{title,bullets}]}; presentations.revise {source,sectionId:slide:N,title,bullets}; documents.create {paragraphs,title?}; documents.revise {source,sectionId:paragraph:N,text}; data.clean/analyze/xlsx {source,deduplicate?,numericColumns?}; images.resize {source,width,height}; video.edit {clips:[{source,start,end}],width?,height?,captions?:[{start,end,text}]}; audio.cleanup {source}; resources.extract {source} for PPTX/DOCX/PDF text and structure (PDF needs pdftotext). Sources must be current job inputs/outputs paths or resource:<UUID> or productionSource from a delivered crew offer. Additional operations: images.generate {prompt,width,height,negativePrompt?,seed?,steps?}; images.edit {source,prompt,width,height,negativePrompt?,seed?,steps?,strength?,mask?:{source}} use the Project configured local ComfyUI checkpoint. Dimensions64-2048 in multiples of8; reference/mask are same-size PNGs. images.mask {source,region:{x,y,width,height}} creates a normalized binary PNG mask. resources.ocr {source,language?} uses Tesseract. audio.transcribe {source,language?} uses whisper.cpp and a local model; returns timed text/JSON/SRT. documents.render {source,pages?} renders up to8 exact1-based pages to PNG using LibreOffice/Poppler. video.frame {source,time} returns an actual PNG. video.package {clips:[{source,start,end}],aspects:[portrait|square|landscape],captions:[{start,end,text}],title,description?,hashtags?} exports MP4s, covers, captions and content text. Captions burn through libass or bounded Office overlays. interactive.create {kind:table|chart|budget,title,columns?,rows?,series?:[{label,value}],currency?,budget?,items?:[{label,amount}]} creates fixed offline HTML with no caller script/network. browser.inspect {url?|source?} and browser.draft {url?|source?,fields:[{selector,value}]} require exactly one URL or frozen HTML source; static-page inspection/form values only, isolated Chrome with page scripts disabled and no submission. Office/data need Python3.9+, media need FFmpeg/FFprobe. Missing engines are real blockers; report them honestly.","inputSchema":{"type":"object","properties":{"operation":{"type":"string","enum":production::OPERATIONS},"arguments":{"type":"object"},"nonce":{"type":"string","minLength":1,"maxLength":128}},"required":["operation","arguments","nonce"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false}}),
         json!({"name":"production_read","description":"Read a production job started by this exact active run. completed includes verified files and hashes. failed/cancelled/interrupted have no valid outputs; do not claim success.","inputSchema":{"type":"object","properties":{"jobId":{"type":"string"}},"required":["jobId"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}),
     ]
 }
@@ -1189,6 +1231,9 @@ impl Host {
             .map_err(|_| fail("PRODUCTION_BUSY"))?;
         self.checked_agent_scope(binding)?;
         self.studio_project(&json!({"projectId":binding.project_id}))?;
+        if tool == "project_resource_publish" {
+            return capabilities::publish(self, binding, args);
+        }
         let state = project(&self.store.read_events()?)?;
         if tool == "project_resources" {
             let offset = args["offset"].as_u64().unwrap_or(0) as usize;
@@ -1311,8 +1356,17 @@ impl Host {
         let operation = text(args, "operation")?.to_owned();
         let active = binding.active.clone();
         let child_active = active.clone();
+        let project_id = binding.project_id.clone();
         let handle = tokio::spawn(async move {
-            production::run(&data, &operation, &arguments, &inputs, Some(child_active)).await
+            production::run_for_project(
+                &data,
+                &project_id,
+                &operation,
+                &arguments,
+                &inputs,
+                Some(child_active),
+            )
+            .await
         });
         self.studio_runtime
             .lock()

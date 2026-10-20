@@ -13,9 +13,12 @@ use std::{
 };
 
 fn config_path(data: &Path, project: &str) -> Result<PathBuf> {
+    let suffix = project
+        .strip_prefix("project:")
+        .ok_or_else(|| error("PRODUCTION_IMAGE_PROJECT_INVALID"))?;
     let id =
-        uuid::Uuid::parse_str(project).map_err(|_| error("PRODUCTION_IMAGE_PROJECT_INVALID"))?;
-    if id.to_string() != project {
+        uuid::Uuid::parse_str(suffix).map_err(|_| error("PRODUCTION_IMAGE_PROJECT_INVALID"))?;
+    if id.to_string() != suffix {
         return Err(error("PRODUCTION_IMAGE_PROJECT_INVALID"));
     }
     Ok(data.join(format!("image-engine-{id}.json")))

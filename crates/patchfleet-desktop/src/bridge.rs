@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::{runtime::Runtime, sync::mpsc, task::JoinHandle};
 
-const PRODUCTIVE_KEYS: [&str; 8] = [
+const PRODUCTIVE_KEYS: [&str; 16] = [
     "projectStudio",
     "projectArtifact",
     "projectStudioReceipt",
@@ -22,11 +22,33 @@ const PRODUCTIVE_KEYS: [&str; 8] = [
     "projectWorkflowReceipt",
     "projectWorkflowError",
     "projectCrewPlanJob",
+    "projectResource",
+    "projectArtifactVisual",
+    "projectArtifactFrame",
+    "projectArtifactOpen",
+    "projectCapabilities",
+    "projectEvidence",
+    "projectCapabilityReceipt",
+    "projectCapabilityError",
 ];
 fn productive_key(action: &str) -> Option<&'static str> {
     Some(match action {
         "project_studio_read" => "projectStudio",
         "project_artifact_read" => "projectArtifact",
+        "project_resource_read" => "projectResource",
+        "project_artifact_visual_read" => "projectArtifactVisual",
+        "project_artifact_frame_read" => "projectArtifactFrame",
+        "project_artifact_open" => "projectArtifactOpen",
+        "project_capabilities_read" => "projectCapabilities",
+        "project_evidence_read" => "projectEvidence",
+        "project_brand_save"
+        | "project_skill_propose"
+        | "project_skill_accept"
+        | "project_skill_revoke"
+        | "project_trigger_save"
+        | "project_trigger_set_armed"
+        | "project_variants_prepare"
+        | "project_evidence_add" => "projectCapabilityReceipt",
         "project_workflows_read" => "projectWorkflowRead",
         "project_crew_plan_read" => "projectCrewPlanJob",
         "project_crew_plan_start"
@@ -41,6 +63,11 @@ fn productive_key(action: &str) -> Option<&'static str> {
         "project_delivery_export"
         | "project_artifact_revise"
         | "project_resource_import"
+        | "project_resource_import_batch"
+        | "project_resource_from_artifact"
+        | "project_resources_from_artifacts"
+        | "project_image_engine_set"
+        | "project_image_engine_remove"
         | "project_resource_remove"
         | "project_tool_configure"
         | "project_connection_set"
@@ -55,6 +82,11 @@ fn private_command(command: &Command) -> Command {
     if command.action == "project_connection_set" {
         if let Some(payload) = command.payload.as_object_mut() {
             payload.remove("accessToken");
+        }
+    }
+    if command.action == "project_image_engine_set" {
+        if let Some(payload) = command.payload.as_object_mut() {
+            payload.remove("url");
         }
     }
     command
@@ -83,6 +115,12 @@ fn memory_read(action: &str) -> bool {
             | "provider_connections_read"
             | "project_studio_read"
             | "project_artifact_read"
+            | "project_resource_read"
+            | "project_artifact_visual_read"
+            | "project_artifact_frame_read"
+            | "project_artifact_open"
+            | "project_capabilities_read"
+            | "project_evidence_read"
             | "project_workflows_read"
             | "project_crew_plan_read"
     )
@@ -100,6 +138,7 @@ enum Message {
     CreateExport(crate::ui::CreateExportRequest, Option<PathBuf>),
     DeliveryExport(crate::ui::DeliveryExportRequest, Option<PathBuf>),
     StudioPath(crate::ui::StudioPathRequest, Option<PathBuf>),
+    CapabilityPath(crate::ui::CapabilityPathRequest, Option<Vec<String>>),
     Account(u64, Command, Value, Result<Value, String>),
     Closed,
 }
@@ -149,6 +188,9 @@ pub struct Bridge {
     productive_pages: std::collections::HashMap<&'static str, Value>,
     productive_project: Option<Value>,
     productive_requests: std::collections::HashMap<&'static str, String>,
+    artifact_open: Option<PathBuf>,
+    opened_artifacts: std::collections::HashSet<String>,
+    pub capability_paths: Option<(crate::ui::CapabilityPathRequest, Option<Vec<String>>)>,
     pub error: Option<String>,
     pub feedback: Option<Notice>,
     pub picking_folder: bool,
@@ -191,6 +233,9 @@ fn poll_delay(snapshot: &Value) -> Duration {
                         .any(|plan| matches!(plan["status"].as_str(), Some("queued" | "running")))
                 })
             || snapshot["cloud"]["paired"] == true
+            || snapshot["projectCapabilities"]["triggers"]
+                .as_array()
+                .is_some_and(|triggers| triggers.iter().any(|trigger| trigger["armed"] == true))
         {
             5
         } else {
@@ -206,6 +251,56 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 }
 
 impl Bridge {
+    #[cfg(feature = "ui-smoke")]
+    pub fn capabilities_smoke(&mut self, scene: &str) {
+        let mut snapshot = self.snapshot.clone().unwrap();
+        let project = snapshot["projectMemory"]["projects"][0]["projectId"].clone();
+        let host = self.host.lock().unwrap().as_ref().cloned().unwrap();
+        let section = match scene {
+            "capabilities-skills" => "skills",
+            "capabilities-triggers" => "triggers",
+            "capabilities-alternatives" => "variants",
+            "capabilities-evidence" => "evidence",
+            _ => "profiles",
+        };
+        for (key, action, payload) in [
+            (
+                "projectStudio",
+                "project_studio_read",
+                serde_json::json!({"projectId":project}),
+            ),
+            (
+                "projectWorkflowRead",
+                "project_workflows_read",
+                serde_json::json!({"projectId":project}),
+            ),
+            (
+                "projectCapabilities",
+                "project_capabilities_read",
+                serde_json::json!({"projectId":project,"section":section,"offset":0,"limit":20}),
+            ),
+        ] {
+            let page = self.runtime.block_on(host.action(action, payload)).unwrap();
+            self.productive_pages.insert(key, page);
+        }
+        self.productive_project = Some(project);
+        if scene == "capabilities-canvas" {
+            let artifact = self.productive_pages["projectStudio"]["artifacts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|artifact| {
+                    artifact["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with(".png"))
+                })
+                .unwrap();
+            let preview=self.runtime.block_on(host.action("project_artifact_read",serde_json::json!({"projectId":snapshot["projectMemory"]["projects"][0]["projectId"],"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]}))).unwrap();
+            self.productive_pages.insert("projectArtifact", preview);
+        }
+        self.productive_overlay(&mut snapshot);
+        self.snapshot = Some(snapshot);
+    }
     #[cfg(feature = "ui-smoke")]
     pub fn smoke_provider_connections(&mut self, ready: bool, selected: &str) {
         if self.provider_connections.is_some() {
@@ -670,6 +765,9 @@ impl Bridge {
             productive_pages: Default::default(),
             productive_project: None,
             productive_requests: Default::default(),
+            artifact_open: None,
+            opened_artifacts: Default::default(),
+            capability_paths: None,
             error: None,
             feedback: None,
             picking_folder: false,
@@ -800,13 +898,22 @@ impl Bridge {
                             self.feedback = Some(Notice::error(command.action, &error));
                             self.pending = (!matches!(
                                 command.action,
-                                "project_connection_set" | "project_connection_execute"
+                                "project_connection_set"
+                                    | "project_connection_execute"
+                                    | "project_image_engine_set"
                             ))
                             .then_some(command);
                         }
                     }
                     self.apply_delivered_snapshot(snapshot);
                     self.busy = false;
+                }
+                Message::CapabilityPath(request, selection) => {
+                    self.picking_folder = false;
+                    self.picker = None;
+                    if !self.closing {
+                        self.capability_paths = Some((request, selection));
+                    }
                 }
                 Message::StudioPath(request, selection) => {
                     self.picking_folder = false;
@@ -1464,6 +1571,7 @@ impl Bridge {
         {
             self.productive_pages.clear();
             self.productive_requests.clear();
+            self.artifact_open = None;
             self.productive_project = Some(command.payload["projectId"].clone());
             if let Some(snapshot) = self.snapshot.as_mut() {
                 for key in PRODUCTIVE_KEYS {
@@ -1485,7 +1593,9 @@ impl Bridge {
         );
         self.productive_pages.remove(key);
         self.productive_pages.remove(
-            if key.starts_with("projectWorkflow") || key == "projectCrewPlanJob" {
+            if key.starts_with("projectCapabilit") || key == "projectEvidence" {
+                "projectCapabilityError"
+            } else if key.starts_with("projectWorkflow") || key == "projectCrewPlanJob" {
                 "projectWorkflowError"
             } else {
                 "projectStudioError"
@@ -1511,6 +1621,17 @@ impl Bridge {
         {
             return;
         }
+        if key == "projectArtifactOpen"
+            && result.is_ok_and(|receipt| {
+                receipt["reasonCode"] != "PROJECT_ARTIFACT_OPEN"
+                    || receipt["sha256"] != command.payload["expectedSha256"]
+                    || ["projectId", "commandId", "workItemId", "path"]
+                        .iter()
+                        .any(|field| receipt[*field] != command.payload[*field])
+            })
+        {
+            return;
+        }
         if let Ok(receipt) = result {
             for field in [
                 "projectId",
@@ -1521,6 +1642,10 @@ impl Bridge {
                 "path",
                 "section",
                 "offset",
+                "resourceId",
+                "evidenceId",
+                "page",
+                "time",
             ] {
                 if !command.payload[field].is_null()
                     && !receipt[field].is_null()
@@ -1550,6 +1675,10 @@ impl Bridge {
             "path",
             "section",
             "offset",
+            "resourceId",
+            "evidenceId",
+            "page",
+            "time",
         ] {
             if !command.payload[identity].is_null() && scoped[identity].is_null() {
                 scoped[identity] = command.payload[identity].clone();
@@ -1559,7 +1688,9 @@ impl Bridge {
         if key == "projectCrewPlanJob" && result.is_ok() {
             scoped["reasonCode"] = Value::from("PROJECT_CREW_PLAN_READ");
         }
-        let error_key = if key.starts_with("projectWorkflow") || key == "projectCrewPlanJob" {
+        let error_key = if key.starts_with("projectCapabilit") || key == "projectEvidence" {
+            "projectCapabilityError"
+        } else if key.starts_with("projectWorkflow") || key == "projectCrewPlanJob" {
             "projectWorkflowError"
         } else {
             "projectStudioError"
@@ -1569,6 +1700,20 @@ impl Bridge {
         }
         if result.is_ok() || !memory_read(command.action) {
             self.productive_pages.insert(key, scoped.clone());
+        }
+        if key == "projectArtifactOpen" && result.is_ok() {
+            if let (Some(path), Some(id)) =
+                (scoped["openPath"].as_str(), scoped["commandId"].as_str())
+            {
+                if scoped["reasonCode"] == "PROJECT_ARTIFACT_OPEN"
+                    && self.opened_artifacts.insert(id.to_owned())
+                {
+                    self.artifact_open = Some(PathBuf::from(path));
+                }
+            }
+        }
+        if key == "projectCapabilityReceipt" {
+            self.productive_pages.remove("projectCapabilities");
         }
         if command.action == "project_artifact_revise" && result.is_ok() {
             self.project_work_receipt = Some(scoped);
@@ -1580,6 +1725,11 @@ impl Bridge {
         if matches!(
             command.action,
             "project_resource_import"
+                | "project_resource_import_batch"
+                | "project_resource_from_artifact"
+                | "project_resources_from_artifacts"
+                | "project_image_engine_set"
+                | "project_image_engine_remove"
                 | "project_resource_remove"
                 | "project_tool_configure"
                 | "project_connection_set"
@@ -1603,6 +1753,9 @@ impl Bridge {
             self.productive_pages.clear();
             self.productive_requests.clear();
             self.productive_project = None;
+            self.artifact_open = None;
+            self.opened_artifacts.clear();
+            self.capability_paths = None;
         }
         for key in PRODUCTIVE_KEYS {
             snapshot[key] = self
@@ -1627,6 +1780,31 @@ impl Bridge {
         let output = self.output.clone();
         self.picker = Some(self.runtime.spawn(async move {
             notify(&ctx, &output, Message::StudioPath(request, choice.await)).await;
+        }));
+    }
+    pub fn take_artifact_open(&mut self) -> Option<PathBuf> {
+        self.artifact_open.take()
+    }
+    pub fn choose_capability_paths(
+        &mut self,
+        ctx: egui::Context,
+        request: crate::ui::CapabilityPathRequest,
+        choice: impl std::future::Future<Output = Option<Vec<String>>> + Send + 'static,
+    ) {
+        if self.busy || self.closing || self.picking_folder || self.error.is_some() {
+            return;
+        }
+        self.dismiss_feedback();
+        self.picking_folder = true;
+        ctx.request_repaint();
+        let output = self.output.clone();
+        self.picker = Some(self.runtime.spawn(async move {
+            notify(
+                &ctx,
+                &output,
+                Message::CapabilityPath(request, choice.await),
+            )
+            .await;
         }));
     }
 
@@ -1862,6 +2040,38 @@ mod tests {
             .unwrap()
             .to_string()
             .contains("PRIVATE-TOKEN-CANARY"));
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn explicit_output_open_requires_exact_version_and_is_consumed_once() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        let command = Command::new(
+            "project_artifact_open",
+            json!({"projectId":"project:one","workItemId":"work:one","path":"outputs/interactive.html","expectedSha256":"a".repeat(64)}),
+        );
+        bridge.productive_submit(&command);
+        let mut receipt = json!({"reasonCode":"PROJECT_ARTIFACT_OPEN","commandId":command.payload["commandId"],"projectId":"project:one","workItemId":"work:one","path":"outputs/interactive.html","sha256":"b".repeat(64),"openPath":"/tmp/checked/output.html"});
+        bridge.productive_outcome(&command, Ok(&receipt));
+        assert!(bridge.take_artifact_open().is_none());
+        receipt["sha256"] = command.payload["expectedSha256"].clone();
+        bridge.productive_outcome(&command, Ok(&receipt));
+        assert_eq!(
+            bridge.take_artifact_open(),
+            Some(PathBuf::from("/tmp/checked/output.html"))
+        );
+        assert!(bridge.take_artifact_open().is_none());
+        bridge.productive_outcome(&command, Ok(&receipt));
+        assert!(bridge.take_artifact_open().is_none());
+        let changed = Command::new("project_artifact_open", command.payload.clone());
+        let mut different = changed.payload.clone();
+        different["projectId"] = json!("project:other");
+        let other = Command::new("project_artifact_open", different);
+        bridge.productive_submit(&other);
+        bridge.productive_outcome(&command, Ok(&receipt));
+        assert!(bridge.take_artifact_open().is_none());
         bridge.shutdown();
     }
 

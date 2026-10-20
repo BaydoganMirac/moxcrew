@@ -604,6 +604,12 @@ impl Store {
                 crate::project_workflows::metadata(workflows),
             );
         }
+        if let Some(capabilities) = state.projected.get("projectCapabilities") {
+            bundle.insert(
+                "projectCapabilities".into(),
+                crate::project_capabilities::metadata(capabilities),
+            );
+        }
         bundle.insert(
             "projectMemory".into(),
             crate::project_memory::metadata(&state.projected["projectMemory"]),

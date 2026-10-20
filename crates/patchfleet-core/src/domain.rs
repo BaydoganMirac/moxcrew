@@ -854,6 +854,9 @@ pub fn validate_event(v: &Value) -> Result<()> {
     let p = &v["payload"];
     let kind = string(&v["type"])?;
     object(p)?;
+    if v["schemaVersion"] == 14 {
+        return crate::project_capabilities::validate_event(v);
+    }
     if v["schemaVersion"] == 12 {
         return crate::project_studio::validate_event(v);
     }
@@ -2493,6 +2496,10 @@ pub fn project_events(events: &[Value]) -> Result<Value> {
     let studio = crate::project_studio::project(events)?;
     if studio["revision"].as_u64().unwrap_or(0) > 0 {
         bundle["projectStudio"] = studio;
+    }
+    let capabilities = crate::project_capabilities::project(events)?;
+    if capabilities["revision"].as_u64().unwrap_or(0) > 0 {
+        bundle["projectCapabilities"] = capabilities;
     }
     let memory = crate::agent_memory::project(events)?;
     if !memory.is_null() {

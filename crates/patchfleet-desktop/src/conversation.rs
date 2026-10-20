@@ -29,6 +29,19 @@ fn pack_context(previous: &[Value], questions: &str, input: &str) -> Option<Vec<
     }
     transcript.push_str("\nOwner:\n");
     transcript.push_str(input);
+    chunk_context(&transcript)
+}
+fn source_context(previous: &[Value], sources: &[Value]) -> Option<Vec<Value>> {
+    if sources.is_empty() {
+        return Some(previous.to_vec());
+    }
+    let mut transcript = context_text(previous);
+    transcript.push_str("\nAttached Project resources (exact selection for this request):\n");
+    let refs:Vec<_>=sources.iter().map(|source|json!({"resourceId":source["resourceId"],"expectedSha256":source["sha256"],"name":source["name"]})).collect();
+    transcript.push_str(&serde_json::to_string(&refs).ok()?);
+    chunk_context(&transcript)
+}
+fn chunk_context(transcript: &str) -> Option<Vec<Value>> {
     let mut chunks = vec![String::new()];
     let mut units = 0;
     for character in transcript.chars() {
@@ -70,16 +83,44 @@ struct ProjectRequest {
     reply: Option<ReplyDraft>,
     provider: String,
     preference: String,
+    paths: Vec<String>,
+}
+
+struct ResourceRequest {
+    session: Option<(CreateDraft, Vec<Value>)>,
+    command: String,
+    key: Scope,
+    draft: CreateDraft,
+    input: String,
+    reply: Option<ReplyDraft>,
+    provider: String,
+    preference: String,
+    paths: Vec<String>,
 }
 
 #[derive(Default)]
 pub(super) struct ConversationState {
     sessions: HashMap<Scope, Session>,
     creation: Option<ProjectRequest>,
+    importing: Option<ResourceRequest>,
     error: Option<&'static str>,
 }
 
 impl ConversationState {
+    pub(super) fn set_error(&mut self, error: &'static str) {
+        self.error = Some(error);
+    }
+    pub(super) fn has_session(&self, key: &Scope) -> bool {
+        self.sessions.contains_key(key)
+    }
+    pub(super) fn input_for(&self, key: &Scope) -> Option<&str> {
+        self.sessions.get(key).map(|s| s.input.as_str())
+    }
+    pub(super) fn clear_input_for(&mut self, key: &Scope) {
+        if let Some(session) = self.sessions.get_mut(key) {
+            session.input.clear();
+        }
+    }
     pub(super) fn preserve_inputs(&self, drafts: &mut HashMap<Scope, CreateDraft>) {
         for (key, session) in &self.sessions {
             if !session.input.is_empty() {
@@ -113,7 +154,7 @@ impl CreateState {
     }
 
     pub(super) fn conversation_creating(&self) -> bool {
-        self.chat.conversation.creation.is_some()
+        self.chat.conversation.creation.is_some() || self.chat.conversation.importing.is_some()
     }
 
     pub(super) fn conversation_input(&mut self) -> &mut String {
@@ -136,6 +177,7 @@ impl CreateState {
         let limit = self.conversation_limit();
         valid_input(self.conversation_input(), limit)
             && !self.conversation_creating()
+            && !self.visual_pending()
             && !self.planner_busy()
             && self.pending.is_none()
             && self
@@ -272,12 +314,20 @@ impl Console {
             || self.create.drafts.get(&pending.key) != Some(&pending.draft)
             || self.create.chat.replies.get(&pending.key) != pending.reply.as_ref()
             || *self.create.planner_provider() != pending.preference
+            || self.create.attachment_paths() != pending.paths
         {
             return;
         }
         let next = (project.to_owned(), pending.key.1.clone());
         if self.create.drafts.contains_key(&next) {
             return;
+        }
+        self.create.capabilities.attachments.remove(&pending.key);
+        if !pending.paths.is_empty() {
+            self.create
+                .capabilities
+                .attachments
+                .insert(next.clone(), pending.paths);
         }
         self.create.project = project.to_owned();
         self.create.drafts.remove(&pending.key);
@@ -293,7 +343,7 @@ impl Console {
                 Some("Selected provider is unavailable. Check connections, then send again.");
             return;
         }
-        self.send_conversation_plan(snapshot, commands, pending.provider);
+        self.import_or_plan(snapshot, commands, pending.provider);
     }
 
     pub(super) fn send_conversation(&mut self, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -325,11 +375,112 @@ impl Console {
                 draft,
                 provider,
                 preference: self.create.planner_provider().clone(),
+                paths: self.create.attachment_paths(),
             });
             commands.push(command);
             return;
         }
-        self.send_conversation_plan(snapshot, commands, provider);
+        self.import_or_plan(snapshot, commands, provider);
+    }
+
+    fn import_or_plan(&mut self, snapshot: &Value, commands: &mut Vec<Command>, provider: String) {
+        let paths = self.create.attachment_paths();
+        if paths.is_empty() {
+            self.send_conversation_plan(snapshot, commands, provider);
+            return;
+        }
+        if !commands.is_empty() {
+            return;
+        }
+        let Some(rev) = output_studio::project_revision(snapshot, &self.create.project) else {
+            return;
+        };
+        let key = self.create.conversation_key();
+        let input = self.create.conversation_input().clone();
+        let command = Command::new(
+            "project_resource_import_batch",
+            json!({"projectId":self.create.project,"expectedProjectRevision":rev,"sourcePaths":paths}),
+        );
+        self.create.chat.conversation.importing = Some(ResourceRequest {
+            session: self
+                .create
+                .chat
+                .conversation
+                .sessions
+                .get(&key)
+                .map(|s| (s.original.clone(), s.answers.clone())),
+            command: text(&command.payload, "commandId").into(),
+            draft: self.create.draft().clone(),
+            input,
+            reply: self.create.chat.replies.get(&key).cloned(),
+            key,
+            provider,
+            preference: self.create.planner_provider().clone(),
+            paths,
+        });
+        commands.push(command);
+    }
+    pub(super) fn sync_conversation_resources(
+        &mut self,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let Some(pending) = &self.create.chat.conversation.importing else {
+            return;
+        };
+        let receipt = &snapshot["projectStudioReceipt"];
+        if text(receipt, "commandId") != pending.command
+            || text(receipt, "projectId") != pending.key.0
+            || matches!(text(receipt, "outcome"), "" | "unknown")
+        {
+            return;
+        }
+        if text(receipt, "outcome") != "applied" {
+            self.create.chat.conversation.importing = None;
+            self.create.chat.conversation.error =
+                Some("Files could not be imported. Your message and attachments are preserved.");
+            return;
+        }
+        if !capabilities::complete_import(receipt, pending.paths.len()) {
+            return;
+        }
+        if !commands.is_empty() {
+            return;
+        }
+        let pending = self.create.chat.conversation.importing.take().unwrap();
+        let same = self.create.conversation_key() == pending.key
+            && self.create.drafts.get(&pending.key) == Some(&pending.draft)
+            && self.create.conversation_input() == &pending.input
+            && self.create.chat.replies.get(&pending.key) == pending.reply.as_ref()
+            && *self.create.planner_provider() == pending.preference
+            && self.create.attachment_paths() == pending.paths
+            && self
+                .create
+                .chat
+                .conversation
+                .sessions
+                .get(&pending.key)
+                .map(|s| (s.original.clone(), s.answers.clone()))
+                == pending.session;
+        if !same {
+            return;
+        }
+        if !connect::can_attempt_provider(snapshot, &pending.provider) {
+            self.create.chat.conversation.error =
+                Some("Selected provider is unavailable. Check connections, then send again.");
+            return;
+        }
+        self.send_conversation_plan_sources(
+            snapshot,
+            commands,
+            pending.provider,
+            array(&receipt["resources"]),
+        );
+        if !commands.is_empty() {
+            if let Some(queue) = self.create.capabilities.attachments.get_mut(&pending.key) {
+                queue.retain(|p| !pending.paths.contains(p));
+            }
+        }
     }
 
     fn send_conversation_plan(
@@ -337,6 +488,15 @@ impl Console {
         snapshot: &Value,
         commands: &mut Vec<Command>,
         provider: String,
+    ) {
+        self.send_conversation_plan_sources(snapshot, commands, provider, &[]);
+    }
+    fn send_conversation_plan_sources(
+        &mut self,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+        provider: String,
+        sources: &[Value],
     ) {
         let key = self.create.conversation_key();
         let input = self.create.conversation_input().clone();
@@ -368,6 +528,11 @@ impl Console {
             (session.original.clone(), answers)
         } else {
             (self.create.draft().clone(), Vec::new())
+        };
+        let Some(answers) = source_context(&answers, sources) else {
+            self.create.chat.conversation.error =
+                Some("Planning context is full. Your message is preserved; start a new request.");
+            return;
         };
         if self.create.draft().goal.is_empty() {
             *self.create.draft() = draft.clone();
@@ -438,7 +603,9 @@ impl Console {
     }
 
     pub(super) fn conversation_feedback(&mut self, ui: &mut Ui) {
-        if self.create.conversation_creating() {
+        if self.create.chat.conversation.importing.is_some() {
+            hint(ui, "Importing the frozen attachments before planning…");
+        } else if self.create.conversation_creating() {
             hint(ui, "Creating a project for this conversation…");
         }
         if let Some(error) = self.create.chat.conversation.error {
@@ -1289,5 +1456,161 @@ mod tests {
                 );
             }
         }
+    }
+    fn imported(data: &mut Value, command: &Command, count: usize) {
+        data["projectStudioReceipt"] = json!({"reasonCode":"PROJECT_RESOURCES_IMPORTED","outcome":"applied","commandId":command.payload["commandId"],"projectId":command.payload["projectId"],"resources":(0..count).map(|i|json!({"resourceId":format!("resource:00000000-0000-4000-8000-{i:012}"),"revision":1,"status":"available","sha256":format!("{:064x}",i+1),"name":format!("source{i}"),"bytes":12})).collect::<Vec<_>>()});
+    }
+    #[test]
+    fn first_request_creates_then_imports_exact_attachments_then_plans_once() {
+        let mut data = fixture();
+        let mut c = console();
+        c.create.project.clear();
+        c.create.draft().goal = "Make a video from the attached sources".into();
+        c.create
+            .queue_paths(vec!["/tmp/a.png".into(), "/tmp/b.wav".into()]);
+        let mut commands = Vec::new();
+        c.send_conversation(&data, &mut commands);
+        assert_eq!(commands[0].action, "project_create");
+        let create = commands.remove(0);
+        c.sync_conversation_project(&data, &mut commands);
+        assert!(commands.is_empty());
+        data["projectCreateReceipt"] = json!({"outcome":"applied","commandId":create.payload["commandId"],"projectId":"project:two"});
+        c.sync_conversation_project(&data, &mut commands);
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_resource_import_batch");
+        assert_eq!(
+            commands[0].payload["sourcePaths"],
+            json!(["/tmp/a.png", "/tmp/b.wav"])
+        );
+        assert_eq!(c.create.project, "project:two");
+        let import = commands.remove(0);
+        imported(&mut data, &import, 1);
+        c.sync_conversation_resources(&data, &mut commands);
+        assert!(commands.is_empty(), "Partial receipt cannot plan");
+        assert!(c.create.conversation_creating());
+        imported(&mut data, &import, 2);
+        c.sync_conversation_resources(&data, &mut commands);
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_crew_plan_start");
+        assert_eq!(commands[0].payload["projectId"], "project:two");
+        assert!(commands[0].payload.get("resourceRefs").is_none());
+        assert!(c.create.attachment_paths().is_empty());
+        commands.clear();
+        c.sync_conversation_resources(&data, &mut commands);
+        assert!(commands.is_empty());
+    }
+    #[test]
+    fn import_unknown_rejected_foreign_and_late_edits_never_continue_old_planning() {
+        for outcome in ["unknown", "rejected", "applied"] {
+            let mut data = fixture();
+            let mut c = console();
+            c.create.queue_paths(vec!["/tmp/a.txt".into()]);
+            let mut commands = Vec::new();
+            c.send_conversation(&data, &mut commands);
+            let import = commands.remove(0);
+            assert_eq!(import.action, "project_resource_import_batch");
+            imported(&mut data, &import, 1);
+            data["projectStudioReceipt"]["commandId"] = json!("cmd:foreign");
+            c.sync_conversation_resources(&data, &mut commands);
+            assert!(commands.is_empty());
+            assert!(c.create.conversation_creating());
+            data["projectStudioReceipt"]["commandId"] = import.payload["commandId"].clone();
+            data["projectStudioReceipt"]["outcome"] = json!(outcome);
+            if outcome == "applied" {
+                c.create.draft().goal = "Later edit must survive".into();
+            }
+            c.sync_conversation_resources(&data, &mut commands);
+            assert!(commands.is_empty());
+            if outcome == "unknown" {
+                assert!(c.create.conversation_creating());
+                assert!(!c.create.conversation_send_enabled(&data));
+                assert_eq!(c.create.attachment_paths().len(), 1);
+            } else {
+                assert!(!c.create.conversation_creating());
+                if outcome == "rejected" {
+                    assert_eq!(c.create.attachment_paths().len(), 1);
+                } else {
+                    assert_eq!(c.create.draft().goal, "Later edit must survive");
+                }
+            }
+        }
+    }
+    #[test]
+    fn changed_attachment_selection_or_frozen_provider_diagnostics_cannot_redirect_creation_chain()
+    {
+        let mut data = fixture();
+        let mut c = console();
+        c.create.project.clear();
+        c.create.draft().goal = "Use this audio source".into();
+        c.create.queue_paths(vec!["/tmp/a.wav".into()]);
+        let mut commands = Vec::new();
+        c.send_conversation(&data, &mut commands);
+        let create = commands.remove(0);
+        c.create.queue_paths(vec!["/tmp/new.wav".into()]);
+        data["projectCreateReceipt"] = json!({"outcome":"applied","commandId":create.payload["commandId"],"projectId":"project:two"});
+        c.sync_conversation_project(&data, &mut commands);
+        assert!(commands.is_empty());
+        assert!(c.create.project.is_empty());
+        assert_eq!(c.create.attachment_paths().len(), 2);
+    }
+    #[test]
+    fn imported_sources_are_exact_request_context_even_after_thirty_two_older_project_resources() {
+        let mut data = fixture();
+        data["projectStudio"] = json!({"projectId":"project:one","resources":(0..40).map(|i|json!({"resourceId":format!("resource:old-{i}"),"sha256":"f".repeat(64)})).collect::<Vec<_>>()});
+        let mut c = console();
+        let original = c.create.draft().goal.clone();
+        c.create.queue_paths(vec!["/tmp/new-source.wav".into()]);
+        let mut commands = Vec::new();
+        c.send_conversation(&data, &mut commands);
+        let import = commands.remove(0);
+        imported(&mut data, &import, 1);
+        c.sync_conversation_resources(&data, &mut commands);
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].payload["instruction"], original);
+        let context = context_text(array(&commands[0].payload["answers"]));
+        assert!(context.contains("resource:00000000-0000-4000-8000-000000000000"));
+        assert!(context.contains(&format!("{:064x}", 1)));
+        assert!(context.contains("source0"));
+        assert_eq!(c.create.draft().goal, original);
+        assert_eq!(
+            c.create.chat.conversation.sessions[&c.create.conversation_key()].turns[0].body,
+            original
+        );
+    }
+    #[test]
+    fn attachment_context_overflow_preserves_exact_input_queue_and_previous_answers() {
+        let mut data = fixture();
+        let mut c = console();
+        let key = c.create.conversation_key();
+        let previous = chunk_context(&"x".repeat(14_000)).unwrap();
+        let original = c.create.draft().clone();
+        c.create.chat.conversation.sessions.insert(
+            key.clone(),
+            Session {
+                original,
+                input: "Continue with these sources".into(),
+                answers: previous.clone(),
+                turns: vec![],
+            },
+        );
+        c.create
+            .queue_paths((0..12).map(|i| format!("/tmp/source-{i}.txt")).collect());
+        let mut commands = Vec::new();
+        c.send_conversation(&data, &mut commands);
+        assert_eq!(commands.len(), 1);
+        let import = commands.remove(0);
+        imported(&mut data, &import, 12);
+        for source in data["projectStudioReceipt"]["resources"]
+            .as_array_mut()
+            .unwrap()
+        {
+            source["name"] = json!("Long source name".repeat(13));
+        }
+        c.sync_conversation_resources(&data, &mut commands);
+        assert!(commands.is_empty());
+        assert_eq!(c.create.attachment_paths().len(), 12);
+        assert_eq!(c.create.conversation_input(), "Continue with these sources");
+        assert_eq!(c.create.chat.conversation.sessions[&key].answers, previous);
+        assert!(c.create.chat.conversation.error.is_some());
     }
 }

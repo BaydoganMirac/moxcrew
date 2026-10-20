@@ -1,4 +1,9 @@
 use super::*;
+#[path = "canvas.rs"]
+mod canvas;
+#[path = "capabilities.rs"]
+mod capabilities;
+pub use capabilities::{CapabilityPathKind, CapabilityPathRequest};
 #[path = "chat.rs"]
 mod chat;
 #[path = "connect.rs"]
@@ -161,6 +166,8 @@ pub(super) struct CreateState {
     chat: ChatState,
     crew: crew::CrewState,
     studio: output_studio::StudioState,
+    capabilities: capabilities::CapabilityState,
+    canvas: canvas::CanvasState,
     pending: Option<Submission>,
     export_request: Option<CreateExportRequest>,
     host_epoch: Option<Value>,
@@ -177,6 +184,8 @@ impl CreateState {
                 self.chat.conversation.preserve_inputs(&mut self.drafts);
                 self.crew = Default::default();
                 self.studio = Default::default();
+                self.capabilities = Default::default();
+                self.canvas = Default::default();
                 self.chat = Default::default();
                 self.pending = None;
                 self.export_request = None;
@@ -185,6 +194,7 @@ impl CreateState {
         }
         self.sync_crew(snapshot);
         self.sync_studio(snapshot);
+        self.sync_capabilities(snapshot);
         let Some(pending) = &self.pending else { return };
         let receipt = &snapshot["projectWorkReceipt"];
         if text(receipt, "commandId") != pending.command_id
@@ -472,6 +482,7 @@ impl Console {
         match self.create.productive_view() {
             1 => self.workflow_dialog(ui, snapshot, commands),
             2 => self.output_studio(ui, snapshot, commands),
+            3 => self.project_capabilities(ui, snapshot, commands),
             _ => self.crew_hub_view(ui, snapshot, commands),
         }
         self.crew_roster_dialog(ui, snapshot);

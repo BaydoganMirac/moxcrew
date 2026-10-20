@@ -14,8 +14,17 @@ pub struct StudioPathRequest {
     pub expected_project_revision: u64,
     pub kind: StudioPathKind,
 }
+struct ArtifactResourceRequest {
+    command: String,
+    project: String,
+    scope: (String, String),
+    files: Vec<(String, String, String)>,
+    input: String,
+    epoch: Option<Value>,
+}
 #[derive(Default)]
 pub(super) struct StudioState {
+    resource_bundle: Option<ArtifactResourceRequest>,
     pub(super) open: bool,
     pub(super) tab: usize,
     pub(super) requested: Option<(String, u64)>,
@@ -23,7 +32,6 @@ pub(super) struct StudioState {
     section: String,
     revisions: HashMap<(String, String, String, String), String>,
     page: usize,
-    texture: Option<(String, egui::TextureHandle)>,
     pub(super) path_request: Option<StudioPathRequest>,
     connection_project: String,
     connection_provider: String,
@@ -47,6 +55,7 @@ fn studio_page<'a>(snapshot: &'a Value, project: &str) -> Option<&'a Value> {
     (text(page, "projectId") == project && text(page, "reasonCode") == "PROJECT_STUDIO_READ")
         .then_some(page)
 }
+#[cfg(test)]
 fn safe_png(bytes: &[u8]) -> bool {
     if bytes.len() < 24
         || bytes[..8] != [137, 80, 78, 71, 13, 10, 26, 10]
@@ -319,12 +328,18 @@ impl CreateState {
         if text(receipt, "projectId") == self.project
             && !text(receipt, "commandId").is_empty()
             && self.studio.observed_receipt != text(receipt, "commandId")
+            && !matches!(text(receipt, "outcome"), "" | "unknown")
         {
             self.studio.observed_receipt = text(receipt, "commandId").into();
             if text(receipt, "outcome") == "applied"
                 && matches!(
                     text(receipt, "action"),
                     "project_resource_import"
+                        | "project_resource_import_batch"
+                        | "project_resource_from_artifact"
+                        | "project_resources_from_artifacts"
+                        | "project_image_engine_set"
+                        | "project_image_engine_remove"
                         | "project_resource_remove"
                         | "project_tool_configure"
                         | "project_connection_set"
@@ -367,6 +382,21 @@ impl CreateState {
 }
 
 impl Console {
+    #[cfg(feature = "ui-smoke")]
+    pub(super) fn studio_canvas_smoke(&mut self, snapshot: &Value) {
+        self.create.select_productive_view(2);
+        self.create.studio.tab = 0;
+        if let Some(artifact) = studio_page(snapshot, &self.create.project).and_then(|p| {
+            array(&p["artifacts"])
+                .iter()
+                .find(|a| text(a, "path").to_ascii_lowercase().ends_with(".png"))
+        }) {
+            self.create
+                .studio
+                .selected
+                .insert(self.create.project.clone(), artifact_key(artifact));
+        }
+    }
     #[cfg(feature = "ui-smoke")]
     pub(super) fn studio_prepare_smoke(&mut self, snapshot: &Value) {
         let receipt = &snapshot["projectStudioReceipt"];
@@ -538,6 +568,7 @@ impl Console {
                             2 => self.studio_tools(ui, snapshot, page, commands),
                             3 => self.studio_apps(ui, snapshot, page, commands),
                             _ if self.create.studio.package_mode => {
+                                self.studio_resource_bundle_action(ui, snapshot, page, commands);
                                 self.studio_delivery(ui, snapshot, page)
                             }
                             _ => self.studio_artifacts(ui, snapshot, page, commands),
@@ -553,6 +584,109 @@ impl Console {
             ui.add_space(studio::metrics::CONTROL_GAP);
             self.studio_footer(ui, snapshot, commands);
         });
+    }
+    fn studio_resource_bundle_action(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        page: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let files: Vec<_> = self
+            .create
+            .studio
+            .packages
+            .get(&self.create.project)
+            .map(|s| s.iter().cloned().collect())
+            .unwrap_or_default();
+        let mut bytes = 0u64;
+        let valid = !files.is_empty()
+            && files.len() <= 12
+            && files.iter().all(|key| {
+                array(&page["artifacts"])
+                    .iter()
+                    .find(|a| artifact_key(a) == *key)
+                    .is_some_and(|a| {
+                        bytes = bytes.saturating_add(a["bytes"].as_u64().unwrap_or(u64::MAX));
+                        capabilities::valid_hash(&key.2)
+                    })
+            })
+            && bytes <= 25 * 1024 * 1024;
+        let before = commands.len();
+        action(
+            ui,
+            commands,
+            "Use selected files in Chat",
+            "project_resources_from_artifacts",
+            valid && self.create.studio.resource_bundle.is_none(),
+            || json!({"projectId":self.create.project,"expectedProjectRevision":project_revision(snapshot,&self.create.project),"files":files.iter().map(|(work,path,hash)|json!({"workItemId":work,"path":path,"expectedSha256":hash})).collect::<Vec<_>>()}),
+        );
+        if commands.len() > before {
+            self.create.studio.resource_bundle = Some(ArtifactResourceRequest {
+                command: text(&commands.last().unwrap().payload, "commandId").into(),
+                project: self.create.project.clone(),
+                scope: (self.create.project.clone(), self.create.ability.clone()),
+                files,
+                input: self.create.conversation_input().clone(),
+                epoch: self.create.host_epoch.clone(),
+            });
+        }
+        hint(
+            ui,
+            "Use up to 12 files, 25 MiB total, as frozen sources for a new conversation request.",
+        );
+    }
+    pub(super) fn sync_artifact_resources(
+        &mut self,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let Some(pending) = &self.create.studio.resource_bundle else {
+            return;
+        };
+        let receipt = &snapshot["projectStudioReceipt"];
+        if text(receipt, "commandId") != pending.command
+            || text(receipt, "projectId") != pending.project
+            || matches!(text(receipt, "outcome"), "" | "unknown")
+        {
+            return;
+        }
+        if text(receipt, "outcome") != "applied" {
+            self.create.studio.resource_bundle = None;
+            return;
+        }
+        if !capabilities::complete_import(receipt, pending.files.len()) {
+            return;
+        }
+        let pending = self.create.studio.resource_bundle.take().unwrap();
+        if pending.epoch != self.create.host_epoch
+            || pending.scope != (self.create.project.clone(), self.create.ability.clone())
+            || self.create.conversation_input() != &pending.input
+        {
+            return;
+        }
+        let refs = array(&receipt["resources"])
+            .iter()
+            .map(|r| format!("{} {}", text(r, "resourceId"), text(r, "sha256")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let input = format!(
+            "{}\n\nUse these exact Project resources:\n{refs}",
+            pending.input
+        );
+        if input.encode_utf16().count() > self.create.conversation_limit() {
+            self.create.chat.conversation.set_error("This request is too long for the current conversation. Start a new conversation or shorten it.");
+            return;
+        }
+        *self.create.conversation_input() = input;
+        self.create.crew.single = false;
+        self.create.select_productive_view(0);
+        let _ = commands;
+        if let Some(cart) = self.create.studio.packages.get_mut(&pending.project) {
+            for key in pending.files {
+                cart.remove(&key);
+            }
+        }
     }
     fn studio_footer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         match self.create.studio.tab {
@@ -675,8 +809,31 @@ impl Console {
         ui.add_space(f32::from(studio::metrics::PADDING));
         ui.label(studio::title(text(&artifact, "name"), 20.0));
         ui.add_space(studio::metrics::CONTROL_GAP);
+        if text(&artifact, "path")
+            .to_ascii_lowercase()
+            .ends_with(".html")
+        {
+            quiet_action(
+                ui,
+                commands,
+                "Open interactive output",
+                "project_artifact_open",
+                !cfg!(target_os = "windows"),
+                || json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]}),
+            );
+        }
         if let Some(preview) = artifact_preview(&self.create, snapshot, &artifact) {
-            self.studio_preview(ui, &preview["preview"], text(&artifact, "sha256"));
+            self.studio_visual_preview(ui, snapshot, &artifact, &preview["preview"], commands);
+            if text(&preview["preview"], "kind") == "text" {
+                quiet_action(
+                    ui,
+                    commands,
+                    "Use text as Project resource",
+                    "project_resource_from_artifact",
+                    true,
+                    || json!({"projectId":self.create.project,"expectedProjectRevision":project_revision(snapshot,&self.create.project),"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]}),
+                );
+            }
             ui.add_space(studio::metrics::SECTION_GAP);
             let key = (
                 self.create.project.clone(),
@@ -701,7 +858,9 @@ impl Console {
                 let valid=valid_input(instruction,12_000);
                 let mut payload=json!({"projectId":self.create.project,"expectedProjectRevision":project_revision(snapshot,&self.create.project),"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"],"instruction":instruction.trim()});
                 if !self.create.studio.section.is_empty(){payload["sectionId"]=json!(self.create.studio.section);}
-                action(ui,commands,"Prepare revision","project_artifact_revise",valid,||payload);
+                let provider=self.create.resolved_planner_provider(snapshot);
+                if let Some(provider)=provider {payload["providerId"]=json!(provider);}
+                action(ui,commands,"Prepare revision","project_artifact_revise",valid&&provider.is_some(),||payload);
                 hint(ui,"A revision prepares a new task. The original stays intact; start it explicitly in Tasks.");
             });
             #[cfg(test)]
@@ -740,7 +899,36 @@ impl Console {
             }
         });
     }
-    fn studio_preview(&mut self, ui: &mut Ui, preview: &Value, hash: &str) {
+    fn use_visual_in_chat(&mut self, artifact: &Value, section: String) {
+        let key = (self.create.project.clone(), self.create.ability.clone());
+        self.create.capabilities.selection.insert(
+            key,
+            capabilities::VisualSelection {
+                project: self.create.project.clone(),
+                work: text(artifact, "workItemId").into(),
+                path: text(artifact, "path").into(),
+                hash: text(artifact, "sha256").into(),
+                section,
+            },
+        );
+        self.create.crew.single = false;
+        self.create.select_productive_view(0);
+    }
+    fn studio_visual_preview(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        artifact: &Value,
+        preview: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let key = canvas::CanvasKey {
+            project: self.create.project.clone(),
+            work: text(artifact, "workItemId").into(),
+            path: text(artifact, "path").into(),
+            hash: text(artifact, "sha256").into(),
+            part: String::new(),
+        };
         match text(preview, "kind") {
             "text" => {
                 ui.add(
@@ -750,75 +938,144 @@ impl Console {
                 );
             }
             "pages" => {
-                hint(
-                    ui,
-                    "Document pages are a text preview of the editable original.",
-                );
                 let pages = array(&preview["pages"]);
                 self.create.studio.page =
                     self.create.studio.page.min(pages.len().saturating_sub(1));
-                ui.horizontal_wrapped(|ui| {
-                    for (i, page) in pages.iter().enumerate() {
-                        ui.selectable_value(&mut self.create.studio.page, i, text(page, "title"));
+                form_combo(
+                    ui,
+                    egui::ComboBox::from_id_salt("visual-document-page").selected_text(
+                        pages
+                            .get(self.create.studio.page)
+                            .map(|p| text(p, "title"))
+                            .unwrap_or(t(ui, "Page").as_ref()),
+                    ),
+                    |ui| {
+                        for (i, page) in pages.iter().enumerate() {
+                            ui.selectable_value(
+                                &mut self.create.studio.page,
+                                i,
+                                text(page, "title"),
+                            );
+                        }
+                    },
+                );
+                let page = self.create.studio.page as u64 + 1;
+                quiet_action(
+                    ui,
+                    commands,
+                    "Render this page",
+                    "project_artifact_visual_read",
+                    !cfg!(target_os = "windows"),
+                    || json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"],"page":page}),
+                );
+                let visual = &snapshot["projectArtifactVisual"];
+                let exact = canvas::matches_read(visual, &key, "PROJECT_ARTIFACT_VISUAL_READ")
+                    && visual["page"] == page;
+                if exact {
+                    if let Some(texture) = canvas::texture(
+                        ui,
+                        &visual["preview"],
+                        &format!("{}:page:{page}", key.hash),
+                    ) {
+                        ui.add(
+                            egui::Image::new(&texture)
+                                .max_size(egui::vec2(ui.available_width(), 260.0)),
+                        );
+                        if view_control(ui, "Use page in Chat", true, false).clicked() {
+                            self.use_visual_in_chat(artifact, format!("page:{page}"));
+                        }
+                    } else {
+                        hint(ui, text(visual, "reasonCode"));
+                        hint(
+                            ui,
+                            "The renderer is unavailable. The text preview remains available.",
+                        );
                     }
-                });
+                } else {
+                    hint(ui,"Render a page for visual selection. The text below is a structural preview.");
+                }
                 if let Some(page) = pages.get(self.create.studio.page) {
                     ui.add(egui::Label::new(text(page, "text")).wrap().selectable(true));
                 }
             }
-            "image" | "media" => {
-                if self
-                    .create
-                    .studio
-                    .texture
-                    .as_ref()
-                    .is_none_or(|(key, _)| key != hash)
-                {
-                    let bytes: Option<Vec<u8>> = preview["pngBytes"]
-                        .as_array()
-                        .filter(|bytes| bytes.len() <= 8 * 1024 * 1024)
-                        .and_then(|bytes| {
-                            bytes
-                                .iter()
-                                .map(|byte| {
-                                    byte.as_u64()
-                                        .filter(|byte| *byte <= 255)
-                                        .map(|byte| byte as u8)
-                                })
-                                .collect()
-                        });
-                    self.create.studio.texture = bytes
-                        .filter(|bytes| safe_png(bytes))
-                        .and_then(|bytes| eframe::icon_data::from_png_bytes(&bytes).ok())
-                        .filter(|image| image.width <= 4096 && image.height <= 4096)
-                        .map(|image| {
-                            let image = egui::ColorImage::from_rgba_unmultiplied(
-                                [image.width as usize, image.height as usize],
-                                &image.rgba,
-                            );
-                            (
-                                hash.into(),
-                                ui.ctx().load_texture(
-                                    format!("artifact-{hash}"),
-                                    image,
-                                    egui::TextureOptions::LINEAR,
-                                ),
-                            )
-                        });
-                }
-                if let Some((_, texture)) = &self.create.studio.texture {
-                    ui.add(
-                        egui::Image::new(texture).max_size(egui::vec2(ui.available_width(), 260.0)),
+            "image" => {
+                if let Some(texture) = canvas::texture(ui, preview, &key.hash) {
+                    canvas::select_image(ui, &texture, &key, &mut self.create.canvas);
+                    let section = self.create.canvas.draft(&key).region.map(canvas::region_id);
+                    if view_control(ui, "Use region in Chat", section.is_some(), false).clicked() {
+                        self.use_visual_in_chat(artifact, section.unwrap());
+                    }
+                    hint(
+                        ui,
+                        "Drag to select a region. Arrow keys move it; Shift adjusts its size.",
+                    );
+                } else {
+                    hint(
+                        ui,
+                        "Native preview is unavailable for this format. Export the original.",
                     );
                 }
-                for key in ["width", "height", "durationSeconds"] {
-                    if preview[key].is_number() {
-                        ui.label(format!("{key}: {}", preview[key]));
+            }
+            "media" => {
+                if let Some(texture) = canvas::texture(ui, preview, &key.hash) {
+                    ui.add(
+                        egui::Image::new(&texture)
+                            .max_size(egui::vec2(ui.available_width(), 220.0)),
+                    );
+                }
+                if let Some(duration) = preview["durationSeconds"]
+                    .as_f64()
+                    .filter(|d| d.is_finite() && *d > 0.0 && text(artifact, "kind") == "video")
+                {
+                    let draft = self.create.canvas.draft(&key);
+                    let (mut start, mut end) = draft.range.unwrap_or((0.0, duration.min(10.0)));
+                    ui.label(t(ui, "Video range (seconds)"));
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add(
+                            egui::DragValue::new(&mut start)
+                                .range(0.0..=duration)
+                                .speed(0.1),
+                        );
+                        ui.label("–");
+                        ui.add(
+                            egui::DragValue::new(&mut end)
+                                .range(0.0..=duration)
+                                .speed(0.1),
+                        );
+                    });
+                    draft.range = Some((start, end));
+                    quiet_action(
+                        ui,
+                        commands,
+                        "Preview selected frame",
+                        "project_artifact_frame_read",
+                        start <= duration,
+                        || json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"],"time":start}),
+                    );
+                    let frame = &snapshot["projectArtifactFrame"];
+                    if canvas::matches_read(frame, &key, "PROJECT_ARTIFACT_FRAME_READ")
+                        && frame["time"].as_f64() == Some(start)
+                    {
+                        if let Some(texture) = canvas::texture(
+                            ui,
+                            &frame["preview"],
+                            &format!("{}:frame:{start}", key.hash),
+                        ) {
+                            ui.add(
+                                egui::Image::new(&texture)
+                                    .max_size(egui::vec2(ui.available_width(), 220.0)),
+                            );
+                        }
+                    }
+                    let range = canvas::range_id(start, end, duration);
+                    if view_control(ui, "Use range in Chat", range.is_some(), false).clicked() {
+                        self.use_visual_in_chat(artifact, range.unwrap());
                     }
                 }
-                if text(preview, "kind") == "media" {
-                    hint(ui,"Media metadata and thumbnail. Export the original for playback or editing.");
-                }
+                hint(
+                    ui,
+                    "Media metadata and thumbnail. Export the original for playback or editing.",
+                );
             }
             _ => hint(
                 ui,
@@ -829,7 +1086,7 @@ impl Console {
     fn studio_resources(
         &mut self,
         ui: &mut Ui,
-        _snapshot: &Value,
+        snapshot: &Value,
         page: &Value,
         commands: &mut Vec<Command>,
     ) {
@@ -842,6 +1099,17 @@ impl Console {
                 ui.label(RichText::new(text(resource,"name")).strong());
                 raw_hint(ui,&format!("{} · {} B",text(resource,"kind"),resource["bytes"].as_u64().unwrap_or(0)));
                 status(ui,text(resource,"status"));
+                quiet_action(ui,commands,"Read resource","project_resource_read",text(resource,"status")=="available",||json!({"projectId":self.create.project,"resourceId":resource["resourceId"],"expectedSha256":resource["sha256"]}));
+                let read=&snapshot["projectResource"];
+                let exact=text(read,"reasonCode")=="PROJECT_RESOURCE_READ" && text(read,"projectId")==self.create.project && read["resourceId"]==resource["resourceId"] && (read["sha256"]==resource["sha256"] || read["resource"]["sha256"]==resource["sha256"]);
+                if exact {
+                    let preview=&read["preview"];
+                    if let Some(text)=preview["text"].as_str(){ui.add(egui::Label::new(text).wrap().selectable(true));}
+                    let key=canvas::CanvasKey{project:self.create.project.clone(),work:text(resource,"resourceId").into(),path:String::new(),hash:text(resource,"sha256").into(),part:"resource".into()};
+                    if let Some(texture)=canvas::texture(ui,preview,&key.hash){canvas::select_image(ui,&texture,&key,&mut self.create.canvas);multiline(ui,"Annotation",&mut self.create.canvas.draft(&key).note,2000,2);let annotation=self.create.canvas.draft(&key).clone();if view_control(ui,"Add annotation to Chat",valid_input(&annotation.note,2000),false).clicked(){self.stage_operation(snapshot,"Apply this image annotation to the exact frozen resource.",json!({"resourceId":resource["resourceId"],"expectedSha256":resource["sha256"],"region":annotation.region.map(canvas::region_id),"annotation":annotation.note}),commands);}}
+                    ui.horizontal_wrapped(|ui|{for(label,operation)in [("Extract text (OCR)","resources.ocr"),("Transcribe audio","audio.transcribe")]{if view_control(ui,label,true,false).clicked(){self.stage_operation(snapshot,"Extract real text from this Project resource; report missing tools honestly.",json!({"operation":operation,"arguments":{"source":resource["resourceId"]},"expectedSha256":resource["sha256"]}),commands);}}});
+                }
+
                 ui.collapsing(t(ui,"Provenance"),|ui| {ui.monospace(text(resource,"sha256"));});
                 quiet_action(ui,commands,"Remove resource","project_resource_remove",revision(resource)>0,||json!({"projectId":self.create.project,"resourceId":resource["resourceId"],"expectedResourceRevision":resource["revision"]}));
                 ui.add_space(f32::from(studio::metrics::PADDING));
@@ -1665,5 +1933,69 @@ mod tests {
         bytes.extend_from_slice(&u32::MAX.to_be_bytes());
         bytes.extend_from_slice(&u32::MAX.to_be_bytes());
         assert!(!safe_png(&bytes));
+    }
+    #[test]
+    fn multi_variant_files_are_frozen_and_only_exact_complete_import_stages_chat_without_execution()
+    {
+        use super::super::tests::click_at_size;
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["artifacts"] = json!([
+            {"workItemId":"work:one","path":"outputs/a.txt","name":"a.txt","sha256":"a".repeat(64),"bytes":100},
+            {"workItemId":"work:two","path":"outputs/b.txt","name":"b.txt","sha256":"b".repeat(64),"bytes":200}
+        ]);
+        let mut c = console(&data);
+        c.hold_automatic_reads = true;
+        c.create.sync(&data);
+        c.create.studio.package_mode = true;
+        c.create.studio.packages.insert(
+            "project:one".into(),
+            [
+                ("work:one".into(), "outputs/a.txt".into(), "a".repeat(64)),
+                ("work:two".into(), "outputs/b.txt".into(), "b".repeat(64)),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let goal = c.create.conversation_input().clone();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "project_resources_from_artifacts",
+            "Use selected files in Chat",
+        );
+        assert_eq!(commands.len(), 1);
+        let command = &commands[0];
+        assert_eq!(command.payload["files"][0]["workItemId"], "work:one");
+        assert_eq!(command.payload["files"][1]["workItemId"], "work:two");
+        assert_eq!(
+            command.payload["files"][1]["expectedSha256"],
+            "b".repeat(64)
+        );
+        data["projectStudioReceipt"] = json!({"commandId":command.payload["commandId"],"projectId":"project:one","reasonCode":"PROJECT_RESOURCES_IMPORTED","outcome":"applied","resources":[{"resourceId":"resource:00000000-0000-4000-8000-000000000001","revision":1,"status":"available","sha256":"c".repeat(64)}]});
+        let mut next = Vec::new();
+        c.sync_artifact_resources(&data, &mut next);
+        assert_eq!(c.create.conversation_input(), &goal);
+        assert!(c.create.studio.resource_bundle.is_some());
+        assert_eq!(c.create.studio.packages["project:one"].len(), 2);
+        data["projectStudioReceipt"]["resources"].as_array_mut().unwrap().push(json!({"resourceId":"resource:00000000-0000-4000-8000-000000000002","revision":1,"status":"available","sha256":"d".repeat(64)}));
+        c.sync_artifact_resources(&data, &mut next);
+        assert!(next.is_empty());
+        assert_eq!(c.create.productive_view(), 0);
+        assert!(c.create.conversation_input().starts_with(&goal));
+        assert!(c
+            .create
+            .conversation_input()
+            .contains("resource:00000000-0000-4000-8000-000000000002"));
+        assert!(c.create.conversation_input().contains(&"d".repeat(64)));
+        assert!(c.create.studio.packages["project:one"].is_empty());
     }
 }

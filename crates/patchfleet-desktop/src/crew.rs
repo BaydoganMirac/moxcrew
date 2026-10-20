@@ -171,7 +171,9 @@ impl CreateState {
     }
 
     pub(crate) fn productive_view(&self) -> usize {
-        if self.studio.open {
+        if self.capabilities.open {
+            3
+        } else if self.studio.open {
             2
         } else if self.crew.workflow.open {
             1
@@ -186,6 +188,10 @@ impl CreateState {
             self.studio.open = true;
         }
         self.crew.workflow.open = view == 1;
+        self.capabilities.open = view == 3;
+        if view != 3 {
+            self.capabilities.clear_private();
+        }
         self.crew.panel_open = false;
         self.chat.files_open = false;
         self.chat.details_open = false;

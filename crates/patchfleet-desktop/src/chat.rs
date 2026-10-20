@@ -112,7 +112,10 @@ impl CreateState {
             .then_some(page)
     }
 
-    fn chat_payload(&self, snapshot: &Value) -> Option<Value> {
+    pub(super) fn chat_payload(&self, snapshot: &Value) -> Option<Value> {
+        if !self.attachment_paths().is_empty() || self.visual_selection().is_some() {
+            return None;
+        }
         let draft = self
             .drafts
             .get(&(self.project.clone(), self.ability.clone()))?;
@@ -181,7 +184,10 @@ impl Console {
         snapshot: &Value,
         commands: &mut Vec<Command>,
     ) {
+        self.receive_dropped_resources(ui);
         self.sync_conversation_project(snapshot, commands);
+        self.sync_conversation_resources(snapshot, commands);
+        self.sync_artifact_resources(snapshot, commands);
         let projects = array(&snapshot["projectMemory"]["projects"]);
         let compact = ui.ctx().viewport_rect().height() < 700.0;
         let previous = self.create.project.clone();
@@ -346,7 +352,17 @@ impl Console {
             egui::Panel::bottom("conversation-composer")
                 .resizable(false)
                 .show_separator_line(false)
-                .exact_size(180.0 + if has_reply { 52.0 } else { 0.0 })
+                .exact_size(
+                    180.0
+                        + if has_reply
+                            || !self.create.attachment_paths().is_empty()
+                            || self.create.visual_selection().is_some()
+                        {
+                            88.0
+                        } else {
+                            0.0
+                        },
+                )
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
                     centered(ui, 820.0, |ui| {
@@ -424,6 +440,7 @@ impl Console {
             match self.create.productive_view() {
                 1 => self.workflow_dialog(ui, snapshot, commands),
                 2 => self.output_studio(ui, snapshot, commands),
+                3 => self.project_capabilities(ui, snapshot, commands),
                 _ => {}
             }
         });
@@ -452,29 +469,58 @@ impl Console {
 
     fn chat_composer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let language = Language::from_snapshot(snapshot);
-        if let Some(reply) = self
-            .create
-            .chat
-            .replies
-            .get(&(self.create.project.clone(), self.create.ability.clone()))
-            .cloned()
+        if !self.create.attachment_paths().is_empty()
+            || self.create.visual_selection().is_some()
+            || self
+                .create
+                .chat
+                .replies
+                .contains_key(&(self.create.project.clone(), self.create.ability.clone()))
         {
-            ui.horizontal_wrapped(|ui| {
-                hint(
-                    ui,
-                    &tf(
-                        ui,
-                        "Follow-up · {0} selected files",
-                        &[&reply.references.len().to_string()],
-                    ),
-                );
-                if control(ui, "Clear follow-up", true).clicked() {
-                    self.create
+            let context = egui::ScrollArea::vertical()
+                .id_salt((
+                    "composer-context",
+                    &self.create.project,
+                    &self.create.ability,
+                ))
+                .max_height(76.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    self.attachment_controls(ui, snapshot);
+                    if let Some(reply) = self
+                        .create
                         .chat
                         .replies
-                        .remove(&(self.create.project.clone(), self.create.ability.clone()));
-                }
+                        .get(&(self.create.project.clone(), self.create.ability.clone()))
+                        .cloned()
+                    {
+                        ui.horizontal_wrapped(|ui| {
+                            hint(
+                                ui,
+                                &tf(
+                                    ui,
+                                    "Follow-up · {0} selected files",
+                                    &[&reply.references.len().to_string()],
+                                ),
+                            );
+                            if control(ui, "Clear follow-up", true).clicked() {
+                                self.create.chat.replies.remove(&(
+                                    self.create.project.clone(),
+                                    self.create.ability.clone(),
+                                ));
+                            }
+                        });
+                    }
+                });
+            #[cfg(test)]
+            ui.data_mut(|d| {
+                d.insert_temp(
+                    egui::Id::new("composer-context-bounds"),
+                    (context.inner_rect, ui.clip_rect()),
+                )
             });
+            #[cfg(not(test))]
+            let _ = context;
         }
         let goal_id = egui::Id::new(("chat-goal", &self.create.project, &self.create.ability));
         // This unframed editor's compact inset is included in the measured composer reservation.
@@ -512,7 +558,17 @@ impl Console {
         let payload = self.create.chat_payload(snapshot);
 
         ui.horizontal_wrapped(|ui| {
-            if self.create.crew.single {
+            if self.create.visual_selection().is_some() {
+                let enabled = self.create.visual_revision_enabled(snapshot);
+                let clicked = ui
+                    .add_enabled_ui(enabled, |ui| {
+                        submit(ui, "Prepare revision", "conversation-revise")
+                    })
+                    .inner;
+                if clicked || (shortcut && enabled) {
+                    self.prepare_visual_revision(snapshot, commands);
+                }
+            } else if self.create.crew.single {
                 let enabled = payload.is_some() && self.create.pending.is_none();
                 let clicked = ui
                     .add_enabled_ui(enabled, |ui| {
@@ -643,6 +699,15 @@ impl Console {
         commands: &mut Vec<Command>,
     ) {
         let _menu = ui.menu_button(t(ui, "More"), |ui| {
+            if view_control(ui, "Attach files", true, false).clicked() {
+                self.create
+                    .request_capability_paths(CapabilityPathKind::Resources);
+                ui.close();
+            }
+            if view_control(ui, "Project tools", !self.create.project.is_empty(), false).clicked() {
+                self.create.select_productive_view(3);
+                ui.close();
+            }
             ui.label(
                 RichText::new(t(ui, "Planning provider"))
                     .size(12.0)
@@ -669,11 +734,31 @@ impl Console {
             if !self.create.crew.single {
                 self.crew_plan_button(ui, snapshot, commands, false);
             }
-            if ui
-                .selectable_value(&mut self.create.crew.single, true, t(ui, "Single task"))
-                .clicked()
-            {
+            let allowed = self.create.attachment_paths().is_empty()
+                && self.create.visual_selection().is_none();
+            let option = ui
+                .add_enabled_ui(allowed, |ui| {
+                    ui.selectable_value(&mut self.create.crew.single, true, t(ui, "Single task"))
+                })
+                .inner;
+            #[cfg(test)]
+            ui.data_mut(|d| {
+                d.insert_temp(
+                    egui::Id::new("conversation-single-option"),
+                    (option.rect, option.enabled()),
+                )
+            });
+            if option.clicked() {
                 ui.close();
+            }
+            if !allowed {
+                ui.add(
+                    egui::Label::new(t(
+                        ui,
+                        "Use Conversation for attachments or visual selections.",
+                    ))
+                    .wrap(),
+                );
             }
         });
         #[cfg(test)]

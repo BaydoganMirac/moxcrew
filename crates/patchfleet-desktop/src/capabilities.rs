@@ -174,7 +174,7 @@ fn budgets(ui: &mut Ui, draft: &mut CapabilityDraft) -> Value {
 }
 fn sources(ui: &mut Ui, draft: &mut CapabilityDraft, resources: &[Value]) {
     if resources.is_empty() {
-        hint(ui, "Import a source in Outputs → Resources first.");
+        hint(ui, "Import a source in Outputs / Resources first.");
     }
     for resource in resources
         .iter()

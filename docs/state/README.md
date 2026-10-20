@@ -43,7 +43,7 @@
 | Shared UI kit and chat-centered studio | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [chat-centered-ui-kit.md](chat-centered-ui-kit.md) |
 | UI kit across native screens | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [ui-kit-screen-migration.md](ui-kit-screen-migration.md) |
 | Conversation-first orchestration and provider selection | Complete; independently reviewed and macOS development package verified | 2026-10-19 | [conversation-first-orchestration.md](conversation-first-orchestration.md) |
-| Automatic planning connection | Implementing; integrated verification pending | 2026-10-20 | [automatic-planning-provider.md](automatic-planning-provider.md) |
+| Automatic planning connection | Complete; independently reviewed and macOS development package verified | 2026-10-20 | [automatic-planning-provider.md](automatic-planning-provider.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

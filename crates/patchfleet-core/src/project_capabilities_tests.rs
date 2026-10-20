@@ -76,6 +76,95 @@ fn accepted(project: &Value, id: &Value, revision: u64) -> Value {
         json!({"projectId":project,"skillId":id,"expectedSkillRevision":revision,"name":"Owner-reviewed process","steps":["Follow the owner-reviewed checked process. PRIVATE_SKILL_CANARY"],"expectedOutputs":["A checked report"]}),
     )
 }
+
+#[test]
+fn standing_context_bounds_complete_serialized_unicode_libraries_and_profiles() {
+    let p = json!(format!("project:{}", uuid::Uuid::new_v4()));
+    let at = json!(now());
+    let refs: Vec<_> = (0..8)
+        .map(|_| json!({"resourceId":format!("resource:{}", uuid::Uuid::new_v4()),"expectedSha256":"a".repeat(64)}))
+        .collect();
+    let mut raw_profile = brand(&p, 0, json!(refs));
+    raw_profile["tone"] = json!("調".repeat(500));
+    raw_profile["instructions"] = json!("整".repeat(4000));
+    raw_profile["colours"] = json!(vec!["#123abc"; 8]);
+    let maximal_profile = profile(&raw_profile, None, &at).unwrap();
+    let raw_skill = command(
+        json!({"projectId":p,"name":"技".repeat(80),"steps":["手".repeat(1000)],"expectedOutputs":["出".repeat(240)],"sources":[refs[0]]}),
+    );
+    let proposed = skill(&raw_skill, None, "project_skill_propose", &at).unwrap();
+    let mut accept = raw_skill.clone();
+    accept.as_object_mut().unwrap().remove("sources");
+    accept["skillId"] = proposed["skillId"].clone();
+    accept["expectedSkillRevision"] = json!(1);
+    let template = skill(&accept, Some(&proposed), "project_skill_accept", &at).unwrap();
+    let mut skills: Vec<_> = (0..197)
+        .map(|_| {
+            let mut record = template.clone();
+            record["skillId"] = json!(format!("skill:{}", uuid::Uuid::new_v4()));
+            record
+        })
+        .collect();
+    for (status, name) in [
+        ("proposed", "PROPOSED_CANARY"),
+        ("revoked", "REVOKED_CANARY"),
+    ] {
+        let mut record = template.clone();
+        record["status"] = json!(status);
+        record["name"] = json!(name);
+        skills.push(record);
+    }
+    let mut foreign = template.clone();
+    foreign["projectId"] = json!(format!("project:{}", uuid::Uuid::new_v4()));
+    foreign["name"] = json!("FOREIGN_CANARY");
+    skills.push(foreign);
+    let mut state = json!({"profiles":[maximal_profile],"skills":skills});
+    let packed = pack_standing_context(&state, p.as_str().unwrap()).unwrap();
+    let bytes = serde_json::to_vec(&packed).unwrap();
+    assert!(bytes.len() <= 24_000, "{}", bytes.len());
+    assert_eq!(packed["profile"], maximal_profile);
+    assert_eq!(packed["profilePartial"], false);
+    assert_eq!(packed["acceptedSkillTotal"], 197);
+    assert_eq!(packed["acceptedSkillManifestPartial"], true);
+    assert_eq!(packed["partial"], true);
+    assert!(!array(&packed, "acceptedSkills").is_empty());
+    assert!(array(&packed, "acceptedSkillManifest").len() < 197);
+    let text = String::from_utf8(bytes).unwrap();
+    for canary in ["PROPOSED_CANARY", "REVOKED_CANARY", "FOREIGN_CANARY"] {
+        assert!(!text.contains(canary));
+    }
+
+    // JSON escaping can exceed the cap even without a skill library.
+    raw_profile["tone"] = json!("\u{1}".repeat(500));
+    raw_profile["instructions"] = json!("\u{1}".repeat(4000));
+    state["profiles"] = json!([profile(&raw_profile, None, &at).unwrap()]);
+    assert!(serde_json::to_vec(&state["profiles"][0]).unwrap().len() > 24_000);
+    let packed = pack_standing_context(&state, p.as_str().unwrap()).unwrap();
+    assert!(serde_json::to_vec(&packed).unwrap().len() <= 24_000);
+    assert_eq!(packed["profilePartial"], true);
+    assert_eq!(packed["partial"], true);
+    assert!(packed["profile"].get("instructions").is_none());
+    assert!(packed["profile"].get("tone").is_none());
+    assert_eq!(packed["profile"]["logoResources"], json!(refs));
+
+    // Existing small-library fields still contain exact full records and the full index.
+    let small_profile = profile(&brand(&p, 0, json!([])), None, &at).unwrap();
+    state["profiles"] = json!([small_profile]);
+    state["skills"] = json!([template]);
+    let packed = pack_standing_context(&state, p.as_str().unwrap()).unwrap();
+    assert!(serde_json::to_vec(&packed).unwrap().len() <= 24_000);
+    assert_eq!(packed["profile"], small_profile);
+    assert_eq!(packed["acceptedSkills"], json!([template]));
+    assert_eq!(
+        packed["acceptedSkillManifest"],
+        json!([{"skillId":template["skillId"],"revision":template["revision"],"name":template["name"]}])
+    );
+    assert_eq!(packed["partial"], false);
+    assert_eq!(packed["acceptedSkillManifestPartial"], false);
+    assert_eq!(packed["profilePartial"], false);
+    assert_eq!(packed["acceptedSkillTotal"], 1);
+}
+
 #[tokio::test]
 async fn brand_and_taught_skills_are_scoped_edited_accepted_revoked_and_durable() {
     let (tmp, host, p) = local().await;

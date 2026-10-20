@@ -9,6 +9,10 @@ Decision: [ADR0048](../decisions/0048-conversation-first-orchestration.md).
 
 ## Product flow
 
+Task0051 supersedes the visible provider picker with automatic connection
+selection and an optional secondary override. See [current connection flow](automatic-planning-provider.md).
+The implementation and verification below record the Task0050 foundation.
+
 Chat uses one message composer, Send and an immediately visible provider choice.
 Skills, single-task mode and configuration remain optional secondary controls.
 The first request can create a local Project; only its exact applied creation

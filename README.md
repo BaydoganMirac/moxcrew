@@ -13,7 +13,8 @@ research, writing, analysis, planning, personal work and software development.
 Project is the main product concept; a separate Workspace hierarchy is not
 required. See the [product direction](docs/decisions/0038-general-purpose-projects.md).
 
-Write a request to Mox, select Codex, Claude Code or Gemini CLI, and send it.
+Write a request to Mox and send it. Mox uses an available local connection to
+Codex, Claude Code or Gemini CLI automatically; a manual override is optional.
 No Project, ability or roster setup is required first. Answer Mox's clarification
 questions or revise the plan in the same composer; prepare and explicitly start
 the crew when ready. A first request creates its local Project before planning.
@@ -37,7 +38,7 @@ See [Output Studio state](docs/state/output-studio.md).
 Chat is the Project's primary surface. Crew and Outputs open one context beside
 the conversation at normal/wide desktop widths; narrow windows keep a readable
 detail view with Back to chat. A new conversation opens one composer with a
-visible provider selector; Skills and configuration are optional. Crew presents
+Send action; provider selection, Skills and configuration are optional. Crew presents
 the goal, role cards and explicit Prepare/
 Start controls; Outputs keeps real previews and delivery packages available.
 Shared native buttons, input fields, cards and spacing follow the
@@ -45,7 +46,9 @@ Shared native buttons, input fields, cards and spacing follow the
 and their dialogs. See [screen migration](docs/state/ui-kit-screen-migration.md) and
 [chat-centered studio state](docs/state/chat-centered-ui-kit.md).
 See [conversation flow and provider diagnosis](docs/state/conversation-first-orchestration.md)
-for the current entry flow and NVM discovery support.
+for the conversational foundation and NVM discovery support. The current
+[automatic connection flow](docs/state/automatic-planning-provider.md) removes
+provider selection from the default composer.
 
 Find outputs by name/path or file type, then choose **Create package** to select
 up to 32 files from the current Project. Review the selection and export one ZIP

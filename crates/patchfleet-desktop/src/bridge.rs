@@ -207,20 +207,24 @@ async fn notify(ctx: &egui::Context, output: &mpsc::Sender<Message>, message: Me
 
 impl Bridge {
     #[cfg(feature = "ui-smoke")]
-    pub fn smoke_provider_connections(&mut self, ready: bool) {
+    pub fn smoke_provider_connections(&mut self, ready: bool, selected: &str) {
         if self.provider_connections.is_some() {
             return;
         }
+        assert!(["codex", "claude", "gemini"].contains(&selected));
+        let providers: Vec<_> = ["codex", "claude", "gemini"]
+            .into_iter()
+            .map(|id| {
+                let available = ready && id == selected;
+                serde_json::json!({"id":id,"installed":available,
+                    "version":if available {Some(if id == "codex" {"0.163.0"} else {"fixture"})} else {None},
+                    "authentication":if available {"present"} else {"unknown"},"controlSupported":available,
+                    "reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"})
+            })
+            .collect();
         self.provider_connections = Some(serde_json::json!({
             "schemaVersion":1,"reasonCode":"PROVIDER_CONNECTIONS_READ",
-            "observedAt":"2026-10-19T00:00:00.000Z",
-            "providers":[
-                {"id":"codex","installed":ready,"version":if ready {Some("0.163.0")} else {None},
-                    "authentication":if ready {"present"} else {"unknown"},"controlSupported":ready,
-                    "reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"},
-                {"id":"claude","installed":false,"version":null,"authentication":"unknown","controlSupported":false,"reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"},
-                {"id":"gemini","installed":false,"version":null,"authentication":"unknown","controlSupported":false,"reasonCode":"UI_FIXTURE_NO_PROVIDER_PROBED"}
-            ]
+            "observedAt":"2026-10-20T00:00:00.000Z","providers":providers
         }));
         if let Some(snapshot) = self.snapshot.clone() {
             self.apply_snapshot(Ok(snapshot));

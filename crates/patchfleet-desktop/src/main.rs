@@ -81,6 +81,7 @@ impl Patchfleet {
                     if scene.starts_with("capabilities-") {
                         bridge.chat_smoke(false);
                         bridge.capabilities_smoke(&scene);
+                        bridge.smoke_provider_connections(true, "codex");
                         console.capabilities_smoke(bridge.snapshot.as_ref().unwrap(), &scene);
                     }
                     if scene.starts_with("conversation-") {
@@ -575,7 +576,7 @@ impl eframe::App for Patchfleet {
         if self.smoke_capture.is_some() && !self.smoke_capture_requested {
             // Areas need a sizing frame before their contents appear in a GL readback.
             ctx.request_repaint();
-            if ctx.cumulative_frame_nr() >= 8 {
+            if ctx.cumulative_frame_nr() >= 8 && !self.bridge.busy && !self.bridge.closing {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
                 self.smoke_capture_requested = true;
             }

@@ -458,6 +458,13 @@ impl Console {
     pub fn capabilities_smoke(&mut self, snapshot: &Value, scene: &str) {
         self.chat_smoke(snapshot, false, false);
         self.hold_automatic_reads = true;
+        let project = self.create.project.clone();
+        self.create.capabilities.dependencies.extend([
+            (project.clone(), "project_studio_read"),
+            (project.clone(), "project_workflows_read"),
+        ]);
+        self.create.studio.requested =
+            output_studio::project_revision(snapshot, &project).map(|rev| (project, rev));
         self.create.select_productive_view(3);
         if scene == "capabilities-canvas" {
             self.studio_canvas_smoke(snapshot);
@@ -507,6 +514,8 @@ impl Console {
             "capabilities-browser" => 6,
             _ => 0,
         };
+        self.create.capabilities.requested =
+            Some((self.create.project.clone(), self.create.capabilities.tab, 0));
         if self.create.capabilities.tab == 5 {
             let project = self.create.project.clone();
             self.create
@@ -697,7 +706,7 @@ impl Console {
             state.requested = None;
         }
         let tab = state.tab;
-        if !self.hold_automatic_reads && commands.is_empty() {
+        if ui.is_enabled() && !self.hold_automatic_reads && commands.is_empty() {
             for (action, needed) in [
                 ("project_studio_read", true),
                 (
@@ -717,7 +726,8 @@ impl Console {
             }
         }
         let key = (project.clone(), tab, state.offset);
-        if !self.hold_automatic_reads
+        if ui.is_enabled()
+            && !self.hold_automatic_reads
             && commands.is_empty()
             && state.requested.as_ref() != Some(&key)
         {
@@ -1573,6 +1583,47 @@ mod tests {
         console.create.draft().goal = "Keep my unsent request".into();
         console.hold_automatic_reads = true;
         console
+    }
+    #[test]
+    fn busy_frames_do_not_consume_project_tool_reads() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let data = fixture();
+        let mut c = console();
+        c.hold_automatic_reads = false;
+        c.create.capabilities.tab = 2;
+        let frame = |c: &mut Console, enabled| {
+            let mut commands = Vec::new();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.add_enabled_ui(enabled, |ui| {
+                    c.project_capabilities(ui, &data, &mut commands);
+                });
+            });
+            output.textures_delta.clear();
+            commands
+        };
+        for expected in [
+            "project_studio_read",
+            "project_workflows_read",
+            "project_capabilities_read",
+        ] {
+            let before = (
+                c.create.capabilities.dependencies.clone(),
+                c.create.capabilities.requested.clone(),
+            );
+            assert!(frame(&mut c, false).is_empty());
+            assert_eq!(
+                before,
+                (
+                    c.create.capabilities.dependencies.clone(),
+                    c.create.capabilities.requested.clone()
+                )
+            );
+            let commands = frame(&mut c, true);
+            assert_eq!(commands.len(), 1);
+            assert_eq!(commands[0].action, expected);
+        }
+        assert!(frame(&mut c, true).is_empty());
     }
     #[test]
     fn native_picker_callbacks_preserve_scope_epoch_and_unsent_path_order() {

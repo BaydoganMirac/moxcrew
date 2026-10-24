@@ -214,7 +214,7 @@ fütüristik kimlik; Mox, semantik kobalt vurgusu, kontrollü yüzey derinliği 
 işi açıklayan kısa geçişlerle korunur.
 
 **VIS-02 — Ölçüleri tek kaynaktan kullan.** Mevcut kit: 4/8/12/16/24/32/48
-boşluk ölçeği; 44 regular, 36 compact kontrol yüksekliği; 14 body, 12 metadata.
+boşluk ölçeği; 36 regular, 32 compact kontrol yüksekliği; 14 body, 12 metadata.
 Bunlar mevcut uygulama değerleridir, evrensel erişilebilirlik zorunluluğu
 değildir. Yoğun masaüstü varyantı gerekiyorsa gerçek içerik ve hit target ile
 prototiplenir; bu belge token'ları sessizce değiştirmez. Ana karar/hata bilgisini

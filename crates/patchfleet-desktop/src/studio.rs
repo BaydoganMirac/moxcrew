@@ -307,16 +307,21 @@ fn chip_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response
     let previous = ui.style().clone();
     ui.spacing_mut().button_padding = egui::vec2(12.0, 4.0);
     ui.spacing_mut().interact_size.y = metrics::CHIP_HEIGHT;
+    let min_width = if selected {
+        ui.painter()
+            .layout_no_wrap(label.to_owned(), FontId::proportional(13.0), p.info)
+            .size()
+            .x
+            + 48.0
+    } else {
+        0.0
+    };
     let response = ui.add(
-        egui::Button::new(
-            RichText::new(if selected {
-                format!("✓ {label}")
-            } else {
-                label.to_owned()
-            })
-            .size(13.0)
-            .color(if selected { p.info } else { p.text }),
-        )
+        egui::Button::new(RichText::new(label).size(13.0).color(if selected {
+            p.info
+        } else {
+            p.text
+        }))
         .fill(if selected { p.info_surface } else { p.surface })
         .stroke(egui::Stroke::new(
             1.0,
@@ -324,8 +329,16 @@ fn chip_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response
         ))
         .corner_radius(16)
         .wrap_mode(egui::TextWrapMode::Extend)
-        .min_size(egui::vec2(0.0, metrics::CHIP_HEIGHT)),
+        .min_size(egui::vec2(min_width, metrics::CHIP_HEIGHT)),
     );
+    if selected {
+        let start = response.rect.left_center() + egui::vec2(9.0, 0.0);
+        let middle = start + egui::vec2(4.0, 3.0);
+        let end = start + egui::vec2(11.0, -4.0);
+        let stroke = egui::Stroke::new(1.5, p.info);
+        ui.painter().line_segment([start, middle], stroke);
+        ui.painter().line_segment([middle, end], stroke);
+    }
     ui.set_style(previous);
     chip_focus(ui, &response);
     response
@@ -704,6 +717,42 @@ pub fn mascot(ui: &mut egui::Ui, width: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selected_filter_keeps_a_plain_font_label_and_supports_keyboard() {
+        let ctx = egui::Context::default();
+        install(&ctx);
+        let mut target = None;
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            target = Some(filter_chip(ui, "Documents", true));
+        });
+        assert!(
+            output.shapes.iter().any(|shape| matches!(
+                &shape.shape, egui::Shape::Text(text) if text.galley.job.text == "Documents"
+            )),
+            "Selection must not depend on a checkmark glyph in the font"
+        );
+        output.drop_without_applying_deltas();
+        let target = target.unwrap();
+        assert_eq!(target.rect.height(), metrics::CHIP_HEIGHT);
+        ctx.memory_mut(|memory| memory.request_focus(target.id));
+        let mut clicked = false;
+        ctx.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Space,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |ui| clicked = filter_chip(ui, "Documents", true).clicked(),
+        )
+        .drop_without_applying_deltas();
+        assert!(clicked);
+    }
 
     #[test]
     fn chip_body_is_inert_and_named_remove_target_supports_keyboard() {

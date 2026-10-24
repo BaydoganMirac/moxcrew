@@ -751,6 +751,7 @@ pub struct Console {
     folder_request: Option<folder::Target>,
     pub notice_action: Option<NoticeAction>,
     hold_automatic_reads: bool,
+    command_busy: bool,
     work: WorkDraft,
     team: TeamDraft,
     manifest: String,
@@ -933,6 +934,7 @@ impl Console {
         notice: Option<&Notice>,
         can_retry: bool,
     ) -> Vec<Command> {
+        self.command_busy = busy;
         self.quick_start.sync(snapshot);
         self.create.sync(snapshot);
         if !matches!(self.tab, Tab::Create | Tab::Teams) {
@@ -965,6 +967,7 @@ impl Console {
             });
         self.decisions.finish_proposal(snapshot, notice, busy);
         ui.ctx().data_mut(|data| {
+            data.insert_temp(egui::Id::new("console-command-busy"), busy);
             data.insert_temp(
                 egui::Id::new("console-language"),
                 Language::from_snapshot(snapshot),
@@ -1264,9 +1267,9 @@ impl Console {
                     ui.add_space(8.0);
                 }
                 if self.tab == Tab::Create {
-                    ui.add_enabled_ui(!busy, |ui| self.create_studio(ui, snapshot, &mut commands));
+                    self.create_studio(ui, snapshot, &mut commands);
                 } else if self.tab == Tab::Teams && self.create.productive_view() != 0 {
-                    ui.add_enabled_ui(!busy, |ui| self.crew_hub(ui, snapshot, &mut commands));
+                    self.crew_hub(ui, snapshot, &mut commands);
                 } else {
                     egui::ScrollArea::vertical()
                         .id_salt(("console-body", self.tab.name()))
@@ -5538,7 +5541,12 @@ fn control(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
     response
 }
 fn submit(ui: &mut Ui, label: &str, action: &str) -> bool {
-    let response = studio::button(ui, t(ui, label).as_ref(), studio::ButtonKind::Primary, true);
+    let response = studio::button(
+        ui,
+        t(ui, label).as_ref(),
+        studio::ButtonKind::Primary,
+        studio::commands_ready(ui),
+    );
     #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(egui::Id::new(("test-action", action, label)), response.rect);
@@ -5558,7 +5566,9 @@ fn action(
     enabled: bool,
     payload: impl FnOnce() -> Value,
 ) {
-    let kind = if matches!(
+    let kind = if matches!(name, "project_crew_start" | "work_start") {
+        studio::ButtonKind::Primary
+    } else if matches!(
         name,
         "work_cancel"
             | "work_remove"
@@ -5566,12 +5576,18 @@ fn action(
             | "pack_remove"
             | "team_cancel"
             | "team_cancel_agent"
+            | "project_crew_cancel"
     ) {
         studio::ButtonKind::Danger
     } else {
         studio::ButtonKind::Secondary
     };
-    let response = studio::compact_button(ui, t(ui, label).as_ref(), kind, enabled);
+    let response = studio::compact_button(
+        ui,
+        t(ui, label).as_ref(),
+        kind,
+        enabled && studio::commands_ready(ui),
+    );
     #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(egui::Id::new(("test-action", name, label)), response.rect);

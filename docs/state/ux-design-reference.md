@@ -2,7 +2,8 @@
 
 Updated: 2026-10-25
 
-Status: Research and durable reference complete; runtime UI remediation pending.
+Status: Research and durable reference complete; remediation tracked separately in
+[Task0053 state](ux-rules-implementation.md).
 
 Reference: [Moxcrew UX rules](../../design/moxcrew/UX-RULES.md).
 Implemented primitives: [UI kit](../../design/moxcrew/UI-KIT.md).

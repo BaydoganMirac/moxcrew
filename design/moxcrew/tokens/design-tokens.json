@@ -113,6 +113,7 @@
   "control": {
     "defaultHeight": 44,
     "compactHeight": 36,
+    "chipHeight": 32,
     "touchTarget": 44,
     "horizontalPadding": 16,
     "inputHorizontalPadding": 12,

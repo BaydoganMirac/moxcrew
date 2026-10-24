@@ -7,6 +7,11 @@ Araştırmayı, mevcut uygulamanın teşhisini ve uygulanacak tasarım hedefleri
 bir araya getirir. Buradaki hedeflerin yazılması, ekranların düzeltildiği veya
 erişilebilirlik uygunluğu elde edildiği anlamına gelmez.
 
+Uygulama takibi: [Task0053](../../docs/plans/0053-apply-ux-rules-and-chips.md)
+ve [uygulama kanıtları/durumu](../../docs/state/ux-rules-implementation.md).
+Aşağıdaki kaynak teşhisi araştırma anının kaydıdır; hangi düzeltmelerin
+gerçekleştiği uygulama durumundan okunur.
+
 Mevcut ölçü ve bileşenlerin kaynağı [UI-KIT.md](UI-KIT.md); ürün yetki ve durum
 sözleşmelerinin kaynağı kabul edilmiş ADR'lerdir. Özellikle
 [ADR0047](../../docs/decisions/0047-chat-centered-project-context.md),

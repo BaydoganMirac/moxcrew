@@ -25,8 +25,14 @@ fn terminal(status: &str) -> bool {
     matches!(status, "completed" | "failed" | "interrupted")
 }
 
+fn centered_width(ui: &Ui, width: f32) -> f32 {
+    let scale = ui.ctx().pixels_per_point();
+    // Keep one physical pixel for frame rounding at fractional desktop scales.
+    ((ui.available_width().min(width) * scale).floor() - 1.0).max(0.0) / scale
+}
+
 fn centered(ui: &mut Ui, width: f32, contents: impl FnOnce(&mut Ui)) {
-    let width = ui.available_width().min(width);
+    let width = centered_width(ui, width);
     ui.vertical_centered(|ui| {
         ui.allocate_ui_with_layout(
             egui::vec2(width, 0.0),
@@ -178,6 +184,105 @@ impl CreateState {
 }
 
 impl Console {
+    fn composer_height(&mut self, ui: &Ui, snapshot: &Value) -> f32 {
+        let width = (centered_width(ui, 820.0) - 34.0).max(100.0);
+        let gap = ui.spacing().item_spacing.y;
+        let text_height = |value: &str| {
+            ui.painter()
+                .layout(
+                    t(ui, value).into_owned(),
+                    egui::FontId::proportional(12.0),
+                    colors(ui).muted,
+                    width,
+                )
+                .size()
+                .y
+                .max(16.0)
+        };
+        // Predict from current content before drawing: Panel's cached natural height
+        // otherwise moves its hit targets one frame after a width/context change.
+        let mut height = 34.0 + 64.0 + studio::metrics::GAP + gap + studio::metrics::CONTROL_HEIGHT;
+        let attachments = !self.create.attachment_paths().is_empty();
+        let selection = self.create.visual_selection().is_some();
+        let reply = self
+            .create
+            .chat
+            .replies
+            .contains_key(&(self.create.project.clone(), self.create.ability.clone()));
+        if attachments || selection || reply {
+            if attachments || selection {
+                height += studio::metrics::CONTROL_HEIGHT;
+            }
+            if attachments && selection {
+                height += 4.0 + gap + studio::metrics::CONTROL_HEIGHT;
+            }
+            if reply {
+                height += studio::metrics::CONTROL_HEIGHT
+                    + if attachments || selection { gap } else { 0.0 };
+            }
+            height += gap + studio::metrics::GAP;
+        }
+        if self.create.crew.single || selection {
+            height += gap
+                + text_height(if self.create.crew.single {
+                    "Single task · prepare, then start."
+                } else {
+                    "Describe the change for this selection."
+                });
+        }
+        if !studio::commands_ready(ui) {
+            height +=
+                gap + text_height("An action is in progress. You can keep editing your message.");
+        } else if self.create.planner_busy() {
+            height += gap + text_height("Mox is planning. You can write your next message.");
+        }
+        if self.create.crew.single {
+            height += gap
+                + if self.create.ability.is_empty()
+                    && suggestion(&self.create.draft().goal).is_some()
+                {
+                    studio::metrics::CONTROL_HEIGHT
+                } else {
+                    16.0
+                };
+        } else {
+            height += gap + studio::metrics::CONTROL_HEIGHT;
+            let preference = self.create.planner_provider().clone();
+            if !preference.is_empty() && self.create.resolved_planner_provider(snapshot).is_none() {
+                let status = format!(
+                    "{} · {}",
+                    connect::provider_name(&preference),
+                    t(ui, connect::selection_status(snapshot, &preference))
+                );
+                let label_width = ui
+                    .painter()
+                    .layout_no_wrap(status, egui::FontId::proportional(12.0), colors(ui).muted)
+                    .size()
+                    .x;
+                let button_width = ui
+                    .painter()
+                    .layout_no_wrap(
+                        t(ui, "Connections").into_owned(),
+                        egui::FontId::proportional(14.0),
+                        colors(ui).muted,
+                    )
+                    .size()
+                    .x
+                    + 32.0;
+                if label_width + button_width + ui.spacing().item_spacing.x > width {
+                    height += studio::metrics::CONTROL_HEIGHT
+                        + gap
+                        + text_height(connect::selection_status(snapshot, &preference)).max(44.0)
+                        - 44.0;
+                }
+            }
+            for text in self.conversation_feedback_text() {
+                height += gap + text_height(text);
+            }
+        }
+        height.ceil()
+    }
+
     pub(super) fn chat_studio(
         &mut self,
         ui: &mut Ui,
@@ -185,9 +290,11 @@ impl Console {
         commands: &mut Vec<Command>,
     ) {
         self.receive_dropped_resources(ui);
-        self.sync_conversation_project(snapshot, commands);
-        self.sync_conversation_resources(snapshot, commands);
-        self.sync_artifact_resources(snapshot, commands);
+        if studio::commands_ready(ui) {
+            self.sync_conversation_project(snapshot, commands);
+            self.sync_conversation_resources(snapshot, commands);
+            self.sync_artifact_resources(snapshot, commands);
+        }
         let projects = array(&snapshot["projectMemory"]["projects"]);
         let compact = ui.ctx().viewport_rect().height() < 700.0;
         let previous = self.create.project.clone();
@@ -307,10 +414,14 @@ impl Console {
         self.restore_conversation(snapshot);
         let context = self.create.productive_view();
         if context != 0 {
-            if ui.ctx().viewport_rect().width() >= 1280.0 {
+            // Reserve readable widths for both panes, including the compact navigation.
+            if ui.available_width() >= 980.0 {
+                let maximum = ui.available_width() - 500.0;
                 egui::Panel::right("project-context-panel")
-                    .resizable(false)
-                    .exact_size(600.0)
+                    .resizable(true)
+                    .default_size(440.0)
+                    .min_size(400.0)
+                    .max_size(maximum)
                     .frame(studio::card(ui))
                     .show(ui, |ui| self.project_context(ui, snapshot, commands));
             } else {
@@ -344,25 +455,11 @@ impl Console {
                 .is_some_and(|page| array(&page["items"]).is_empty())
                 && !self.create.crew_has_history(snapshot);
         if !welcome {
-            let has_reply = self
-                .create
-                .chat
-                .replies
-                .contains_key(&(self.create.project.clone(), self.create.ability.clone()));
+            let composer_height = self.composer_height(ui, snapshot);
             egui::Panel::bottom("conversation-composer")
                 .resizable(false)
                 .show_separator_line(false)
-                .exact_size(
-                    180.0
-                        + if has_reply
-                            || !self.create.attachment_paths().is_empty()
-                            || self.create.visual_selection().is_some()
-                        {
-                            88.0
-                        } else {
-                            0.0
-                        },
-                )
+                .exact_size(composer_height)
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
                     centered(ui, 820.0, |ui| {
@@ -402,6 +499,7 @@ impl Console {
         if commands.is_empty()
             && !self.hold_automatic_reads
             && ui.is_enabled()
+            && studio::commands_ready(ui)
             && !self.create.chat.connection_requested
             && connect::connections(snapshot).is_empty()
         {
@@ -409,10 +507,10 @@ impl Console {
             commands.push(Command::new("provider_connections_read", json!({})));
         }
         if commands.is_empty() {
-            if let Some(command) = self
-                .create
-                .next_chat_read(snapshot, !ui.is_enabled() || self.hold_automatic_reads)
-            {
+            if let Some(command) = self.create.next_chat_read(
+                snapshot,
+                !ui.is_enabled() || !studio::commands_ready(ui) || self.hold_automatic_reads,
+            ) {
                 commands.push(command);
             }
         }
@@ -477,50 +575,54 @@ impl Console {
                 .replies
                 .contains_key(&(self.create.project.clone(), self.create.ability.clone()))
         {
-            let context = egui::ScrollArea::vertical()
-                .id_salt((
-                    "composer-context",
-                    &self.create.project,
-                    &self.create.ability,
-                ))
-                .max_height(76.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    self.attachment_controls(ui, snapshot);
-                    if let Some(reply) = self
-                        .create
-                        .chat
-                        .replies
-                        .get(&(self.create.project.clone(), self.create.ability.clone()))
-                        .cloned()
-                    {
-                        ui.horizontal_wrapped(|ui| {
-                            hint(
-                                ui,
-                                &tf(
-                                    ui,
-                                    "Follow-up · {0} selected files",
-                                    &[&reply.references.len().to_string()],
-                                ),
-                            );
-                            if control(ui, "Clear follow-up", true).clicked() {
-                                self.create.chat.replies.remove(&(
-                                    self.create.project.clone(),
-                                    self.create.ability.clone(),
-                                ));
-                            }
+            let context = ui.vertical(|ui| {
+                self.attachment_controls(ui, snapshot);
+                if let Some(reply) = self
+                    .create
+                    .chat
+                    .replies
+                    .get(&(self.create.project.clone(), self.create.ability.clone()))
+                    .cloned()
+                {
+                    ui.horizontal_wrapped(|ui| {
+                        let label = tf(
+                            ui,
+                            "Follow-up · {0} selected files",
+                            &[&reply.references.len().to_string()],
+                        );
+                        let remove =
+                            studio::input_chip(ui, &label, t(ui, "Clear follow-up").as_ref());
+                        #[cfg(test)]
+                        ui.data_mut(|d| {
+                            d.insert_temp(
+                                egui::Id::new(("test-action", "memory_control", "Clear follow-up")),
+                                remove.rect,
+                            )
                         });
-                    }
-                });
+                        if remove.clicked() {
+                            self.create.chat.replies.remove(&(
+                                self.create.project.clone(),
+                                self.create.ability.clone(),
+                            ));
+                        }
+                    });
+                }
+            });
             #[cfg(test)]
             ui.data_mut(|d| {
                 d.insert_temp(
                     egui::Id::new("composer-context-bounds"),
-                    (context.inner_rect, ui.clip_rect()),
+                    (context.response.rect, ui.clip_rect()),
                 )
             });
             #[cfg(not(test))]
             let _ = context;
+            ui.add_space(studio::metrics::GAP);
+        }
+        if self.create.crew.single {
+            hint(ui, "Single task · prepare, then start.");
+        } else if self.create.visual_selection().is_some() {
+            hint(ui, "Describe the change for this selection.");
         }
         let goal_id = egui::Id::new(("chat-goal", &self.create.project, &self.create.ability));
         // This unframed editor's compact inset is included in the measured composer reservation.
@@ -534,20 +636,30 @@ impl Console {
         } else {
             self.create.conversation_input()
         };
-        let response = ui.add(
-            egui::TextEdit::multiline(input)
-                .id(goal_id)
-                .frame(egui::Frame::NONE)
-                .hint_text(t(ui, "Describe your idea or ask for a change…"))
-                .desired_width(f32::INFINITY)
-                .desired_rows(2)
-                .char_limit(limit)
-                .margin(egui::Margin::symmetric(8, 6)),
-        );
+        let editor = egui::ScrollArea::vertical()
+            .id_salt(goal_id.with("editor-scroll"))
+            .max_height(64.0)
+            .min_scrolled_height(64.0)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(input)
+                        .id(goal_id)
+                        .frame(egui::Frame::NONE)
+                        .hint_text(t(ui, "Describe your idea or ask for a change…"))
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(2)
+                        .char_limit(limit)
+                        .margin(egui::Margin::symmetric(8, 6)),
+                )
+            });
+        let response = editor.inner;
         let shortcut = response.has_focus()
             && ui.input(|input| input.modifiers.command && input.key_pressed(egui::Key::Enter));
         #[cfg(test)]
-        ui.data_mut(|data| data.insert_temp(egui::Id::new("create-goal-prompt"), response.rect));
+        ui.data_mut(|data| {
+            data.insert_temp(egui::Id::new("create-goal-prompt"), editor.inner_rect)
+        });
         ui.add_space(studio::metrics::GAP);
         let goal = self.create.draft().goal.clone();
         let suggested = suggestion(&goal).filter(|id| {
@@ -557,56 +669,90 @@ impl Console {
         });
         let payload = self.create.chat_payload(snapshot);
 
-        ui.horizontal_wrapped(|ui| {
-            if self.create.visual_selection().is_some() {
-                let enabled = self.create.visual_revision_enabled(snapshot);
-                let clicked = ui
-                    .add_enabled_ui(enabled, |ui| {
-                        submit(ui, "Prepare revision", "conversation-revise")
-                    })
-                    .inner;
-                if clicked || (shortcut && enabled) {
-                    self.prepare_visual_revision(snapshot, commands);
-                }
-            } else if self.create.crew.single {
-                let enabled = payload.is_some() && self.create.pending.is_none();
-                let clicked = ui
-                    .add_enabled_ui(enabled, |ui| {
-                        submit(ui, "Prepare task", "project_chat_send")
-                    })
-                    .inner;
-                if (clicked || (shortcut && enabled)) && commands.is_empty() {
-                    if let Some(payload) = payload {
-                        let command = Command::new("project_chat_send", payload);
-                        let command_id = text(&command.payload, "commandId").to_owned();
-                        self.create.chat.pending_reply = Some((
-                            command_id.clone(),
-                            self.create
-                                .chat
-                                .replies
-                                .get(&(self.create.project.clone(), self.create.ability.clone()))
-                                .cloned(),
-                        ));
-                        self.create.pending = Some(Submission {
-                            command_id,
-                            project: self.create.project.clone(),
-                            ability: self.create.ability.clone(),
-                            draft: self.create.draft().clone(),
-                        });
-                        commands.push(command);
-                    }
-                }
-            } else {
-                let enabled = self.create.conversation_send_enabled(snapshot);
-                let clicked = ui
-                    .add_enabled_ui(enabled, |ui| submit(ui, "Send", "conversation-send"))
-                    .inner;
-                if clicked || (shortcut && enabled) {
-                    self.send_conversation(snapshot, commands);
-                }
+        ui.horizontal(|ui| {
+            let attach = studio::compact_button(
+                ui,
+                t(ui, "Attach files").as_ref(),
+                studio::ButtonKind::Ghost,
+                true,
+            );
+            #[cfg(test)]
+            ui.data_mut(|d| {
+                d.insert_temp(
+                    egui::Id::new(("test-action", "memory_control", "Attach files")),
+                    attach.rect,
+                )
+            });
+            if attach.clicked() {
+                self.create
+                    .request_capability_paths(CapabilityPathKind::Resources);
             }
             self.chat_composer_options(ui, snapshot, commands);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if self.create.visual_selection().is_some() {
+                    let enabled =
+                        studio::commands_ready(ui) && self.create.visual_revision_enabled(snapshot);
+                    let clicked = ui
+                        .add_enabled_ui(enabled, |ui| {
+                            submit(ui, "Prepare revision", "conversation-revise")
+                        })
+                        .inner;
+                    if clicked || (shortcut && enabled) {
+                        self.prepare_visual_revision(snapshot, commands);
+                    }
+                } else if self.create.crew.single {
+                    let enabled = studio::commands_ready(ui)
+                        && payload.is_some()
+                        && self.create.pending.is_none();
+                    let clicked = ui
+                        .add_enabled_ui(enabled, |ui| {
+                            submit(ui, "Prepare task", "project_chat_send")
+                        })
+                        .inner;
+                    if (clicked || (shortcut && enabled)) && commands.is_empty() {
+                        if let Some(payload) = payload {
+                            let command = Command::new("project_chat_send", payload);
+                            let command_id = text(&command.payload, "commandId").to_owned();
+                            self.create.chat.pending_reply = Some((
+                                command_id.clone(),
+                                self.create
+                                    .chat
+                                    .replies
+                                    .get(&(
+                                        self.create.project.clone(),
+                                        self.create.ability.clone(),
+                                    ))
+                                    .cloned(),
+                            ));
+                            self.create.pending = Some(Submission {
+                                command_id,
+                                project: self.create.project.clone(),
+                                ability: self.create.ability.clone(),
+                                draft: self.create.draft().clone(),
+                            });
+                            commands.push(command);
+                        }
+                    }
+                } else {
+                    let enabled = studio::commands_ready(ui)
+                        && self.create.conversation_send_enabled(snapshot);
+                    let clicked = ui
+                        .add_enabled_ui(enabled, |ui| submit(ui, "Send", "conversation-send"))
+                        .inner;
+                    if clicked || (shortcut && enabled) {
+                        self.send_conversation(snapshot, commands);
+                    }
+                }
+            });
         });
+        if !studio::commands_ready(ui) {
+            hint(
+                ui,
+                "An action is in progress. You can keep editing your message.",
+            );
+        } else if self.create.planner_busy() {
+            hint(ui, "Mox is planning. You can write your next message.");
+        }
         if !self.create.crew.single {
             let preference = self.create.planner_provider().clone();
             let target = self
@@ -647,6 +793,18 @@ impl Console {
                 }
                 if !ready && studio::quiet_button(ui, t(ui, "Connections").as_ref()).clicked() {
                     self.create.chat.connections_open = true;
+                }
+                if ready {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        hint(
+                            ui,
+                            if cfg!(target_os = "macos") {
+                                "Cmd+Enter to send"
+                            } else {
+                                "Ctrl+Enter to send"
+                            },
+                        );
+                    });
                 }
             });
             self.conversation_feedback(ui);
@@ -699,11 +857,6 @@ impl Console {
         commands: &mut Vec<Command>,
     ) {
         let _menu = ui.menu_button(t(ui, "More"), |ui| {
-            if view_control(ui, "Attach files", true, false).clicked() {
-                self.create
-                    .request_capability_paths(CapabilityPathKind::Resources);
-                ui.close();
-            }
             if view_control(ui, "Project tools", !self.create.project.is_empty(), false).clicked() {
                 self.create.select_productive_view(3);
                 ui.close();
@@ -886,6 +1039,38 @@ impl Console {
         });
         ui.add_space(if compact { 12.0 } else { 24.0 });
         self.chat_composer_frame(ui, snapshot, commands);
+        if self.create.conversation_input().trim().is_empty()
+            && self.create.attachment_paths().is_empty()
+            && self.create.visual_selection().is_none()
+        {
+            ui.add_space(studio::metrics::CONTROL_GAP);
+            ui.horizontal_wrapped(|ui| {
+                for label in [
+                    "Prepare a presentation",
+                    "Research a topic",
+                    "Analyze a file",
+                ] {
+                    let response = studio::suggestion_chip(ui, t(ui, label).as_ref());
+                    #[cfg(test)]
+                    ui.data_mut(|d| {
+                        d.insert_temp(
+                            egui::Id::new(("test-action", "suggestion", label)),
+                            response.rect,
+                        )
+                    });
+                    if response.clicked() {
+                        *self.create.conversation_input() = t(ui, label).into_owned();
+                        ui.memory_mut(|m| {
+                            m.request_focus(egui::Id::new((
+                                "chat-goal",
+                                &self.create.project,
+                                &self.create.ability,
+                            )))
+                        });
+                    }
+                }
+            });
+        }
     }
 
     fn chat_work_card(
@@ -1081,6 +1266,207 @@ impl Console {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_drafts_and_panel_transitions_keep_the_footer_visible_at_desktop_scales() {
+        use super::super::tests::render;
+        for language in ["en", "tr"] {
+            for scale in [1.0, 1.25, 1.5] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_pixels_per_point(scale);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                data["projectChat"] = json!({"reasonCode":"PROJECT_CHAT_READ","projectId":"project:one","offset":0,"workRevision":4,"items":[{"workItemId":"work:old","instruction":"Earlier request"}]});
+                data["providerConnections"] = json!({"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[{"id":"codex","installed":true,"version":"0.163.0","controlSupported":true,"authentication":"present"}]});
+                let mut console = Console {
+                    tab: Tab::Create,
+                    create: draft(),
+                    ..Default::default()
+                };
+                let goal = "A long paragraph with a specific request.\n".repeat(150);
+                *console.create.conversation_input() = goal.clone();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut console, &data, size, false, vec![]);
+                }
+                for files_open in [true, false] {
+                    console.create.chat.files_open = files_open;
+                    render(&ctx, &mut console, &data, size, false, vec![]);
+                    let before = ctx.data(|d| {
+                        d.get_temp::<egui::Rect>(egui::Id::new((
+                            "test-action",
+                            "memory_control",
+                            "More",
+                        )))
+                        .unwrap()
+                    });
+                    render(&ctx, &mut console, &data, size, false, vec![]);
+                    let after = ctx.data(|d| {
+                        d.get_temp::<egui::Rect>(egui::Id::new((
+                            "test-action",
+                            "memory_control",
+                            "More",
+                        )))
+                        .unwrap()
+                    });
+                    assert_eq!(
+                        before, after,
+                        "{language}/{scale}: stable hit target on panel transition"
+                    );
+                    let (frame, clip) = ctx
+                        .data(|d| {
+                            d.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new(
+                                "chat-composer-bounds",
+                            ))
+                        })
+                        .unwrap();
+                    assert!(
+                        clip.contains_rect(frame),
+                        "{language}/{scale}: {frame:?}/{clip:?}"
+                    );
+                    let editor = ctx
+                        .data(|d| d.get_temp::<egui::Rect>(egui::Id::new("create-goal-prompt")))
+                        .unwrap();
+                    assert!(editor.height() <= 64.1);
+                    assert!(clip.contains_rect(editor));
+                    assert_eq!(*console.create.conversation_input(), goal);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn busy_composer_keeps_typing_and_attach_available_without_dispatching() {
+        use super::super::tests::render;
+        for language in ["en", "tr"] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut data = fixture();
+            data["desktopPreferences"] = json!({"language": language});
+            data["projectChat"] = json!({"reasonCode":"PROJECT_CHAT_READ", "projectId":"project:one", "offset":0, "workRevision":4, "items":[]});
+            data["providerConnections"] = json!({"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[{"id":"codex","installed":true,"version":"0.163.0","controlSupported":true,"authentication":"present"}]});
+            let mut console = Console {
+                tab: Tab::Create,
+                create: draft(),
+                ..Default::default()
+            };
+            let size = egui::vec2(800.0, 560.0);
+            for _ in 0..3 {
+                assert!(render(&ctx, &mut console, &data, size, true, vec![])
+                    .0
+                    .is_empty());
+            }
+            let input = egui::Id::new(("chat-goal", "project:one", "P1"));
+            ctx.memory_mut(|m| m.request_focus(input));
+            assert!(render(
+                &ctx,
+                &mut console,
+                &data,
+                size,
+                true,
+                vec![egui::Event::Text(" typed while busy".into())]
+            )
+            .0
+            .is_empty());
+            assert!(console
+                .create
+                .conversation_input()
+                .contains("typed while busy"));
+            assert!(console
+                .create
+                .conversation_input()
+                .contains("Revise the introduction"));
+            let mut dispatched = Vec::new();
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    events: vec![
+                        egui::Event::ModifiersChanged(egui::Modifiers::COMMAND),
+                        egui::Event::Key {
+                            key: egui::Key::Enter,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::COMMAND,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                |ui| dispatched = console.show(ui, &data, true, None, false),
+            )
+            .drop_without_applying_deltas();
+            assert!(dispatched.is_empty());
+            let (enabled, send, clip) = ctx.data(|d| {
+                d.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                    "test-action-state",
+                    "conversation-send",
+                    "Send",
+                )))
+                .unwrap()
+            });
+            assert!(!enabled);
+            assert!(clip.contains_rect(send));
+            let attach = ctx.data(|d| {
+                d.get_temp::<egui::Rect>(egui::Id::new((
+                    "test-action",
+                    "memory_control",
+                    "Attach files",
+                )))
+                .unwrap()
+            });
+            assert!(attach.right() < send.left());
+            let saved = console.create.conversation_input().clone();
+            render(&ctx, &mut console, &data, size, false, vec![]);
+            assert_eq!(*console.create.conversation_input(), saved);
+            assert!(console.create.conversation_send_enabled(&data));
+        }
+    }
+
+    #[test]
+    fn welcome_suggestions_only_fill_the_draft_and_attach_is_direct() {
+        use super::super::tests::{click_at_size, render};
+        for language in ["en", "tr"] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut data = fixture();
+            data["desktopPreferences"] = json!({"language":language});
+            data["projectMemory"]["projects"] = json!([]);
+            data["providerConnections"] =
+                json!({"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[]});
+            let mut console = Console::launch();
+            let size = egui::vec2(800.0, 560.0);
+            for _ in 0..3 {
+                render(&ctx, &mut console, &data, size, false, vec![]);
+            }
+            let commands = click_at_size(
+                &ctx,
+                &mut console,
+                &data,
+                size,
+                false,
+                "suggestion",
+                "Research a topic",
+            );
+            assert!(commands.is_empty());
+            assert!(console.create.project.is_empty());
+            assert_eq!(
+                console.create.conversation_input(),
+                i18n::tr(Language::from_code(language), "Research a topic").as_ref()
+            );
+            assert!(click_at_size(
+                &ctx,
+                &mut console,
+                &data,
+                size,
+                false,
+                "memory_control",
+                "Attach files"
+            )
+            .is_empty());
+            assert!(console.take_capability_path_request().is_some());
+        }
+    }
     #[test]
     fn suggestions_are_goal_based_and_ambiguity_never_silently_selects() {
         assert_eq!(

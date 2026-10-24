@@ -644,10 +644,15 @@ impl eframe::App for Patchfleet {
                 }
             });
         } else if let Some(snapshot) = &self.bridge.snapshot {
+            let command_busy =
+                self.bridge.busy || self.bridge.closing || self.bridge.picking_folder;
+            #[cfg(feature = "ui-smoke")]
+            let command_busy = command_busy
+                || std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("conversation-busy");
             let commands = self.console.show(
                 ui,
                 snapshot,
-                self.bridge.busy || self.bridge.closing || self.bridge.picking_folder,
+                command_busy,
                 self.bridge.feedback.as_ref(),
                 self.bridge.pending.is_some(),
             );

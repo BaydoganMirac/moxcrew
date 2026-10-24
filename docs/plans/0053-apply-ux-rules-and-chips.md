@@ -1,6 +1,6 @@
 # Task0053: Apply the UX reference to native screens and flows
 
-Status: Approved by owner; implementation in progress
+Status: Complete for the approved native UI scope; local development package verified
 
 Updated: 2026-10-25
 
@@ -58,7 +58,11 @@ a separate component, with keyboard semantics and non-overlapping hit targets.
 
 ## Handoff
 
-Update [implementation state](../state/ux-rules-implementation.md), the UI kit
-and indexes. Provide local commits, validation results, actual captures and
-remaining platform/user-study limits. Critical clipping, hidden conflict
-resolution, draft loss and command/authority regressions block completion.
+See [implementation state](../state/ux-rules-implementation.md) for source commits,
+227 passing desktop tests, strict Clippy, the final 40 native captures, independent
+review and development package verification. The UI kit and indexes are current.
+No critical clipping, hidden conflict resolution, draft loss or command/authority
+regression remains in the reviewed scope. Live provider execution, installed
+release behavior, native Windows/Linux, assistive technology and moderated
+usability remain separate evidence requirements; no global conformance claim is
+made.

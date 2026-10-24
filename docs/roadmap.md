@@ -2,12 +2,17 @@
 
 Status: active
 
-Updated: 2026-10-20
+Updated: 2026-10-25
 
 This roadmap describes public technical direction, not dates or commercial
 commitments.
 
 ## Now
+
+- Validate the delivered [native UX rules implementation](state/ux-rules-implementation.md)
+  with real users and assistive technology. Task0053 implements removable input
+  chips, output filter chips, a stable composer and contextual actions; desktop
+  tests and native fixture captures establish the bounded rendering/flow evidence.
 
 - Continue live-model and platform release evidence for the delivered
   [eleven local product capabilities](plans/0052-eleven-product-capabilities.md):

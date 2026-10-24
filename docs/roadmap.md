@@ -13,6 +13,9 @@ commitments.
   with real users and assistive technology. Task0053 implements removable input
   chips, output filter chips, a stable composer and contextual actions; desktop
   tests and native fixture captures establish the bounded rendering/flow evidence.
+  [Task0054](state/desktop-composition-and-cleanup.md) subsequently recomposes
+  the shell, conversation and inspectors after owner visual rejection; owner
+  evaluation of the revised direction remains distinct from technical checks.
 
 - Continue live-model and platform release evidence for the delivered
   [eleven local product capabilities](plans/0052-eleven-product-capabilities.md):

@@ -417,7 +417,17 @@ impl Console {
                     .default_size(420.0)
                     .min_size(400.0)
                     .max_size(maximum)
-                    .frame(egui::Frame::new().fill(colors(ui).surface).inner_margin(16))
+                    .frame(
+                        egui::Frame::new()
+                            .fill(colors(ui).surface)
+                            .inner_margin(16)
+                            .outer_margin(egui::Margin {
+                                left: 16,
+                                right: 0,
+                                top: 0,
+                                bottom: 0,
+                            }),
+                    )
                     .show(ui, |ui| self.project_context(ui, snapshot, commands, false));
             } else {
                 self.project_context(ui, snapshot, commands, true);

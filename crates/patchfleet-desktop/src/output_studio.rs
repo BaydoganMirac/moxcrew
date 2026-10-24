@@ -224,10 +224,13 @@ fn save_connection(
     if view_control(
         ui,
         "Save connection",
-        valid_input(&state.token, 16_000) && valid_input(&state.label, 80),
+        studio::commands_ready(ui)
+            && valid_input(&state.token, 16_000)
+            && valid_input(&state.label, 80),
         primary,
     )
     .clicked()
+        && studio::commands_ready(ui)
         && commands.is_empty()
     {
         let token = std::mem::take(&mut state.token);
@@ -312,6 +315,8 @@ impl CreateState {
             self.studio.query.clear();
             self.studio.file_type = 0;
             self.studio.package_mode = false;
+            self.studio.section.clear();
+            self.studio.page = 0;
         }
         self.studio
             .packages
@@ -473,6 +478,7 @@ impl Console {
         if ui.is_enabled()
             && !self.hold_automatic_reads
             && self.create.studio.requested.as_ref() != Some(&key)
+            && studio::commands_ready(ui)
             && commands.is_empty()
         {
             self.create.studio.requested = Some(key);
@@ -548,9 +554,7 @@ impl Console {
             });
             let height = (ui.available_height()
                 - if self.create.studio.tab == 0 && self.create.studio.package_mode {
-                    studio::metrics::CONTROL_HEIGHT
-                        + f32::from(studio::metrics::PADDING) * 2.0
-                        + studio::metrics::SECTION_GAP
+                    delivery::footer_height(ui, &self.create, snapshot)
                 } else {
                     studio::metrics::CONTROL_HEIGHT
                         + studio::metrics::CONTROL_GAP
@@ -568,7 +572,6 @@ impl Console {
                             2 => self.studio_tools(ui, snapshot, page, commands),
                             3 => self.studio_apps(ui, snapshot, page, commands),
                             _ if self.create.studio.package_mode => {
-                                self.studio_resource_bundle_action(ui, snapshot, page, commands);
                                 self.studio_delivery(ui, snapshot, page)
                             }
                             _ => self.studio_artifacts(ui, snapshot, page, commands),
@@ -692,27 +695,42 @@ impl Console {
         match self.create.studio.tab {
             0 => {
                 if self.create.studio.package_mode {
-                    self.studio_delivery_footer(ui, snapshot);
+                    self.studio_delivery_footer(ui, snapshot, commands);
                     return;
                 }
-                ui.horizontal_wrapped(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if let Some(artifact) = selected_artifact(&self.create, snapshot).cloned() {
                         let has_preview = artifact_preview(&self.create, snapshot, &artifact).is_some();
-                        if !has_preview {
-                            let response=view_control(ui,"Preview",!cfg!(target_os="windows"),true);
+                        if has_preview {
+                            if view_control(ui, "Revise in Chat", true, true).clicked() {
+                                let section = artifact_preview(&self.create, snapshot, &artifact)
+                                    .and_then(|preview| array(&preview["sections"]).iter().find(|section| text(section, "id") == self.create.studio.section))
+                                    .map(|section| text(section, "id").to_owned())
+                                    .unwrap_or_default();
+                                self.use_visual_in_chat(&artifact, section);
+                            }
+                        } else {
+                            let response = view_control(ui, "Preview", studio::commands_ready(ui) && !cfg!(target_os = "windows"), true);
                             #[cfg(test)]
-                            ui.data_mut(|data|data.insert_temp(egui::Id::new(("test-action","project_artifact_read","Preview")),response.rect));
-                            if response.clicked() && commands.is_empty() { commands.push(Command::new("project_artifact_read",json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]}))); }
+                            ui.data_mut(|data| data.insert_temp(egui::Id::new(("test-action", "project_artifact_read", "Preview")), response.rect));
+                            if response.clicked() && studio::commands_ready(ui) && commands.is_empty() {
+                                commands.push(Command::new("project_artifact_read", json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]})));
+                            }
                         }
-                        if view_control(ui,"Export copy",!cfg!(target_os="windows"),has_preview).clicked() {
-                            self.create.export_request=Some(CreateExportRequest{project_id:self.create.project.clone(),work_item_id:text(&artifact,"workItemId").into(),path:text(&artifact,"path").into(),name:text(&artifact,"name").into(),expected_sha256:Some(text(&artifact,"sha256").into())});
+                        if view_control(ui, "Export copy", studio::commands_ready(ui) && !cfg!(target_os = "windows"), false).clicked() {
+                            self.create.export_request = Some(CreateExportRequest {
+                                project_id: self.create.project.clone(),
+                                work_item_id: text(&artifact, "workItemId").into(),
+                                path: text(&artifact, "path").into(),
+                                name: text(&artifact, "name").into(),
+                                expected_sha256: Some(text(&artifact, "sha256").into()),
+                            });
                         }
                     }
-                    if view_control(ui,"Create package",studio_page(snapshot,&self.create.project).is_some_and(|page|!array(&page["artifacts"]).is_empty()),false).clicked() { self.create.studio.package_mode=true; }
                 });
             }
             1 => {
-                if view_control(ui, "Import resource", true, true).clicked() {
+                if view_control(ui, "Import resource", studio::commands_ready(ui), true).clicked() {
                     self.create.studio.path_request = Some(StudioPathRequest {
                         project_id: self.create.project.clone(),
                         expected_project_revision: project_revision(snapshot, &self.create.project)
@@ -742,6 +760,24 @@ impl Console {
         }
         delivery::file_filters(ui, &mut self.create.studio);
         ui.add_space(studio::metrics::GAP);
+        if !artifacts.iter().any(|artifact| {
+            delivery::matches_file(
+                artifact,
+                &self.create.studio.query,
+                self.create.studio.file_type,
+            )
+        }) {
+            hint(ui, "No matching outputs.");
+        }
+        if selected_artifact(&self.create, snapshot).is_some_and(|artifact| {
+            !delivery::matches_file(
+                artifact,
+                &self.create.studio.query,
+                self.create.studio.file_type,
+            )
+        }) {
+            hint(ui, "The selected output is outside this filter.");
+        }
         let current = selected_artifact(&self.create, snapshot)
             .map(|artifact| {
                 format!(
@@ -754,54 +790,73 @@ impl Console {
                 )
             })
             .unwrap_or_else(|| t(ui, "Choose an output").into_owned());
-        form_combo(
-            ui,
-            egui::ComboBox::from_id_salt("studio-artifact-version")
-                .selected_text(current)
-                .width(ui.available_width().min(540.0))
-                .height(220.0),
-            |ui| {
-                let mut count = 0;
-                for artifact in artifacts.iter().filter(|artifact| {
-                    delivery::matches_file(
-                        artifact,
-                        &self.create.studio.query,
-                        self.create.studio.file_type,
+        let package_width = ui
+            .painter()
+            .layout_no_wrap(
+                t(ui, "Create package").into_owned(),
+                egui::FontId::proportional(14.0),
+                colors(ui).text,
+            )
+            .size()
+            .x
+            + 32.0;
+        ui.horizontal(|ui| {
+            form_combo(
+                ui,
+                egui::ComboBox::from_id_salt("studio-artifact-version")
+                    .selected_text(current)
+                    .width(
+                        (ui.available_width() - package_width - studio::metrics::GAP)
+                            .max(120.0)
+                            .min(540.0),
                     )
-                }) {
-                    count += 1;
-                    let key = artifact_key(artifact);
-                    let selected =
-                        self.create.studio.selected.get(&self.create.project) == Some(&key);
-                    let version = text(artifact, "versionId")
-                        .chars()
-                        .take(8)
-                        .collect::<String>();
-                    if ui
-                        .selectable_label(
-                            selected,
-                            format!(
-                                "{} · {} · {} B",
-                                text(artifact, "name"),
-                                version,
-                                artifact["bytes"].as_u64().unwrap_or(0)
-                            ),
+                    .height(220.0),
+                |ui| {
+                    let mut count = 0;
+                    for artifact in artifacts.iter().filter(|artifact| {
+                        delivery::matches_file(
+                            artifact,
+                            &self.create.studio.query,
+                            self.create.studio.file_type,
                         )
-                        .clicked()
-                    {
-                        self.create
-                            .studio
-                            .selected
-                            .insert(self.create.project.clone(), key);
-                        self.create.studio.page = 0;
-                        self.create.studio.section.clear();
+                    }) {
+                        count += 1;
+                        let key = artifact_key(artifact);
+                        let selected =
+                            self.create.studio.selected.get(&self.create.project) == Some(&key);
+                        let version = text(artifact, "versionId")
+                            .chars()
+                            .take(8)
+                            .collect::<String>();
+                        if ui
+                            .selectable_label(
+                                selected,
+                                format!(
+                                    "{} · {} · {} B",
+                                    text(artifact, "name"),
+                                    version,
+                                    artifact["bytes"].as_u64().unwrap_or(0)
+                                ),
+                            )
+                            .clicked()
+                        {
+                            self.create
+                                .studio
+                                .selected
+                                .insert(self.create.project.clone(), key);
+                            self.create.studio.page = 0;
+                            self.create.studio.section.clear();
+                        }
                     }
-                }
-                if count == 0 {
-                    hint(ui, "No matching outputs.");
-                }
-            },
-        );
+                    if count == 0 {
+                        hint(ui, "No matching outputs.");
+                    }
+                },
+            );
+            if view_control(ui, "Create package", true, false).clicked() {
+                self.create.studio.package_mode = true;
+            }
+        });
         let Some(artifact) = selected_artifact(&self.create, snapshot).cloned() else {
             hint(ui, "Choose an output to preview or revise.");
             return;
@@ -1106,8 +1161,8 @@ impl Console {
                     let preview=&read["preview"];
                     if let Some(text)=preview["text"].as_str(){ui.add(egui::Label::new(text).wrap().selectable(true));}
                     let key=canvas::CanvasKey{project:self.create.project.clone(),work:text(resource,"resourceId").into(),path:String::new(),hash:text(resource,"sha256").into(),part:"resource".into()};
-                    if let Some(texture)=canvas::texture(ui,preview,&key.hash){canvas::select_image(ui,&texture,&key,&mut self.create.canvas);multiline(ui,"Annotation",&mut self.create.canvas.draft(&key).note,2000,2);let annotation=self.create.canvas.draft(&key).clone();if view_control(ui,"Add annotation to Chat",valid_input(&annotation.note,2000),false).clicked(){self.stage_operation(snapshot,"Apply this image annotation to the exact frozen resource.",json!({"resourceId":resource["resourceId"],"expectedSha256":resource["sha256"],"region":annotation.region.map(canvas::region_id),"annotation":annotation.note}),commands);}}
-                    ui.horizontal_wrapped(|ui|{for(label,operation)in [("Extract text (OCR)","resources.ocr"),("Transcribe audio","audio.transcribe")]{if view_control(ui,label,true,false).clicked(){self.stage_operation(snapshot,"Extract real text from this Project resource; report missing tools honestly.",json!({"operation":operation,"arguments":{"source":resource["resourceId"]},"expectedSha256":resource["sha256"]}),commands);}}});
+                    if let Some(texture)=canvas::texture(ui,preview,&key.hash){canvas::select_image(ui,&texture,&key,&mut self.create.canvas);multiline(ui,"Annotation",&mut self.create.canvas.draft(&key).note,2000,2);let annotation=self.create.canvas.draft(&key).clone();if view_control(ui,"Add annotation to Chat",studio::commands_ready(ui) && valid_input(&annotation.note,2000),false).clicked(){self.stage_operation(snapshot,"Apply this image annotation to the exact frozen resource.",json!({"resourceId":resource["resourceId"],"expectedSha256":resource["sha256"],"region":annotation.region.map(canvas::region_id),"annotation":annotation.note}),commands);}}
+                    ui.horizontal_wrapped(|ui|{for(label,operation)in [("Extract text (OCR)","resources.ocr"),("Transcribe audio","audio.transcribe")]{if view_control(ui,label,studio::commands_ready(ui),false).clicked(){self.stage_operation(snapshot,"Extract real text from this Project resource; report missing tools honestly.",json!({"operation":operation,"arguments":{"source":resource["resourceId"]},"expectedSha256":resource["sha256"]}),commands);}}});
                 }
 
                 ui.collapsing(t(ui,"Provenance"),|ui| {ui.monospace(text(resource,"sha256"));});
@@ -1139,37 +1194,39 @@ impl Console {
                             },
                         );
                     });
-                    ui.collapsing(t(ui, "Setup details"), |ui| {
-                        if view_control(
-                            ui,
-                            "Choose executable",
-                            !text(tool, "id").is_empty(),
-                            false,
-                        )
-                        .clicked()
-                        {
-                            self.create.studio.path_request = Some(StudioPathRequest {
-                                project_id: self.create.project.clone(),
-                                expected_project_revision: project_revision(
-                                    snapshot,
-                                    &self.create.project,
-                                )
-                                .unwrap_or(0),
-                                kind: StudioPathKind::Tool {
-                                    tool_id: text(tool, "id").into(),
-                                },
-                            });
-                        }
-                        if let Some(url) = tool["setupUrl"]
-                            .as_str()
-                            .filter(|url| url.starts_with("https://"))
-                        {
-                            if ui.link(t(ui, "Official setup guide")).clicked() {
-                                ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                    egui::CollapsingHeader::new(t(ui, "Setup details"))
+                        .default_open(tool["available"] != true)
+                        .show(ui, |ui| {
+                            if view_control(
+                                ui,
+                                "Choose executable",
+                                studio::commands_ready(ui) && !text(tool, "id").is_empty(),
+                                false,
+                            )
+                            .clicked()
+                            {
+                                self.create.studio.path_request = Some(StudioPathRequest {
+                                    project_id: self.create.project.clone(),
+                                    expected_project_revision: project_revision(
+                                        snapshot,
+                                        &self.create.project,
+                                    )
+                                    .unwrap_or(0),
+                                    kind: StudioPathKind::Tool {
+                                        tool_id: text(tool, "id").into(),
+                                    },
+                                });
                             }
-                        }
-                        hint(ui, text(tool, "reasonCode"));
-                    });
+                            if let Some(url) = tool["setupUrl"]
+                                .as_str()
+                                .filter(|url| url.starts_with("https://"))
+                            {
+                                if ui.link(t(ui, "Official setup guide")).clicked() {
+                                    ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                                }
+                            }
+                            hint(ui, text(tool, "reasonCode"));
+                        });
                     ui.add_space(f32::from(studio::metrics::PADDING));
                 })
             });
@@ -1297,7 +1354,7 @@ impl Console {
             let action_id = text(&receipt, "preparedActionId");
             let rev = revision(&receipt);
             ui.horizontal_wrapped(|ui| {
-                if view_control(ui,"Approve & execute",state.executing.as_ref().is_none_or(|(_,id)|id!=action_id),true).clicked() && commands.is_empty() {
+                if view_control(ui,"Approve & execute",studio::commands_ready(ui) && state.executing.as_ref().is_none_or(|(_,id)|id!=action_id),true).clicked() && studio::commands_ready(ui) && commands.is_empty() {
                     state.executing=Some((project.clone(),action_id.into()));
                     commands.push(Command::new("project_connection_execute",json!({"projectId":project,"preparedActionId":action_id,"expectedActionRevision":rev})));
                 }
@@ -1329,7 +1386,15 @@ impl Console {
                         .is_some_and(|value| !value.trim().is_empty())
                 })
                 && state.pending_prepare.is_none();
-            if view_control(ui, "Preview operation", enabled, true).clicked() && commands.is_empty()
+            if view_control(
+                ui,
+                "Preview operation",
+                enabled && studio::commands_ready(ui),
+                true,
+            )
+            .clicked()
+                && studio::commands_ready(ui)
+                && commands.is_empty()
             {
                 let command = Command::new(
                     "project_connection_prepare",
@@ -1374,6 +1439,48 @@ mod tests {
             ..Default::default()
         }
     }
+    #[test]
+    fn revise_in_chat_preserves_exact_selected_version_and_never_starts_work() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectArtifact"] = json!({"reasonCode":"PROJECT_ARTIFACT_READ","projectId":"project:one","workItemId":"work:one","path":"outputs/deck.pptx","sha256":"hash-one","preview":{"kind":"text","text":"Original content"},"sections":[{"id":"slide:2","label":"Slide 2"}]});
+        let original = data["projectStudio"]["artifacts"].clone();
+        let mut console = console(&data);
+        render(
+            &ctx,
+            &mut console,
+            &data,
+            egui::vec2(800.0, 560.0),
+            false,
+            vec![],
+        );
+        console.create.studio.section = "slide:2".into();
+        *console.create.conversation_input() = "Keep my draft".into();
+        let commands = super::super::tests::click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            egui::vec2(800.0, 560.0),
+            false,
+            "memory_control",
+            "Revise in Chat",
+        );
+        assert!(commands.is_empty());
+        assert_eq!(console.create.productive_view(), 0);
+        let selected = console.create.visual_selection().unwrap();
+        assert_eq!(selected.project, "project:one");
+        assert_eq!(selected.work, "work:one");
+        assert_eq!(selected.path, "outputs/deck.pptx");
+        assert_eq!(selected.hash, "hash-one");
+        assert_eq!(selected.section, "slide:2");
+        assert_eq!(
+            console.create.conversation_input().as_str(),
+            "Keep my draft"
+        );
+        assert_eq!(data["projectStudio"]["artifacts"], original);
+    }
+
     #[test]
     fn disconnected_apps_foreground_private_setup_and_visible_explicit_save_at_minimum_size() {
         for language in ["en", "tr"] {
@@ -1963,6 +2070,16 @@ mod tests {
         for _ in 0..3 {
             render(&ctx, &mut c, &data, size, false, vec![]);
         }
+        assert!(click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Package actions"
+        )
+        .is_empty());
         let commands = click_at_size(
             &ctx,
             &mut c,

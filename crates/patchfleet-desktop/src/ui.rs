@@ -984,7 +984,7 @@ impl Console {
             .exact_size(if compact_navigation { 64.0 } else { 208.0 })
             .frame(egui::Frame::new().fill(colors(ui).surface).inner_margin(
                 if compact_navigation {
-                    12
+                    8
                 } else {
                     studio::metrics::PADDING
                 },

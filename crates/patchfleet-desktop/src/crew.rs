@@ -846,15 +846,17 @@ impl Console {
                 self.crew_roster_summary(ui, snapshot, true);
             }
             ui.add_space(studio::metrics::CONTROL_GAP);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.crew_prepare_action(ui, snapshot, commands);
-                if self.create.has_conversation() {
-                    if view_control(ui, "Review crew", true, false).clicked() {
-                        self.create.select_productive_view(1);
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.crew_prepare_action(ui, snapshot, commands);
+                    if self.create.has_conversation() {
+                        if view_control(ui, "Review crew", true, false).clicked() {
+                            self.create.select_productive_view(1);
+                        }
+                    } else if view_control(ui, "Edit roster", true, false).clicked() {
+                        self.create.crew.roster_open = true;
                     }
-                } else if view_control(ui, "Edit roster", true, false).clicked() {
-                    self.create.crew.roster_open = true;
-                }
+                });
             });
             hint(
                 ui,
@@ -1221,16 +1223,18 @@ impl Console {
         commands: &mut Vec<Command>,
     ) {
         let valid = text(mission, "projectId") == self.create.project && revision(mission) > 0;
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if text(mission,"status")=="prepared" {
-                action(ui,commands,"Start crew","project_crew_start",valid && connect::crew_can_start(snapshot,mission),||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
-            }
-            if matches!(text(mission,"status"),"prepared"|"active") {
-                action(ui,commands,"Stop crew","project_crew_cancel",valid,||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
-            }
-            if matches!(text(mission,"status"),"failed"|"cancelled"|"timed_out") {
-                action(ui,commands,"Retry crew","project_crew_retry",valid,||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
-            }
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if text(mission,"status")=="prepared" {
+                    action(ui,commands,"Start crew","project_crew_start",valid && connect::crew_can_start(snapshot,mission),||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
+                }
+                if matches!(text(mission,"status"),"prepared"|"active") {
+                    action(ui,commands,"Stop crew","project_crew_cancel",valid,||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
+                }
+                if matches!(text(mission,"status"),"failed"|"cancelled"|"timed_out") {
+                    action(ui,commands,"Retry crew","project_crew_retry",valid,||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
+                }
+            });
         });
         if text(mission, "status") == "prepared" && !connect::crew_can_start(snapshot, mission) {
             ui.horizontal_wrapped(|ui| {
@@ -2218,8 +2222,8 @@ impl Console {
             });
             ui.add_space(studio::metrics::CONTROL_GAP);
             if self.create.crew.workflow.tab == 0 {
-                let preparation =
-                    egui::Frame::NONE.show(ui, |ui| {
+                let preparation = egui::Frame::NONE.show(ui, |ui| {
+                    ui.horizontal(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if self.create.crew.plans.contains_key(&key) {
                                 self.crew_prepare_action(ui, snapshot, commands);
@@ -2253,36 +2257,37 @@ impl Console {
                                 }
                             }
                         });
-                        let copy =
-                            if self.create.crew.pending.is_some() || !studio::commands_ready(ui) {
-                                "Applying action…"
-                            } else if self.create.crew.workflow.request.is_some() {
-                                "Waiting for planner confirmation…"
-                            } else if self.create.crew.plans.contains_key(&key)
-                                && self.create.crew_payload(snapshot).is_none()
-                            {
-                                "Review the goal and roster before preparing."
-                            } else {
-                                "Prepare now. Start the crew when you’re ready."
-                            };
-                        let guidance = ui.add(
-                            egui::Label::new(
-                                RichText::new(t(ui, copy))
-                                    .size(12.0)
-                                    .color(colors(ui).muted),
-                            )
-                            .wrap(),
-                        );
-                        #[cfg(test)]
-                        ui.data_mut(|data| {
-                            data.insert_temp(
-                                egui::Id::new("workflow-footer-guidance"),
-                                (guidance.rect, ui.clip_rect()),
-                            )
-                        });
-                        #[cfg(not(test))]
-                        let _ = guidance;
                     });
+                    let copy = if self.create.crew.pending.is_some() || !studio::commands_ready(ui)
+                    {
+                        "Applying action…"
+                    } else if self.create.crew.workflow.request.is_some() {
+                        "Waiting for planner confirmation…"
+                    } else if self.create.crew.plans.contains_key(&key)
+                        && self.create.crew_payload(snapshot).is_none()
+                    {
+                        "Review the goal and roster before preparing."
+                    } else {
+                        "Prepare now. Start the crew when you’re ready."
+                    };
+                    let guidance = ui.add(
+                        egui::Label::new(
+                            RichText::new(t(ui, copy))
+                                .size(12.0)
+                                .color(colors(ui).muted),
+                        )
+                        .wrap(),
+                    );
+                    #[cfg(test)]
+                    ui.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::new("workflow-footer-guidance"),
+                            (guidance.rect, ui.clip_rect()),
+                        )
+                    });
+                    #[cfg(not(test))]
+                    let _ = guidance;
+                });
                 #[cfg(test)]
                 ui.data_mut(|data| {
                     data.insert_temp(

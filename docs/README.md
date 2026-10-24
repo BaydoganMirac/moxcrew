@@ -67,6 +67,12 @@ tests, actual native capture review and a local development package. Component
 completion and fixture evidence do not establish measured usability or
 accessibility conformance.
 
+[Desktop composition and cleanup](state/desktop-composition-and-cleanup.md)
+records the owner's later rejection of the visual composition, the implemented
+shell/conversation/inspector changes and removal of obsolete generated builds
+and packages. It supersedes the earlier control density; no new package or
+installation was produced.
+
 ## Execution records
 
 - [Plans](plans/) describe a bounded implementation slice and its acceptance

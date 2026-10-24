@@ -1,6 +1,6 @@
 # Task0054: Desktop composition and generated artifact cleanup
 
-Status: Owner requested; implementation in progress
+Status: Implemented and locally verified; owner visual acceptance not asserted
 
 Updated: 2026-10-25
 
@@ -37,3 +37,11 @@ Geometry tests alone cannot establish premium aesthetics or usability. Preserve
 named keyboard controls, visible error/conflict resolution and scoped drafts.
 No animation work, provider changes, new dependency, framework migration, Cloud
 deployment, installation or package publishing is part of this task.
+
+## Handoff
+
+See [composition and cleanup state](../state/desktop-composition-and-cleanup.md)
+for actual cleanup measurements, source commits, 229 passing desktop tests,
+strict Clippy and 17 final native captures. The owner evaluates the visual
+direction from the running UI captures; technical checks do not establish a
+premium appearance or user acceptance.

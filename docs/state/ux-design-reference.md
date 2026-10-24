@@ -12,9 +12,9 @@ Implemented primitives: [UI kit](../../design/moxcrew/UI-KIT.md).
 
 The owner requested detailed UI/UX standards research, understandable Moxcrew
 flows and a durable reference, including an explanation of Rust/egui limitations
-and the absence of useful chip patterns. This session changes documentation
-only. No runtime, token, dependency, schema, version, authority or Cloud change
-is included.
+and the absence of useful chip patterns. That research slice changed
+documentation only. Its runtime remediation and later verification are recorded
+separately in [Task0053 state](ux-rules-implementation.md).
 
 The reference distinguishes normative WCAG web requirements, informative native
 mapping, platform guidance, research heuristics and Moxcrew design targets.
@@ -55,6 +55,8 @@ No moderated user session, new native platform run, screen-reader audit or
 accessibility conformance assessment was performed. Existing technical and
 fixture passes establish their stated behavior/geometry only.
 
-Next: use the reference's P0 composer/selection/busy slice to define the next
-implementation task, then verify the complete request-to-result flow with
-representative content and users. Runtime defects remain open.
+Follow-through: the owner approved Task0053, which now delivers the bounded
+composer/selection/busy and contextual-screen remediation with tests and fresh
+native captures. The findings above describe the original research baseline;
+use [Task0053 state](ux-rules-implementation.md) for current implementation
+evidence. Representative user sessions and assistive-technology validation remain.

@@ -61,9 +61,11 @@ crew recommendations, reusable Project teams, explicit mission starts and
 attributed agent communication to the native conversation.
 
 [UI/UX research and design reference](state/ux-design-reference.md) records the
-2026-10-25 investigation. The reference is complete; correcting the identified
-screen and flow defects remains pending. Earlier component/feature completion
-records are not evidence of validated usability or accessibility.
+2026-10-25 investigation. [Task0053 implementation](state/ux-rules-implementation.md)
+applies the reference to native screens, chips and contextual task actions, with
+tests, actual native capture review and a local development package. Component
+completion and fixture evidence do not establish measured usability or
+accessibility conformance.
 
 ## Execution records
 

@@ -1161,19 +1161,6 @@ impl Console {
         show_goal: bool,
     ) {
         ui.add_space(studio::metrics::CONTROL_GAP);
-        if show_goal {
-            studio::card(ui)
-                .fill(colors(ui).info_surface)
-                .show(ui, |ui| {
-                    hint(ui, "You");
-                    ui.add(
-                        egui::Label::new(text(mission, "instruction"))
-                            .wrap()
-                            .selectable(true),
-                    );
-                });
-            ui.add_space(studio::metrics::CONTROL_GAP);
-        }
         studio::card(ui).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 crate::motion::mox(
@@ -1185,6 +1172,24 @@ impl Console {
                 ui.label(studio::title(text(mission, "title"), 20.0));
                 status(ui, text(mission, "status"));
             });
+            if show_goal {
+                let goal = ui.collapsing(t(ui, "Goal"), |ui| {
+                    ui.add(
+                        egui::Label::new(text(mission, "instruction"))
+                            .wrap()
+                            .selectable(true),
+                    );
+                });
+                #[cfg(test)]
+                ui.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new(("mission-goal", text(mission, "missionId"))),
+                        goal.header_response.id,
+                    )
+                });
+                #[cfg(not(test))]
+                let _ = goal;
+            }
             let tasks = array(&mission["tasks"]);
             let complete = tasks
                 .iter()
@@ -2989,6 +2994,59 @@ mod tests {
             tab: Tab::Create,
             create: state,
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn mission_goal_is_inspectable_without_synthesizing_an_owner_message() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        ctx.data_mut(|data| data.insert_temp(egui::Id::new("console-language"), Language::En));
+        let data = fixture();
+        let mission = &data["projectCrews"]["missions"][0];
+        let mut console = console();
+        for expanded in [false, true] {
+            let events = if expanded {
+                let id = ctx.data(|data| {
+                    data.get_temp::<egui::Id>(egui::Id::new(("mission-goal", "mission:one")))
+                        .unwrap()
+                });
+                ctx.memory_mut(|memory| memory.request_focus(id));
+                vec![egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }]
+            } else {
+                vec![]
+            };
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    console.crew_mission_card(ui, &data, mission, &mut vec![], true);
+                },
+            );
+            let copy: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+                    _ => None,
+                })
+                .collect();
+            output.drop_without_applying_deltas();
+            assert!(!copy.iter().any(|line| line == "You"));
+            assert!(copy.iter().any(|line| line == "Goal"));
+            assert_eq!(
+                copy.iter()
+                    .any(|line| line == "Create a launch presentation"),
+                expanded
+            );
         }
     }
 

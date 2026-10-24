@@ -32,6 +32,20 @@ pub fn show(ui: &mut egui::Ui) {
                     .size(18.0)
                     .color(p.muted),
             );
+            studio::card(ui).show(ui, |ui| {
+                section(
+                    ui,
+                    "CHIPS / CONTEXT, FILTERS, SUGGESTIONS",
+                    "32 px targets · named removal · keyboard focus",
+                );
+                ui.horizontal_wrapped(|ui| {
+                    studio::input_chip(ui, "Launch brief.pdf", "Remove Launch brief.pdf");
+                    studio::input_chip(ui, "Page 3", "Clear selected page");
+                    studio::filter_chip(ui, "Documents", true);
+                    studio::filter_chip(ui, "Images", false);
+                    studio::suggestion_chip(ui, "Research a topic");
+                });
+            });
             ui.columns(2, |columns| {
                 studio::card(&columns[0]).show(&mut columns[0], |ui| {
                     section(ui, "01 / ACTIONS", "44 px standard · 36 px compact");

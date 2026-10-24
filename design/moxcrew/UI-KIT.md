@@ -8,29 +8,31 @@ Read [UX-RULES.md](UX-RULES.md) before changing or reviewing any screen. It owns
 the researched interaction guidance, component roles, action placement, critical
 flows and usability acceptance targets. This kit records implemented primitives
 and measurements; shared styling alone does not prove that a screen is usable.
-The 2026-10-25 review identifies remaining flow and hierarchy defects. Those
-remediations and any future density changes are not implemented by that review.
+The 2026-10-25 review identifies flow and hierarchy defects. Their implementation
+is tracked in [Task0053 state](../../docs/state/ux-rules-implementation.md);
+the research record alone does not establish remediation or usability acceptance.
 
 ## Measurements
 
-Sizes are logical UI pixels; native Retina captures can contain twice as many
+Sizes below are logical egui points; native Retina captures can contain twice as many
 physical pixels on each axis.
 
 | Element | Rule |
 |---|---|
-| Spacing | 4, 8, 12, 16, 24, 32, 48 px |
-| Related controls | 8 px gap; center vertically in one row |
-| Control groups | 12 px gap |
-| Sections | 24 px gap |
-| Regular controls | 44 px height; 16 px horizontal button padding |
-| Compact controls | 36 px height, for contextual navigation and dense row actions |
-| Input | 44 px single line; 12 px horizontal / 10 px vertical inset |
-| Card | 16 px padding / 16 px radius |
-| Page | 24 px padding; 16 px at narrow window widths |
-| Control radius | 12 px |
-| Focus | 2 px visible ring, independent of hover |
-| Typography | 14 px body/control, 12 px metadata, 20/24 px section/page heading |
-| Dialog | Card frame with 16 px inset/radius; menus use 8 px inset |
+| Spacing | 4, 8, 12, 16, 24, 32, 48 pt |
+| Related controls | 8 pt gap; center vertically in one row |
+| Control groups | 12 pt gap |
+| Sections | 24 pt gap |
+| Regular controls | 44 pt height; 16 pt horizontal button padding |
+| Compact controls | 36 pt height, for contextual navigation and dense row actions |
+| Chips | 32 logical point height; removal has its own 32×32 target; pill radius 16 |
+| Input | 44 pt single line; 12 pt horizontal / 10 pt vertical inset |
+| Card | 16 pt padding / 16 pt radius |
+| Page | 24 pt padding; 16 pt at narrow window widths |
+| Control radius | 12 pt |
+| Focus | 2 pt visible ring, independent of hover |
+| Typography | 14 pt body/control, 12 pt metadata, 20/24 pt section/page heading |
+| Dialog | Card frame with 16 pt inset/radius; menus use 8 pt inset |
 
 ## Components and hierarchy
 
@@ -42,6 +44,13 @@ physical pixels on each axis.
 - **Danger:** explicit destructive/cancel actions use semantic danger colors.
 - **Inputs:** labels above, supporting/error text below. Values retain the
   caller's length bounds, identity, private-input and validation behavior.
+- **Input chips:** filename or selected output context with an independently
+  named remove target. Removal edits only the scoped draft. Body text truncates
+  within measured bounds; full labels remain available. Stable identities keep
+  keyboard focus on the same file when another file is removed.
+- **Filter chips:** selected state includes a check and accessible selection;
+  All/Documents/Images remain visible with other types in a menu.
+- **Suggestion chips:** fill an optional draft; never send, prepare or start work.
 - **Cards:** one consistent surface and inset. Nested cards do not accumulate
   arbitrary extra padding. Empty, unavailable and error states include text.
 
@@ -58,7 +67,7 @@ palette, button variants, single-line input and card frame. Existing `control`,
 delegate to these components while preserving their command and test hooks.
 
 The UI-kit reference scene uses those same controls in the native application,
-including disabled and keyboard-focused examples. It is compiled only with
+including chips, disabled and keyboard-focused examples. It is compiled only with
 `ui-smoke`; development fixtures/gallery code are excluded from the production
 package. This is an implemented component kit, not a Figma file or a claim that
 every bespoke data visualization has been redesigned.
@@ -83,12 +92,32 @@ and portable CSS colors remain available for other surfaces.
 | Account / Cloud | Optional sign-in/pairing forms, account cards and shared search |
 | Crew / Outputs context | Plan/revision forms, file filters, delivery rows, private setup and frozen approval |
 
-Forms use 44 px controls and 36 px popup options. Long project names truncate
+Forms use 44 pt controls and 36 pt popup options. Long project names truncate
 with hover text within the width remaining after the measured action. A short
 viewport scrolls content without shrinking controls. Native evidence and acceptance results are recorded
 in [screen migration state](../../docs/state/ui-kit-screen-migration.md).
 
-The unframed chat editor retains its measured 8/6 px inset inside the 16 px
-composer frame. Read-only folder wells and feedback use the compact 12 px inset
+The unframed chat editor retains its measured 8/6 pt inset inside the 16 pt
+composer frame. Read-only folder wells and feedback use the compact 12 pt inset
 and control radius. Mascot/icon painter coordinates, status dots/badges and the
 brand wordmark retain their intentional geometry; they are not spacing tokens.
+
+## Task flow adoption
+
+The composer shows Attach at the leading edge and its stage-specific primary
+action at the trailing edge. Attachment/output chips and visible conflict
+resolution are outside the old clipped context scroll; extra files open in a
+bounded `+N` popup. The bottom composer measures its actual content rather than
+reserving a fixed 76-point context slot. Cmd/Ctrl+Enter uses the same validated
+operation as the primary action. Optional connection override stays secondary.
+
+Host command availability is separate from local message editing. Shared
+submit/action/read helpers and automatic continuation paths respect busy state;
+the Chat editor, chip removal and local context navigation stay available.
+Prepare and explicit Start retain their exact scope and receipt checks.
+
+Project context is resizable when both it and a readable conversation fit;
+narrow layouts retain Back to chat and the same draft. Crew summaries expose
+one stage action, outputs put preview/revision beside the selected artifact,
+and Brand fields scroll above a stable Save footer with dirty/validation states.
+Existing regular/compact sizes and all production/approval contracts remain.

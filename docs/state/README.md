@@ -46,6 +46,7 @@
 | Automatic planning connection | Complete; independently reviewed and macOS development package verified | 2026-10-20 | [automatic-planning-provider.md](automatic-planning-provider.md) |
 | Eleven local product capabilities | Complete; independently reviewed, integrated tests and macOS development package verified | 2026-10-20 | [eleven-product-capabilities.md](eleven-product-capabilities.md) |
 | UI/UX research and design reference | Reference complete; screen and flow remediation pending | 2026-10-25 | [ux-design-reference.md](ux-design-reference.md) |
+| UX rules in native screens and flows | In progress; semantic chips, composer and contextual actions | 2026-10-25 | [ux-rules-implementation.md](ux-rules-implementation.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

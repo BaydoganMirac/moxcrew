@@ -807,8 +807,7 @@ impl Console {
                     .selected_text(current)
                     .width(
                         (ui.available_width() - package_width - studio::metrics::GAP)
-                            .max(120.0)
-                            .min(540.0),
+                            .clamp(120.0, 540.0),
                     )
                     .height(220.0),
                 |ui| {

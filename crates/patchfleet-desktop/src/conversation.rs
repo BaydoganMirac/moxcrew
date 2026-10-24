@@ -286,6 +286,9 @@ impl Console {
         snapshot: &Value,
         commands: &mut Vec<Command>,
     ) {
+        if self.command_busy {
+            return;
+        }
         let Some(pending) = &self.create.chat.conversation.creation else {
             return;
         };
@@ -347,7 +350,10 @@ impl Console {
     }
 
     pub(super) fn send_conversation(&mut self, snapshot: &Value, commands: &mut Vec<Command>) {
-        if !commands.is_empty() || !self.create.conversation_send_enabled(snapshot) {
+        if self.command_busy
+            || !commands.is_empty()
+            || !self.create.conversation_send_enabled(snapshot)
+        {
             return;
         }
         self.create.chat.conversation.error = None;
@@ -425,6 +431,9 @@ impl Console {
         snapshot: &Value,
         commands: &mut Vec<Command>,
     ) {
+        if self.command_busy {
+            return;
+        }
         let Some(pending) = &self.create.chat.conversation.importing else {
             return;
         };
@@ -602,14 +611,15 @@ impl Console {
         }
     }
 
-    pub(super) fn conversation_feedback(&mut self, ui: &mut Ui) {
+    pub(super) fn conversation_feedback_text(&self) -> Vec<&'static str> {
+        let mut feedback = Vec::new();
         if self.create.chat.conversation.importing.is_some() {
-            hint(ui, "Importing the frozen attachments before planning…");
+            feedback.push("Importing the frozen attachments before planning…");
         } else if self.create.conversation_creating() {
-            hint(ui, "Creating a project for this conversation…");
+            feedback.push("Creating a project for this conversation…");
         }
         if let Some(error) = self.create.chat.conversation.error {
-            hint(ui, error);
+            feedback.push(error);
         }
         if let Some(session) = self
             .create
@@ -619,11 +629,17 @@ impl Console {
             .get(&self.create.conversation_key())
         {
             if pack_context(&session.answers, "", &session.input).is_none() {
-                hint(
-                    ui,
+                feedback.push(
                     "Planning context is full. Your message is preserved; start a new request.",
                 );
             }
+        }
+        feedback
+    }
+
+    pub(super) fn conversation_feedback(&self, ui: &mut Ui) {
+        for text in self.conversation_feedback_text() {
+            hint(ui, text);
         }
     }
 }
@@ -632,6 +648,38 @@ impl Console {
 mod tests {
     use super::super::tests::{click_at_size, render, snapshot};
     use super::*;
+
+    #[test]
+    fn busy_bridge_defers_receipt_chains_without_consuming_frozen_requests() {
+        let mut data = fixture();
+        let mut c = console();
+        c.create.project.clear();
+        c.create.draft().goal = "Research these attachments".into();
+        c.create.queue_paths(vec!["/tmp/brief.txt".into()]);
+        let mut commands = Vec::new();
+        c.send_conversation(&data, &mut commands);
+        let create = commands.remove(0);
+        data["projectCreateReceipt"] = json!({"commandId":create.payload["commandId"],"projectId":"project:two","outcome":"applied"});
+        c.command_busy = true;
+        c.sync_conversation_project(&data, &mut commands);
+        assert!(commands.is_empty());
+        assert!(c.create.chat.conversation.creation.is_some());
+        c.command_busy = false;
+        c.sync_conversation_project(&data, &mut commands);
+        assert_eq!(commands.len(), 1);
+        let import = commands.remove(0);
+        assert_eq!(import.action, "project_resource_import_batch");
+        imported(&mut data, &import, 1);
+        c.command_busy = true;
+        c.sync_conversation_resources(&data, &mut commands);
+        assert!(commands.is_empty());
+        assert!(c.create.chat.conversation.importing.is_some());
+        c.command_busy = false;
+        c.sync_conversation_resources(&data, &mut commands);
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_crew_plan_start");
+        assert_eq!(commands[0].payload["projectId"], "project:two");
+    }
 
     fn fixture() -> Value {
         let mut data = snapshot();

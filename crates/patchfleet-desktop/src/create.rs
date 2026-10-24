@@ -56,7 +56,7 @@ fn quiet_action(
     enabled: bool,
     payload: impl FnOnce() -> Value,
 ) {
-    let response = view_control(ui, label, enabled, false);
+    let response = view_control(ui, label, enabled && studio::commands_ready(ui), false);
     #[cfg(test)]
     ui.data_mut(|data| {
         data.insert_temp(egui::Id::new(("test-action", name, label)), response.rect);
@@ -932,7 +932,7 @@ mod tests {
         render(ctx, console, data, size, busy, vec![]);
         let rect = ctx.data(|d| {
             d.get_temp::<egui::Rect>(egui::Id::new(("test-action", action, label)))
-                .expect("action rendered")
+                .unwrap_or_else(|| panic!("action not rendered: {action}/{label}"))
         });
         let position = rect.center();
         render(
@@ -1282,6 +1282,10 @@ mod tests {
                         click(&ctx, &mut console, &data, false, "memory_control", "Skills")
                             .is_empty()
                     );
+                    assert!(
+                        console.create.catalog_open,
+                        "Skills must open the catalog, files-first={select_files_first}"
+                    );
                     assert!(click(&ctx, &mut console, &data, false, "ability", "P1").is_empty());
                 }
             }
@@ -1620,6 +1624,12 @@ mod tests {
         )
         .is_empty());
         assert!(console.tab == Tab::Create);
+        assert!(
+            console.create.chat.connections_open,
+            "busy local navigation remains available without a Host command"
+        );
+        assert!(click(&ctx, &mut console, &data, true, "memory_control", "Close").is_empty());
+        assert!(!console.create.chat.connections_open);
         assert!(click(
             &ctx,
             &mut console,

@@ -28,6 +28,7 @@ pub mod metrics {
     use eframe::egui;
     pub const CONTROL_HEIGHT: f32 = 44.0;
     pub const COMPACT_HEIGHT: f32 = 36.0;
+    pub const CHIP_HEIGHT: f32 = 32.0;
     pub const GAP: f32 = 8.0;
     pub const CONTROL_GAP: f32 = 12.0;
     pub const SECTION_GAP: f32 = 24.0;
@@ -225,6 +226,121 @@ pub fn section_nav(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Resp
 
 pub fn quiet_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     compact_button(ui, label, ButtonKind::Ghost, true)
+}
+
+/// Local draft controls stay interactive while only Host commands are locked.
+pub fn commands_ready(ui: &egui::Ui) -> bool {
+    !ui.data(|data| {
+        data.get_temp::<bool>(egui::Id::new("console-command-busy"))
+            .unwrap_or(false)
+    })
+}
+
+pub fn input_chip(ui: &mut egui::Ui, label: &str, remove_label: &str) -> egui::Response {
+    let p = palette(ui.ctx());
+    let previous = ui.style().clone();
+    ui.spacing_mut().interact_size.y = metrics::CHIP_HEIGHT;
+    ui.spacing_mut().button_padding = egui::vec2(4.0, 2.0);
+    let text_width = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), FontId::proportional(13.0), p.text)
+        .size()
+        .x;
+    let width = (text_width + 48.0).min(ui.available_width().clamp(100.0, 280.0));
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(width, metrics::CHIP_HEIGHT),
+        egui::Sense::hover(),
+    );
+    ui.painter().rect(
+        rect,
+        16,
+        p.raised,
+        egui::Stroke::new(1.0, p.border),
+        egui::StrokeKind::Inside,
+    );
+    let remove_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.right() - metrics::CHIP_HEIGHT, rect.top()),
+        rect.right_bottom(),
+    );
+    let label_rect = egui::Rect::from_min_max(
+        rect.left_top() + egui::vec2(12.0, 0.0),
+        egui::pos2(remove_rect.left() - 4.0, rect.bottom()),
+    );
+    ui.put(
+        label_rect,
+        egui::Label::new(RichText::new(label).size(13.0).color(p.text)).truncate(),
+    )
+    .on_hover_text(label);
+    let response = ui.put(
+        remove_rect,
+        egui::Button::new(RichText::new("×").size(18.0).color(p.muted))
+            .frame(false)
+            .corner_radius(16),
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, response.enabled(), remove_label)
+    });
+    ui.set_style(previous);
+    chip_focus(ui, &response);
+    response.on_hover_text(remove_label)
+}
+
+pub fn filter_chip(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
+    let response = chip_button(ui, label, selected);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Checkbox,
+            response.enabled(),
+            selected,
+            label,
+        )
+    });
+    response
+}
+
+pub fn suggestion_chip(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    chip_button(ui, label, false)
+}
+
+fn chip_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
+    let p = palette(ui.ctx());
+    let previous = ui.style().clone();
+    ui.spacing_mut().button_padding = egui::vec2(12.0, 4.0);
+    ui.spacing_mut().interact_size.y = metrics::CHIP_HEIGHT;
+    let response = ui.add(
+        egui::Button::new(
+            RichText::new(if selected {
+                format!("✓ {label}")
+            } else {
+                label.to_owned()
+            })
+            .size(13.0)
+            .color(if selected { p.info } else { p.text }),
+        )
+        .fill(if selected { p.info_surface } else { p.surface })
+        .stroke(egui::Stroke::new(
+            1.0,
+            if selected { p.info } else { p.control_border },
+        ))
+        .corner_radius(16)
+        .wrap_mode(egui::TextWrapMode::Extend)
+        .min_size(egui::vec2(0.0, metrics::CHIP_HEIGHT)),
+    );
+    ui.set_style(previous);
+    chip_focus(ui, &response);
+    response
+}
+
+fn chip_focus(ui: &egui::Ui, response: &egui::Response) {
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            16,
+            egui::Stroke::new(2.0, palette(ui.ctx()).focus),
+            egui::StrokeKind::Inside,
+        );
+        response.scroll_to_me(None);
+    }
 }
 
 pub fn view_switch(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
@@ -588,6 +704,64 @@ pub fn mascot(ui: &mut egui::Ui, width: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chip_body_is_inert_and_named_remove_target_supports_keyboard() {
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let ctx = egui::Context::default();
+            install(&ctx);
+            ctx.set_theme(theme);
+            let mut clicked = false;
+            let mut remove = None;
+            let mut render = |events| {
+                ctx.run_ui(
+                    egui::RawInput {
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let response = input_chip(
+                            ui,
+                            "Quarterly research.pdf",
+                            "Remove Quarterly research.pdf",
+                        );
+                        assert_eq!(response.rect.height(), metrics::CHIP_HEIGHT);
+                        assert_eq!(response.rect.width(), metrics::CHIP_HEIGHT);
+                        clicked |= response.clicked();
+                        remove = Some(response);
+                    },
+                )
+                .drop_without_applying_deltas();
+                (clicked, remove.clone().unwrap())
+            };
+            let (_, target) = render(vec![]);
+            let body = target.rect.left_center() - egui::vec2(16.0, 0.0);
+            for pressed in [true, false] {
+                assert!(
+                    !render(vec![
+                        egui::Event::PointerMoved(body),
+                        egui::Event::PointerButton {
+                            pos: body,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::default()
+                        }
+                    ])
+                    .0
+                );
+            }
+            ctx.memory_mut(|m| m.request_focus(target.id));
+            let (activated, response) = render(vec![egui::Event::Key {
+                key: egui::Key::Space,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            }]);
+            assert!(response.has_focus());
+            assert!(activated, "the removal target activates from the keyboard");
+        }
+    }
     #[test]
     fn button_semantic_foregrounds_survive_the_global_body_text_color() {
         for theme in [egui::Theme::Light, egui::Theme::Dark] {
@@ -630,6 +804,7 @@ mod tests {
             metrics::COMPACT_HEIGHT as f64
         );
         assert_eq!(contract["radius"]["control"], metrics::CONTROL_RADIUS);
+        assert_eq!(contract["control"]["chipHeight"], metrics::CHIP_HEIGHT);
         assert_eq!(contract["radius"]["card"], metrics::CARD_RADIUS);
         for theme in [egui::Theme::Light, egui::Theme::Dark] {
             let ctx = egui::Context::default();

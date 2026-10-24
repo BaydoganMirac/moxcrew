@@ -104,7 +104,7 @@ impl Console {
         if !self.create.chat.connections_open {
             return;
         }
-        let ready = ui.is_enabled();
+        let ready = ui.is_enabled() && studio::commands_ready(ui);
         let id = egui::Id::new("provider-connections");
         let modal = egui::Modal::new(id)
             .area(egui::Modal::default_area(id).fade_in(false))

@@ -56,6 +56,26 @@ pub(super) fn matches_file(artifact: &Value, query: &str, kind: usize) -> bool {
             || text(artifact, "path").to_lowercase().contains(&query))
 }
 
+fn selection_action(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
+    let response = studio::compact_button(
+        ui,
+        t(ui, label).as_ref(),
+        studio::ButtonKind::Ghost,
+        enabled,
+    );
+    if response.has_focus() {
+        response.scroll_to_me(None);
+    }
+    #[cfg(test)]
+    ui.data_mut(|data| {
+        data.insert_temp(
+            egui::Id::new(("test-action", "memory_control", label)),
+            response.rect,
+        )
+    });
+    response
+}
+
 pub(super) fn file_filters(ui: &mut Ui, state: &mut StudioState) {
     let query = studio::input(
         ui,
@@ -241,10 +261,6 @@ impl Console {
 
     pub(super) fn studio_delivery(&mut self, ui: &mut Ui, snapshot: &Value, page: &Value) {
         file_filters(ui, &mut self.create.studio);
-        hint(
-            ui,
-            "Select up to 32 files, 64 MiB total. The ZIP includes a source and version manifest.",
-        );
         let project = self.create.project.clone();
         let selected = self
             .create
@@ -253,42 +269,6 @@ impl Console {
             .entry(project.clone())
             .or_default()
             .clone();
-        if !selected.is_empty() {
-            ui.collapsing(
-                tf(ui, "Review selection ({0})", &[&selected.len().to_string()]),
-                |ui| {
-                    for key in &selected {
-                        ui.push_id(key, |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                let present = array(&page["artifacts"])
-                                    .iter()
-                                    .any(|file| artifact_key(file) == *key);
-                                ui.label(&key.1);
-                                ui.label(
-                                    RichText::new(key.2.chars().take(8).collect::<String>())
-                                        .size(12.0)
-                                        .color(colors(ui).muted),
-                                );
-                                if !present {
-                                    ui.colored_label(
-                                        colors(ui).warning,
-                                        t(ui, "Changed or unavailable"),
-                                    );
-                                }
-                                if view_control(ui, "Remove from package", true, false).clicked() {
-                                    self.create
-                                        .studio
-                                        .packages
-                                        .get_mut(&project)
-                                        .unwrap()
-                                        .remove(key);
-                                }
-                            })
-                        });
-                    }
-                },
-            );
-        }
         let visible: Vec<_> = array(&page["artifacts"])
             .iter()
             .filter(|file| {
@@ -304,18 +284,80 @@ impl Console {
             .cloned()
             .chain(visible.iter().map(|file| artifact_key(file)))
             .collect();
-        ui.horizontal(|ui| {
-            if view_control(
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().interact_size.y = studio::metrics::COMPACT_HEIGHT;
+            ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
+            let review = ui.add_enabled_ui(!selected.is_empty(), |ui| {
+                ui.menu_button(
+                    tf(ui, "Review selection ({0})", &[&selected.len().to_string()]),
+                    |ui| {
+                        ui.set_width((ui.ctx().viewport_rect().width() - 64.0).clamp(280.0, 480.0));
+                        egui::ScrollArea::vertical()
+                            .id_salt(("delivery-selected-review", &project))
+                            .max_height((ui.ctx().viewport_rect().height() - 180.0).max(120.0))
+                            .show(ui, |ui| {
+                                for key in &selected {
+                                    ui.push_id(key, |ui| {
+                                        let present = array(&page["artifacts"])
+                                            .iter()
+                                            .any(|file| artifact_key(file) == *key);
+                                        ui.add(egui::Label::new(&key.1).wrap());
+                                        ui.label(
+                                            RichText::new(
+                                                key.2.chars().take(8).collect::<String>(),
+                                            )
+                                            .size(12.0)
+                                            .color(colors(ui).muted),
+                                        );
+                                        if !present {
+                                            ui.colored_label(
+                                                colors(ui).warning,
+                                                t(ui, "Changed or unavailable"),
+                                            );
+                                        }
+                                        let remove =
+                                            selection_action(ui, "Remove from package", true);
+                                        #[cfg(test)]
+                                        ui.data_mut(|data| {
+                                            data.insert_temp(
+                                                egui::Id::new(("delivery-selected-remove", key)),
+                                                (remove.id, remove.rect, ui.clip_rect()),
+                                            )
+                                        });
+                                        if remove.clicked() {
+                                            self.create
+                                                .studio
+                                                .packages
+                                                .get_mut(&project)
+                                                .unwrap()
+                                                .remove(key);
+                                        }
+                                        ui.add_space(studio::metrics::GAP);
+                                    });
+                                }
+                            });
+                    },
+                )
+            });
+            #[cfg(test)]
+            ui.data_mut(|data| {
+                data.insert_temp(
+                    egui::Id::new(("test-action", "memory_control", "Review selection")),
+                    review.inner.response.rect,
+                )
+            });
+            #[cfg(not(test))]
+            let _ = review;
+            if selection_action(
                 ui,
                 "Select shown",
                 !visible.is_empty() && union.len() <= FILES_MAX,
-                false,
             )
             .clicked()
             {
                 *self.create.studio.packages.get_mut(&project).unwrap() = union;
             }
-            if view_control(ui, "Clear selection", !selected.is_empty(), false).clicked() {
+            if selection_action(ui, "Clear selection", !selected.is_empty()).clicked() {
                 self.create
                     .studio
                     .packages
@@ -338,15 +380,18 @@ impl Console {
                 .map(|task| text(task, "title"))
                 .filter(|title| !title.is_empty())
                 .unwrap_or(text(file, "path"));
-            let row = studio::card(ui).show(ui, |ui| {
+            let row = egui::Frame::NONE.inner_margin(8).show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                ui.spacing_mut().interact_size.y = studio::metrics::COMPACT_HEIGHT;
+                ui.spacing_mut().item_spacing.y = 4.0;
                 let response = ui.add_enabled(
                     can_select,
                     egui::Checkbox::new(&mut checked, text(file, "name")),
                 );
                 #[cfg(test)]
                 ui.data_mut(|data| {
-                    data.insert_temp(egui::Id::new(("delivery-file", &key)), response.rect)
+                    data.insert_temp(egui::Id::new(("delivery-file", &key)), response.rect);
+                    data.insert_temp(egui::Id::new(("delivery-file-id", &key)), response.id);
                 });
                 ui.label(
                     RichText::new(format!(
@@ -359,6 +404,13 @@ impl Console {
                     .color(colors(ui).muted),
                 );
                 response.changed()
+            });
+            #[cfg(test)]
+            ui.data_mut(|data| {
+                data.insert_temp(
+                    egui::Id::new(("delivery-file-row", &key)),
+                    (row.response.rect, ui.clip_rect()),
+                )
             });
             if row.inner {
                 let selection = self.create.studio.packages.get_mut(&project).unwrap();
@@ -429,6 +481,8 @@ impl Console {
                     self.create.studio.package_mode = false;
                 }
                 let more = ui.menu_button(t(ui, "More"), |ui| {
+                    hint(ui, "Select up to 32 files, 64 MiB total. The ZIP includes a source and version manifest.");
+                    ui.separator();
                     if let Some(page) = studio_page(snapshot, &self.create.project) {
                         let before = commands.len();
                         self.studio_resource_bundle_action(ui, snapshot, page, commands);
@@ -487,6 +541,147 @@ mod tests {
             },
             data,
         )
+    }
+
+    #[test]
+    fn minimum_package_shows_a_complete_file_row_and_keyboard_checkbox() {
+        let size = egui::vec2(800.0, 560.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let (mut console, mut data) = fixture();
+                data["desktopPreferences"] = json!({"language":language,"reduceMotion":true});
+                console.create.studio.package_mode = true;
+                let selected = array(&data["projectStudio"]["artifacts"])
+                    .iter()
+                    .map(artifact_key)
+                    .collect();
+                console
+                    .create
+                    .studio
+                    .packages
+                    .insert("project:one".into(), selected);
+                for _ in 0..3 {
+                    assert!(render(&ctx, &mut console, &data, size, false, vec![])
+                        .0
+                        .is_empty());
+                }
+                let key = artifact_key(&data["projectStudio"]["artifacts"][0]);
+                let (row, clip) = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new((
+                        "delivery-file-row",
+                        &key,
+                    )))
+                    .unwrap()
+                });
+                let checkbox = ctx.data(|data| {
+                    data.get_temp::<egui::Rect>(egui::Id::new(("delivery-file", &key)))
+                        .unwrap()
+                });
+                assert!(
+                    clip.contains_rect(row) && screen.contains_rect(row),
+                    "{language}/{theme:?} first complete file row {row:?} / {clip:?}"
+                );
+                assert!(row.contains_rect(checkbox) && clip.contains_rect(checkbox));
+                let id = ctx.data(|data| {
+                    data.get_temp::<egui::Id>(egui::Id::new(("delivery-file-id", &key)))
+                        .unwrap()
+                });
+                ctx.memory_mut(|memory| memory.request_focus(id));
+                let (commands, _) = render(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    size,
+                    false,
+                    vec![egui::Event::Key {
+                        key: egui::Key::Space,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers::default(),
+                    }],
+                );
+                assert!(commands.is_empty());
+                assert!(!console.create.studio.packages["project:one"].contains(&key));
+                assert_eq!(console.create.studio.packages["project:one"].len(), 1);
+                assert!(console.take_delivery_export_request(true).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn selection_popup_keeps_changed_versions_inspectable_and_keyboard_removable() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let (mut console, mut data) = fixture();
+        data["desktopPreferences"] = json!({"language":"en","reduceMotion":true});
+        console.create.studio.package_mode = true;
+        let stale = artifact_key(&data["projectStudio"]["artifacts"][0]);
+        let selected = array(&data["projectStudio"]["artifacts"])
+            .iter()
+            .map(artifact_key)
+            .collect();
+        console
+            .create
+            .studio
+            .packages
+            .insert("project:one".into(), selected);
+        data["projectStudio"]["artifacts"][0]["sha256"] = json!("c".repeat(64));
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut console, &data, size, false, vec![]);
+        }
+        assert!(selected_files(&console.create, &data).is_none());
+        assert!(click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Review selection"
+        )
+        .is_empty());
+        let (_, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+        assert!(copy.iter().any(|line| line == "Changed or unavailable"));
+        assert!(copy.iter().any(|line| line == &stale.1));
+        assert!(copy.iter().any(|line| line == "aaaaaaaa"));
+        let (id, rect, clip) = ctx.data(|data| {
+            data.get_temp::<(egui::Id, egui::Rect, egui::Rect)>(egui::Id::new((
+                "delivery-selected-remove",
+                &stale,
+            )))
+            .unwrap()
+        });
+        assert!(
+            clip.contains_rect(rect),
+            "changed-file removal must be visible: {rect:?}/{clip:?}"
+        );
+        ctx.memory_mut(|memory| memory.request_focus(id));
+        let (commands, _) = render(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            false,
+            vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        assert!(commands.is_empty());
+        assert!(!console.create.studio.packages["project:one"].contains(&stale));
+        let files = selected_files(&console.create, &data).unwrap().0;
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].work_item_id, "work:two");
+        assert_eq!(files[0].expected_sha256, "b".repeat(64));
     }
 
     #[test]

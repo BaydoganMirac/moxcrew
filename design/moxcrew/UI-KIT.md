@@ -48,7 +48,7 @@ physical pixels on each axis.
   named remove target. Removal edits only the scoped draft. Body text truncates
   within measured bounds; full labels remain available. Stable identities keep
   keyboard focus on the same file when another file is removed.
-- **Filter chips:** selected state includes a check and accessible selection;
+- **Filter chips:** selected state includes a vector check and accessible selection;
   All/Documents/Images remain visible with other types in a menu.
 - **Suggestion chips:** fill an optional draft; never send, prepare or start work.
 - **Cards:** one consistent surface and inset. Nested cards do not accumulate
@@ -110,6 +110,8 @@ resolution are outside the old clipped context scroll; extra files open in a
 bounded `+N` popup. The bottom composer measures its actual content rather than
 reserving a fixed 76-point context slot. Cmd/Ctrl+Enter uses the same validated
 operation as the primary action. Optional connection override stays secondary.
+Revision context is explicitly named; inactive follow-up context stays saved
+without adding a second mode row. The editor prompts for the requested change.
 
 Host command availability is separate from local message editing. Shared
 submit/action/read helpers and automatic continuation paths respect busy state;
@@ -120,4 +122,7 @@ Project context is resizable when both it and a readable conversation fit;
 narrow layouts retain Back to chat and the same draft. Crew summaries expose
 one stage action, outputs put preview/revision beside the selected artifact,
 and Brand fields scroll above a stable Save footer with dirty/validation states.
+Package selection uses a compact toolbar and a bounded selection-review popup,
+so the actual file list remains visible at the minimum window size. Changed
+versions remain inspectable and removable; package limits remain under More.
 Existing regular/compact sizes and all production/approval contracts remain.

@@ -292,11 +292,12 @@ fn selection_label(ui: &Ui, selection: &VisualSelection) -> String {
     } else {
         selection.section.clone()
     };
-    if section.is_empty() {
+    let target = if section.is_empty() {
         filename.into_owned()
     } else {
         format!("{filename} · {section}")
-    }
+    };
+    tf(ui, "Revise · {0}", &[&target])
 }
 
 impl CapabilityState {
@@ -2559,6 +2560,21 @@ mod tests {
                 for _ in 0..3 {
                     render(&ctx, &mut c, &data, size, false, vec![]);
                 }
+                assert!(
+                    ctx.data(|d| d
+                        .get_temp::<egui::Rect>(egui::Id::new((
+                            "test-action",
+                            "memory_control",
+                            "Clear follow-up"
+                        )))
+                        .is_none()),
+                    "Revision shows only its active context"
+                );
+                assert_eq!(
+                    c.create.chat.replies.len(),
+                    1,
+                    "The prior follow-up draft remains saved"
+                );
                 let (rect, clip) = ctx.data(|d| {
                     d.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new("composer-context-bounds"))
                         .unwrap()

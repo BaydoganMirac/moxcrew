@@ -204,11 +204,12 @@ impl Console {
         let mut height = 34.0 + 64.0 + studio::metrics::GAP + gap + studio::metrics::CONTROL_HEIGHT;
         let attachments = !self.create.attachment_paths().is_empty();
         let selection = self.create.visual_selection().is_some();
-        let reply = self
-            .create
-            .chat
-            .replies
-            .contains_key(&(self.create.project.clone(), self.create.ability.clone()));
+        let reply = !selection
+            && self
+                .create
+                .chat
+                .replies
+                .contains_key(&(self.create.project.clone(), self.create.ability.clone()));
         if attachments || selection || reply {
             if attachments || selection {
                 height += studio::metrics::CONTROL_HEIGHT;
@@ -222,13 +223,8 @@ impl Console {
             }
             height += gap + studio::metrics::GAP;
         }
-        if self.create.crew.single || selection {
-            height += gap
-                + text_height(if self.create.crew.single {
-                    "Single task · prepare, then start."
-                } else {
-                    "Describe the change for this selection."
-                });
+        if self.create.crew.single {
+            height += gap + text_height("Single task · prepare, then start.");
         }
         if !studio::commands_ready(ui) {
             height +=
@@ -567,29 +563,30 @@ impl Console {
 
     fn chat_composer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let language = Language::from_snapshot(snapshot);
-        if !self.create.attachment_paths().is_empty()
-            || self.create.visual_selection().is_some()
-            || self
-                .create
+        let revision = self.create.visual_selection().is_some();
+        let reply = if revision {
+            None
+        } else {
+            self.create
                 .chat
                 .replies
-                .contains_key(&(self.create.project.clone(), self.create.ability.clone()))
-        {
+                .get(&(self.create.project.clone(), self.create.ability.clone()))
+                .cloned()
+        };
+        if !self.create.attachment_paths().is_empty() || revision || reply.is_some() {
             let context = ui.vertical(|ui| {
                 self.attachment_controls(ui, snapshot);
-                if let Some(reply) = self
-                    .create
-                    .chat
-                    .replies
-                    .get(&(self.create.project.clone(), self.create.ability.clone()))
-                    .cloned()
-                {
+                if let Some(reply) = reply {
                     ui.horizontal_wrapped(|ui| {
-                        let label = tf(
-                            ui,
-                            "Follow-up · {0} selected files",
-                            &[&reply.references.len().to_string()],
-                        );
+                        let label = if reply.references.is_empty() {
+                            t(ui, "Follow-up task").into_owned()
+                        } else {
+                            tf(
+                                ui,
+                                "Follow-up · {0} selected files",
+                                &[&reply.references.len().to_string()],
+                            )
+                        };
                         let remove =
                             studio::input_chip(ui, &label, t(ui, "Clear follow-up").as_ref());
                         #[cfg(test)]
@@ -621,8 +618,6 @@ impl Console {
         }
         if self.create.crew.single {
             hint(ui, "Single task · prepare, then start.");
-        } else if self.create.visual_selection().is_some() {
-            hint(ui, "Describe the change for this selection.");
         }
         let goal_id = egui::Id::new(("chat-goal", &self.create.project, &self.create.ability));
         // This unframed editor's compact inset is included in the measured composer reservation.
@@ -646,7 +641,14 @@ impl Console {
                     egui::TextEdit::multiline(input)
                         .id(goal_id)
                         .frame(egui::Frame::NONE)
-                        .hint_text(t(ui, "Describe your idea or ask for a change…"))
+                        .hint_text(t(
+                            ui,
+                            if revision {
+                                "Describe the change for this selection."
+                            } else {
+                                "Describe your idea or ask for a change…"
+                            },
+                        ))
                         .desired_width(f32::INFINITY)
                         .desired_rows(2)
                         .char_limit(limit)
@@ -798,7 +800,11 @@ impl Console {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         hint(
                             ui,
-                            if cfg!(target_os = "macos") {
+                            if revision && cfg!(target_os = "macos") {
+                                "Cmd+Enter to prepare"
+                            } else if revision {
+                                "Ctrl+Enter to prepare"
+                            } else if cfg!(target_os = "macos") {
                                 "Cmd+Enter to send"
                             } else {
                                 "Ctrl+Enter to send"

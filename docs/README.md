@@ -19,6 +19,9 @@ and trust boundaries come before implementation details.
    help and how their ownership is bounded.
 8. [Project skills](../.agents/skills/) — task-triggered rules for adapters,
    local state, the Cloud boundary, and team delegation.
+9. [UI/UX reference](../design/moxcrew/UX-RULES.md) — researched standards versus
+   product choices, native UI diagnosis, component roles, task flows and
+   acceptance rules; read with the [implemented UI kit](../design/moxcrew/UI-KIT.md).
 
 ## Current product focus
 
@@ -56,6 +59,11 @@ attributed proposals through the installed Codex provider. See [draft state](sta
 [Project crew orchestration](state/project-crew-orchestration.md) adds editable
 crew recommendations, reusable Project teams, explicit mission starts and
 attributed agent communication to the native conversation.
+
+[UI/UX research and design reference](state/ux-design-reference.md) records the
+2026-10-25 investigation. The reference is complete; correcting the identified
+screen and flow defects remains pending. Earlier component/feature completion
+records are not evidence of validated usability or accessibility.
 
 ## Execution records
 

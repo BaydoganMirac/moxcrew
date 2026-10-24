@@ -4,6 +4,13 @@ One native component system for the application. The accepted Mox identity,
 Manrope and semantic light/dark colors remain unchanged. Task0048 established
 the shared controls; Task0049 applies them across the native application screens.
 
+Read [UX-RULES.md](UX-RULES.md) before changing or reviewing any screen. It owns
+the researched interaction guidance, component roles, action placement, critical
+flows and usability acceptance targets. This kit records implemented primitives
+and measurements; shared styling alone does not prove that a screen is usable.
+The 2026-10-25 review identifies remaining flow and hierarchy defects. Those
+remediations and any future density changes are not implemented by that review.
+
 ## Measurements
 
 Sizes are logical UI pixels; native Retina captures can contain twice as many

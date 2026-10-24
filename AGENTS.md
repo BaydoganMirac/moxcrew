@@ -29,6 +29,13 @@ state and does not execute local work.
 7. The relevant file under [docs/state/](docs/state/)
 8. Applicable records under [docs/decisions/](docs/decisions/)
 
+For any UI/UX change or review, also read the
+[Moxcrew UX rules](design/moxcrew/UX-RULES.md) and
+[implemented UI kit](design/moxcrew/UI-KIT.md) before proposing or editing screens.
+The UX rules separate researched guidance, observed defects and design targets;
+they do not supersede accepted ADRs or authorize runtime work. Geometry tests
+and screenshots alone do not establish usability or accessibility acceptance.
+
 ## Tool entry points
 
 - Codex and compatible tools read AGENTS.md directly.

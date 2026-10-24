@@ -4,6 +4,12 @@ Updated: 2026-10-19
 
 Status: Complete; independently reviewed, native captures and macOS development package verified.
 
+2026-10-25 clarification: completion below records component adoption and its
+technical verification, not validated usability or accessibility. The later
+[UI/UX investigation](ux-design-reference.md) identifies remaining hierarchy,
+composer, action-placement and flow defects. Follow the
+[UX rules](../../design/moxcrew/UX-RULES.md) for remediation; that work is pending.
+
 Plan: [Task0049](../plans/0049-apply-ui-kit-to-screens.md).
 Component contract: [Moxcrew UI kit](../../design/moxcrew/UI-KIT.md).
 

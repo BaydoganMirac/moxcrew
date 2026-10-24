@@ -77,68 +77,73 @@ fn selection_action(ui: &mut Ui, label: &str, enabled: bool) -> egui::Response {
 }
 
 pub(super) fn file_filters(ui: &mut Ui, state: &mut StudioState) {
-    let query = studio::input(
-        ui,
-        &mut state.query,
-        200,
-        t(ui, "Search outputs…").as_ref(),
-        false,
-    );
-    #[cfg(test)]
-    ui.data_mut(|data| {
-        data.insert_temp(egui::Id::new("delivery-search"), (query.rect, query.id));
-        data.insert_temp(
-            egui::Id::new(("test-action", "memory_control", "Search outputs")),
-            query.rect,
+    ui.horizontal(|ui| {
+        let type_width = ui
+            .painter()
+            .layout_no_wrap(
+                t(ui, TYPES[state.file_type.min(TYPES.len() - 1)]).into_owned(),
+                egui::FontId::proportional(14.0),
+                colors(ui).text,
+            )
+            .size()
+            .x
+            + 48.0;
+        let search_width = (ui.available_width() - type_width - studio::metrics::GAP).max(80.0);
+        let query = ui.add_sized(
+            egui::vec2(search_width, studio::metrics::CONTROL_HEIGHT),
+            egui::TextEdit::singleline(&mut state.query)
+                .id_salt("output-file-query")
+                .hint_text(t(ui, "Search outputs…"))
+                .char_limit(200)
+                .margin(studio::metrics::INPUT_MARGIN)
+                .desired_width(search_width),
         );
-    });
-    #[cfg(not(test))]
-    let _ = query;
-    ui.add_space(studio::metrics::GAP);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = studio::metrics::GAP;
-        ui.spacing_mut().interact_size.y = studio::metrics::CHIP_HEIGHT;
-        ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
-        for index in [0, 1, 3] {
-            let response =
-                studio::filter_chip(ui, t(ui, TYPES[index]).as_ref(), state.file_type == index);
-            if response.clicked() {
-                state.file_type = index;
-            }
-            #[cfg(test)]
-            ui.data_mut(|data| {
-                data.insert_temp(
-                    egui::Id::new(("delivery-filter-chip", index)),
-                    (response.rect, response.id),
-                );
-            });
-        }
-        let label = if [0, 1, 3].contains(&state.file_type) {
-            "More types"
-        } else {
-            TYPES[state.file_type.min(TYPES.len() - 1)]
-        };
-        let picker = ui.menu_button(t(ui, label), |ui| {
-            for (index, label) in TYPES.iter().enumerate() {
-                let response = ui.selectable_value(&mut state.file_type, index, t(ui, label));
-                if response.clicked() {
-                    ui.close();
-                }
-                #[cfg(test)]
-                ui.data_mut(|data| {
-                    data.insert_temp(
-                        egui::Id::new(("delivery-type-option", index)),
-                        (response.id, response.rect, ui.clip_rect()),
-                    );
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(egui::Id::new("delivery-search"), (query.rect, query.id));
+            data.insert_temp(
+                egui::Id::new(("test-action", "memory_control", "Search outputs")),
+                query.rect,
+            );
+        });
+        #[cfg(not(test))]
+        let _ = query;
+        let picker = ui.menu_button(t(ui, TYPES[state.file_type.min(TYPES.len() - 1)]), |ui| {
+            ui.set_min_width(180.0);
+            egui::ScrollArea::vertical()
+                .id_salt("output-file-types")
+                .max_height((ui.ctx().viewport_rect().height() - 144.0).min(360.0))
+                .show(ui, |ui| {
+                    for (index, label) in TYPES.iter().enumerate() {
+                        let response = studio::filter_chip(
+                            ui,
+                            t(ui, label).as_ref(),
+                            state.file_type == index,
+                        );
+                        if response.clicked() {
+                            state.file_type = index;
+                            ui.close();
+                        }
+                        #[cfg(test)]
+                        ui.data_mut(|data| {
+                            data.insert_temp(
+                                egui::Id::new(("delivery-filter-chip", index)),
+                                (response.rect, response.id),
+                            );
+                            data.insert_temp(
+                                egui::Id::new(("delivery-type-option", index)),
+                                (response.id, response.rect, ui.clip_rect()),
+                            );
+                        });
+                    }
                 });
-            }
         });
         #[cfg(test)]
         ui.data_mut(|data| {
             data.insert_temp(
                 egui::Id::new(("test-action", "memory_control", "File type")),
                 picker.response.rect,
-            );
+            )
         });
         #[cfg(not(test))]
         let _ = picker;
@@ -189,13 +194,15 @@ fn size(bytes: u64) -> String {
 }
 
 pub(super) fn footer_height(ui: &Ui, state: &CreateState, snapshot: &Value) -> f32 {
-    let padding = studio::card(ui).total_margin().sum().y;
+    let padding = 16.0;
     let mut height = padding
         + ui.text_style_height(&egui::TextStyle::Body)
         + ui.spacing().item_spacing.y
         + studio::metrics::GAP
         + studio::metrics::CONTROL_HEIGHT
-        + studio::metrics::CONTROL_GAP;
+        + studio::metrics::CONTROL_GAP
+        + ui.spacing().item_spacing.y
+        + 1.0;
     let count = state
         .studio
         .packages
@@ -206,7 +213,7 @@ pub(super) fn footer_height(ui: &Ui, state: &CreateState, snapshot: &Value) -> f
             t(ui, "Review changed files or package limits.").into_owned(),
             egui::FontId::proportional(12.0),
             colors(ui).warning,
-            (ui.available_width() - padding).max(1.0),
+            ui.available_width().max(1.0),
         );
         height += warning.size().y + ui.spacing().item_spacing.y;
     }
@@ -445,8 +452,9 @@ impl Console {
         } else {
             tf(ui, "{0} files selected", &[&count.to_string()])
         };
-        let footer = studio::card(ui).fill(colors(ui).raised).show(ui, |ui| {
-            ui.label(summary);
+        let footer = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(0, 8)).show(ui, |ui| {
+            ui.separator();
+            ui.label(RichText::new(summary).size(12.0).color(colors(ui).muted));
             if count > 0 && selected.is_none() {
                 ui.add(
                     egui::Label::new(
@@ -696,6 +704,17 @@ mod tests {
                 .0
                 .is_empty());
         }
+        assert!(click_at_size(
+            &ctx,
+            &mut console,
+            &data,
+            size,
+            true,
+            "memory_control",
+            "File type"
+        )
+        .is_empty());
+        render(&ctx, &mut console, &data, size, true, vec![]);
         let (rect, id) = ctx.data(|d| {
             d.get_temp::<(egui::Rect, egui::Id)>(egui::Id::new(("delivery-filter-chip", 3usize)))
                 .unwrap()

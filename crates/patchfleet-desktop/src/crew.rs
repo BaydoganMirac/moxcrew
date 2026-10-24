@@ -607,6 +607,10 @@ impl Console {
     }
 
     fn crew_plan_chat_summary(&mut self, ui: &mut Ui, snapshot: &Value) {
+        studio::card(ui).show(ui, |ui| self.crew_plan_summary(ui, snapshot));
+    }
+
+    fn crew_plan_summary(&mut self, ui: &mut Ui, snapshot: &Value) {
         let Some(plan) = self.create.crew.plans.get(&self.create.crew_key()) else {
             return;
         };
@@ -615,26 +619,28 @@ impl Console {
             .recommended_for
             .clone()
             .unwrap_or_else(|| self.create.draft().goal.clone());
-        ui.add_space(studio::metrics::GAP);
-        studio::card(ui).show(ui, |ui| {
-            ui.horizontal_top(|ui| {
-                crate::motion::mox(
-                    ui,
-                    studio::metrics::COMPACT_HEIGHT,
-                    false,
-                    snapshot["desktopPreferences"]["reduceMotion"] == true,
+        ui.horizontal(|ui| {
+            crate::motion::mox(
+                ui,
+                24.0,
+                false,
+                snapshot["desktopPreferences"]["reduceMotion"] == true,
+            );
+            ui.label(
+                RichText::new(t(ui, "Your crew is ready"))
+                    .size(14.0)
+                    .strong(),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    RichText::new(tf(ui, "{0} agents", &[&count]))
+                        .size(12.0)
+                        .color(colors(ui).muted),
                 );
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(t(ui, "Your crew is ready")).strong());
-                    short_copy(ui, &goal, 14.0, colors(ui).text, 2);
-                    ui.label(
-                        RichText::new(tf(ui, "{0} agents", &[&count]))
-                            .size(12.0)
-                            .color(colors(ui).muted),
-                    );
-                });
             });
         });
+        ui.add_space(studio::metrics::GAP);
+        short_copy(ui, &goal, 14.0, colors(ui).text, 2);
     }
 
     fn crew_prepare_action(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -689,7 +695,7 @@ impl Console {
             return;
         };
         if show_title {
-            ui.label(studio::title(t(ui, "Your crew is ready"), 24.0));
+            ui.label(studio::title(t(ui, "Your crew is ready"), 20.0));
             ui.add_space(studio::metrics::CONTROL_GAP);
         }
         let goal = plan
@@ -768,8 +774,8 @@ impl Console {
                         egui::vec2(width, 0.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
-                            studio::card(ui).inner_margin(12).show(ui, |ui| {
-                                ui.set_width((width - 24.0).max(studio::metrics::CONTROL_HEIGHT));
+                            egui::Frame::NONE.inner_margin(8).show(ui, |ui| {
+                                ui.set_width((width - 16.0).max(studio::metrics::CONTROL_HEIGHT));
                                 ui.horizontal(|ui| {
                                     studio::icon(ui, icon, 24.0, accent);
                                     ui.vertical(|ui| {
@@ -821,43 +827,55 @@ impl Console {
         }
     }
     fn crew_plan_card(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
-        ui.add_space(f32::from(studio::metrics::PADDING));
-        if self.create.has_conversation() {
-            self.crew_plan_chat_summary(ui, snapshot);
-            if let Some(plan) = self.create.crew.plans.get(&self.create.crew_key()) {
-                raw_hint(
-                    ui,
-                    &plan
-                        .members
-                        .iter()
-                        .map(|member| text(member, "name"))
-                        .collect::<Vec<_>>()
-                        .join(" · "),
-                );
-            }
-        } else {
-            self.crew_roster_summary(ui, snapshot, true);
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            self.crew_prepare_action(ui, snapshot, commands);
+        ui.add_space(studio::metrics::GAP);
+        let proposal = studio::card(ui).show(ui, |ui| {
             if self.create.has_conversation() {
-                if view_control(ui, "Review crew", true, false).clicked() {
-                    self.create.select_productive_view(1);
+                self.crew_plan_summary(ui, snapshot);
+                if let Some(plan) = self.create.crew.plans.get(&self.create.crew_key()) {
+                    ui.add_space(studio::metrics::GAP);
+                    ui.horizontal_wrapped(|ui| {
+                        for (index, member) in plan.members.iter().enumerate() {
+                            if index > 0 {
+                                ui.label(RichText::new("·").color(colors(ui).muted));
+                            }
+                            ui.label(RichText::new(text(member, "name")).size(13.0));
+                        }
+                    });
                 }
-            } else if view_control(ui, "Edit roster", true, false).clicked() {
-                self.create.crew.roster_open = true;
-            }
-        });
-        hint(
-            ui,
-            if self.create.crew.pending.is_some() || !studio::commands_ready(ui) {
-                "Applying action…"
-            } else if self.create.crew_payload(snapshot).is_none() {
-                "Review the goal and roster before preparing."
             } else {
-                "Preparing saves the mission. Agents start only when you choose Start crew."
-            },
-        );
+                self.crew_roster_summary(ui, snapshot, true);
+            }
+            ui.add_space(studio::metrics::CONTROL_GAP);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.crew_prepare_action(ui, snapshot, commands);
+                if self.create.has_conversation() {
+                    if view_control(ui, "Review crew", true, false).clicked() {
+                        self.create.select_productive_view(1);
+                    }
+                } else if view_control(ui, "Edit roster", true, false).clicked() {
+                    self.create.crew.roster_open = true;
+                }
+            });
+            hint(
+                ui,
+                if self.create.crew.pending.is_some() || !studio::commands_ready(ui) {
+                    "Applying action…"
+                } else if self.create.crew_payload(snapshot).is_none() {
+                    "Review the goal and roster before preparing."
+                } else {
+                    "Preparing saves the mission. Agents start only when you choose Start crew."
+                },
+            );
+        });
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("crew-proposal-card"),
+                (proposal.response.rect, ui.clip_rect()),
+            )
+        });
+        #[cfg(not(test))]
+        let _ = proposal;
     }
 
     pub(super) fn crew_roster_dialog(&mut self, ui: &mut Ui, snapshot: &Value) {
@@ -2088,7 +2106,7 @@ impl Console {
                 labels[self.create.crew.workflow.tab.min(4)]
             };
             ui.horizontal(|ui| {
-                let title = ui.label(studio::title(t(ui, heading), 24.0));
+                let title = ui.label(studio::title(t(ui, heading), 20.0));
                 #[cfg(test)]
                 ui.data_mut(|data| {
                     data.insert_temp(
@@ -2201,7 +2219,7 @@ impl Console {
             ui.add_space(studio::metrics::CONTROL_GAP);
             if self.create.crew.workflow.tab == 0 {
                 let preparation =
-                    studio::card(ui).fill(colors(ui).raised).show(ui, |ui| {
+                    egui::Frame::NONE.show(ui, |ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if self.create.crew.plans.contains_key(&key) {
                                 self.crew_prepare_action(ui, snapshot, commands);
@@ -2234,55 +2252,36 @@ impl Console {
                                     self.begin_model_plan(snapshot, commands, None);
                                 }
                             }
-
-                            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                                ui.set_max_width(ui.available_width());
-                                ui.label(
-                                    RichText::new(t(
-                                        ui,
-                                        if self.create.crew.plans.contains_key(&key) {
-                                            "Ready to prepare"
-                                        } else {
-                                            "Plan before you start"
-                                        },
-                                    ))
-                                    .size(14.0)
-                                    .strong(),
-                                );
-                                let guidance = ui.add(
-                                    egui::Label::new(
-                                        RichText::new(t(
-                                            ui,
-                                            if self.create.crew.pending.is_some()
-                                                || !studio::commands_ready(ui)
-                                            {
-                                                "Applying action…"
-                                            } else if self.create.crew.workflow.request.is_some() {
-                                                "Waiting for planner confirmation…"
-                                            } else if self.create.crew.plans.contains_key(&key)
-                                                && self.create.crew_payload(snapshot).is_none()
-                                            {
-                                                "Review the goal and roster before preparing."
-                                            } else {
-                                                "Prepare now. Start the crew when you’re ready."
-                                            },
-                                        ))
-                                        .size(12.0)
-                                        .color(colors(ui).muted),
-                                    )
-                                    .wrap(),
-                                );
-                                #[cfg(test)]
-                                ui.data_mut(|data| {
-                                    data.insert_temp(
-                                        egui::Id::new("workflow-footer-guidance"),
-                                        (guidance.rect, ui.clip_rect()),
-                                    )
-                                });
-                                #[cfg(not(test))]
-                                let _ = guidance;
-                            });
                         });
+                        let copy =
+                            if self.create.crew.pending.is_some() || !studio::commands_ready(ui) {
+                                "Applying action…"
+                            } else if self.create.crew.workflow.request.is_some() {
+                                "Waiting for planner confirmation…"
+                            } else if self.create.crew.plans.contains_key(&key)
+                                && self.create.crew_payload(snapshot).is_none()
+                            {
+                                "Review the goal and roster before preparing."
+                            } else {
+                                "Prepare now. Start the crew when you’re ready."
+                            };
+                        let guidance = ui.add(
+                            egui::Label::new(
+                                RichText::new(t(ui, copy))
+                                    .size(12.0)
+                                    .color(colors(ui).muted),
+                            )
+                            .wrap(),
+                        );
+                        #[cfg(test)]
+                        ui.data_mut(|data| {
+                            data.insert_temp(
+                                egui::Id::new("workflow-footer-guidance"),
+                                (guidance.rect, ui.clip_rect()),
+                            )
+                        });
+                        #[cfg(not(test))]
+                        let _ = guidance;
                     });
                 #[cfg(test)]
                 ui.data_mut(|data| {
@@ -2986,6 +2985,38 @@ mod tests {
             create: state,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn proposal_keeps_its_prepare_action_inside_the_same_surface() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectCrews"]["missions"] = json!([]);
+        let mut console = console();
+        for _ in 0..3 {
+            render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(800.0, 560.0),
+                false,
+                vec![],
+            );
+        }
+        let (card, clip) = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, egui::Rect)>(egui::Id::new("crew-proposal-card"))
+                .unwrap()
+        });
+        let (_, prepare, _) = ctx.data(|data| {
+            data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                "test-action-state",
+                "project_crew_prepare",
+                "Prepare crew",
+            )))
+            .unwrap()
+        });
+        assert!(card.contains_rect(prepare) && clip.contains_rect(prepare));
     }
 
     #[test]

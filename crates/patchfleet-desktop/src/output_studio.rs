@@ -488,7 +488,6 @@ impl Console {
             ));
         }
         inline_surface(ui, |ui| {
-            let compact = ui.ctx().viewport_rect().height() < 700.0;
             ui.horizontal(|ui| {
                 ui.label(studio::title(
                     t(
@@ -499,7 +498,7 @@ impl Console {
                             "Outputs"
                         },
                     ),
-                    24.0,
+                    20.0,
                 ));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let before = self.create.studio.tab;
@@ -547,11 +546,7 @@ impl Console {
                     );
                 });
             });
-            ui.add_space(if compact {
-                f32::from(studio::metrics::PADDING)
-            } else {
-                studio::metrics::SECTION_GAP
-            });
+            ui.add_space(studio::metrics::GAP);
             let height = (ui.available_height()
                 - if self.create.studio.tab == 0 && self.create.studio.package_mode {
                     delivery::footer_height(ui, &self.create, snapshot)
@@ -860,8 +855,6 @@ impl Console {
             hint(ui, "Choose an output to preview or revise.");
             return;
         };
-        ui.add_space(f32::from(studio::metrics::PADDING));
-        ui.label(studio::title(text(&artifact, "name"), 20.0));
         ui.add_space(studio::metrics::CONTROL_GAP);
         if text(&artifact, "path")
             .to_ascii_lowercase()

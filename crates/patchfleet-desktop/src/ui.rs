@@ -978,11 +978,10 @@ impl Console {
         let reveal_navigation = self.navigation_tab != Some(self.tab);
         self.navigation_tab = Some(self.tab);
         let compact_navigation = matches!(self.tab, Tab::Create | Tab::Teams)
-            && (ui.ctx().viewport_rect().width() < 1000.0
-                || (self.tab == Tab::Create && self.create.productive_view() != 0));
+            && ui.ctx().viewport_rect().width() < 1000.0;
         egui::Panel::left("console-navigation")
             .resizable(false)
-            .exact_size(if compact_navigation { 72.0 } else { 192.0 })
+            .exact_size(if compact_navigation { 64.0 } else { 208.0 })
             .frame(egui::Frame::new().fill(colors(ui).surface).inner_margin(
                 if compact_navigation {
                     12
@@ -1010,7 +1009,7 @@ impl Console {
                         );
                     });
                 });
-                ui.add_space(32.0);
+                ui.add_space(24.0);
                 let account_footer =
                     if verified_account(snapshot).is_some_and(|a| a["email"].is_string()) {
                         64.0
@@ -1143,7 +1142,6 @@ impl Console {
                 ),
             ))
             .show(ui, |ui| {
-                studio::ambient(ui);
                 if self.tab != Tab::Create {
                     ui.horizontal(|ui| {
                         ui.label(
@@ -1174,12 +1172,6 @@ impl Console {
                             }
                         });
                     });
-                } else if busy {
-                    ui.label(
-                        RichText::new(t(ui, "Applying action…"))
-                            .size(12.0)
-                            .color(colors(ui).primary),
-                    );
                 }
                 if self.tab != Tab::Create {
                     ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
@@ -5690,7 +5682,10 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
     }
     if selected {
         ui.painter().rect_filled(
-            egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 13.0), egui::vec2(2.0, 16.0)),
+            egui::Rect::from_min_size(
+                egui::pos2(rect.left(), rect.center().y - 7.0),
+                egui::vec2(2.0, 14.0),
+            ),
             1,
             colors(ui).primary,
         );
@@ -5707,7 +5702,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
             if compact {
                 rect.center()
             } else {
-                rect.min + egui::vec2(21.0, 21.0)
+                egui::pos2(rect.left() + 18.0, rect.center().y)
             },
             egui::vec2(18.0, 18.0),
         ),
@@ -5720,7 +5715,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
     );
     if !compact {
         ui.painter().text(
-            rect.min + egui::vec2(40.0, 21.0),
+            egui::pos2(rect.left() + 36.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
             label.as_ref(),
             egui::FontId::proportional(13.0),
@@ -8346,7 +8341,7 @@ mod tests {
             });
             assert!(
                 account.min.x >= f32::from(studio::metrics::PADDING)
-                    && account.max.x <= 192.0 - f32::from(studio::metrics::PADDING),
+                    && account.max.x <= 208.0 - f32::from(studio::metrics::PADDING),
                 "{code}: account action must keep the sidebar inset: {account:?}"
             );
             for tab in Tab::ALL {

@@ -23,16 +23,16 @@ physical pixels on each axis.
 | Related controls | 8 pt gap; center vertically in one row |
 | Control groups | 12 pt gap |
 | Sections | 24 pt gap |
-| Regular controls | 44 pt height; 16 pt horizontal button padding |
-| Compact controls | 36 pt height, for contextual navigation and dense row actions |
+| Regular controls | 36 pt height; 12 pt horizontal button padding |
+| Compact controls | 32 pt height, for contextual navigation and dense row actions |
 | Chips | 32 logical point height; removal has its own 32×32 target; pill radius 16 |
-| Input | 44 pt single line; 12 pt horizontal / 10 pt vertical inset |
-| Card | 16 pt padding / 16 pt radius |
+| Input | 36 pt single line; 12 pt horizontal / 8 pt vertical inset |
+| Card | 16 pt padding / 12 pt radius |
 | Page | 24 pt padding; 16 pt at narrow window widths |
-| Control radius | 12 pt |
+| Control radius | 8 pt |
 | Focus | 2 pt visible ring, independent of hover |
 | Typography | 14 pt body/control, 12 pt metadata, 20/24 pt section/page heading |
-| Dialog | Card frame with 16 pt inset/radius; menus use 8 pt inset |
+| Dialog | Card frame with 16 pt inset / 12 pt radius; menus use 8 pt inset |
 
 ## Components and hierarchy
 
@@ -48,8 +48,8 @@ physical pixels on each axis.
   named remove target. Removal edits only the scoped draft. Body text truncates
   within measured bounds; full labels remain available. Stable identities keep
   keyboard focus on the same file when another file is removed.
-- **Filter chips:** selected state includes a vector check and accessible selection;
-  All/Documents/Images remain visible with other types in a menu.
+- **Filter chips:** selected state includes a vector check and accessible selection.
+  The output toolbar shows the current type; its bounded picker contains all types.
 - **Suggestion chips:** fill an optional draft; never send, prepare or start work.
 - **Cards:** one consistent surface and inset. Nested cards do not accumulate
   arbitrary extra padding. Empty, unavailable and error states include text.
@@ -92,12 +92,12 @@ and portable CSS colors remain available for other surfaces.
 | Account / Cloud | Optional sign-in/pairing forms, account cards and shared search |
 | Crew / Outputs context | Plan/revision forms, file filters, delivery rows, private setup and frozen approval |
 
-Forms use 44 pt controls and 36 pt popup options. Long project names truncate
+Forms use 36 pt controls and 32 pt popup options. Long project names truncate
 with hover text within the width remaining after the measured action. A short
 viewport scrolls content without shrinking controls. Native evidence and acceptance results are recorded
 in [screen migration state](../../docs/state/ui-kit-screen-migration.md).
 
-The unframed chat editor retains its measured 8/6 pt inset inside the 16 pt
+The unframed chat editor retains its measured 8/6 pt inset inside the 12 pt
 composer frame. Read-only folder wells and feedback use the compact 12 pt inset
 and control radius. Mascot/icon painter coordinates, status dots/badges and the
 brand wordmark retain their intentional geometry; they are not spacing tokens.
@@ -126,3 +126,16 @@ Package selection uses a compact toolbar and a bounded selection-review popup,
 so the actual file list remains visible at the minimum window size. Changed
 versions remain inspectable and removable; package limits remain under More.
 Existing regular/compact sizes and all production/approval contracts remain.
+
+## Desktop composition (Task0054)
+
+The 208-point navigation remains in place when Project context opens at normal
+width; a 64-point rail is reserved for narrow windows. A 760-point conversation
+column and an adaptive inspector share the main surface. Only narrow detail
+surfaces need Back to chat. Welcome text, composer and suggestions share a
+left reading axis. Status/connection guidance sits beneath the editor surface.
+
+The 36/32-point desktop control density preserves 14-point body text, 32-point
+chip removal and visible keyboard focus. Touch guidance stays separate. Shared
+cards and inspector surfaces avoid nested outlines, canvas bloom and idle
+ornament. Task0054 records visual evidence; this is not user acceptance.

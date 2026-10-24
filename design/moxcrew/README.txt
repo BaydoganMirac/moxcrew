@@ -15,13 +15,12 @@ this new identity. The master is not claimed to have been generated again.
 
 tokens/design-tokens.json is the color/spacing/type contract. Semantic revision 1.1
 adds ink/cobalt native studio surfaces and a cooler light canvas; Mox and the
-core identity colors are unchanged. Static ambient light and orbital accents
-provide depth, while animation remains tied to real work.
+core identity colors are unchanged. Desktop composition prioritizes content and navigation; motion remains tied to real work.
 Revision 1.2 records shared control insets and layout padding; colors are unchanged.
 Normal text pairs in tokens/contrast-checks.json meet 4.5:1 in both themes.
 Control/focus boundaries meet 3:1; card borders remain decorative.
 The portable CSS export includes the local WOFF2 and its OFL license in fonts/.
-Primary controls 44px; compact native secondary controls 36px. Radii8/12/16/24.
+Revision 1.3 uses 36px desktop controls, 32px compact controls/chips, and 8/12px control/card radii. Touch guidance remains 44px.
 UI-KIT.md defines the production component system: shared action variants,
 inputs, cards, control heights, padding, spacing and keyboard feedback.
 Follow the OS light/dark preference; light is the deterministic fallback.

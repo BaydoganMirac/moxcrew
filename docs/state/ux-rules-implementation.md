@@ -8,6 +8,13 @@ Plan: [Task0053](../plans/0053-apply-ux-rules-and-chips.md).
 Reference: [UX rules](../../design/moxcrew/UX-RULES.md).
 Implemented components: [UI kit](../../design/moxcrew/UI-KIT.md).
 
+Follow-up: the owner rejected the visual composition after this bounded technical
+remediation. [Task0054](../plans/0054-desktop-composition-and-build-cleanup.md)
+recomposes the desktop screens and cleans reproducible artifacts. The DMG listed
+below was verified at this historical checkpoint and subsequently removed at the
+owner's cleanup request; it is not a current download. One existing App was kept
+as a fallback. These test results do not imply owner visual acceptance.
+
 ## Delivered behavior
 
 - Shared 32-point removable input, selected filter and optional suggestion chips;

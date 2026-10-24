@@ -12,7 +12,6 @@ pub fn show(ui: &mut egui::Ui) {
         )
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(m::SECTION_GAP, m::PADDING as f32);
-            studio::ambient(ui);
             ui.horizontal(|ui| {
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(48.0, 40.0), egui::Sense::hover());

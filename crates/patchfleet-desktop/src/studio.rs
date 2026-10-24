@@ -26,17 +26,17 @@ include!("../assets/brand/palette.rs");
 
 pub mod metrics {
     use eframe::egui;
-    pub const CONTROL_HEIGHT: f32 = 44.0;
-    pub const COMPACT_HEIGHT: f32 = 36.0;
+    pub const CONTROL_HEIGHT: f32 = 36.0;
+    pub const COMPACT_HEIGHT: f32 = 32.0;
     pub const CHIP_HEIGHT: f32 = 32.0;
     pub const GAP: f32 = 8.0;
     pub const CONTROL_GAP: f32 = 12.0;
     pub const SECTION_GAP: f32 = 24.0;
     pub const PADDING: i8 = 16;
     pub const PAGE_PADDING: i8 = 24;
-    pub const CONTROL_RADIUS: u8 = 12;
-    pub const CARD_RADIUS: u8 = 16;
-    pub const INPUT_MARGIN: egui::Margin = egui::Margin::symmetric(12, 10);
+    pub const CONTROL_RADIUS: u8 = 8;
+    pub const CARD_RADIUS: u8 = 12;
+    pub const INPUT_MARGIN: egui::Margin = egui::Margin::symmetric(12, 8);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -69,7 +69,7 @@ fn kit_button(
 ) -> egui::Response {
     let p = palette(ui.ctx());
     let previous = ui.style().clone();
-    ui.spacing_mut().button_padding = egui::vec2(16.0, 8.0);
+    ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
     let (fill, hover, pressed, foreground, border) = match kind {
         ButtonKind::Primary => (
             p.primary,
@@ -78,13 +78,7 @@ fn kit_button(
             p.on_primary,
             Color32::TRANSPARENT,
         ),
-        ButtonKind::Secondary => (
-            p.surface,
-            p.raised,
-            p.info_surface,
-            p.text,
-            p.control_border,
-        ),
+        ButtonKind::Secondary => (p.surface, p.raised, p.info_surface, p.text, p.border),
         ButtonKind::Ghost => (
             Color32::TRANSPARENT,
             p.raised,
@@ -169,7 +163,7 @@ pub fn input(
 pub fn card(ui: &egui::Ui) -> egui::Frame {
     egui::Frame::new()
         .fill(palette(ui.ctx()).surface)
-        .stroke(egui::Stroke::new(1.0, palette(ui.ctx()).border))
+        .stroke(egui::Stroke::NONE)
         .corner_radius(metrics::CARD_RADIUS)
         .inner_margin(metrics::PADDING)
 }
@@ -255,7 +249,7 @@ pub fn input_chip(ui: &mut egui::Ui, label: &str, remove_label: &str) -> egui::R
         rect,
         16,
         p.raised,
-        egui::Stroke::new(1.0, p.border),
+        egui::Stroke::NONE,
         egui::StrokeKind::Inside,
     );
     let remove_rect = egui::Rect::from_min_max(
@@ -325,7 +319,7 @@ fn chip_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response
         .fill(if selected { p.info_surface } else { p.surface })
         .stroke(egui::Stroke::new(
             1.0,
-            if selected { p.info } else { p.control_border },
+            if selected { p.info } else { p.border },
         ))
         .corner_radius(16)
         .wrap_mode(egui::TextWrapMode::Extend)
@@ -364,11 +358,7 @@ pub fn view_switch(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Resp
         } else {
             p.muted
         }))
-        .fill(if selected {
-            p.raised
-        } else {
-            Color32::TRANSPARENT
-        })
+        .fill(Color32::TRANSPARENT)
         .stroke(egui::Stroke::NONE)
         .corner_radius(7)
         .min_size(egui::vec2(66.0, metrics::COMPACT_HEIGHT)),
@@ -381,6 +371,15 @@ pub fn view_switch(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Resp
             label,
         )
     });
+    if selected {
+        ui.painter().line_segment(
+            [
+                response.rect.left_bottom() + egui::vec2(10.0, 0.0),
+                response.rect.right_bottom() - egui::vec2(10.0, 0.0),
+            ],
+            egui::Stroke::new(2.0, p.primary),
+        );
+    }
     if response.has_focus() {
         ui.painter().rect_stroke(
             response.rect,
@@ -490,7 +489,7 @@ fn style(p: Palette, dark: bool) -> egui::Style {
         widget.weak_bg_fill = p.surface;
         widget.bg_stroke = egui::Stroke::new(1.0, p.control_border);
         widget.fg_stroke = egui::Stroke::new(1.0, p.text);
-        widget.corner_radius = egui::CornerRadius::same(12);
+        widget.corner_radius = egui::CornerRadius::same(metrics::CONTROL_RADIUS);
     }
     style.visuals.widgets.hovered.bg_fill = p.raised;
     style.visuals.widgets.hovered.weak_bg_fill = p.raised;
@@ -500,30 +499,6 @@ fn style(p: Palette, dark: bool) -> egui::Style {
     style.visuals.widgets.active.bg_stroke = egui::Stroke::new(2.0, p.focus);
     style.visuals.widgets.open = style.visuals.widgets.active;
     style
-}
-
-/// Static light gives the canvas depth without waking an idle window.
-pub fn ambient(ui: &egui::Ui) {
-    let rect = ui.max_rect();
-    let dark = ui.ctx().theme() == egui::Theme::Dark;
-    let center = egui::pos2(rect.center().x, rect.top() + rect.height() * 0.27);
-    let radius = rect.width().min(1100.0) * 0.58;
-    let mut mesh = egui::Mesh::default();
-    mesh.colored_vertex(
-        center,
-        Color32::from_rgba_unmultiplied(65, 90, 230, if dark { 27 } else { 12 }),
-    );
-    for i in 0..=64 {
-        let angle = i as f32 / 64.0 * std::f32::consts::TAU;
-        mesh.colored_vertex(
-            center + egui::vec2(angle.cos() * radius, angle.sin() * radius * 0.8),
-            Color32::TRANSPARENT,
-        );
-        if i > 0 {
-            mesh.add_triangle(0, i, i + 1);
-        }
-    }
-    ui.painter().add(egui::Shape::mesh(mesh));
 }
 
 /// Small native line icons share one stroke and never depend on emoji fonts.

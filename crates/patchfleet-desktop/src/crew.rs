@@ -545,14 +545,15 @@ impl Console {
             .any(|project| {
                 text(project, "projectId") == self.create.project && revision(project) > 0
             });
-        let enabled = project
+        let enabled = studio::commands_ready(ui)
+            && project
             && valid_input(&goal, 20_000)
             && self.create.crew.pending.is_none()
             && self.create.pending.is_none();
         let clicked = ui
             .add_enabled_ui(enabled, |ui| submit(ui, "Plan crew", "project_crew_plan"))
             .inner;
-        if (clicked || (shortcut && enabled)) && commands.is_empty() {
+        if (clicked || (shortcut && enabled)) && studio::commands_ready(ui) && commands.is_empty() {
             let mut payload = json!({"projectId":self.create.project,"instruction":goal});
             if !self.create.ability.is_empty() {
                 payload["abilityId"] = json!(self.create.ability);
@@ -655,12 +656,13 @@ impl Console {
         let clicked = ui
             .add_enabled_ui(
                 payload.is_some()
+                    && studio::commands_ready(ui)
                     && self.create.crew.pending.is_none()
                     && self.create.pending.is_none(),
                 |ui| submit(ui, "Prepare crew", "project_crew_prepare"),
             )
             .inner;
-        if clicked && commands.is_empty() {
+        if clicked && studio::commands_ready(ui) && commands.is_empty() {
             if let Some(payload) = payload {
                 let command = Command::new(
                     if model.is_some() {
@@ -727,20 +729,17 @@ impl Console {
             .num_columns(columns)
             .spacing(egui::vec2(
                 studio::metrics::CONTROL_GAP,
-                studio::metrics::CONTROL_GAP,
+                studio::metrics::GAP,
             ))
             .show(ui, |ui| {
                 for (index, member) in plan.members.iter().enumerate() {
                     let role = text(member, "role");
                     let p = colors(ui);
-                    let accent = if role == "research" {
-                        p.info
-                    } else if role == "review" {
-                        p.success
-                    } else if role == "presentation" {
-                        p.warning
-                    } else {
-                        p.primary
+                    let accent = match role {
+                        "research" => p.info,
+                        "review" => p.success,
+                        "presentation" => p.warning,
+                        _ => p.primary,
                     };
                     let ability = array(&snapshot["abilities"])
                         .iter()
@@ -752,69 +751,47 @@ impl Console {
                             .map(|ability| text(ability, "category"))
                             .unwrap_or("connections")
                     };
+                    let capability = if role == "review" {
+                        t(ui, "Quality review")
+                    } else {
+                        ability
+                            .map(|ability| {
+                                std::borrow::Cow::Borrowed(ability_text(
+                                    ability,
+                                    "name",
+                                    Language::from_snapshot(snapshot),
+                                ))
+                            })
+                            .unwrap_or_else(|| t(ui, role_label(role)))
+                    };
                     let cell = ui.allocate_ui_with_layout(
-                        egui::vec2(width, studio::metrics::CONTROL_HEIGHT * 3.0),
+                        egui::vec2(width, 0.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
-                            studio::card(ui).show(ui, |ui| {
-                                ui.set_width(
-                                    (width - f32::from(studio::metrics::PADDING) * 2.0)
-                                        .max(studio::metrics::CONTROL_HEIGHT),
-                                );
-                                ui.set_min_height(
-                                    studio::metrics::CONTROL_HEIGHT * 3.0
-                                        - f32::from(studio::metrics::PADDING) * 2.0,
-                                );
-                                ui.spacing_mut().item_spacing.y = studio::metrics::GAP * 0.5;
-                                ui.spacing_mut().interact_size.y = 20.0;
+                            studio::card(ui).inner_margin(12).show(ui, |ui| {
+                                ui.set_width((width - 24.0).max(studio::metrics::CONTROL_HEIGHT));
                                 ui.horizontal(|ui| {
-                                    studio::icon(ui, icon, 20.0, accent);
-                                    ui.label(
-                                        RichText::new(t(ui, role_label(role)))
-                                            .size(12.0)
-                                            .color(accent),
-                                    );
+                                    studio::icon(ui, icon, 24.0, accent);
+                                    ui.vertical(|ui| {
+                                        ui.spacing_mut().item_spacing.y = 4.0;
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(text(member, "name"))
+                                                    .size(14.0)
+                                                    .strong(),
+                                            )
+                                            .truncate(),
+                                        )
+                                        .on_hover_text(text(member, "name"));
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(capability).size(12.0).color(accent),
+                                            )
+                                            .truncate(),
+                                        )
+                                        .on_hover_text(t(ui, role_label(role)));
+                                    });
                                 });
-                                ui.add(
-                                    egui::Label::new(
-                                        RichText::new(text(member, "name")).size(14.0).strong(),
-                                    )
-                                    .truncate(),
-                                )
-                                .on_hover_text(text(member, "name"));
-                                let capability = if role == "review" {
-                                    t(ui, "Quality review")
-                                } else {
-                                    ability
-                                        .map(|ability| {
-                                            std::borrow::Cow::Borrowed(ability_text(
-                                                ability,
-                                                "name",
-                                                Language::from_snapshot(snapshot),
-                                            ))
-                                        })
-                                        .unwrap_or_else(|| t(ui, role_label(role)))
-                                };
-                                ui.add(
-                                    egui::Label::new(
-                                        RichText::new(capability).size(12.0).color(p.muted),
-                                    )
-                                    .truncate(),
-                                );
-                                let description = if role == "review" {
-                                    t(ui, "Checks the deliverables against your goal.")
-                                } else {
-                                    ability
-                                        .map(|ability| {
-                                            std::borrow::Cow::Borrowed(ability_text(
-                                                ability,
-                                                "description",
-                                                Language::from_snapshot(snapshot),
-                                            ))
-                                        })
-                                        .unwrap_or_else(|| t(ui, role_label(role)))
-                                };
-                                short_copy(ui, &description, 12.0, p.muted, 2);
                             });
                         },
                     );
@@ -861,7 +838,7 @@ impl Console {
         } else {
             self.crew_roster_summary(ui, snapshot, true);
         }
-        ui.horizontal_wrapped(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             self.crew_prepare_action(ui, snapshot, commands);
             if self.create.has_conversation() {
                 if view_control(ui, "Review crew", true, false).clicked() {
@@ -873,7 +850,13 @@ impl Console {
         });
         hint(
             ui,
-            "Preparing saves the mission. Agents start only when you choose Start crew.",
+            if self.create.crew.pending.is_some() || !studio::commands_ready(ui) {
+                "Applying action…"
+            } else if self.create.crew_payload(snapshot).is_none() {
+                "Review the goal and roster before preparing."
+            } else {
+                "Preparing saves the mission. Agents start only when you choose Start crew."
+            },
         );
     }
 
@@ -1220,7 +1203,7 @@ impl Console {
         commands: &mut Vec<Command>,
     ) {
         let valid = text(mission, "projectId") == self.create.project && revision(mission) > 0;
-        ui.horizontal_wrapped(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if text(mission,"status")=="prepared" {
                 action(ui,commands,"Start crew","project_crew_start",valid && connect::crew_can_start(snapshot,mission),||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
             }
@@ -1476,6 +1459,7 @@ impl Console {
         if self.create.crew.message_request.as_ref() != Some(&key)
             && ui.is_enabled()
             && !self.hold_automatic_reads
+            && studio::commands_ready(ui)
             && commands.is_empty()
         {
             self.create.crew.message_request = Some(key);
@@ -1875,6 +1859,7 @@ impl Console {
         if !self.hold_automatic_reads
             && ui.is_enabled()
             && model.read_revision != Some(latest)
+            && studio::commands_ready(ui)
             && commands.is_empty()
         {
             self.create
@@ -2050,7 +2035,14 @@ impl Console {
             && answers
                 .iter()
                 .all(|answer| valid_input(text(answer, "answer"), 2000));
-        if view_control(ui, "Send answers & replan", enabled, true).clicked() {
+        if view_control(
+            ui,
+            "Send answers & replan",
+            enabled && studio::commands_ready(ui),
+            true,
+        )
+        .clicked()
+        {
             self.begin_model_plan(snapshot, commands, Some(json!(answers)));
         }
     }
@@ -2072,6 +2064,7 @@ impl Console {
         if !self.hold_automatic_reads
             && ui.is_enabled()
             && self.create.crew.workflow.read.as_ref() != Some(&read_key)
+            && studio::commands_ready(ui)
             && commands.is_empty()
         {
             self.create.crew.workflow.read = Some(read_key);
@@ -2182,13 +2175,13 @@ impl Console {
                             if ready{
                                 ui.add_space(f32::from(studio::metrics::PADDING));self.workflow_plan_request(ui,snapshot);
                                 let enabled=valid_input(&self.create.draft().goal,20_000)&&self.create.crew.workflow.request.is_none()&&self.create.resolved_planner_provider(snapshot).is_some();
-                                if view_control(ui,"Generate plan",enabled,false).clicked(){self.begin_model_plan(snapshot,commands,None);}
+                                if view_control(ui,"Generate plan",enabled && studio::commands_ready(ui),false).clicked(){self.begin_model_plan(snapshot,commands,None);}
                             }
                             ui.add_space(f32::from(studio::metrics::PADDING));ui.label(RichText::new(t(ui,"Saved plans")).strong());
                             for saved in workflow_values(snapshot,&project,"plans"){
                                 ui.push_id(text(saved,"planJobId"),|ui|ui.horizontal_wrapped(|ui|{
                                     ui.label(text(saved,"title"));status(ui,text(saved,"status"));
-                                    if view_control(ui,"Open plan",true,false).clicked()&&commands.is_empty(){
+                                    if view_control(ui,"Open plan",studio::commands_ready(ui),false).clicked()&&studio::commands_ready(ui)&&commands.is_empty(){
                                         let key=self.create.crew_key();self.create.crew.plans.remove(&key);
                                         self.create.crew.workflow.models.insert(key,ModelPlan{job:saved.clone(),draft:CreateDraft::default(),reply:None,answers:HashMap::new(),assignments:HashMap::new(),read_revision:None});
                                         commands.push(Command::new("project_crew_plan_read",json!({"projectId":project,"planJobId":saved["planJobId"]})));
@@ -2230,7 +2223,14 @@ impl Console {
                                 let enabled = valid_input(&self.create.draft().goal, 20_000)
                                     && self.create.crew.workflow.request.is_none()
                                     && self.create.resolved_planner_provider(snapshot).is_some();
-                                if view_control(ui, "Generate plan", enabled, true).clicked() {
+                                if view_control(
+                                    ui,
+                                    "Generate plan",
+                                    enabled && studio::commands_ready(ui),
+                                    true,
+                                )
+                                .clicked()
+                                {
                                     self.begin_model_plan(snapshot, commands, None);
                                 }
                             }
@@ -2253,7 +2253,19 @@ impl Console {
                                     egui::Label::new(
                                         RichText::new(t(
                                             ui,
-                                            "Prepare now. Start the crew when you’re ready.",
+                                            if self.create.crew.pending.is_some()
+                                                || !studio::commands_ready(ui)
+                                            {
+                                                "Applying action…"
+                                            } else if self.create.crew.workflow.request.is_some() {
+                                                "Waiting for planner confirmation…"
+                                            } else if self.create.crew.plans.contains_key(&key)
+                                                && self.create.crew_payload(snapshot).is_none()
+                                            {
+                                                "Review the goal and roster before preparing."
+                                            } else {
+                                                "Prepare now. Start the crew when you’re ready."
+                                            },
                                         ))
                                         .size(12.0)
                                         .color(colors(ui).muted),
@@ -2485,7 +2497,12 @@ impl Console {
         let enabled = text(mission, "status") == "active"
             && valid_input(&state.instruction, 20_000)
             && !affected.is_empty();
-        let response = view_control(ui, "Apply direction", enabled, true);
+        let response = view_control(
+            ui,
+            "Apply direction",
+            enabled && studio::commands_ready(ui),
+            true,
+        );
         #[cfg(test)]
         ui.data_mut(|data| {
             data.insert_temp(
@@ -2493,7 +2510,7 @@ impl Console {
                 response.rect,
             )
         });
-        if response.clicked() && commands.is_empty() {
+        if response.clicked() && studio::commands_ready(ui) && commands.is_empty() {
             commands.push(Command::new("project_crew_steer",json!({"projectId":self.create.project,"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"],"instruction":state.instruction.trim(),"affectedTaskIds":affected})));
         }
     }
@@ -2646,7 +2663,12 @@ impl Console {
             payload["instruction"] = json!(goal.trim());
         }
         ui.horizontal_wrapped(|ui| {
-            let response = view_control(ui, "Prepare recipe", revision(recipe) > 0, true);
+            let response = view_control(
+                ui,
+                "Prepare recipe",
+                revision(recipe) > 0 && studio::commands_ready(ui),
+                true,
+            );
             #[cfg(test)]
             ui.data_mut(|data| {
                 data.insert_temp(
@@ -2654,7 +2676,7 @@ impl Console {
                     response.rect,
                 )
             });
-            if response.clicked() && commands.is_empty() {
+            if response.clicked() && studio::commands_ready(ui) && commands.is_empty() {
                 commands.push(Command::new("project_recipe_run", payload));
             }
             if view_control(ui, "Schedule recipe", revision(recipe) > 0, false).clicked() {
@@ -2679,8 +2701,8 @@ impl Console {
         };
         let values = workflow_values(snapshot, &self.create.project, section);
         ui.push_id(("workflow-pages",section),|ui|ui.horizontal_wrapped(|ui| {
-            if control(ui,"Previous",offset>=20).clicked()&&commands.is_empty(){commands.push(Command::new("project_workflows_read",json!({"projectId":self.create.project,"section":section,"offset":offset.saturating_sub(20),"limit":20})));}
-            if control(ui,"Next",if same{page["nextOffset"].is_u64()}else{values.len()>=20}).clicked()&&commands.is_empty(){commands.push(Command::new("project_workflows_read",json!({"projectId":self.create.project,"section":section,"offset":page["nextOffset"].as_u64().filter(|_|same).unwrap_or(offset+20),"limit":20})));}
+            if control(ui,"Previous",studio::commands_ready(ui) && offset>=20).clicked()&&studio::commands_ready(ui)&&commands.is_empty(){commands.push(Command::new("project_workflows_read",json!({"projectId":self.create.project,"section":section,"offset":offset.saturating_sub(20),"limit":20})));}
+            if control(ui,"Next",studio::commands_ready(ui) && if same{page["nextOffset"].is_u64()}else{values.len()>=20}).clicked()&&studio::commands_ready(ui)&&commands.is_empty(){commands.push(Command::new("project_workflows_read",json!({"projectId":self.create.project,"section":section,"offset":page["nextOffset"].as_u64().filter(|_|same).unwrap_or(offset+20),"limit":20})));}
         }));
     }
     fn workflow_schedules(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -2891,7 +2913,10 @@ impl Console {
                 true,
                 || json!({"projectId":project,"section":section,"offset":state.offset,"limit":20}),
             );
-            if control(ui, "Previous", state.offset >= 20).clicked() && commands.is_empty() {
+            if control(ui, "Previous", state.offset >= 20).clicked()
+                && studio::commands_ready(ui)
+                && commands.is_empty()
+            {
                 state.offset = state.offset.saturating_sub(20);
                 commands.push(Command::new(
                     "project_workflows_read",
@@ -2906,6 +2931,7 @@ impl Console {
                     && page["nextOffset"].is_u64(),
             )
             .clicked()
+                && studio::commands_ready(ui)
                 && commands.is_empty()
             {
                 state.offset = page["nextOffset"].as_u64().unwrap_or(0) as usize;
@@ -2960,6 +2986,42 @@ mod tests {
             create: state,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn busy_context_keeps_local_goal_and_defers_automatic_workflow_reads() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let data = fixture();
+        let mut console = console();
+        console.create.select_productive_view(1);
+        console.create.crew.workflow.read = None;
+        let goal = console.create.draft().goal.clone();
+        for _ in 0..3 {
+            let (commands, _) = render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(800.0, 560.0),
+                true,
+                vec![],
+            );
+            assert!(commands.is_empty());
+            assert!(console.create.crew.workflow.read.is_none());
+            assert!(console.create.crew.pending.is_none());
+            assert_eq!(console.create.draft().goal, goal);
+        }
+        let (commands, _) = render(
+            &ctx,
+            &mut console,
+            &data,
+            egui::vec2(800.0, 560.0),
+            false,
+            vec![],
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_workflows_read");
+        assert_eq!(commands[0].payload["projectId"], "project:one");
     }
 
     #[test]

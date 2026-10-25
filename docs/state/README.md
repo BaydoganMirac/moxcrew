@@ -48,6 +48,7 @@
 | UI/UX research and design reference | Reference complete; native remediation delivered in Task0053 | 2026-10-25 | [ux-design-reference.md](ux-design-reference.md) |
 | UX rules in native screens and flows | Complete; 227 tests, 40 final native captures and local macOS development package | 2026-10-25 | [ux-rules-implementation.md](ux-rules-implementation.md) |
 | Desktop composition and artifact cleanup | Implemented; 229 tests, 17 final native captures; visual direction awaits owner judgment | 2026-10-25 | [desktop-composition-and-cleanup.md](desktop-composition-and-cleanup.md) |
+| Codex connection compatibility | Adapter repaired; real 0.163.0 observation verified; App update pending | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3
 paired Cloud visibility with remote cancel are complete.

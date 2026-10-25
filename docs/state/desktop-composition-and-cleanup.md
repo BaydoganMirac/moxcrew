@@ -2,7 +2,7 @@
 
 Updated: 2026-10-25
 
-Status: Implementation verified; mission-history capture refresh in progress
+Status: Implemented and locally verified; owner visual acceptance not asserted
 
 Plan: [Task0054](../plans/0054-desktop-composition-and-build-cleanup.md).
 Components: [UI kit](../../design/moxcrew/UI-KIT.md).
@@ -81,21 +81,25 @@ repository root, including cleanup/package manifests and final test/build logs.
 - Strict workspace/all-target/all-feature Clippy passes with `-D warnings`;
   formatting, changed Markdown links, token JSON and whitespace checks pass.
 - **17 final native fixture screenshots**, all processes exit 0:
-  `native-final/qa.json` records 15 cases (six TR/dark normal, six TR/dark minimum,
-  plus EN/light minimum offline, busy and output); `crew-final/qa.json` records
-  two additional normal/minimum Crew inspector images. The completed checkpoint
-  used clean source `ab2205c`; these sets are being refreshed after the mission
-  goal presentation correction. Each index records its source and binary/image hashes.
+  `native-verified/qa.json` records 15 cases (six TR/dark normal, six TR/dark minimum,
+  plus EN/light minimum offline, busy and output); `crew-verified/qa.json` records
+  two additional normal/minimum Crew inspector images. Both verified indexes
+  record clean source `c0050ff` (runtime `bfc250d` plus documentation), the debug
+  binary hash and individual image hashes.
 - The first capture pass exposed a wrapped rail language code and the missing
   gutter between conversation and inspector. Both were corrected, tested and
-  recaptured before handoff. Earlier `native/` evidence retains its own provenance.
+  recaptured before handoff. The additional mission-goal correction was also
+  keyboard-tested and recaptured. Earlier iteration directories retain their
+  original source provenance.
 - Native captures are framebuffer fixtures using disposable data, without live
   inference or provider/account probes. Loopback fixture tests and WindowServer
   captures required execution outside the restricted sandbox.
 
-Independent source and image review checks the changed layouts and command
-boundaries. The owner's evaluation of the visual result remains authoritative;
-passing rendering and behavior tests is not a premium-design acceptance claim.
+Independent read-only review of runtime `bfc250d` and all 17 verified images
+found no remaining actionable blocker, including in the mission goal disclosure
+and preserved real turns. The owner's evaluation of the visual result remains
+authoritative; passing rendering and behavior tests is not a premium-design
+acceptance claim.
 
 ## Limits
 

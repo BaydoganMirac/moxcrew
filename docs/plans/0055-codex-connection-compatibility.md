@@ -1,6 +1,6 @@
 # Task0055: Repair Codex connection diagnostics and observation
 
-Status: Implemented and live adapter verified; installed application update pending
+Status: Complete; installed App updated and live Codex observation verified
 
 Updated: 2026-10-25
 
@@ -37,5 +37,7 @@ Ten provider conformance tests, five extraction tests, seven provider-memory
 tests and 229 desktop tests pass. Strict workspace/all-target/all-feature Clippy
 passes. The updated adapter reports the real Codex provider available, observes
 20 recent sessions and confirms existing authentication without a model call.
+The owner authorized restarting the running App; the signed production build is
+installed and running with a fresh available Codex observation and no error.
 
 Current handoff: [Codex connection state](../state/codex-connection-compatibility.md).

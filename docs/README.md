@@ -73,6 +73,11 @@ shell/conversation/inspector changes and removal of obsolete generated builds
 and packages. It supersedes the earlier control density; no new package or
 installation was produced.
 
+[Codex connection compatibility](state/codex-connection-compatibility.md) fixes
+`CODEX_PROTOCOL_MALFORMED` caused by reading full conversation history during
+observation. The updated adapter and signed production App have been verified
+against the installed Codex 0.163.0; the state records the local App handoff.
+
 ## Execution records
 
 - [Plans](plans/) describe a bounded implementation slice and its acceptance

@@ -21,7 +21,7 @@ owner design acceptance. This slice changes the actual native composition.
 - Removed 31 obsolete paths under `dist/native`, including old App/DMG versions
   and the preceding Task0053 DMG. Retained only the existing
   `dist/native/ux-rules/Moxcrew.app` fallback (~17 MiB).
-- Filesystem free space reported by `df -h`: 5.7 GiB before, approximately 51 GiB
+- Filesystem free space reported by `df -h`: 5.7 GiB before, approximately 50 GiB
   after cleanup and final verification. This is actual filesystem availability,
   not the sum of logical file lengths.
 - Rebuilt only development/test artifacts with `CARGO_INCREMENTAL=0`,

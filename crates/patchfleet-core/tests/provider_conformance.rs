@@ -119,6 +119,45 @@ async fn supported_observation_is_bounded_and_sanitized() {
     assert_eq!(all[2]["provider"]["state"], "available");
 }
 #[tokio::test]
+async fn codex_observation_uses_one_metadata_only_turn_page_for_long_history() {
+    for (mode, status) in [
+        ("codex-paged-complete", "completed"),
+        ("codex-paged-running", "running"),
+        ("codex-paged-empty", "unknown"),
+    ] {
+        let all = providers::observe_with(&programs(mode)).await.unwrap();
+        assert_eq!(
+            all[0]["provider"]["state"], "available",
+            "{mode}: {}",
+            all[0]
+        );
+        assert_eq!(all[0]["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(all[0]["sessions"][0]["status"], status);
+        assert_eq!(
+            all[0]["sessions"][0]["terminalAt"].is_string(),
+            status == "completed"
+        );
+        let normalized = all[0].to_string();
+        for secret in ["SECRET", "/secret", "older-secret-cursor"] {
+            assert!(!normalized.contains(secret));
+        }
+    }
+    for mode in [
+        "codex-paged-bad-page",
+        "codex-paged-bad-status",
+        "codex-paged-oversize",
+    ] {
+        let all = providers::observe_with(&programs(mode)).await.unwrap();
+        assert_eq!(
+            all[0]["provider"]["error"]["code"],
+            "CODEX_PROTOCOL_MALFORMED"
+        );
+        assert!(all[0]["sessions"].as_array().unwrap().is_empty());
+        assert!(!all[0].to_string().contains("SECRET"));
+    }
+}
+
+#[tokio::test]
 async fn unavailable_malformed_timeout_are_safe() {
     let mut p = programs("codex-malformed");
     let all = providers::observe_with(&p).await.unwrap();

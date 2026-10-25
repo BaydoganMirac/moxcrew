@@ -1512,10 +1512,23 @@ async fn observe_codex(p: &Programs) -> Value {
     let result:Result<Value>=timeout(p.timeout.saturating_mul(2),async {
         let list=server.request("thread/list",json!({"archived":false,"limit":20,"sortDirection":"desc","sortKey":"recency_at","sourceKinds":["cli","vscode","exec","appServer"]})).await?;
         let entries=list["data"].as_array().ok_or("CODEX_PROTOCOL_MALFORMED")?;let mut seen=HashSet::new();let mut sessions=vec![];let mut system_error=false;
+        // 0.163's verified pagination omits transcript items; full history can exceed LIMIT.
+        let paged=at_least(&version,[0,163,0],true);
         for entry in entries.iter().take(20) {let id=entry["id"].as_str().filter(|s|opaque(s)).ok_or("CODEX_PROTOCOL_MALFORMED")?;if !seen.insert(id){return Err("CODEX_PROTOCOL_MALFORMED".into());}
-            let r=server.request("thread/read",json!({"threadId":id,"includeTurns":true})).await?;let t=&r["thread"];if t["id"]!=id {return Err("CODEX_PROTOCOL_MALFORMED".into());}
-            let turns=t["turns"].as_array().ok_or("CODEX_PROTOCOL_MALFORMED")?;let native=t["status"]["type"].as_str().ok_or("CODEX_PROTOCOL_MALFORMED")?;system_error|=native=="systemError";
-            let latest=turns.last();if latest.is_some_and(|l|!l["status"].is_string()){return Err("CODEX_PROTOCOL_MALFORMED".into());}
+            let r=if paged {
+                server.request("thread/turns/list",json!({"threadId":id,"limit":1,"sortDirection":"desc","itemsView":"notLoaded"})).await?
+            } else {
+                server.request("thread/read",json!({"threadId":id,"includeTurns":true})).await?
+            };
+            let (t,turns)=if paged {
+                let turns=r["data"].as_array().filter(|turns|turns.len()<=1).ok_or("CODEX_PROTOCOL_MALFORMED")?;
+                (entry,turns)
+            } else {
+                let t=&r["thread"];if t["id"]!=id {return Err("CODEX_PROTOCOL_MALFORMED".into());}
+                (t,t["turns"].as_array().ok_or("CODEX_PROTOCOL_MALFORMED")?)
+            };
+            let native=t["status"]["type"].as_str().ok_or("CODEX_PROTOCOL_MALFORMED")?;system_error|=native=="systemError";
+            let latest=if paged{turns.first()}else{turns.last()};if latest.is_some_and(|l|!l["status"].is_string()){return Err("CODEX_PROTOCOL_MALFORMED".into());}
             let status=match latest.and_then(|l|l["status"].as_str()){Some("completed")=>"completed",Some("failed")=>"failed",Some("interrupted")=>"interrupted",Some("inProgress")=>"running",_=>if native=="active"{"running"}else{"unknown"}};
             let mut session=json!({"providerSessionId":id,"status":status,"createdAt":seconds(&t["createdAt"]).ok_or("CODEX_PROTOCOL_MALFORMED")?,"lastObservedAt":observed_at});
             if status!="running"&&status!="unknown" {if let Some(at)=latest.and_then(|l|l.get("completedAt")).filter(|v|!v.is_null()){session["terminalAt"]=json!(seconds(at).ok_or("CODEX_PROTOCOL_MALFORMED")?);}}

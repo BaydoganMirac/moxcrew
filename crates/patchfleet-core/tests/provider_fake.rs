@@ -55,7 +55,9 @@ fn main() {
         } else {
             println!(
                 "codex-cli {}",
-                if mode.contains("auth-old") {
+                if mode.contains("paged") {
+                    "0.163.0"
+                } else if mode.contains("auth-old") {
                     "0.143.0"
                 } else if mode.contains("managed") {
                     "0.155.1"
@@ -142,8 +144,53 @@ fn main() {
             }
             send(&id, "{}");
         } else if line.contains("\"thread/list\"") {
-            send(&id, "{\"data\":[{\"id\":\"observed-thread\"}]}");
+            if mode.contains("paged") {
+                send(
+                    &id,
+                    r#"{"data":[{"id":"observed-thread","createdAt":1784160000,"status":{"type":"notLoaded"},"preview":"SECRET_PROMPT","cwd":"/secret/repo"}]}"#,
+                );
+            } else {
+                send(&id, "{\"data\":[{\"id\":\"observed-thread\"}]}");
+            }
+        } else if line.contains("\"thread/turns/list\"") {
+            assert!(mode.contains("paged"));
+            assert!(line.contains("\"limit\":1"));
+            assert!(line.contains("\"sortDirection\":\"desc\""));
+            assert!(line.contains("\"itemsView\":\"notLoaded\""));
+            assert!(line.contains("\"threadId\":\"observed-thread\""));
+            if mode.contains("empty") {
+                send(&id, r#"{"data":[],"nextCursor":null}"#);
+            } else if mode.contains("bad-page") {
+                send(
+                    &id,
+                    r#"{"data":[{"id":"one","status":"completed"},{"id":"two","status":"completed"}]}"#,
+                );
+            } else if mode.contains("bad-status") {
+                send(&id, r#"{"data":[{"id":"turn:one","status":null}]}"#);
+            } else if mode.contains("oversize") {
+                send(
+                    &id,
+                    &format!(r#"{{"data":[],"SECRET":"{}"}}"#, "X".repeat(300 * 1024)),
+                );
+            } else if mode.contains("running") {
+                send(
+                    &id,
+                    r#"{"data":[{"id":"turn:one","status":"inProgress","items":[]}],"nextCursor":"older-secret-cursor"}"#,
+                );
+            } else {
+                send(
+                    &id,
+                    r#"{"data":[{"id":"turn:one","status":"completed","completedAt":1784160020,"items":[]}],"nextCursor":"older-secret-cursor"}"#,
+                );
+            }
         } else if line.contains("\"thread/read\"") {
+            if mode.contains("paged") {
+                send(
+                    &id,
+                    &format!(r#"{{"SECRET_TRANSCRIPT":"{}"}}"#, "X".repeat(300 * 1024)),
+                );
+                continue;
+            }
             send(&id,"{\"thread\":{\"id\":\"observed-thread\",\"createdAt\":1784160000,\"status\":{\"type\":\"active\"},\"turns\":[{\"id\":\"observe-turn\",\"status\":\"inProgress\"}],\"preview\":\"SECRET_PROMPT\",\"cwd\":\"/secret/repo\"}}");
         } else if line.contains("\"thread/start\"") {
             assert!(line.contains("\"sandbox\":\"workspace-write\""));

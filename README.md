@@ -104,14 +104,16 @@ build is needed.
 
 | Platform | Download |
 |---|---|
-| macOS Apple Silicon | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
-| macOS Intel | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
-| Linux x64 / ARM64 | [Download AppImage or Deb](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
+| macOS Apple Silicon | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_macOS_Apple-Silicon.dmg) |
+| macOS Intel | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_macOS_Intel.dmg) |
+| Linux x64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_x86_64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_x86_64.deb) |
+| Linux ARM64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_aarch64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_aarch64.deb) |
 
 This is an unsigned public preview. macOS may show a Gatekeeper warning; verify
-the published SHA-256 checksums before opening an installer. Moxcrew never asks
-you to bypass protection with a terminal command. The Windows package is withheld
-until its native private-storage and installer gates pass.
+the published [SHA-256 checksums](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/SHA256SUMS.txt)
+before opening an installer. Moxcrew never asks you to bypass protection with a
+terminal command. The Windows package is withheld until its native
+private-storage and installer gates pass.
 
 For real planning or execution, install and authenticate at least one supported
 provider CLI separately. See [installation and recovery](docs/install.md) for

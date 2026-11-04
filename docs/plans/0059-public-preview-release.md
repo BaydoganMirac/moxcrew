@@ -1,6 +1,6 @@
 # Task0059: Public preview release
 
-Status: Owner-approved; implementation in progress
+Status: Complete; published as `v0.12.0`
 
 Updated: 2026-11-04
 
@@ -53,3 +53,9 @@ A later no-fail-fast Windows run exposed broader private-storage ACL/lock and
 platform-dependent desktop test failures. The release scope therefore narrows to
 the four passing macOS/Linux targets instead of presenting an unverified Windows
 installer as usable.
+
+The final tag points to commit `921db2132f407b4419c7c1c8d8f804ede3bacc84`.
+General CI run `41818496085` passed, and native run `41818496580` produced the
+four advertised platform artifacts while retaining the expected failing Windows
+evidence lane. Six installers and `SHA256SUMS.txt` were published in the GitHub
+pre-release and their anonymous download URLs returned HTTP 200.

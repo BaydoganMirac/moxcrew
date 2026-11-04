@@ -6,16 +6,19 @@ Updated: 2026-11-04
 
 ## Download
 
-Download the installer for your platform from the
-[Moxcrew 0.12.0 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0):
+Download the installer for your platform directly:
 
-- macOS Apple Silicon or Intel: DMG;
-- Linux x64 or ARM64: AppImage or Deb.
+- macOS: [Apple Silicon DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_macOS_Apple-Silicon.dmg)
+  or [Intel DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_macOS_Intel.dmg);
+- Linux x64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_x86_64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_x86_64.deb);
+- Linux ARM64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_aarch64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_aarch64.deb).
 
 No Rust, Node or source checkout is needed. Compare the installer's SHA-256
-digest with `SHA256SUMS.txt` on the release before opening it. Provider CLIs are
-separate: install and authenticate Codex, Claude Code or Gemini CLI according to
-the provider you intend to use.
+digest with the published [SHA256SUMS.txt](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/SHA256SUMS.txt)
+before opening it. Provider CLIs are separate: install and authenticate Codex,
+Claude Code or Gemini CLI according to the provider you intend to use.
 
 The Public Preview is not notarized with an Apple Developer ID. On macOS, use
 Finder's **Open** action or the explicit **Open Anyway** control in Privacy &
@@ -29,8 +32,8 @@ as a usable download until those gates pass.
 
 ## Application requirements
 
-- macOS 11+; Windows 10+ with suitable OpenGL drivers; or Linux with native
-  X11/Wayland and OpenGL runtime libraries. No WebView runtime is required.
+- macOS 11+, or Linux with native X11/Wayland and OpenGL runtime libraries. No
+  WebView runtime is required.
 - Provider CLIs installed separately. Their own Node/model/account requirements
   are independent of the Rust Moxcrew application.
 - Advertised macOS/Linux packages are built by the public release matrix.

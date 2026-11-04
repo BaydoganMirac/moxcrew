@@ -373,13 +373,13 @@ mod tests {
         ]);
         host.action(
             "project_artifact_review_set",
-            command(json!({"projectId":project,"workItemId":work,"path":"outputs/Özet_猫.md","expectedSha256":digest(b"Original document"),"status":"reviewed"})),
+            command(json!({"projectId":project,"workItemId":work,"path":"outputs/Özet_猫.md","expectedSha256":digest(b"Original document"),"status":"reviewed","note":"PRIVATE_REVIEW_NOTE_CANARY"})),
         )
         .await
         .unwrap();
         host.action(
             "project_artifact_review_set",
-            command(json!({"projectId":project,"workItemId":work,"path":"outputs/charts/Özet_猫.md","expectedSha256":digest(b"Different chart bytes"),"status":"needs_changes"})),
+            command(json!({"projectId":project,"workItemId":work,"path":"outputs/charts/Özet_猫.md","expectedSha256":digest(b"Different chart bytes"),"status":"needs_changes","note":"Keep this feedback local"})),
         )
         .await
         .unwrap();
@@ -432,6 +432,8 @@ mod tests {
         }
         let manifest_text = serde_json::to_string(&manifest).unwrap();
         assert!(!manifest_text.contains("PRIVATE_DELIVERY_PROMPT"));
+        assert!(!manifest_text.contains("PRIVATE_REVIEW_NOTE_CANARY"));
+        assert!(!manifest_text.contains("Keep this feedback local"));
         assert!(!manifest_text.contains(tmp.path().to_str().unwrap()));
         assert_eq!(
             fs::read(root.join("outputs/Özet_猫.md")).unwrap(),

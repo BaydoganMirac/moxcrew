@@ -391,6 +391,8 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "You marked this exact file version as reviewed." => "Bu dosyanın tam sürümünü incelendi olarak işaretledin.",
         "You marked this exact file version as needing changes." => "Bu dosyanın tam sürümünü değişiklik gerekiyor olarak işaretledin.",
         "This records your review; it does not verify factual or visual quality automatically." => "Bu kayıt senin inceleme kararındır; olgusal veya görsel kaliteyi otomatik doğrulamaz.",
+        "Review note (optional · local)" => "İnceleme notu (isteğe bağlı · yerel)",
+        "What should change or what did you verify?" => "Ne değişmeli veya neyi kontrol ettin?",
         "Mark reviewed" => "İncelendi olarak işaretle",
         "Needs changes" => "Değişiklik gerekiyor",
         "Clear review" => "İnceleme kararını temizle",

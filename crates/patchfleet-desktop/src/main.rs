@@ -341,7 +341,7 @@ fn seed_create_scene(directory: &std::path::Path) {
         if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("productive-review") {
             let page=host.action("project_studio_read",serde_json::json!({"projectId":created["projectId"]})).await.unwrap();
             let artifact=&page["artifacts"][0];
-            let reviewed=host.action("project_artifact_review_set",command::Command::new("project_artifact_review_set",serde_json::json!({"projectId":created["projectId"],"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"],"status":"reviewed"})).payload).await.unwrap();
+            let reviewed=host.action("project_artifact_review_set",command::Command::new("project_artifact_review_set",serde_json::json!({"projectId":created["projectId"],"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"],"status":"reviewed","note":"Kaynak kapsamını ve çıktı yapısını kontrol ettim."})).payload).await.unwrap();
             assert_eq!(reviewed["status"],"reviewed");
         }
         if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("productive-compare") {

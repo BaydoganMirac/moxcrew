@@ -73,7 +73,7 @@ fn fact(kind: &str, p: Value) -> Value {
 }
 fn review_fact(kind: &str, p: Value) -> Value {
     let mut e = event(kind, p);
-    e["schemaVersion"] = json!(15);
+    e["schemaVersion"] = json!(16);
     e
 }
 pub(crate) fn action_fields(action: &str) -> Option<&'static [&'static str]> {
@@ -90,6 +90,7 @@ pub(crate) fn action_fields(action: &str) -> Option<&'static [&'static str]> {
             "path",
             "expectedSha256",
             "status",
+            "note",
         ],
         "project_artifact_revise" => &[
             "projectId",
@@ -136,8 +137,8 @@ struct Active {
 }
 
 pub(crate) fn validate_event(e: &Value) -> Result<()> {
-    if e["schemaVersion"] == 15 {
-        return validate_review_event(e);
+    if e["schemaVersion"] == 15 || e["schemaVersion"] == 16 {
+        return validate_review_event(e, e["schemaVersion"] == 16);
     }
     if capabilities::validate_event(e)? {
         return Ok(());
@@ -333,26 +334,27 @@ pub(crate) fn validate_event(e: &Value) -> Result<()> {
     }
     require(serde_json::to_vec(p)?.len() <= 512 * 1024)
 }
-fn validate_review_event(e: &Value) -> Result<()> {
+fn validate_review_event(e: &Value, notes: bool) -> Result<()> {
     let p = &e["payload"];
     match e["type"].as_str().unwrap_or("") {
         "owner.command.requested" => {
             exact(p, &["commandId", "action", "payload"], &[])?;
             id(&p["commandId"], "cmd:")?;
             require(p["action"] == "project_artifact_review_set")?;
+            let required = [
+                "projectId",
+                "workItemId",
+                "path",
+                "expectedSha256",
+                "status",
+                "commandId",
+                "createdAt",
+                "expiresAt",
+            ];
             exact(
                 &p["payload"],
-                &[
-                    "projectId",
-                    "workItemId",
-                    "path",
-                    "expectedSha256",
-                    "status",
-                    "commandId",
-                    "createdAt",
-                    "expiresAt",
-                ],
-                &[],
+                &required,
+                if notes { &["note"] } else { &[] },
             )?;
             require(p["payload"]["commandId"] == p["commandId"])?;
             review_scope(&p["payload"])?;
@@ -363,26 +365,30 @@ fn validate_review_event(e: &Value) -> Result<()> {
             require(p["result"].is_object())?;
         }
         "project_studio.artifact_reviewed" => {
-            exact(
-                p,
-                &[
-                    "projectId",
-                    "commandId",
-                    "workItemId",
-                    "path",
-                    "sha256",
-                    "status",
-                ],
-                &[],
-            )?;
+            let mut required = vec![
+                "projectId",
+                "commandId",
+                "workItemId",
+                "path",
+                "sha256",
+                "status",
+            ];
+            if notes {
+                required.push("note");
+            }
+            exact(p, &required, &[])?;
             id(&p["commandId"], "cmd:")?;
-            review_scope(&json!({
+            let mut scope = json!({
                 "projectId":p["projectId"],
                 "workItemId":p["workItemId"],
                 "path":p["path"],
                 "expectedSha256":p["sha256"],
                 "status":p["status"]
-            }))?;
+            });
+            if notes {
+                scope["note"] = p["note"].clone();
+            }
+            review_scope(&scope)?;
         }
         _ => return Err(fail("PROJECT_ARTIFACT_REVIEW_EVENT_UNSUPPORTED")),
     }
@@ -395,7 +401,18 @@ fn review_scope(p: &Value) -> Result<()> {
     hash(&p["expectedSha256"])?;
     require(
         p["status"] == "reviewed" || p["status"] == "needs_changes" || p["status"] == "unreviewed",
-    )
+    )?;
+    let note = review_note(p)?;
+    require(p["status"] != "unreviewed" || note.is_empty())
+}
+fn review_note(p: &Value) -> Result<&str> {
+    match p.get("note") {
+        None => Ok(""),
+        Some(note) => note
+            .as_str()
+            .filter(|note| note.len() <= 4_000 && !note.contains('\0') && note.trim() == *note)
+            .ok_or_else(|| fail("PROJECT_STUDIO_INVALID")),
+    }
 }
 fn resource(r: &Value) -> Result<()> {
     exact(
@@ -475,7 +492,7 @@ fn owner_review_proof(events: &[Value], p: &Value) -> Result<Value> {
     let command = events
         .iter()
         .find(|e| {
-            e["schemaVersion"] == 15
+            (e["schemaVersion"] == 15 || e["schemaVersion"] == 16)
                 && e["type"] == "owner.command.requested"
                 && e["payload"]["commandId"] == p["commandId"]
         })
@@ -495,7 +512,7 @@ pub(crate) fn project(events: &[Value]) -> Result<Value> {
     let mut revisions = Vec::new();
     let mut revision = 0;
     for (i, e) in events.iter().enumerate().filter(|(_, e)| {
-        (e["schemaVersion"] == 12 || e["schemaVersion"] == 15)
+        (e["schemaVersion"] == 12 || e["schemaVersion"] == 15 || e["schemaVersion"] == 16)
             && e["type"]
                 .as_str()
                 .is_some_and(|s| s.starts_with("project_studio."))
@@ -511,11 +528,13 @@ pub(crate) fn project(events: &[Value]) -> Result<Value> {
             "project_studio.artifact_reviewed" => {
                 project_exists(prior, &p["projectId"])?;
                 let c = owner_review_proof(prior, p)?;
+                let note_matches = review_note(&c)? == review_note(p)?;
                 require(
                     c["workItemId"] == p["workItemId"]
                         && c["path"] == p["path"]
                         && c["expectedSha256"] == p["sha256"]
-                        && c["status"] == p["status"],
+                        && c["status"] == p["status"]
+                        && note_matches,
                 )?;
                 let key = (
                     text(p, "projectId")?.into(),
@@ -778,13 +797,13 @@ pub(crate) fn recovered_owner_result(events: &[Value], request: &Value) -> Optio
     }
     if action == "project_artifact_review_set" {
         let e = events.iter().find(|e| {
-            e["schemaVersion"] == 15
+            (e["schemaVersion"] == 15 || e["schemaVersion"] == 16)
                 && e["type"] == "project_studio.artifact_reviewed"
                 && e["payload"]["commandId"] == *command
                 && e["payload"]["projectId"] == request["payload"]["projectId"]
         })?;
         let p = &e["payload"];
-        return Some(json!({
+        let mut result = json!({
             "outcome":"applied",
             "reasonCode":"PROJECT_ARTIFACT_REVIEW_SET",
             "projectId":p["projectId"],
@@ -792,7 +811,11 @@ pub(crate) fn recovered_owner_result(events: &[Value], request: &Value) -> Optio
             "path":p["path"],
             "sha256":p["sha256"],
             "status":p["status"]
-        }));
+        });
+        if p.get("note").is_some() {
+            result["note"] = p["note"].clone();
+        }
+        return Some(result);
     }
     let expected = match action {
         "project_resource_import" => "project_studio.resource_imported",
@@ -1098,6 +1121,7 @@ impl Host {
                     return Err(fail("PROJECT_ARTIFACT_CHANGED"));
                 }
                 review_scope(p)?;
+                let note = review_note(p)?;
                 self.store.append(vec![review_fact(
                     "project_studio.artifact_reviewed",
                     json!({
@@ -1106,7 +1130,8 @@ impl Host {
                         "workItemId":p["workItemId"],
                         "path":p["path"],
                         "sha256":p["expectedSha256"],
-                        "status":p["status"]
+                        "status":p["status"],
+                        "note":note
                     }),
                 )])?;
                 Ok(json!({
@@ -1116,7 +1141,8 @@ impl Host {
                     "workItemId":p["workItemId"],
                     "path":p["path"],
                     "sha256":p["expectedSha256"],
-                    "status":p["status"]
+                    "status":p["status"],
+                    "note":note
                 }))
             }
             "project_artifact_revise" => {
@@ -1790,13 +1816,15 @@ mod tests {
         let first_hash = digest(first);
         let request = command(json!({
             "projectId":project,"workItemId":work,"path":path,
-            "expectedSha256":first_hash,"status":"reviewed"
+            "expectedSha256":first_hash,"status":"reviewed",
+            "note":"Checked structure and source coverage."
         }));
         let receipt = host
             .action("project_artifact_review_set", request.clone())
             .await
             .unwrap();
         assert_eq!(receipt["status"], "reviewed");
+        assert_eq!(receipt["note"], "Checked structure and source coverage.");
         assert_eq!(
             host.action("project_artifact_review_set", request.clone())
                 .await
@@ -1808,18 +1836,20 @@ mod tests {
         let owner = events
             .iter()
             .find(|e| {
-                e["schemaVersion"] == 15
+                e["schemaVersion"] == 16
                     && e["type"] == "owner.command.requested"
                     && e["payload"]["commandId"] == request["commandId"]
             })
             .unwrap();
         let mut wrong_version = owner.clone();
+        wrong_version["schemaVersion"] = json!(15);
+        assert!(domain::validate_event(&wrong_version).is_err());
         wrong_version["schemaVersion"] = json!(12);
         assert!(domain::validate_event(&wrong_version).is_err());
         let without_receipt = events
             .iter()
             .filter(|e| {
-                !(e["schemaVersion"] == 15
+                !(e["schemaVersion"] == 16
                     && e["type"] == "owner.command.receipted"
                     && e["payload"]["commandId"] == request["commandId"])
             })
@@ -1829,12 +1859,65 @@ mod tests {
             recovered_owner_result(&without_receipt, &owner["payload"]).unwrap(),
             receipt
         );
+        let legacy = events
+            .iter()
+            .cloned()
+            .map(|mut event| {
+                if event["schemaVersion"] == 16
+                    && event["payload"]["commandId"] == request["commandId"]
+                {
+                    event["schemaVersion"] = json!(15);
+                    if event["type"] == "owner.command.requested" {
+                        event["payload"]["payload"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("note");
+                    } else if event["type"] == "project_studio.artifact_reviewed" {
+                        event["payload"].as_object_mut().unwrap().remove("note");
+                    } else if event["type"] == "owner.command.receipted" {
+                        event["payload"]["result"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("note");
+                    }
+                }
+                event
+            })
+            .collect::<Vec<_>>();
+        let legacy_state = super::project(&legacy).unwrap();
+        assert_eq!(legacy_state["reviews"][0]["status"], "reviewed");
+        assert!(legacy_state["reviews"][0].get("note").is_none());
         let page = host
             .action("project_studio_read", json!({"projectId":project}))
             .await
             .unwrap();
         assert_eq!(page["reviews"][0]["sha256"], first_hash);
         assert_eq!(page["reviews"][0]["status"], "reviewed");
+        assert_eq!(
+            page["reviews"][0]["note"],
+            "Checked structure and source coverage."
+        );
+        for (status, note) in [
+            (
+                "unreviewed",
+                "A cleared review cannot keep a note".to_owned(),
+            ),
+            ("reviewed", " padded".to_owned()),
+            ("reviewed", "x".repeat(4_001)),
+        ] {
+            let before = host.store.read_events().unwrap().len();
+            assert_eq!(
+                host.action(
+                    "project_artifact_review_set",
+                    command(json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":first_hash,"status":status,"note":note})),
+                )
+                .await
+                .unwrap_err()
+                .0,
+                "PROJECT_STUDIO_INVALID"
+            );
+            assert_eq!(host.store.read_events().unwrap().len(), before);
+        }
 
         let other = host
             .action("project_create", command(json!({"name":"Other"})))
@@ -1863,7 +1946,7 @@ mod tests {
         let second_hash = digest(second);
         host.action(
             "project_artifact_review_set",
-            command(json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":second_hash,"status":"needs_changes"})),
+            command(json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":second_hash,"status":"needs_changes","note":"Clarify the final recommendation."})),
         )
         .await
         .unwrap();
@@ -1873,7 +1956,9 @@ mod tests {
             .iter()
             .any(|review| { review["sha256"] == first_hash && review["status"] == "reviewed" }));
         assert!(array(&state, "reviews").iter().any(|review| {
-            review["sha256"] == second_hash && review["status"] == "needs_changes"
+            review["sha256"] == second_hash
+                && review["status"] == "needs_changes"
+                && review["note"] == "Clarify the final recommendation."
         }));
         host.action(
             "project_artifact_review_set",

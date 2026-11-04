@@ -60,6 +60,9 @@ The owner can also record **reviewed** or **needs changes** for the exact
 Project/work/path/hash tuple. That durable human decision never becomes an
 automatic quality claim and a new version starts unreviewed. See
 [artifact owner review](state/exact-artifact-owner-review.md).
+An optional local note makes that exact decision actionable without entering the
+delivery ZIP or following a later hash. See
+[owner review notes](state/exact-owner-review-notes.md).
 Package selection carries the same exact-version decision forward: review
 coverage and risks remain visible, and the exported schema2 manifest records the
 status beside each checked hash without blocking a deliberate delivery. See

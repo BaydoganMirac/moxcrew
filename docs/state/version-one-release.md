@@ -16,7 +16,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 
 | Area | IDs | Current status |
 |---|---|---|
-| Research | R1–R5 | Frozen sources, bounded text extraction, literal-evidence claim reports with derived supported/disputed/unresolved states, and dated source-hashed line change reports with explicit no-change handling implemented; full research quality proof pending |
+| Research | R1–R5 | Frozen sources, bounded text extraction, attributed multi-source synthesis with preserved disagreements, literal-evidence claim reports with derived supported/disputed/unresolved states, and dated source-hashed line change reports with explicit no-change handling implemented; full research quality proof pending |
 | Documents | D1–D5 | DOCX creation/paragraph revision, attributed briefs, source-pinned translation/style rewrite with protected facts, and exact template filling; real LibreOffice open proof; PDF merge and broader semantic/layout quality pending |
 | Presentations | P1–P5 | Editable PPTX creation/slide revision; real LibreOffice open proof; full area pending |
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
@@ -135,6 +135,10 @@ source and does not claim semantic equivalence.
 disputed and explicitly unresolved claims. Every evidence quote is verified
 against a selected frozen source, statuses are derived locally and the report
 does not claim an automatic truth or source-quality score.
+[Task0080](attributed-multi-source-synthesis.md) adds deterministic R3 reports
+that require every selected source, at least one cross-source finding and
+literal source-distinct disagreement positions. An empty disagreement list is
+explicitly not treated as evidence of consensus.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

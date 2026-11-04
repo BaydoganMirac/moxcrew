@@ -10,7 +10,6 @@ Download the installer for your platform from the
 [Moxcrew 0.12.0 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0):
 
 - macOS Apple Silicon or Intel: DMG;
-- Windows x64: setup EXE or MSI;
 - Linux x64 or ARM64: AppImage or Deb.
 
 No Rust, Node or source checkout is needed. Compare the installer's SHA-256
@@ -18,12 +17,15 @@ digest with `SHA256SUMS.txt` on the release before opening it. Provider CLIs are
 separate: install and authenticate Codex, Claude Code or Gemini CLI according to
 the provider you intend to use.
 
-The Public Preview is not notarized with an Apple Developer ID and is not signed
-with a Windows publisher certificate. On macOS, use Finder's **Open** action or
-the explicit **Open Anyway** control in Privacy & Security after verifying the
-checksum. On Windows, inspect the SmartScreen details and publisher status before
-choosing to run it. Moxcrew does not require a shell command that disables an OS
-security feature.
+The Public Preview is not notarized with an Apple Developer ID. On macOS, use
+Finder's **Open** action or the explicit **Open Anyway** control in Privacy &
+Security after verifying the checksum. Moxcrew does not require a shell command
+that disables an OS security feature.
+
+Windows packages are intentionally withheld from 0.12.0 Public Preview. The
+experimental Windows lane exposed unresolved private-storage ACL/locking and
+native behavior test failures. A configured NSIS/MSI build is not being presented
+as a usable download until those gates pass.
 
 ## Application requirements
 
@@ -31,13 +33,14 @@ security feature.
   X11/Wayland and OpenGL runtime libraries. No WebView runtime is required.
 - Provider CLIs installed separately. Their own Node/model/account requirements
   are independent of the Rust Moxcrew application.
-- Native packages are built by the public release matrix. Publisher signing and
-  hands-on fresh-install/upgrade evidence remain production-release gates.
+- Advertised macOS/Linux packages are built by the public release matrix.
+  Publisher signing, Windows readiness and hands-on fresh-install/upgrade
+  evidence remain production-release gates.
 - Linux folder selection needs a working XDG desktop portal with a desktop
   backend, or Zenity as the fallback. The Deb declares these runtime packages;
   AppImage users need them supplied by their distribution. GTK is not bundled.
 
-Use the platform installer: macOS DMG/application, Windows NSIS/MSI, or Linux
+Use the advertised platform installer: macOS DMG/application or Linux
 Deb/AppImage. The public artifacts are produced from the exact tagged source by
 the repository's native CI and published with checksums.
 

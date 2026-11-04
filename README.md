@@ -106,13 +106,12 @@ build is needed.
 |---|---|
 | macOS Apple Silicon | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
 | macOS Intel | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
-| Windows x64 | [Download setup EXE or MSI](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
 | Linux x64 / ARM64 | [Download AppImage or Deb](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
 
-This is an unsigned public preview. macOS may show a Gatekeeper warning and
-Windows may show a SmartScreen warning; verify the published SHA-256 checksums
-before opening an installer. Moxcrew never asks you to bypass protection with a
-terminal command.
+This is an unsigned public preview. macOS may show a Gatekeeper warning; verify
+the published SHA-256 checksums before opening an installer. Moxcrew never asks
+you to bypass protection with a terminal command. The Windows package is withheld
+until its native private-storage and installer gates pass.
 
 For real planning or execution, install and authenticate at least one supported
 provider CLI separately. See [installation and recovery](docs/install.md) for
@@ -121,11 +120,11 @@ platform steps, data locations, upgrades and rollback. Contributors can still
 
 ## Current status
 
-Moxcrew 0.12.0 is an active Public Preview. CI builds and checks native artifacts
-for macOS, Windows and Linux. Publisher-signed distribution, live quality
-evidence across every provider/capability and moderated usability testing remain
-production-release gates. Windows result listing, preview and export are not yet
-available; text-only work remains supported.
+Moxcrew 0.12.0 is an active Public Preview for macOS and Linux. CI builds and
+checks those native artifacts while retaining a visible experimental Windows
+lane. Publisher-signed distribution, a passing Windows private-storage/runtime
+gate, live quality evidence across every provider/capability and moderated
+usability testing remain production-release gates.
 
 The repository intentionally separates implemented behavior from future scope:
 

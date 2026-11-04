@@ -58,13 +58,6 @@ impl Tab {
             Self::Cloud => "Cloud",
         }
     }
-    fn group(self) -> &'static str {
-        match self {
-            Self::Create | Self::Projects | Self::Work | Self::Teams => "YOUR WORK",
-            Self::Memory | Self::Decisions => "KNOWLEDGE",
-            Self::Agents | Self::Providers | Self::Cloud => "SYSTEM",
-        }
-    }
     fn summary(self) -> &'static str {
         match self {
             Self::Create => "Turn an idea into project work. Review what your agent creates.",
@@ -981,7 +974,11 @@ impl Console {
             && ui.ctx().viewport_rect().width() < 1000.0;
         egui::Panel::left("console-navigation")
             .resizable(false)
-            .exact_size(if compact_navigation { 64.0 } else { 208.0 })
+            .exact_size(if compact_navigation {
+                studio::metrics::NAV_RAIL_WIDTH
+            } else {
+                studio::metrics::NAV_WIDTH
+            })
             .frame(egui::Frame::new().fill(colors(ui).surface).inner_margin(
                 if compact_navigation {
                     8
@@ -1002,10 +999,9 @@ impl Console {
                     ui.vertical(|ui| {
                         ui.label(studio::title("Moxcrew", 18.0));
                         ui.label(
-                            RichText::new(t(ui, "LOCAL STUDIO"))
+                            RichText::new(t(ui, "Local workspace"))
                                 .size(12.0)
-                                .color(colors(ui).muted)
-                                .extra_letter_spacing(1.8),
+                                .color(colors(ui).muted),
                         );
                     });
                 });
@@ -1113,7 +1109,7 @@ impl Console {
                                     if snapshot["cloud"]["paired"] == true {
                                         "Your account"
                                     } else {
-                                        "Sign in · optional"
+                                        "Optional sign-in"
                                     },
                                     true,
                                 )
@@ -1143,44 +1139,15 @@ impl Console {
             ))
             .show(ui, |ui| {
                 if self.tab != Tab::Create {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(t(ui, self.tab.group()))
-                                .size(12.0)
-                                .color(colors(ui).muted)
-                                .extra_letter_spacing(1.2),
-                        );
-                        ui.label(RichText::new("/").size(12.0).color(colors(ui).border));
-                        ui.label(
-                            RichText::new(t(ui, self.tab.name()))
-                                .size(12.0)
-                                .color(colors(ui).text),
-                        );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if busy {
-                                ui.label(
-                                    RichText::new(t(ui, "Applying action…"))
-                                        .size(12.0)
-                                        .color(colors(ui).primary),
-                                );
-                            } else {
-                                ui.label(
-                                    RichText::new(t(ui, "Free · Local"))
-                                        .size(12.0)
-                                        .color(colors(ui).muted),
-                                );
-                            }
-                        });
-                    });
-                }
-                if self.tab != Tab::Create {
-                    ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
-                        8.0
-                    } else {
-                        16.0
-                    });
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(studio::title(t(ui, self.tab.name()), 24.0));
+                        ui.label(studio::title(
+                            t(ui, self.tab.name()),
+                            if ui.ctx().viewport_rect().height() < 700.0 {
+                                24.0
+                            } else {
+                                28.0
+                            },
+                        ));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if self.tab == Tab::Projects {
                                 if control(ui, "Quick start", !busy).clicked() {
@@ -1208,26 +1175,44 @@ impl Console {
                                     || json!({}),
                                 );
                             }
+                            ui.label(
+                                RichText::new(t(
+                                    ui,
+                                    if busy {
+                                        "Applying action…"
+                                    } else {
+                                        "Free. Local."
+                                    },
+                                ))
+                                .size(12.0)
+                                .color(if busy {
+                                    colors(ui).primary
+                                } else {
+                                    colors(ui).muted
+                                }),
+                            );
                         });
                     });
-                    ui.add_space(4.0);
+                    ui.add_space(6.0);
                     ui.label(
                         RichText::new(i18n::tr_for_snapshot(snapshot, self.tab.summary()))
-                            .size(12.0)
+                            .size(14.0)
                             .color(colors(ui).muted),
                     );
                     ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
                         8.0
                     } else {
-                        18.0
+                        14.0
                     });
+                    let (marker, _) =
+                        ui.allocate_exact_size(egui::vec2(64.0, 3.0), egui::Sense::hover());
+                    ui.painter().rect_filled(marker, 0, colors(ui).accent);
                 }
                 if self.tab != Tab::Create {
-                    ui.separator();
                     ui.add_space(if ui.ctx().viewport_rect().height() < 700.0 {
                         12.0
                     } else {
-                        20.0
+                        18.0
                     });
                 }
                 if let Some(notice) = notice {
@@ -1573,7 +1558,7 @@ impl Console {
                 if linked.is_empty() {
                     self.project_folders(ui, project, snapshot, commands);
                 } else {
-                    card(ui, |ui| {
+                    guide_surface(ui, |ui| {
                         hint(ui, "Choose a linked folder for this walkthrough.");
                         choose_refs(
                             ui,
@@ -1587,7 +1572,7 @@ impl Console {
                     });
                 }
             }
-            2 => card(ui, |ui| {
+            2 => guide_surface(ui, |ui| {
                 section_title(
                     ui,
                     "Check Codex",
@@ -1605,7 +1590,7 @@ impl Console {
                 hint(ui, "Compatibility does not confirm provider sign-in. Project memory needs Codex 0.155.1 or later.");
             }),
             3 => {
-                card(ui, |ui| {
+                guide_surface(ui, |ui| {
                     section_title(
                         ui,
                         "Start your first task",
@@ -1644,7 +1629,7 @@ impl Console {
                     hint(ui, "Adding to the queue does not start a task. Only an applied start completes this guide.");
                 });
             }
-            _ => card(ui, |ui| {
+            _ => guide_surface(ui, |ui| {
                 section_title(
                     ui,
                     "First task started",
@@ -1679,7 +1664,7 @@ impl Console {
         if projects.is_empty() {
             if ui.ctx().viewport_rect().height() >= 700.0 {
                 ui.label(
-                    RichText::new(t(ui, "YOUR LOCAL WORKSPACE"))
+                    RichText::new(t(ui, "Your local workspace"))
                         .size(12.0)
                         .color(colors(ui).primary),
                 );
@@ -1717,38 +1702,30 @@ impl Console {
                 .iter()
                 .map(|p| p["acceptedCount"].as_u64().unwrap_or(0))
                 .sum::<u64>();
-            ui.columns(3, |columns| {
-                for (column, (label, count, icon)) in columns.iter_mut().zip([
-                    ("Projects", projects.len() as u64, Tab::Projects),
-                    ("Local folders", workspaces.len() as u64, Tab::Work),
-                    ("Accepted decisions", accepted, Tab::Decisions),
-                ]) {
-                    studio_metric(column, label, count, icon);
-                }
-            });
+            egui::Frame::new()
+                .fill(colors(ui).surface)
+                .inner_margin(16)
+                .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
+                    ui.columns(3, |columns| {
+                        for (column, (label, count, icon)) in columns.iter_mut().zip([
+                            ("Projects", projects.len() as u64, Tab::Projects),
+                            ("Local folders", workspaces.len() as u64, Tab::Work),
+                            ("Accepted decisions", accepted, Tab::Decisions),
+                        ]) {
+                            studio_metric(column, label, count, icon);
+                        }
+                    });
+                });
             ui.add_space(24.0);
-            ui.horizontal(|ui| {
-                hint(
-                    ui,
-                    &localized_format!(
-                        ui,
-                        "{0} projects · {1} local folders",
-                        projects.len(),
-                        workspaces.len()
-                    ),
-                );
-            });
-            ui.add_space(16.0);
-            let columns = if ui.available_width() >= 940.0 && projects.len() > 1 {
-                2
-            } else {
-                1
-            };
+            ui.label(studio::title(t(ui, "Project ledger"), 20.0));
+            ui.add_space(8.0);
+            let columns = 1;
             for row in projects.chunks(columns) {
                 ui.columns(columns, |columns| {
                     for (project, ui) in row.iter().zip(columns.iter_mut()) {
                         ui.push_id(text(project, "projectId"), |ui| {
-                            card(ui, |ui| {
+                            studio::ledger_row(ui, colors(ui).primary, false, |ui| {
                                 ui.horizontal(|ui| {
                                     let (rect, _) = ui.allocate_exact_size(
                                         egui::vec2(34.0, 34.0),
@@ -1777,20 +1754,19 @@ impl Console {
                                                     ui.add(
                                                         egui::Label::new(studio::title(
                                                             text(project, "name"),
-                                                            20.0,
+                                                            24.0,
                                                         ))
                                                         .truncate(),
                                                     )
                                                     .on_hover_text(text(project, "name"));
                                                     hint(
                                                         ui,
-                                                        &localized_format!(
+                                                        &project_count_summary(
                                                             ui,
-                                                            "{0} folders · {1} sources",
                                                             array(&project["workspaceIds"]).len(),
                                                             project["sourceCount"]
                                                                 .as_u64()
-                                                                .unwrap_or(0)
+                                                                .unwrap_or(0),
                                                         ),
                                                     );
                                                 },
@@ -1807,7 +1783,7 @@ impl Console {
                                         ui,
                                         &localized_format!(
                                             ui,
-                                            "Revision {0} · created {1}",
+                                            "Revision {0}. Created {1}.",
                                             revision(project),
                                             format_time(ui, text(project, "createdAt"))
                                         ),
@@ -1860,7 +1836,7 @@ impl Console {
         ui.add_space(16.0);
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(t(ui, "LOCAL FOLDERS"))
+                RichText::new(t(ui, "Local folders"))
                     .size(12.0)
                     .color(colors(ui).muted),
             );
@@ -1976,7 +1952,7 @@ impl Console {
     }
 
     fn create_project_form(&mut self, ui: &mut Ui, commands: &mut Vec<Command>) {
-        card(ui, |ui| {
+        guide_surface(ui, |ui| {
             section_title(
                 ui,
                 "Project",
@@ -2281,11 +2257,16 @@ impl Console {
                     })
             {
                 ui.push_id(text(source, "sourceId"), |ui| {
-                    card(ui, |ui| {
+                    let accent = if text(source, "kind") == "message" {
+                        colors(ui).accent
+                    } else {
+                        colors(ui).primary
+                    };
+                    studio::ledger_row(ui, accent, false, |ui| {
                         ui.horizontal_wrapped(|ui| {
                             ui.label(
                                 RichText::new(text(source, "title"))
-                                    .size(14.0)
+                                    .size(15.0)
                                     .strong()
                                     .color(colors(ui).text),
                             );
@@ -3089,46 +3070,31 @@ impl Console {
         {
             ui.push_id(text(decision, "decisionId"), |ui| {
                 let selected = self.decisions.selected == text(decision, "decisionId");
-                egui::Frame::new()
-                    .fill(if selected {
-                        colors(ui).info_surface
-                    } else {
-                        colors(ui).surface
-                    })
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        if selected {
-                            colors(ui).primary
-                        } else {
-                            colors(ui).border
-                        },
-                    ))
-                    .corner_radius(studio::metrics::CARD_RADIUS)
-                    .inner_margin(studio::metrics::PADDING)
-                    .show(ui, |ui| {
-                        ui.set_min_width((ui.available_width() - 1.0).max(0.0));
-                        ui.label(
-                            RichText::new(text(decision, "title"))
-                                .size(14.0)
-                                .strong()
-                                .color(colors(ui).text),
-                        );
-                        ui.horizontal_wrapped(|ui| {
-                            status(ui, text(decision, "status"));
-                            hint(
+                let accent = state_accent(ui, text(decision, "status"));
+                studio::ledger_row(ui, accent, selected, |ui| {
+                    ui.set_min_width((ui.available_width() - 1.0).max(0.0));
+                    ui.label(
+                        RichText::new(text(decision, "title"))
+                            .size(15.0)
+                            .strong()
+                            .color(colors(ui).text),
+                    );
+                    ui.horizontal_wrapped(|ui| {
+                        status(ui, text(decision, "status"));
+                        hint(
+                            ui,
+                            &localized_format!(
                                 ui,
-                                &localized_format!(
-                                    ui,
-                                    "{0} sources",
-                                    decision["sourceCount"].as_u64().unwrap_or(0)
-                                ),
-                            );
-                        });
-                        if control(ui, "Open decision", !self.hold_automatic_reads).clicked() {
-                            self.decisions.selected = text(decision, "decisionId").to_owned();
-                            self.decisions.replacement.clear();
-                        }
+                                "{0} sources",
+                                decision["sourceCount"].as_u64().unwrap_or(0)
+                            ),
+                        );
                     });
+                    if control(ui, "Open decision", !self.hold_automatic_reads).clicked() {
+                        self.decisions.selected = text(decision, "decisionId").to_owned();
+                        self.decisions.replacement.clear();
+                    }
+                });
             });
             ui.add_space(8.0);
         }
@@ -3164,7 +3130,9 @@ impl Console {
             return;
         }
         let decision = &detail["decision"];
-        card(ui, |ui| {
+        let accent = state_accent(ui, text(decision, "status"));
+        studio::accent_surface(ui, accent, |ui| {
+            ui.set_min_width((ui.available_width() - 1.0).max(0.0));
             ui.label(
                 RichText::new(text(decision, "title"))
                     .size(20.0)
@@ -3559,7 +3527,13 @@ impl Console {
         let cloud = &snapshot["cloud"];
         let connected = cloud["paired"] == true && cloud["error"] != true;
         let remap = text(metadata, "state") == "connection_changed";
-        card(ui, |ui| {
+        let accent = if connected {
+            colors(ui).success
+        } else {
+            colors(ui).primary
+        };
+        studio::accent_surface(ui, accent, |ui| {
+            ui.set_min_width((ui.available_width() - 1.0).max(0.0));
             ui.horizontal_wrapped(|ui| {
                 status(ui, shared_role_label(text(metadata, "role")));
                 status(ui, shared_state_label(text(metadata, "state")));
@@ -3721,7 +3695,8 @@ impl Console {
         if self.shared.page_matches(page, metadata, global) {
             for record in array(&page["decisions"]).iter().take(10) {
                 ui.push_id(text(record, "decisionId"), |ui| {
-                    card(ui, |ui| {
+                    let selected = self.shared.selected == text(record, "decisionId");
+                    studio::ledger_row(ui, colors(ui).primary, selected, |ui| {
                         ui.label(
                             RichText::new(text(record, "title"))
                                 .strong()
@@ -3776,7 +3751,13 @@ impl Console {
                 ui.scroll_to_cursor(Some(egui::Align::TOP));
                 self.shared_smoke_focus = false;
             }
-            card(ui, |ui| {
+            let accent = if detail["current"] == true {
+                colors(ui).success
+            } else {
+                colors(ui).muted
+            };
+            studio::accent_surface(ui, accent, |ui| {
+                ui.set_min_width((ui.available_width() - 1.0).max(0.0));
                 status(
                     ui,
                     if detail["current"] == true {
@@ -3888,7 +3869,7 @@ impl Console {
         let ready = codex_ready(snapshot);
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(t(ui, "TASK QUEUE"))
+                RichText::new(t(ui, "Task queue"))
                     .size(12.0)
                     .color(colors(ui).muted),
             );
@@ -3924,7 +3905,7 @@ impl Console {
                 }
                 ui.label(localized_format!(
                     ui,
-                    "Page {0} of {1} · {2} tasks",
+                    "Page {0} of {1}. {2} tasks.",
                     self.work_page + 1,
                     page_count,
                     list.len()
@@ -3942,7 +3923,7 @@ impl Console {
             });
         }
         for item in list.iter().skip(self.work_page * 25).take(25) {
-            ui.push_id(text(item,"workItemId"), |ui| card(ui, |ui| {
+            ui.push_id(text(item,"workItemId"), |ui| studio::ledger_row(ui, state_accent(ui,text(item,"status")), false, |ui| {
                 ui.horizontal_wrapped(|ui| {ui.strong(text(item,"title"));status(ui,text(item,"status"));});
                 let workspace = items(&snapshot["workspaces"]).iter().find(|w| w["workingDirectory"]==item["workingDirectory"]);
                 if let Some(workspace)=workspace {raw_hint(ui,text(workspace,"displayName"));}
@@ -3951,7 +3932,7 @@ impl Console {
                 } else {hint(ui,"Unregistered worktree");}
                 let run = array(&work["runs"]).iter().rev().find(|r|r["workItemId"]==item["workItemId"]);
                 if let Some(memory) = array(&snapshot["agentMemory"]["contexts"]).iter().rev().find(|r|r["workItemId"]==item["workItemId"]) {
-                    hint(ui,&localized_format!(ui,"Project memory · start {0} · current {1}",memory["decisionRevision"].as_u64().unwrap_or(0),memory["currentDecisionRevision"].as_u64().unwrap_or(0)));
+                    hint(ui,&localized_format!(ui,"Project memory at start: {0}. Current: {1}.",memory["decisionRevision"].as_u64().unwrap_or(0),memory["currentDecisionRevision"].as_u64().unwrap_or(0)));
                     if memory["issue"] == "AGENT_MEMORY_UNSUPPORTED" {
                         hint(ui,"Update Codex to 0.155.1 or later to connect project memory.");
                     } else if !memory["issue"].is_null() {
@@ -3964,7 +3945,7 @@ impl Console {
                         hint(ui,"Project context is bound to this run.");
                     }
                 }
-                ui.collapsing(t(ui, "Local task details"),|ui| {ui.monospace(text(item,"workingDirectory"));ui.label(text(item,"instruction"));if let Some(run)=run {ui.monospace(localized_format!(ui, "Run {0} · turn {1}",text(run,"runId"),text(run,"providerTurnId")));}});
+                ui.collapsing(t(ui, "Local task details"),|ui| {ui.monospace(text(item,"workingDirectory"));ui.label(text(item,"instruction"));if let Some(run)=run {ui.monospace(localized_format!(ui, "Run {0}. Turn {1}.",text(run,"runId"),text(run,"providerTurnId")));}});
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
                     if text(item,"status")=="queued" {
@@ -4002,7 +3983,9 @@ impl Console {
         });
     }
     fn work_composer(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
-        card(ui, |ui| {
+        let accent = colors(ui).accent;
+        studio::accent_surface(ui, accent, |ui| {
+            ui.set_min_width((ui.available_width() - 1.0).max(0.0));
             section_title(ui, "New task", "One clear outcome for Codex.");
             ui.add_space(16.0);
             field(ui, "Task name", &mut self.work.title, 160, false);
@@ -4107,9 +4090,9 @@ impl Console {
             );
         }
         for team in teams {
-            ui.push_id(text(team,"teamId"),|ui|card(ui,|ui| {
+            ui.push_id(text(team,"teamId"),|ui|studio::ledger_row(ui,state_accent(ui,text(team,"status")),false,|ui| {
             ui.horizontal_wrapped(|ui|{ui.label(studio::title(text(team,"name"),20.0));status(ui,text(team,"status"));});
-            ui.label(text(team,"goal"));hint(ui,&localized_format!(ui, "{0} · concurrency {1} · {2} retries",t(ui,&text(team,"templateId").replace('-'," ")),team["settings"]["concurrency"],team["settings"]["retryLimit"]));
+            ui.label(text(team,"goal"));hint(ui,&localized_format!(ui, "{0}. Concurrency {1}. {2} retries.",t(ui,&text(team,"templateId").replace('-'," ")),team["settings"]["concurrency"],team["settings"]["retryLimit"]));
             ui.add_space(12.0);
             let active=matches!(text(team,"status"),"active"|"waiting");
             ui.horizontal_wrapped(|ui| {
@@ -4123,7 +4106,7 @@ impl Console {
                 if task["status"] == "queued" && array(&snapshot["work"]["receipts"]).iter().rev().find(|r|r["commandType"]=="start_work" && r["workItemId"]==task["workItemId"]).is_some_and(|r|r["outcome"]!="applied") {
                     hint(ui,"Start failed. Fix the provider connection, then start this task from Work. Automatic retries are paused.");
                 }
-                hint(ui,&localized_format!(ui, "{0} · attempt {1}/{2}",agent.map(|a|catalog_text(ui,&a["pack"],"name")).unwrap_or_else(||t(ui,"Unassigned")),task["attempt"],task["maxAttempts"]));
+                hint(ui,&localized_format!(ui, "{0}. Attempt {1}/{2}.",agent.map(|a|catalog_text(ui,&a["pack"],"name")).unwrap_or_else(||t(ui,"Unassigned")),task["attempt"],task["maxAttempts"]));
                 if active&&text(task,"status")=="waiting_question"&&!task["question"].is_null() {
                     let q=&task["question"];let key=format!("{}:{}",text(team,"teamId"),text(q,"questionId"));
                     let answer=self.answers.entry(key).or_default();let max=q["maxAnswerLength"].as_u64().unwrap_or(1000).min(50_000) as usize;
@@ -4153,7 +4136,7 @@ impl Console {
 
     fn team_direction(&mut self, ui: &mut Ui, snapshot: &Value) {
         ui.label(
-            RichText::new(t(ui, "01 / DIRECTION"))
+            RichText::new(t(ui, "01 / Direction"))
                 .size(12.0)
                 .color(colors(ui).primary),
         );
@@ -4180,7 +4163,7 @@ impl Console {
 
     fn team_roles(&mut self, ui: &mut Ui, snapshot: &Value) {
         ui.label(
-            RichText::new(t(ui, "02 / TEAM & LIMITS"))
+            RichText::new(t(ui, "02 / Team and limits"))
                 .size(12.0)
                 .color(colors(ui).primary),
         );
@@ -4245,20 +4228,21 @@ impl Console {
             &localized_format!(ui, "{0} inspectable local packs", packs.len()),
         );
         ui.add_space(12.0);
-        let column_count = if ui.available_width() >= 1000.0 {
-            3
-        } else if ui.available_width() >= 620.0 {
-            2
-        } else {
-            1
-        };
+        ui.label(studio::title(t(ui, "Crew catalog"), 20.0));
+        ui.add_space(8.0);
+        let column_count = 1;
         for row in packs.chunks(column_count) {
             ui.columns(column_count, |columns| {
                 for (pack, ui) in row.iter().zip(columns.iter_mut()) {
                     ui.push_id(text(pack, "id"), |ui| {
-                        card(ui, |ui| {
+                        let accent = if text(pack, "role") == "orchestrator" {
+                            colors(ui).accent
+                        } else {
+                            colors(ui).primary
+                        };
+                        studio::ledger_row(ui, accent, false, |ui| {
                             ui.horizontal_wrapped(|ui| {
-                                ui.label(studio::title(catalog_text(ui, pack, "name"), 20.0));
+                                ui.label(studio::title(catalog_text(ui, pack, "name"), 24.0));
                                 status(ui, text(pack, "role"));
                                 hint(ui, text(&pack["provenance"], "kind"));
                             });
@@ -4268,7 +4252,7 @@ impl Console {
                                 |ui| {
                                     ui.label(localized_format!(
                                         ui,
-                                        "Provider: {0} · {1} minutes · {2} attempts",
+                                        "Provider: {0}. {1} minutes. {2} attempts.",
                                         text(pack, "providerId"),
                                         pack["limits"]["timeoutMinutes"],
                                         pack["limits"]["maxAttempts"]
@@ -4311,7 +4295,9 @@ impl Console {
             ui.add_space(12.0);
         }
         ui.add_space(12.0);
-        card(ui, |ui| {
+        let accent = colors(ui).accent;
+        studio::accent_surface(ui, accent, |ui| {
+            ui.set_min_width((ui.available_width() - 1.0).max(0.0));
             ui.label(studio::title(t(ui, "Install a custom pack"), 20.0));
             multiline(
                 ui,
@@ -4345,9 +4331,10 @@ impl Console {
         for observation in observations {
             let provider = &observation["provider"];
             ui.push_id(text(provider, "id"), |ui| {
-                card(ui, |ui| {
+                let accent = state_accent(ui, text(provider, "state"));
+                studio::ledger_row(ui, accent, false, |ui| {
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(studio::title(text(provider, "displayName"), 20.0));
+                        ui.label(studio::title(text(provider, "displayName"), 24.0));
                         status(ui, text(provider, "state"));
                     });
                     hint(
@@ -4363,7 +4350,7 @@ impl Console {
                     );
                     ui.label(localized_format!(
                         ui,
-                        "Recent observation: {0} · explicit live status: {1}",
+                        "Recent observation: {0}. Explicit live status: {1}.",
                         if provider["capabilities"]["recentObservation"] == true {
                             t(ui, "supported")
                         } else {
@@ -4443,7 +4430,13 @@ impl Console {
         let account_ui = &snapshot["cloudAccountUi"];
         let account_busy = account_ui["busy"] == true;
         let waiting = login["status"] == "waiting";
-        card(ui, |ui| {
+        let accent = if cloud["paired"] == true {
+            colors(ui).success
+        } else {
+            colors(ui).accent
+        };
+        studio::accent_surface(ui, accent, |ui| {
+            ui.set_min_width((ui.available_width() - 1.0).max(0.0));
             ui.horizontal_wrapped(|ui| {
                 ui.label(studio::title(t(ui, "Moxcrew Cloud"), 20.0));
                 status(
@@ -4451,7 +4444,7 @@ impl Console {
                     if cloud["paired"] == true {
                         "Connected"
                     } else {
-                        "Free · Local"
+                        "Local only"
                     },
                 );
             });
@@ -5028,6 +5021,23 @@ fn t<'a>(ui: &Ui, key: &'a str) -> std::borrow::Cow<'a, str> {
 fn tf(ui: &Ui, key: &str, args: &[&str]) -> String {
     i18n::format(language(ui), key, args)
 }
+fn project_count_summary(ui: &Ui, folders: usize, sources: u64) -> String {
+    let folder_key = if folders == 1 {
+        "{0} folder"
+    } else {
+        "{0} folders"
+    };
+    let source_key = if sources == 1 {
+        "{0} source"
+    } else {
+        "{0} sources"
+    };
+    format!(
+        "{}. {}.",
+        tf(ui, folder_key, &[&folders.to_string()]),
+        tf(ui, source_key, &[&sources.to_string()])
+    )
+}
 fn catalog_text<'a>(ui: &Ui, value: &'a Value, key: &str) -> std::borrow::Cow<'a, str> {
     let raw = text(value, key);
     let builtin = text(&value["provenance"], "kind") == "built-in"
@@ -5239,6 +5249,17 @@ fn folder_preview(ui: &mut Ui, path: &str) {
         });
     ui.add_space(8.0);
 }
+fn state_accent(ui: &Ui, value: &str) -> Color32 {
+    let p = colors(ui);
+    match value {
+        "available" | "completed" | "applied" | "accepted" | "active" | "Connected"
+        | "Codex ready" | "Paired" => p.success,
+        "cancelling" | "waiting_question" | "waiting_approval" => p.warning,
+        "failed" | "rejected" | "timed_out" | "blocked" => p.danger,
+        "queued" | "proposed" | "launching" | "running" => p.primary,
+        _ => p.muted,
+    }
+}
 fn status(ui: &mut Ui, value: &str) {
     let p = colors(ui);
     let (color, background) = match value {
@@ -5269,28 +5290,21 @@ fn paint_status(ui: &mut Ui, label: String, color: Color32, background: Color32)
         .galley(rect.min + egui::vec2(8.0, 4.0), galley, color);
 }
 fn studio_metric(ui: &mut Ui, label: &str, count: u64, icon: Tab) {
-    egui::Frame::new()
-        .fill(colors(ui).surface)
-        .stroke(egui::Stroke::new(1.0, colors(ui).border))
-        .corner_radius(studio::metrics::CARD_RADIUS)
-        .inner_margin(studio::metrics::PADDING)
-        .show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(t(ui, label))
-                        .size(12.0)
-                        .color(colors(ui).muted),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
-                    draw_icon(ui.painter(), rect, icon, colors(ui).muted);
-                });
-            });
-            ui.add_space(8.0);
+    ui.set_min_width(ui.available_width());
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
             ui.label(studio::title(count.to_string(), 32.0));
+            ui.label(
+                RichText::new(t(ui, label))
+                    .size(12.0)
+                    .color(colors(ui).muted),
+            );
         });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+            draw_icon(ui.painter(), rect, icon, colors(ui).muted);
+        });
+    });
 }
 
 fn studio_flow(ui: &mut Ui) {
@@ -5354,14 +5368,29 @@ fn card(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
         ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), contents);
     });
 }
+fn guide_surface(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
+    studio::accent_surface(ui, colors(ui).accent, |ui| {
+        ui.set_min_width((ui.available_width() - 1.0).max(0.0));
+        contents(ui);
+    });
+}
 fn empty(ui: &mut Ui, title: &str, description: &str) {
-    card(ui, |ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(30.0, 28.0), egui::Sense::hover());
-        studio::mark(ui.painter(), rect);
-        ui.add_space(12.0);
-        ui.label(studio::title(t(ui, title), 20.0));
-        ui.add_space(8.0);
-        hint(ui, description);
+    let accent = colors(ui).primary;
+    studio::accent_surface(ui, accent, |ui| {
+        ui.horizontal_top(|ui| {
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(42.0, 42.0), egui::Sense::hover());
+            studio::mark(ui.painter(), rect);
+            ui.add_space(12.0);
+            ui.vertical(|ui| {
+                ui.label(studio::title(t(ui, title), 20.0));
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new(t(ui, description))
+                        .size(14.0)
+                        .color(colors(ui).muted),
+                );
+            });
+        });
     });
     ui.add_space(16.0);
 }
@@ -5603,7 +5632,11 @@ fn constrained(ui: &mut Ui, max_width: f32, contents: impl FnOnce(&mut Ui)) {
 fn section_title(ui: &mut Ui, title: &str, description: &str) {
     ui.label(studio::title(t(ui, title), 20.0));
     ui.add_space(4.0);
-    hint(ui, description);
+    ui.label(
+        RichText::new(t(ui, description))
+            .size(14.0)
+            .color(colors(ui).muted),
+    );
 }
 fn field_hint(ui: &mut Ui, label: &str, value: &mut String, max: usize, placeholder: &str) {
     ui.label(
@@ -5664,14 +5697,12 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
     if selected && reveal {
         response.scroll_to_me(Some(egui::Align::Center));
     }
-    let background = if selected {
-        colors(ui).info_surface
-    } else if response.hovered() {
+    let background = if selected || response.hovered() {
         colors(ui).raised
     } else {
         Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, 10, background);
+    ui.painter().rect_filled(rect, 8, background);
     if response.has_focus() {
         ui.painter().rect_stroke(
             rect,
@@ -5684,10 +5715,10 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         ui.painter().rect_filled(
             egui::Rect::from_min_size(
                 egui::pos2(rect.left(), rect.center().y - 7.0),
-                egui::vec2(2.0, 14.0),
+                egui::vec2(3.0, 14.0),
             ),
-            1,
-            colors(ui).primary,
+            2,
+            colors(ui).accent,
         );
     }
     let color = if selected {
@@ -5866,6 +5897,19 @@ mod tests {
 
     use super::*;
     use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
+
+    #[test]
+    fn project_count_summary_pluralizes_english_without_changing_turkish_counts() {
+        let ctx = test_context();
+        let output = ctx.run_ui(RawInput::default(), |ui| {
+            ui.data_mut(|data| data.insert_temp(egui::Id::new("console-language"), Language::En));
+            assert_eq!(project_count_summary(ui, 1, 1), "1 folder. 1 source.");
+            assert_eq!(project_count_summary(ui, 2, 3), "2 folders. 3 sources.");
+            ui.data_mut(|data| data.insert_temp(egui::Id::new("console-language"), Language::Tr));
+            assert_eq!(project_count_summary(ui, 1, 5), "1 klasör. 5 kaynak.");
+        });
+        output.drop_without_applying_deltas();
+    }
 
     #[test]
     fn shared_controls_show_keyboard_focus_without_activating() {
@@ -8335,13 +8379,14 @@ mod tests {
                 d.get_temp(egui::Id::new((
                     "test-action",
                     "memory_control",
-                    "Sign in · optional",
+                    "Optional sign-in",
                 )))
                 .unwrap()
             });
             assert!(
                 account.min.x >= f32::from(studio::metrics::PADDING)
-                    && account.max.x <= 208.0 - f32::from(studio::metrics::PADDING),
+                    && account.max.x
+                        <= studio::metrics::NAV_WIDTH - f32::from(studio::metrics::PADDING),
                 "{code}: account action must keep the sidebar inset: {account:?}"
             );
             for tab in Tab::ALL {

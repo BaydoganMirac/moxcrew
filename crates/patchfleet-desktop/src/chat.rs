@@ -11,8 +11,8 @@ fn composer_frame(ui: &Ui, focused: bool) -> egui::Frame {
                 colors(ui).border
             },
         ))
-        .corner_radius(studio::metrics::CARD_RADIUS)
-        .inner_margin(12)
+        .corner_radius(studio::metrics::CONTROL_RADIUS)
+        .inner_margin(14)
 }
 
 fn terminal(status: &str) -> bool {
@@ -21,8 +21,8 @@ fn terminal(status: &str) -> bool {
 
 fn centered_width(ui: &Ui, width: f32) -> f32 {
     let scale = ui.ctx().pixels_per_point();
-    // Keep one physical pixel for frame rounding at fractional desktop scales.
-    ((ui.available_width().min(width) * scale).floor() - 1.0).max(0.0) / scale
+    // Keep two physical pixels for stroke and frame rounding at fractional desktop scales.
+    ((ui.available_width().min(width) * scale).floor() - 2.0).max(0.0) / scale
 }
 
 fn centered(ui: &mut Ui, width: f32, contents: impl FnOnce(&mut Ui)) {
@@ -218,7 +218,7 @@ impl Console {
             height += gap + studio::metrics::GAP;
         }
         if self.create.crew.single {
-            height += gap + text_height("Single task · prepare, then start.");
+            height += gap + text_height("Single task. Prepare, then start.");
         }
         if !studio::commands_ready(ui) {
             height +=
@@ -391,7 +391,9 @@ impl Console {
                 }
             });
         });
-        ui.add_space(if compact { 12.0 } else { 24.0 });
+        ui.add_space(12.0);
+        ui.separator();
+        ui.add_space(if compact { 12.0 } else { 16.0 });
         if previous != self.create.project {
             self.create.result_path.clear();
             self.create.chat.files_open = false;
@@ -420,9 +422,11 @@ impl Console {
                     .frame(
                         egui::Frame::new()
                             .fill(colors(ui).surface)
-                            .inner_margin(16)
+                            .stroke(egui::Stroke::new(1.0, colors(ui).border))
+                            .corner_radius(studio::metrics::CONTROL_RADIUS)
+                            .inner_margin(20)
                             .outer_margin(egui::Margin {
-                                left: 16,
+                                left: 20,
                                 right: 0,
                                 top: 0,
                                 bottom: 0,
@@ -568,6 +572,11 @@ impl Console {
         });
         let frame =
             composer_frame(ui, focused).show(ui, |ui| self.chat_composer(ui, snapshot, commands));
+        let stripe = egui::Rect::from_min_max(
+            frame.response.rect.left_top() + egui::vec2(0.0, 12.0),
+            frame.response.rect.left_bottom() + egui::vec2(3.0, -12.0),
+        );
+        ui.painter().rect_filled(stripe, 2, colors(ui).accent);
         #[cfg(test)]
         ui.data_mut(|data| {
             data.insert_temp(
@@ -635,7 +644,7 @@ impl Console {
             ui.add_space(studio::metrics::GAP);
         }
         if self.create.crew.single {
-            hint(ui, "Single task · prepare, then start.");
+            hint(ui, "Single task. Prepare, then start.");
         }
         let goal_id = egui::Id::new(("chat-goal", &self.create.project, &self.create.ability));
         // This unframed editor's compact inset is included in the measured composer reservation.
@@ -664,7 +673,7 @@ impl Console {
                             if revision {
                                 "Describe the change for this selection."
                             } else {
-                                "Describe your idea or ask for a change…"
+                                "Describe the result you need…"
                             },
                         ))
                         .desired_width(f32::INFINITY)
@@ -792,11 +801,7 @@ impl Console {
                     if let Some(target) = target {
                         raw_hint(
                             ui,
-                            &tf(
-                                ui,
-                                "Planning connection · {0}",
-                                &[connect::provider_name(&target)],
-                            ),
+                            &tf(ui, "Planning with {0}", &[connect::provider_name(&target)]),
                         );
                     } else if preference.is_empty() {
                         hint(
@@ -864,7 +869,7 @@ impl Console {
                 ui,
                 &tf(
                     ui,
-                    "Suggested · {0}",
+                    "Suggested: {0}",
                     &[ability_text(suggested, "name", language)],
                 ),
                 true,
@@ -1031,32 +1036,21 @@ impl Console {
                     ui.add_space(
                         (ui.available_width() - owner_width - ui.spacing().item_spacing.x).max(0.0),
                     );
-                    studio::card(ui)
-                        .fill(colors(ui).info_surface)
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            colors(ui).primary.gamma_multiply(0.18),
-                        ))
-                        .corner_radius(studio::metrics::CARD_RADIUS)
-                        .inner_margin(studio::metrics::PADDING)
-                        .show(ui, |ui| {
-                            ui.set_max_width((owner_width - 32.0).max(100.0));
-                            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                                ui.label(
-                                    RichText::new(t(ui, "You"))
-                                        .size(12.0)
-                                        .color(colors(ui).primary),
-                                );
-                                ui.add(
-                                    egui::Label::new(text(entry, "goal"))
-                                        .wrap()
-                                        .selectable(true),
-                                );
-                                if entry["replyToWorkItemId"].is_string() {
-                                    hint(ui, "Follow-up request");
-                                }
-                            });
+                    let accent = colors(ui).accent;
+                    studio::accent_surface(ui, accent, |ui| {
+                        ui.set_max_width((owner_width - 32.0).max(100.0));
+                        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                            ui.label(RichText::new(t(ui, "You")).size(12.0).color(accent));
+                            ui.add(
+                                egui::Label::new(RichText::new(text(entry, "goal")).size(15.0))
+                                    .wrap()
+                                    .selectable(true),
+                            );
+                            if entry["replyToWorkItemId"].is_string() {
+                                hint(ui, "Follow-up request");
+                            }
                         });
+                    });
                 });
                 ui.add_space(studio::metrics::CONTROL_GAP);
                 self.chat_work_card(ui, snapshot, entry, commands);
@@ -1069,39 +1063,85 @@ impl Console {
     fn chat_welcome(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let compact = ui.ctx().viewport_rect().height() < 700.0;
         ui.add_space(if compact {
-            24.0
+            12.0
         } else {
-            (ui.available_height() * 0.12).clamp(32.0, 96.0)
+            (ui.available_height() * 0.08).clamp(20.0, 52.0)
         });
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
-            studio::mark(ui.painter(), rect);
-            ui.add_space(8.0);
-            ui.label(studio::title(
-                t(ui, "What would you like to make?"),
-                if compact { 24.0 } else { 30.0 },
-            ));
-        });
-        ui.add_space(8.0);
-        ui.label(
-            RichText::new(t(ui, "Tell Mox what you want to do."))
-                .size(14.0)
-                .color(colors(ui).muted),
+        let cobalt = egui::Color32::from_rgb(40, 84, 244);
+        let orange = egui::Color32::from_rgb(255, 122, 47);
+        let hero = egui::Frame::new()
+            .fill(cobalt)
+            .corner_radius(studio::metrics::CARD_RADIUS)
+            .inner_margin(if compact { 20 } else { 28 })
+            .show(ui, |ui| {
+                let hero_height = if compact { 126.0 } else { 152.0 };
+                let mascot_width = if compact { 104.0 } else { 132.0 };
+                let gap = if compact { 16.0 } else { 24.0 };
+                let copy_width = (ui.available_width() - mascot_width - gap - 24.0).max(280.0);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), hero_height),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(copy_width, hero_height),
+                        egui::Layout::top_down(egui::Align::Min)
+                            .with_main_align(egui::Align::Center),
+                        |ui| {
+                            ui.label(
+                                RichText::new(t(ui, "Mox is ready"))
+                                    .size(13.0)
+                                    .strong()
+                                    .color(orange),
+                            );
+                            ui.add_space(8.0);
+                            ui.label(
+                                studio::title(
+                                    t(ui, "Name the outcome.\nWatch the crew take shape."),
+                                    if compact { 28.0 } else { 36.0 },
+                                )
+                                .color(egui::Color32::WHITE),
+                            );
+                            ui.add_space(10.0);
+                            ui.label(
+                                RichText::new(t(
+                                    ui,
+                                    "Mox shapes the plan and proposes the right roles. You stay in control.",
+                                ))
+                                .size(14.0)
+                                .color(egui::Color32::from_rgb(221, 228, 255)),
+                            );
+                        },
+                    );
+                    ui.add_space(gap);
+                    egui::Frame::new()
+                        .fill(orange)
+                        .corner_radius(studio::metrics::CARD_RADIUS)
+                        .inner_margin(if compact { 8 } else { 12 })
+                        .show(ui, |ui| studio::mascot(ui, mascot_width));
+                    },
+                );
+            });
+        let accent = egui::Rect::from_min_size(
+            hero.response.rect.left_bottom() - egui::vec2(0.0, 6.0),
+            egui::vec2((hero.response.rect.width() * 0.22).max(120.0), 6.0),
         );
-        ui.add_space(24.0);
+        ui.painter().rect_filled(accent, 0, orange);
+        ui.add_space(if compact { 12.0 } else { 16.0 });
         self.chat_composer_frame(ui, snapshot, commands);
         if self.create.conversation_input().trim().is_empty()
             && self.create.attachment_paths().is_empty()
             && self.create.visual_selection().is_none()
         {
             ui.add_space(studio::metrics::CONTROL_GAP);
-            ui.horizontal_wrapped(|ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = studio::metrics::GAP;
+                let width = (ui.available_width() - studio::metrics::GAP * 2.0) / 3.0;
                 for label in [
                     "Prepare a presentation",
                     "Research a topic",
                     "Analyze a file",
                 ] {
-                    let response = studio::suggestion_chip(ui, t(ui, label).as_ref());
+                    let response = studio::shortcut_button(ui, t(ui, label).as_ref(), width);
                     #[cfg(test)]
                     ui.data_mut(|d| {
                         d.insert_temp(
@@ -1137,23 +1177,44 @@ impl Console {
         else {
             return;
         };
-        studio::card(ui)
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    crate::motion::mox(ui,36.0,matches!(text(work,"status"),"launching"|"running"|"cancelling"),snapshot["desktopPreferences"]["reduceMotion"]==true);
-                    ui.vertical(|ui| {
-                        ui.label(studio::title("Mox",20.0));
-                        ui.label(RichText::new(t(ui,"Work status")).size(12.0).color(colors(ui).muted));
-                    });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| status(ui,text(work,"status")));
+        let accent = colors(ui).primary;
+        studio::accent_surface(ui, accent, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                crate::motion::mox(
+                    ui,
+                    36.0,
+                    matches!(text(work, "status"), "launching" | "running" | "cancelling"),
+                    snapshot["desktopPreferences"]["reduceMotion"] == true,
+                );
+                ui.vertical(|ui| {
+                    ui.label(studio::title("Mox", 20.0));
+                    ui.label(
+                        RichText::new(t(ui, "Work status"))
+                            .size(12.0)
+                            .color(colors(ui).muted),
+                    );
                 });
-                ui.add_space(studio::metrics::GAP);
-                hint(ui,match text(work,"status") {"queued"=>"Prepared. Start when you're ready.","launching"|"running"|"cancelling"=>"Working in this project.","completed"=>"Work finished. Review the actual files.",_=>"Work stopped or needs attention. Review its status and files."});
-                let issue=job_issue(snapshot,&self.create.project,text(work,"workItemId"));
-                if let Some(issue)=issue {hint(ui,issue);}
-                ui.add_space(studio::metrics::GAP);
-                ui.horizontal_wrapped(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    status(ui, text(work, "status"))
+                });
+            });
+            ui.add_space(studio::metrics::GAP);
+            hint(
+                ui,
+                match text(work, "status") {
+                    "queued" => "Prepared. Start when you're ready.",
+                    "launching" | "running" | "cancelling" => "Working in this project.",
+                    "completed" => "Work finished. Review the actual files.",
+                    _ => "Work stopped or needs attention. Review its status and files.",
+                },
+            );
+            let issue = job_issue(snapshot, &self.create.project, text(work, "workItemId"));
+            if let Some(issue) = issue {
+                hint(ui, issue);
+            }
+            ui.add_space(studio::metrics::GAP);
+            ui.horizontal_wrapped(|ui| {
                     if text(work,"status")=="queued" {
                         action(ui,commands,"Start task","work_start",connect::can_start(snapshot) && issue.is_none() && revision(work)>0,
                             ||json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
@@ -1175,11 +1236,16 @@ impl Console {
                     }
                     if control(ui,"Follow up",terminal(text(work,"status"))).clicked() {self.begin_chat_reply(snapshot,work);}
                 });
-                if text(work,"status")=="queued" && !connect::can_start(snapshot) {
-                    ui.add_space(4.0);
-                    ui.horizontal_wrapped(|ui| {hint(ui,"Connect a supported Codex account to start.");if control(ui,"Set up Codex",true).clicked() {self.create.chat.connections_open=true;}});
-                }
-            });
+            if text(work, "status") == "queued" && !connect::can_start(snapshot) {
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    hint(ui, "Connect a supported Codex account to start.");
+                    if control(ui, "Set up Codex", true).clicked() {
+                        self.create.chat.connections_open = true;
+                    }
+                });
+            }
+        });
     }
 
     fn chat_files(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {

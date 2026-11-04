@@ -3,6 +3,10 @@
 These documents are written for both humans and coding agents. Product intent
 and trust boundaries come before implementation details.
 
+Looking for the product overview, screenshots or development preview? Start with
+the repository [README](../README.md). This index is the deeper product,
+architecture and delivery record.
+
 ## Read first
 
 1. [Product brief](product.md) — promise, jobs, scope, principles, and success

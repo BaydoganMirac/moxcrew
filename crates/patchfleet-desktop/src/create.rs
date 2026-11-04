@@ -1666,7 +1666,9 @@ mod tests {
             commands.is_empty(),
             "opening the studio must not enqueue or start work"
         );
-        assert!(copy.join("\n").contains("What would you like to make?"));
+        assert!(copy
+            .join("\n")
+            .contains("Name the outcome.\nWatch the crew take shape."));
         let commands = click(
             &ctx,
             &mut console,
@@ -2151,9 +2153,9 @@ mod tests {
                 assert!(console.folder_request.is_none());
                 assert!(!copy.join("\n").contains("Git"));
                 assert!(copy.join("\n").contains(if language == "tr" {
-                    "Ne üretmek istersiniz?"
+                    "Sonucu söyle.\nEkibin şekillenişini izle."
                 } else {
-                    "What would you like to make?"
+                    "Name the outcome.\nWatch the crew take shape."
                 }));
                 let action = ctx.data(|data| {
                     data.get_temp::<egui::Rect>(egui::Id::new((

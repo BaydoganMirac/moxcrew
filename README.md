@@ -1,190 +1,151 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="design/moxcrew/logos/moxcrew-reversed.svg">
-  <img src="design/moxcrew/logos/moxcrew-primary.svg" alt="Moxcrew — Mox + crew" width="320">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="design/moxcrew/logos/moxcrew-reversed.svg">
+    <img src="design/moxcrew/logos/moxcrew-primary.svg" alt="Moxcrew" width="300">
+  </picture>
+</p>
 
-# Moxcrew
+<h1 align="center">One goal. A whole AI crew.</h1>
 
-One idea. A whole crew.
+<p align="center">
+  Moxcrew is a native, local-first desktop app that turns a request into an
+  inspectable plan, the right agent crew, durable project context and real
+  outputs—using the AI tools you already have.
+</p>
 
-Moxcrew helps people turn goals into outcomes with AI agents, organized in
-projects with persistent context and decisions. Its intended uses include
-research, writing, analysis, planning, personal work and software development.
-Project is the main product concept; a separate Workspace hierarchy is not
-required. See the [product direction](docs/decisions/0038-general-purpose-projects.md).
+<p align="center">
+  <a href="https://github.com/BaydoganMirac/moxcrew/actions/workflows/desktop.yml"><img alt="Native desktop CI" src="https://github.com/BaydoganMirac/moxcrew/actions/workflows/desktop.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2854F4"></a>
+  <img alt="Rust native desktop" src="https://img.shields.io/badge/desktop-native%20Rust-FF7A2F">
+  <img alt="Local first" src="https://img.shields.io/badge/data-local%20first-111827">
+</p>
 
-Write a request to Mox and send it. Mox uses an available local connection to
-Codex, Claude Code or Gemini CLI automatically; a manual override is optional.
-No Project, ability or roster setup is required first. Answer Mox's clarification
-questions or revise the plan in the same composer; prepare and explicitly start
-the crew when ready. A first request creates its local Project before planning.
-Supported local providers can also be assigned
-per member. Crews exchange scoped messages and checked file deliveries; owner
-direction can replace affected work while preserving existing outputs. Reviewers
-accept checked results or request bounded corrections. Saved recipes and local
-schedules reuse this workflow. See [workflow state](docs/state/workflow-controls.md)
-and [provider execution](docs/state/provider-execution.md).
+<p align="center">
+  <a href="#try-the-development-preview"><strong>Try the development preview</strong></a>
+  · <a href="docs/roadmap.md">Roadmap</a>
+  · <a href="https://github.com/BaydoganMirac/moxcrew/issues/new">Share feedback</a>
+</p>
 
-Attach files to Chat or drop them into the composer. Mox freezes their Project
-copies before planning; images, recordings and documents can feed real OCR,
-transcription and production tools. In Outputs, render an Office/PDF page, select
-an image region or video interval, then describe the revision in Chat. Each
-revision freezes its source version and preserves the original.
+![Moxcrew turns one goal into an inspectable AI crew](docs/screenshots/marketing/conversation-empty.png)
 
-**More → Project tools** holds the Project's brand profile, taught skills,
-folder/page-change triggers, alternative crews, source evidence and typed output
-requests. Accepted skills and brand guidance carry into future work. Prepare two
-to four independent alternatives, compare their files, then reuse selected outputs
-together in a new request. Evidence opens literal excerpts from immutable sources.
+## Stop rebuilding context for every AI task
 
-Typed tools create editable Office/data files, generate/edit images through local
-ComfyUI, package videos in three aspect ratios with burned captions and covers,
-inspect static public pages or prepare unsent form drafts in isolated Chrome,
-and create standalone interactive tables, charts and budget tools. Deliberately
-open interactive output in the system browser or export its original file.
-Engines are installed separately: Python 3.9+, FFmpeg/FFprobe, LibreOffice/Poppler,
-Tesseract, whisper.cpp with a compatible local model, Chrome and/or ComfyUI as
-needed. Configure tools through Outputs; image engine settings are Project scoped.
-Missing tools show setup errors. Protocol peers verify image/speech integration;
-live model quality and Windows/Linux runtime proof remain separate release gates.
-See [capabilities and limits](docs/state/eleven-product-capabilities.md).
+Codex, Claude Code and Gemini CLI are powerful, but useful work still gets
+scattered across prompts, terminals, files and decisions. Moxcrew gives that work
+a home.
 
-Chat is the Project's primary surface. Crew and Outputs open one context beside
-the conversation at normal/wide desktop widths; narrow windows keep a readable
-detail view with Back to chat. A new conversation opens one composer with a
-Send action; provider selection, Skills and configuration are optional. Crew presents
-the goal, role cards and explicit Prepare/
-Start controls; Outputs keeps real previews and delivery packages available.
-Shared native buttons, input fields, cards and spacing follow the
-[Moxcrew UI kit](design/moxcrew/UI-KIT.md) across all nine native destinations
-and their dialogs. See [screen migration](docs/state/ui-kit-screen-migration.md) and
-[chat-centered studio state](docs/state/chat-centered-ui-kit.md).
-See [conversation flow and provider diagnosis](docs/state/conversation-first-orchestration.md)
-for the conversational foundation and NVM discovery support. The current
-[automatic connection flow](docs/state/automatic-planning-provider.md) removes
-provider selection from the default composer.
+- **Start with the outcome.** Write one request; Mox proposes the plan and roles.
+- **Keep control.** Review the plan, access and crew before anything starts.
+- **Keep the work together.** Projects retain context, tasks, outputs and accepted
+  decisions.
+- **Use your own AI access.** Connect an existing local Codex, Claude Code or
+  Gemini CLI installation. Moxcrew does not resell model tokens.
+- **Stay local by default.** Local use is free, needs no Moxcrew account and keeps
+  source, prompts, paths, outputs and credentials off Cloud by default.
 
-Find outputs by name/path or file type, then choose **Create package** to select
-up to 32 files from the current Project. Review the selection and export one ZIP
-through the native save dialog. The package retains original bytes and includes
-a source/version manifest; changed files and existing destinations are refused.
-Packaging requires no external tool. See [delivery packages](docs/state/delivery-packages.md)
-for size limits and platform support.
+## From request to result
 
-Google Drive blob import, Notion page creation and Google Calendar event creation
-use private, manually configured access tokens. Each action has a concrete preview
-and a separate explicit execution command; uncertain remote writes are never retried
-automatically. See [app connections](docs/state/app-connections.md).
+1. **Describe the result** and attach the files that matter.
+2. **Review Mox's proposal**—plan, crew, tools and boundaries stay visible.
+3. **Prepare, then start** when you are ready. Queueing never silently executes.
+4. **Inspect and revise the output** without losing the original goal or source
+   versions.
+5. **Keep the decisions** that should guide the next task in the same Project.
 
-The approved [1.0.0 release target](docs/plans/0039-version-one-release.md)
-covers eight capability areas, forty abilities and ten composed project workflows,
-including presentations and video editing. See the
-[release state](docs/state/version-one-release.md) for implementation evidence;
-1.0.0 is a future target, not the current application version.
+Moxcrew is designed for research, writing, analysis, planning, personal work and
+software development. Recipes, provider overrides and advanced Project tools are
+available when needed; they are not prerequisites for the first request.
 
-Moxcrew 0.12 runs its interface and host in Rust. egui/eframe renders the native
-window through one Glow backend; the installed application contains no WebView,
-HTML/JavaScript UI bundle or Node server. Local canonical state remains useful
-without Cloud. Accessibility support is enabled.
+## A workbench, not another chat tab
 
-The Moxcrew interface groups Chat, projects, tasks and teams beside project memory and
-decisions. Project cards open their own context; creating a task from a project
-selects its local folder while preserving any existing unsent draft. Bundled UI
-fonts, Mox mascot and the vector Moxcrew mark work offline. Both light and dark
-themes follow the system preference. The brand source is in [design/moxcrew](design/moxcrew/README.txt).
-The studio groups Mox and the conversation composer, with optional Skills,
-ink/cobalt surfaces and an adaptive file panel. See the
-[native studio evidence](docs/state/futuristic-native-studio.md).
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/marketing/studio-decisions.png" alt="Project decisions with explicit owner acceptance">
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/marketing/studio-agents.png" alt="Inspectable local agent catalog">
+    </td>
+  </tr>
+  <tr>
+    <td><strong>Decisions with evidence.</strong><br>Suggestions remain proposals until you accept them.</td>
+    <td><strong>Agents with boundaries.</strong><br>Inspect roles, instructions and limits before use.</td>
+  </tr>
+</table>
 
-The native interface supports Turkish and English. Change the language in the
-sidebar; the owner Host saves it locally for the next launch. Source messages,
-work instructions, code and custom user content retain their original language.
+The native workbench also includes Project memory, task queues, reusable crews,
+provider diagnostics, output previews and an optional sanitized Cloud view.
+Turkish and English interfaces, light and dark themes, and keyboard navigation
+ship in the desktop application.
 
-The application opens Chat with the Project conversation and one composer.
-Mox chooses the plan and appropriate abilities from the request; manual choices
-and an inspectable catalog remain available. Chat, Projects, Teams and Tasks are the primary navigation;
-other tools remain available under More. Connections separates installation,
-saved sign-in and supported task control for the three local CLIs. Setup guides
-open by deliberate action. Saved credentials do not establish model access.
-Mox moves during real active work; reduced motion is saved locally.
+## Why local-first matters
 
-Cloud sign-in is optional. Configure the Cloud server address, then use the
-system browser to sign in and approve this installation. Account and subscription
-status appear in the desktop; sign-out keeps Local projects and downloaded ADRs.
-Local remains free and works without an account. See [account state](docs/state/desktop-account.md).
+Moxcrew's local host is the execution authority and canonical source of truth.
+Cloud is optional and cannot run arbitrary shell commands on your machine. Any
+remote action must be an allowlisted, versioned intent that the local host checks
+and records with a receipt.
 
-Create stable projects, link multiple Git worktrees, keep project messages and
-owner task/team sources in local Project Memory. Create sourced ADR drafts in
-Decisions, explicitly accept/reject them and replace an accepted decision while
-preserving its evidence and history. Queue and control supported local provider work, configure twelve
-agent packs and six bounded team templates, answer owner gates, and inspect
-provider status. Provider
-CLIs and their own model/account/runtime requirements are installed separately.
+That means:
 
-Rendering reacts to input and state changes. Owned run signals are checked
-quickly during active work; idle provider probes are limited to once a minute.
-Cloud receives only allowlisted operational data by default. Optional paid
-shared memory publishes only explicitly previewed and confirmed accepted ADRs.
-Source bodies, paths, prompts, output and credentials remain local by default.
+- provider credentials remain with their provider tools;
+- local projects keep working without Moxcrew Cloud;
+- uncertain work is shown instead of silently retried;
+- accepted decisions and source versions remain auditable;
+- explicit review gates stay between a proposal and execution.
 
-Moxcrew = **Mox + crew**: Mox is the mascot; crew is the cooperating agent team.
-The brand domain is `moxcrew.com`; service deployment is a separate step. Existing installation, data,
-command and protocol identifiers retain `patchfleet` for compatibility.
+Read the full [product boundaries](docs/product.md),
+[architecture](docs/architecture.md) and [security policy](SECURITY.md).
 
-The public repository is [BaydoganMirac/moxcrew](https://github.com/BaydoganMirac/moxcrew).
+## Try the development preview
 
-## Build and run
+> **Pre-release:** there are no public release downloads yet. Build from source
+> to evaluate the current desktop, or watch the repository for the first signed
+> release.
 
-Install Rust 1.99+ and platform native compiler/window prerequisites, then:
+You need Rust 1.99+ and the native compiler/window prerequisites for your OS.
+For real planning or execution, install and authenticate at least one supported
+provider CLI separately.
 
 ```sh
+git clone https://github.com/BaydoganMirac/moxcrew.git
+cd moxcrew
 cargo run --locked -p patchfleet-desktop
-cargo build --locked --release -p patchfleet-desktop
 ```
 
-The production binary is `target/release/patchfleet-desktop` (Windows `.exe`).
-Node/npm are not required to build or run the current desktop. Historical
-`app/`, `lib/`, `bin/` and Node tests remain event/protocol parity references.
-`legacy:*` scripts target that historical host, and npm publication is retired.
+The compatibility binary name remains `patchfleet-desktop`; the product and
+packaged application are Moxcrew. Node is not required for the native desktop.
 
-## Package and verify
+See [installation and recovery](docs/install.md) for platform prerequisites,
+data locations, upgrades and rollback. Development packages can be built with
+the commands in [release checks](docs/release.md).
 
-```sh
-cargo install cargo-packager --version 0.11.8 --locked
-cargo packager --config Packager.toml --formats app,dmg
-cargo test --locked --workspace
-cargo clippy --locked --workspace --all-targets -- -D warnings
-```
+## Current status
 
-Build the executable before packaging. Local packages are under `dist/native`.
-Native CI targets macOS ARM64/Intel, Windows x64 and Linux x64/ARM64. Local Mac
-build/runtime evidence and remaining signing/platform checks are recorded in
-[native state](docs/state/native-rust-desktop.md).
+Moxcrew is under active pre-release development. The native macOS build is the
+reference environment; CI builds and checks development artifacts for macOS,
+Windows and Linux. Signed public distribution, live quality evidence across
+every provider/capability and moderated usability testing remain release gates.
 
-Read [installation and recovery](docs/install.md), [architecture](docs/architecture.md)
-and [release checks](docs/release.md). Create/retry/export commands write V8 local
-events; chat-send and motion preferences add V9 audit facts. Project crews add
-V10 local mission and communication facts. Productive crews add V11 workflow,
-V12 resource/artifact/action, V13 multi-provider execution/usage and V14 local
-profile/skill/trigger/alternative/evidence facts. Older builds need
-an unchanged pre-upgrade backup for rollback.
-[Project Memory](docs/state/project-memory.md)
-supports durable sources, message revisions, sourced ADR lifecycle and scoped
-keyword reads. The optional subscription Cloud memory service supports explicit
-publication and exact cross-device reads; see the [memory protocol](docs/memory-protocol.md).
-Explicit Cloud semantic search and free Local ranked keyword retrieval are implemented; see [search state](docs/state/project-memory-search.md). Scoped Local agent tools and optional consented automatic ADR drafts are implemented; see [draft state](docs/state/automatic-drafts.md). Only
-owner acceptance makes an ADR active; active agents read it through scoped memory tools.
-Local memory remains free. Cloud service deployment is a separate release step.
+The repository intentionally separates implemented behavior from future scope:
 
-## Product boundaries
+- [Public roadmap](docs/roadmap.md)
+- [Release target and evidence](docs/state/version-one-release.md)
+- [Documentation index](docs/README.md)
+- [Contribution rules for coding agents](AGENTS.md)
 
-- Local execution and append-only events are canonical.
-- Cloud cannot execute arbitrary shell commands.
-- Declarative packs cannot load code or widen permissions.
-- Lost or uncertain work is never silently restarted.
-- No private work data or credentials upload by default.
+## Help shape Moxcrew
+
+If local-first, inspectable AI teamwork is useful to you:
+
+- **Star the repository** to help more people discover the project.
+- **Watch releases** to hear when signed downloads are available.
+- **Open an issue** with the outcome you want Moxcrew to handle or a problem you
+  found in the development preview.
+
+Moxcrew means **Mox + crew**: Mox shapes the work; the crew delivers it; you keep
+authority over both.
 
 ## License
 
-Patchfleet is [Apache License 2.0](LICENSE).
-Report vulnerabilities through the [security policy](SECURITY.md).
+Moxcrew is available under the [Apache License 2.0](LICENSE).
+Report vulnerabilities privately through the [security policy](SECURITY.md).

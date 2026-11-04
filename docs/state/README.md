@@ -48,6 +48,9 @@
 | UI/UX research and design reference | Reference complete; native remediation delivered in Task0053 | 2026-10-25 | [ux-design-reference.md](ux-design-reference.md) |
 | UX rules in native screens and flows | Complete; 227 tests, 40 final native captures and local macOS development package | 2026-10-25 | [ux-rules-implementation.md](ux-rules-implementation.md) |
 | Desktop composition and artifact cleanup | Implemented; 229 tests, 17 final native captures; visual direction awaits owner judgment | 2026-10-25 | [desktop-composition-and-cleanup.md](desktop-composition-and-cleanup.md) |
+| Distinctive desktop workbench | Implemented; 230 tests, strict Clippy and native normal/minimum/plan captures; owner visual judgment pending | 2026-11-04 | [distinctive-desktop-workbench.md](distinctive-desktop-workbench.md) |
+| Distinctive desktop flows | Implemented; 231 tests, strict Clippy and 12 native route captures; owner visual judgment pending | 2026-11-04 | [distinctive-desktop-flows.md](distinctive-desktop-flows.md) |
+| GitHub product surface | Implemented; marketing README, current native screenshots, aligned package/About metadata and full workspace verification | 2026-11-04 | [github-product-surface.md](github-product-surface.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

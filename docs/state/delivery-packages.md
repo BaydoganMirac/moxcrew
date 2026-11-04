@@ -32,8 +32,9 @@ destination is created. Existing files are never overwritten.
 The standard UTF-8 ZIP keeps full sanitized basenames/extensions in numbered
 folders (`files/01/name.ext`) and includes `manifest.json` schema2 with Project,
 work, source path, archive path, SHA-256, byte count and the owner-review status
-for that exact hash. No prompts, credentials, review timestamps or absolute
-source paths enter the manifest. Original source files remain intact.
+for that exact hash. No prompts, credentials, owner-review notes, review
+timestamps or absolute source paths enter the manifest. Original source files
+remain intact.
 
 ## Limits
 

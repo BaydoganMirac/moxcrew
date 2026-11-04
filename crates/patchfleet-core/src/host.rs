@@ -404,7 +404,7 @@ impl Host {
                             events,
                             &e["payload"],
                         ),
-                        Some(15) => {
+                        Some(15 | 16) => {
                             crate::project_studio::recovered_owner_result(events, &e["payload"])
                         }
                         Some(11) => {
@@ -692,7 +692,7 @@ impl Host {
             || capability_mutation
             || action == "work_retry";
         let audit_version = if action == "project_artifact_review_set" {
-            15
+            16
         } else if capability_mutation {
             14
         } else if studio_mutation
@@ -758,7 +758,7 @@ impl Host {
             let recorded = match &result {
                 Ok(v) => v.clone(),
                 Err(error)
-                    if matches!(audit_version, 8..=15)
+                    if matches!(audit_version, 8..=16)
                         && error
                             .0
                             .bytes()

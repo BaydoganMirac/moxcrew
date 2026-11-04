@@ -21,7 +21,7 @@ fn receipt() -> Value {
 #[test]
 fn productive_state_stays_private_and_v13_work_is_omitted_from_legacy_cloud() {
     let mut changed = bundle();
-    changed["projectStudio"] = json!({"resources":[{"text":"PRIVATE_RESOURCE"}],"connections":[{"arguments":"PRIVATE_APP_CONTENT"}]});
+    changed["projectStudio"] = json!({"resources":[{"text":"PRIVATE_RESOURCE"}],"connections":[{"arguments":"PRIVATE_APP_CONTENT"}],"reviews":[{"note":"PRIVATE_REVIEW_NOTE"}]});
     changed["projectWorkflows"] =
         json!({"plans":[{"instruction":"PRIVATE_PLAN"}],"offers":[{"text":"PRIVATE_OFFER"}]});
     changed["providerUsage"] = json!({"details":"PRIVATE_USAGE"});

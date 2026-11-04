@@ -339,6 +339,11 @@ append. `reviewed`, `needs_changes` and clearing `unreviewed` remain owner-autho
 workflow evidence and do not certify semantic, factual, layout or playback
 quality. V15 content is local and does not widen Cloud projections.
 
+V16 adds an optional bounded owner note to the same exact review scope. Old V15
+facts replay with an empty note; clearing requires an empty note and removes the
+active status/text without deleting history. Notes stay local, do not enter
+delivery manifests and do not widen Cloud projections.
+
 Typed production uses bounded, cancellable child processes: a bundled standard
 library Python script and explicitly detected owner-installed media tools.
 Provider adapters share the owned-process runner. App credentials live in private

@@ -20,11 +20,12 @@ Project/work/path/hash tuple while checking the actual exported bytes. A missing
 matching decision is written as `unreviewed`; a decision for an older hash is
 never inherited.
 
-Review metadata appears only in the explicitly exported archive. The existing
-delivery command and durable receipt shapes remain unchanged, no review time or
-file content is added to the manifest, and no provider/model/account action is
-involved. Review state remains human workflow evidence rather than factual,
-semantic, visual or playback verification.
+Only the status is copied into the explicitly exported archive; private owner
+notes remain local to Output Studio. The existing delivery command and durable
+receipt shapes remain unchanged, no review time or file content is added to the
+manifest, and no provider/model/account action is involved. Review state remains
+human workflow evidence rather than factual, semantic, visual or playback
+verification.
 
 The retained Turkish dark-theme capture is
 [review-aware-delivery-tr-dark.png](../screenshots/review-aware-delivery/review-aware-delivery-tr-dark.png)

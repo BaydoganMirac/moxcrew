@@ -23,8 +23,8 @@ extensions without increasing the basename length. `manifest.json` schema2 recor
 Project ID and each work/path/archive-path/hash/byte identity, plus
 `ownerReview.status` resolved from the exact Project/work/path/hash review
 projection. No matching decision is represented as `unreviewed`; another hash's
-decision is never inherited. The manifest adds no review time, absolute paths,
-goals, prompts, account state or credentials. Explicitly selected source bytes
+decision is never inherited. The manifest adds no review note/time, absolute
+paths, goals, prompts, account state or credentials. Explicitly selected source bytes
 are exported unchanged; their content is not redacted. The command payload and
 success receipt remain backward-compatible and do not gain review fields.
 

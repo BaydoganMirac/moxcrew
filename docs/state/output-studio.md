@@ -90,8 +90,10 @@ app-action dispatch. Secrets never enter them. V13 usage records contain only
 provider-reported token/cost values; missing measurements remain null. Existing
 Cloud allowlists remain unchanged: V13 Claude/Gemini work is omitted from the
 legacy Codex remote-control projection, and all content remains local by default.
-V15 local review events add only the exact artifact scope and owner decision;
-they do not add file content or widen Cloud allowlists.
+V15 local review events add only the exact artifact scope and owner decision.
+V16 adds the owner's bounded local note while retaining V15 replay; notes do not
+enter delivery manifests. Neither version adds file content or widens Cloud
+allowlists. See [exact owner review notes](exact-owner-review-notes.md).
 
 Resources, preview/export and production publication use checked Unix file
 descriptors. Windows remains explicitly unsupported for these file operations

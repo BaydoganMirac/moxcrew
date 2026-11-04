@@ -197,6 +197,11 @@ backup before the first review mutation. Earlier readers reject V15; rollback
 restores the unchanged pre-upgrade copy. Never remove review events to make an
 older build open the current data directory.
 
+Task0069 adds V16 bounded owner-review notes while retaining V15 replay. Preserve
+a complete stopped backup before the first noted review mutation. Earlier readers
+reject V16; rollback restores the unchanged pre-upgrade copy. Never strip notes
+or rewrite V16 facts to make an older build open the directory.
+
 Task0041 adds V9 owner audit for project_chat_send and desktop_motion. Rollback
 uses the complete stopped pre-upgrade copy, including preferences. Never remove
 new audit lines or downgrade the preferences file in place.

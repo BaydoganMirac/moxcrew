@@ -103,6 +103,9 @@ unreviewed. This is human evidence, not automatic content-quality proof.
 assembling a delivery package and records reviewed, needs-changes or unreviewed
 beside each checked hash in the schema2 ZIP manifest. Warnings remain advisory;
 the owner retains explicit export control.
+[Task0069](exact-owner-review-notes.md) adds bounded local context to the exact
+review decision. V16 retains V15 replay, clearing removes the active note and
+delivery manifests intentionally keep only status.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

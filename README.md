@@ -47,8 +47,9 @@ a home.
 - **Know what was checked.** Output previews identify the exact hash-matched
   version, the format evidence Moxcrew could inspect and the human review that
   still remains. Mark that exact version reviewed or needing changes without
-  changing the file or inheriting the decision into a later version. Delivery
-  packages show review coverage and preserve the exact status in their manifest.
+  changing the file or inheriting the decision into a later version, and keep an
+  optional local note with that exact decision. Delivery packages show review
+  coverage and preserve only the status—not the private note—in their manifest.
 - **Stay local by default.** Local use is free, needs no Moxcrew account and keeps
   source, prompts, paths, outputs and credentials off Cloud by default.
 

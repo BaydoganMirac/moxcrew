@@ -24,6 +24,10 @@ canonical log. Clearing appends an auditable `unreviewed` transition and removes
 the active decision from the projection without deleting history or the file.
 No provider, model, task start, external app or Cloud action is involved.
 
+[Task0069](exact-owner-review-notes.md) extends this exact decision with an
+optional bounded local note. V16 preserves V15 replay, and clearing removes the
+active note with the status. Notes are not exported in delivery manifests.
+
 The Turkish/English native card is covered in light/dark themes and remains
 scroll-reachable at the 800×560 minimum window. The retained Turkish dark-theme
 capture is
@@ -45,5 +49,5 @@ capture is
 ## Limits
 
 This is an owner-authored review marker, not semantic evaluation, factual
-verification, rendered-layout proof or media playback evidence. Review notes,
-multi-reviewer approval and Windows result-access proof are not included.
+verification, rendered-layout proof or media playback evidence. Multi-reviewer
+approval and Windows result-access proof are not included.

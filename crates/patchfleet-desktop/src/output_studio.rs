@@ -77,6 +77,7 @@ pub(super) struct StudioState {
     delivery_request: Option<DeliveryExportRequest>,
     comparison_previews: HashMap<ComparisonCacheKey, ComparisonPreview>,
     comparison: Option<ArtifactComparison>,
+    review_notes: HashMap<(String, String, String, String), String>,
 }
 
 pub(super) fn studio_page<'a>(snapshot: &'a Value, project: &str) -> Option<&'a Value> {
@@ -1446,55 +1447,78 @@ impl Console {
         let status = review
             .map(|review| text(review, "status"))
             .unwrap_or("unreviewed");
-        let (label, description, accent) = match status {
-            "reviewed" => (
-                "Reviewed",
-                "You marked this exact file version as reviewed.",
-                colors(ui).success,
-            ),
-            "needs_changes" => (
-                "Changes needed",
-                "You marked this exact file version as needing changes.",
-                colors(ui).warning,
-            ),
-            _ => (
-                "Not reviewed",
-                "No owner decision is recorded for this exact version.",
-                colors(ui).info,
-            ),
+        let (label, accent) = match status {
+            "reviewed" => ("Reviewed", colors(ui).success),
+            "needs_changes" => ("Changes needed", colors(ui).warning),
+            _ => ("Not reviewed", colors(ui).info),
         };
         let project = self.create.project.clone();
         let work = text(artifact, "workItemId").to_owned();
         let path = text(artifact, "path").to_owned();
         let hash = text(artifact, "sha256").to_owned();
+        let note_key = (project.clone(), work.clone(), path.clone(), hash.clone());
+        let saved_note = review.map(|review| text(review, "note")).unwrap_or("");
+        let note = self
+            .create
+            .studio
+            .review_notes
+            .entry(note_key.clone())
+            .or_insert_with(|| saved_note.to_owned());
         let card = studio::accent_surface(ui, accent, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(studio::title(t(ui, "Owner review"), 18.0));
                 ui.label(RichText::new(t(ui, label)).strong().color(accent));
             });
-            hint(ui, description);
             hint(
                 ui,
                 "This records your review; it does not verify factual or visual quality automatically.",
             );
             ui.add_space(studio::metrics::GAP);
+            ui.label(
+                RichText::new(t(ui, "Review note (optional · local)"))
+                    .size(12.0)
+                    .color(colors(ui).muted),
+            );
+            let note_input = ui.add_sized(
+                egui::vec2(ui.available_width(), 58.0),
+                egui::TextEdit::multiline(note)
+                    .id_salt(("artifact-review-note", &note_key))
+                    .hint_text(t(ui, "What should change or what did you verify?"))
+                    .char_limit(1000)
+                    .desired_rows(2),
+            );
+            #[cfg(test)]
+            ui.data_mut(|data| {
+                data.insert_temp(
+                    egui::Id::new("artifact-review-note"),
+                    (note_input.rect, note_input.id),
+                )
+            });
+            #[cfg(not(test))]
+            let _ = note_input;
+            let note = note.trim().to_owned();
+            ui.add_space(studio::metrics::GAP);
             ui.horizontal_wrapped(|ui| {
-                quiet_action(
-                    ui,
-                    commands,
-                    "Mark reviewed",
-                    "project_artifact_review_set",
-                    status != "reviewed",
-                    || json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":hash,"status":"reviewed"}),
-                );
-                quiet_action(
-                    ui,
-                    commands,
-                    "Needs changes",
-                    "project_artifact_review_set",
-                    status != "needs_changes",
-                    || json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":hash,"status":"needs_changes"}),
-                );
+                if status != "reviewed" || note != saved_note {
+                    quiet_action(
+                        ui,
+                        commands,
+                        "Mark reviewed",
+                        "project_artifact_review_set",
+                        true,
+                        || json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":hash,"status":"reviewed","note":note}),
+                    );
+                }
+                if status != "needs_changes" || note != saved_note {
+                    quiet_action(
+                        ui,
+                        commands,
+                        "Needs changes",
+                        "project_artifact_review_set",
+                        true,
+                        || json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":hash,"status":"needs_changes","note":note}),
+                    );
+                }
                 if status != "unreviewed" {
                     quiet_action(
                         ui,
@@ -1502,7 +1526,7 @@ impl Console {
                         "Clear review",
                         "project_artifact_review_set",
                         true,
-                        || json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":hash,"status":"unreviewed"}),
+                        || json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":hash,"status":"unreviewed","note":""}),
                     );
                 }
             });
@@ -2146,7 +2170,6 @@ mod tests {
                     for key in [
                         "Owner review",
                         "Not reviewed",
-                        "No owner decision is recorded for this exact version.",
                         "This records your review; it does not verify factual or visual quality automatically.",
                     ] {
                         assert!(
@@ -2182,6 +2205,56 @@ mod tests {
                         .unwrap()
                 });
                 assert!(card.intersects(clip));
+                let (note, _) = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, egui::Id)>(egui::Id::new("artifact-review-note"))
+                        .unwrap()
+                });
+                assert!(
+                    clip.intersects(note),
+                    "{language}/{theme:?}: review note must be scroll-reachable"
+                );
+                render(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    size,
+                    false,
+                    vec![
+                        egui::Event::PointerMoved(egui::pos2(650.0, 360.0)),
+                        egui::Event::MouseWheel {
+                            unit: egui::MouseWheelUnit::Page,
+                            delta: egui::vec2(0.0, -1.0),
+                            phase: egui::TouchPhase::Move,
+                            modifiers: egui::Modifiers::default(),
+                        },
+                    ],
+                );
+                render(&ctx, &mut console, &data, size, false, vec![]);
+                for action in ["Mark reviewed", "Needs changes"] {
+                    let (_, rect, clip) = ctx.data(|data| {
+                        data.get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                            "test-action-state",
+                            "project_artifact_review_set",
+                            action,
+                        )))
+                        .unwrap()
+                    });
+                    assert!(
+                        clip.intersects(rect),
+                        "{language}/{theme:?}: {action} must remain scroll-reachable"
+                    );
+                }
+
+                let note_key = (
+                    "project:one".to_owned(),
+                    "work:one".to_owned(),
+                    "outputs/deck.pptx".to_owned(),
+                    "hash-one".to_owned(),
+                );
+                console.create.studio.review_notes.insert(
+                    note_key.clone(),
+                    "Checked sources and slide structure.".to_owned(),
+                );
 
                 let commands = super::super::tests::click_at_size(
                     &ctx,
@@ -2199,6 +2272,10 @@ mod tests {
                 assert_eq!(commands[0].payload["path"], "outputs/deck.pptx");
                 assert_eq!(commands[0].payload["expectedSha256"], "hash-one");
                 assert_eq!(commands[0].payload["status"], "reviewed");
+                assert_eq!(
+                    commands[0].payload["note"],
+                    "Checked sources and slide structure."
+                );
                 assert!(commands
                     .iter()
                     .all(|command| command.action != "work_start"));
@@ -2206,8 +2283,10 @@ mod tests {
                 data["projectStudio"]["reviews"] = json!([{
                     "projectId":"project:one","workItemId":"work:one",
                     "path":"outputs/deck.pptx","sha256":"hash-one",
-                    "status":"reviewed","reviewedAt":"2026-11-04T12:00:00.000Z"
+                    "status":"reviewed","note":"Saved exact-version note.",
+                    "reviewedAt":"2026-11-04T12:00:00.000Z"
                 }]);
+                console.create.studio.review_notes.remove(&note_key);
                 let (_, copy) = render(
                     &ctx,
                     &mut console,
@@ -2219,6 +2298,27 @@ mod tests {
                 assert!(copy.iter().any(|line| {
                     line == i18n::tr(Language::from_code(language), "Reviewed").as_ref()
                 }));
+                assert_eq!(
+                    console.create.studio.review_notes[&note_key],
+                    "Saved exact-version note."
+                );
+                console
+                    .create
+                    .studio
+                    .review_notes
+                    .insert(note_key.clone(), "Updated exact-version note.".to_owned());
+                let update = super::super::tests::click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    egui::vec2(1280.0, 2200.0),
+                    false,
+                    "project_artifact_review_set",
+                    "Mark reviewed",
+                );
+                assert_eq!(update.len(), 1);
+                assert_eq!(update[0].payload["status"], "reviewed");
+                assert_eq!(update[0].payload["note"], "Updated exact-version note.");
                 let clear = super::super::tests::click_at_size(
                     &ctx,
                     &mut console,
@@ -2230,6 +2330,7 @@ mod tests {
                 );
                 assert_eq!(clear.len(), 1);
                 assert_eq!(clear[0].payload["status"], "unreviewed");
+                assert_eq!(clear[0].payload["note"], "");
 
                 data["projectStudio"]["reviews"][0]["sha256"] = json!("other-version");
                 let (_, copy) = render(

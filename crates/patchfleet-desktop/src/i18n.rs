@@ -1150,7 +1150,7 @@ fn reason(code: &str) -> Option<(&'static str, &'static str)> {
         "PROJECT_RESULT_PREVIEW_UNSUPPORTED" | "PROJECT_RESULT_TOO_LARGE" => ("This file cannot be previewed here. Export a copy to open it in its app.", "Bu dosya burada önizlenemiyor. Uygulamasında açmak için kopyasını dışa aktarın."),
         "PROJECT_RESULT_EXPORT_EXISTS" => ("A file already exists there. Choose a different name; the original was preserved.", "Bu konumda aynı adlı dosya var. Başka bir ad seçin; mevcut dosya korundu."),
         "PROJECT_RESULT_EXPORT_PATH_INVALID" => ("Choose a writable destination outside Moxcrew's private data folder.", "Moxcrew’ün özel veri klasörü dışında yazılabilir bir konum seçin."),
-        "PROJECT_RESULT_EXPORT_FAILED" => ("The copy could not be saved. An incomplete new copy may remain; check destination access and choose another name.", "Kopya kaydedilemedi. Eksik bir yeni kopya kalmış olabilir; konum izinlerini kontrol edip başka bir ad seçin."),
+        "PROJECT_RESULT_EXPORT_FAILED" => ("The copy could not be saved. No incomplete copy was published; check destination access and try again.", "Kopya kaydedilemedi. Eksik bir kopya yayımlanmadı; konum izinlerini kontrol edip yeniden deneyin."),
         "PROJECT_RESULT_EXPORTED" => ("Output copy exported. The task's original file was preserved.", "Çıktının kopyası dışa aktarıldı. İşin asıl dosyası korundu."),
         "WORKSPACE_PATH_INVALID" => ("The folder path cannot be used. Choose it with the folder picker.", "Klasör yolu kullanılamıyor. Klasör seçiciden yeniden seçin."),
         "WORKSPACE_FOLDER_NOT_FOUND" => ("This folder no longer exists. Reconnect its drive or choose another folder.", "Bu klasör bulunamıyor. Diskini yeniden bağlayın veya başka klasör seçin."),

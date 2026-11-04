@@ -18,8 +18,10 @@ Symlink aliases and escapes must fail closed, including result reads/exports.
 
 Unix result operations use pinned directory handles. Windows result access is
 explicitly unsupported until equivalent race-resistant protection is implemented
-and natively verified. Failed exports may retain a partial new destination;
-cleanup must never remove a pathname another process may have replaced.
+and natively verified. The original implementation retained a partial new
+destination on write failure; [ADR0051](0051-atomic-owner-export-publication.md)
+supersedes that Unix export detail with private staging and atomic no-replace
+publication. Cleanup never removes the requested public pathname.
 
 Native Create uses declarative, localized ability recipes and does not claim
 their required renderers, models or connectors exist. Actual files can be
@@ -43,4 +45,5 @@ introduced. Presentation/video tool feasibility remains separate evidence.
 ## References
 
 - [Task0040](../plans/0040-project-create-studio.md)
+- [ADR0051](0051-atomic-owner-export-publication.md)
 - [1.0.0 plan](../plans/0039-version-one-release.md)

@@ -26,10 +26,11 @@ selected source bytes are exported unchanged; their content is not redacted.
 
 Single-file and package exports share the checked destination helper: absolute
 owner-selected target, existing parent, outside the canonical data directory,
-pinned no-follow creation and no overwrite. Windows remains explicitly
-unsupported until pinned no-reparse result operations are verified. An I/O
-failure can leave a partial target. Neither export removes the public path on
-failure, since another process may have replaced it.
+pinned no-follow access and atomic no-replace publication. Windows remains
+explicitly unsupported until pinned no-reparse result operations are verified.
+On Unix, an I/O failure publishes no partial target; a destination that appears
+concurrently is preserved. See [Task0060](../plans/0060-atomic-owner-exports.md)
+and [ADR0051](../decisions/0051-atomic-owner-export-publication.md).
 
 Success returns `PROJECT_DELIVERY_EXPORTED`, Project ID, file count, archive byte
 length (`bytes`), total source bytes (`sourceBytes`), archive SHA-256 and the safe
@@ -47,5 +48,6 @@ no destination creation on source failures. A separate ignored fixture test
 produces a retained real Host ZIP for an independent standard-reader check.
 
 No provider process, inference, network call, external tool, new dependency or
-Cloud change is needed. Native Windows/Linux execution and deliberate disk-full
-injection were not performed; success is acknowledged only after flush/sync.
+Cloud change is needed. Native Windows execution and deliberate disk-full
+injection were not performed; success is acknowledged only after staged bytes
+are flushed, synced and published.

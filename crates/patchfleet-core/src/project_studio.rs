@@ -1417,7 +1417,7 @@ pub(crate) fn tool_schema() -> Vec<Value> {
     ];
     let description = tools[2]["description"].as_str().unwrap_or_default();
     tools[2]["description"] = format!(
-        "{description} research.compare {{title,question,sources:[{{source,label}}],criteria:[{{key,label}}],options:[{{option,cells:{{key:{{status:confirmed|uncertain|missing,assessment,evidence:[{{source,quote}}]}}}}}}],recommendation:{{option,reason,basedOnCriteria:[key],uncertainty}}}} applies the same owner criteria to every option, verifies literal evidence and keeps recommendation separate from uncertainty."
+        "{description} research.compare {{title,question,sources:[{{source,label}}],criteria:[{{key,label}}],options:[{{option,cells:{{key:{{status:confirmed|uncertain|missing,assessment,evidence:[{{source,quote}}]}}}}}}],recommendation:{{option,reason,basedOnCriteria:[key],uncertainty}}}} applies the same owner criteria to every option, verifies literal evidence and keeps recommendation separate from uncertainty. browser.research {{title,question,sources:[{{url,label}}],claims:[{{claim,classification:fact|inference|unknown,evidence:[{{source,quote}}],note}}]}} retrieves up to four public pages with scripts disabled, verifies literal evidence, records access times and response hashes, and emits Markdown, CSV and JSON."
     )
     .into();
     tools

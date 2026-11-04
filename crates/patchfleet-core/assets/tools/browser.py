@@ -1,5 +1,6 @@
 """Fixed browser inspection/drafting. Isolated profile, pinned public GETs, no submit."""
 import base64
+import csv
 import hashlib
 import html
 import http.client
@@ -24,6 +25,11 @@ ROOT = Path.cwd().resolve()
 def require(ok, code="BROWSER_INVALID_INPUT"):
     if not ok:
         raise ValueError(code)
+
+
+def exact(value, required, optional=()):
+    require(isinstance(value, dict) and set(value) == set(required) | set(optional)
+            and all(key in value for key in required))
 
 
 def public_address(value):
@@ -204,8 +210,172 @@ class Browser:
             pass
 
 
+def prepare_browser(browser):
+    browser.call("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True}, False)
+    target = browser.call("Target.createTarget", {"url": "about:blank"}, False)["targetId"]
+    while target not in browser.attached:
+        message = browser.message()
+        if message.get("method") == "Target.attachedToTarget":
+            attached = message["params"]
+            browser.attached[attached["targetInfo"]["targetId"]] = attached["sessionId"]
+    browser.session = browser.attached[target]
+    browser.call("Page.enable")
+    browser.call("Runtime.enable")
+    browser.call("Emulation.setScriptExecutionDisabled", {"value": True})
+    browser.call("Network.enable")
+    browser.call("Network.setBlockedURLs", {"urls": ["file:*", "filesystem:*", "ftp:*", "ws:*", "wss:*"]})
+    browser.call("Fetch.enable", {"patterns": [{"urlPattern": "*", "requestStage": "Request"}], "handleAuthRequests": True})
+    browser.call("Browser.setDownloadBehavior", {"behavior": "deny"}, False)
+    browser.call("Emulation.setDeviceMetricsOverride", {"width": 1200, "height": 800, "deviceScaleFactor": 1, "mobile": False})
+    browser.call("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": "light"}]})
+    browser.call("Runtime.runIfWaitingForDebugger")
+
+
+def wait_for_page(browser):
+    until = min(browser.deadline, time.monotonic() + 8)
+    while time.monotonic() < until:
+        if browser.evaluate("document.readyState") == "complete":
+            return
+        time.sleep(.05)
+    require(False, "BROWSER_TIMEOUT")
+
+
+def web_research(args, tools):
+    exact(args, ("title", "question", "sources", "claims"))
+    title = args["title"]; question = args["question"]
+    require(isinstance(title, str) and 0 < len(title.strip()) <= 160)
+    require(isinstance(question, str) and 0 < len(question.strip()) <= 2000)
+    requested = args["sources"]
+    require(isinstance(requested, list) and 1 <= len(requested) <= 4)
+    seen_urls = set(); seen_labels = set(); checked_sources = []
+    for index, item in enumerate(requested, 1):
+        exact(item, ("url", "label")); url = item["url"]; label = item["label"]
+        public_url(url)
+        require(isinstance(label, str) and 0 < len(label.strip()) <= 200
+                and "/" not in label and "\\" not in label)
+        require(url not in seen_urls and label not in seen_labels, "BROWSER_DUPLICATE_SOURCE")
+        seen_urls.add(url); seen_labels.add(label)
+        checked_sources.append({"id": f"source-{index:02}", "url": url, "label": label.strip()})
+
+    executable = tools.get("chrome")
+    require(isinstance(executable, str) and Path(executable).is_absolute(), "BROWSER_CHROME_REQUIRED")
+    browser = Browser(executable, True)
+    try:
+        prepare_browser(browser)
+        pages = []
+        for source_record in checked_sources:
+            start = len(browser.sources)
+            browser.call("Page.navigate", {"url": source_record["url"]})
+            wait_for_page(browser)
+            document = browser.evaluate("(() => ({title:document.title.slice(0,200),url:location.href,text:(document.body?.innerText||'').slice(0,64000)}))()")
+            require(isinstance(document, dict) and isinstance(document.get("text"), str)
+                    and document["text"].strip(), "BROWSER_OUTPUT_INVALID")
+            public_url(document["url"])
+            page_requests = browser.sources[start:]
+            response = next((item for item in reversed(page_requests) if item["url"] == document["url"]), None)
+            require(response is not None, "BROWSER_SOURCE_UNAVAILABLE")
+            observed = datetime.now(timezone.utc).isoformat()
+            page = dict(source_record)
+            page.update({"requestedUrl": source_record["url"], "url": document["url"],
+                         "pageTitle": document.get("title", ""), "accessedAt": observed,
+                         "responseSha256": response["sha256"],
+                         "textSha256": hashlib.sha256(document["text"].encode()).hexdigest(),
+                         "textBytes": len(document["text"].encode()), "text": document["text"],
+                         "possiblyTruncated": len(document["text"]) == 64000})
+            pages.append(page)
+
+        by_url = {item["requestedUrl"]: item for item in pages}
+        claims = args["claims"]
+        require(isinstance(claims, list) and 1 <= len(claims) <= 100, "BROWSER_RESEARCH_CLAIM_LIMIT")
+        checked_claims = []; seen_claims = set(); used_sources = set(); total_evidence = 0
+        for claim_index, item in enumerate(claims, 1):
+            exact(item, ("claim", "classification", "evidence", "note"))
+            statement = item["claim"]; classification = item["classification"]
+            require(isinstance(statement, str) and 0 < len(statement.strip()) <= 2000
+                    and statement not in seen_claims, "BROWSER_RESEARCH_CLAIM_INVALID")
+            require(classification in ("fact", "inference", "unknown"), "BROWSER_RESEARCH_CLASSIFICATION_INVALID")
+            seen_claims.add(statement); evidence = item["evidence"]; note = item["note"]
+            require(isinstance(evidence, list) and len(evidence) <= 8, "BROWSER_RESEARCH_EVIDENCE_LIMIT")
+            if classification == "unknown":
+                require(not evidence and isinstance(note, str) and 0 < len(note.strip()) <= 1000,
+                        "BROWSER_RESEARCH_UNKNOWN_INVALID")
+                checked_evidence = []; checked_note = note.strip()
+            else:
+                require(evidence, "BROWSER_RESEARCH_EVIDENCE_REQUIRED")
+                if classification == "fact":
+                    require(note is None, "BROWSER_RESEARCH_NOTE_INVALID"); checked_note = None
+                else:
+                    require(isinstance(note, str) and 0 < len(note.strip()) <= 1000,
+                            "BROWSER_RESEARCH_NOTE_INVALID"); checked_note = note.strip()
+                checked_evidence = []; seen_evidence = set()
+                for entry in evidence:
+                    exact(entry, ("source", "quote")); source_url = entry["source"]
+                    require(source_url in by_url, "BROWSER_RESEARCH_SOURCE_INVALID")
+                    quote = entry["quote"]
+                    require(isinstance(quote, str) and 0 < len(quote.strip()) <= 4000,
+                            "BROWSER_RESEARCH_EVIDENCE_REQUIRED")
+                    page = by_url[source_url]; start = page["text"].find(quote)
+                    require(start >= 0, "BROWSER_RESEARCH_EVIDENCE_MISMATCH")
+                    pair = (page["id"], quote)
+                    require(pair not in seen_evidence, "BROWSER_RESEARCH_EVIDENCE_DUPLICATE")
+                    seen_evidence.add(pair); used_sources.add(source_url); total_evidence += 1
+                    require(total_evidence <= 500, "BROWSER_RESEARCH_EVIDENCE_LIMIT")
+                    byte_start = len(page["text"][:start].encode())
+                    checked_evidence.append({"sourceId": page["id"], "sourceLabel": page["label"],
+                                             "sourceUrl": page["url"], "accessedAt": page["accessedAt"],
+                                             "quote": quote, "line": page["text"].count("\n", 0, start) + 1,
+                                             "startByte": byte_start,
+                                             "endByte": byte_start + len(quote.encode())})
+            checked_claims.append({"index": claim_index, "claim": statement.strip(),
+                                   "classification": classification, "evidence": checked_evidence,
+                                   "note": checked_note})
+        require(used_sources == set(by_url), "BROWSER_RESEARCH_UNUSED_SOURCE")
+
+        public_sources = [{key: page[key] for key in ("id", "label", "requestedUrl", "url", "pageTitle",
+                          "accessedAt", "responseSha256", "textSha256", "textBytes", "possiblyTruncated")}
+                          for page in pages]
+        result = {"kind": "web_research", "title": title.strip(), "question": question.strip(),
+                  "sources": public_sources, "claims": checked_claims,
+                  "summary": {"sources": len(public_sources), "claims": len(checked_claims),
+                              "facts": sum(item["classification"] == "fact" for item in checked_claims),
+                              "inferences": sum(item["classification"] == "inference" for item in checked_claims),
+                              "unknowns": sum(item["classification"] == "unknown" for item in checked_claims)},
+                  "file": "research-report.md"}
+        markdown = lambda value: ''.join(('\\' + character) if character in '\\`*_{}[]()#+-.!|>' else character
+                                         for character in html.escape(str(value), quote=True).replace('\r', ' ').replace('\n', ' '))
+        report = ['# ' + markdown(result["title"]), '', '**Research question:** ' + markdown(result["question"]), '',
+                  '> Classifications are reviewable labels, not automatic truth scores. Quotes, access times and response hashes are verified against this run.', '',
+                  '## Retrieved sources', '']
+        report.extend(f'- **{markdown(source["id"])} · {markdown(source["label"])}** · {markdown(source["url"])} · accessed {markdown(source["accessedAt"])} · response `{source["responseSha256"]}` · text `{source["textSha256"]}`'
+                      for source in public_sources)
+        for claim in checked_claims:
+            report.extend(('', f'## Claim {claim["index"]} · {claim["classification"].title()}', '', markdown(claim["claim"])))
+            if claim["note"] is not None:
+                report.extend(('', '**Review note:** ' + markdown(claim["note"])))
+            for evidence_item in claim["evidence"]:
+                report.extend(('', f'**{markdown(evidence_item["sourceId"])} · {markdown(evidence_item["sourceLabel"])} · accessed {markdown(evidence_item["accessedAt"])} · line {evidence_item["line"]} · bytes {evidence_item["startByte"]}–{evidence_item["endByte"]}**',
+                               '', f'> {markdown(evidence_item["quote"])}'))
+        out = ROOT / "outputs"; out.mkdir(exist_ok=True)
+        (out / "research-report.md").write_text('\n'.join(report) + '\n', encoding="utf-8")
+        csv_cell = lambda value: "'" + value if str(value).lstrip().startswith(("=", "+", "-", "@")) else value
+        with (out / "sources.csv").open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle); writer.writerow(("claim", "source_url", "accessed_at", "evidence_location"))
+            for claim in checked_claims:
+                if not claim["evidence"]:
+                    writer.writerow((csv_cell(claim["claim"]), "", "", "unknown: " + claim["note"]))
+                for evidence_item in claim["evidence"]:
+                    writer.writerow((csv_cell(claim["claim"]), evidence_item["sourceUrl"], evidence_item["accessedAt"],
+                                     f'line {evidence_item["line"]}; bytes {evidence_item["startByte"]}-{evidence_item["endByte"]}'))
+        (out / "research-evidence.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        return result
+    finally:
+        browser.close()
+
+
 def run(request):
     operation, args, tools = request["operation"], request["arguments"], request["tools"]
+    if operation == "browser.research":
+        return web_research(args, tools)
     require(operation in ("browser.inspect", "browser.draft") and isinstance(args, dict))
     require(set(args) <= {"url", "source", "fields"} and (("url" in args) != ("source" in args)))
     fields = args.get("fields", [])
@@ -229,37 +399,14 @@ def run(request):
     require(isinstance(executable, str) and Path(executable).is_absolute(), "BROWSER_CHROME_REQUIRED")
     browser = Browser(executable, source is None)
     try:
-        browser.call("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True}, False)
-        target = browser.call("Target.createTarget", {"url": "about:blank"}, False)["targetId"]
-        # Resume the auto-attached debugger; a second session leaves navigation paused.
-        while target not in browser.attached:
-            message = browser.message()
-            if message.get("method") == "Target.attachedToTarget":
-                attached = message["params"]
-                browser.attached[attached["targetInfo"]["targetId"]] = attached["sessionId"]
-        browser.session = browser.attached[target]
-        browser.call("Page.enable")
-        browser.call("Runtime.enable")
-        # Page scripts are disabled; only the fixed inspection/draft expressions run.
-        browser.call("Emulation.setScriptExecutionDisabled", {"value": True})
-        browser.call("Network.enable")
-        browser.call("Network.setBlockedURLs", {"urls": ["file:*", "filesystem:*", "ftp:*", "ws:*", "wss:*"]})
-        browser.call("Fetch.enable", {"patterns": [{"urlPattern": "*", "requestStage": "Request"}], "handleAuthRequests": True})
-        browser.call("Browser.setDownloadBehavior", {"behavior": "deny"}, False)
-        browser.call("Emulation.setDeviceMetricsOverride", {"width": 1200, "height": 800, "deviceScaleFactor": 1, "mobile": False})
-        browser.call("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": "light"}]})
-        browser.call("Runtime.runIfWaitingForDebugger")
+        prepare_browser(browser)
         if source is None:
             browser.call("Page.navigate", {"url": args["url"]})
         else:
             frame = browser.call("Page.getFrameTree")["frameTree"]["frame"]["id"]
             browser.call("Page.setDocumentContent", {"frameId": frame, "html": source})
         browser.call("Emulation.setDefaultBackgroundColorOverride", {"color": {"r": 255, "g": 255, "b": 255, "a": 1}})
-        until = time.monotonic() + 8
-        while time.monotonic() < until:
-            if browser.evaluate("document.readyState") == "complete":
-                break
-            time.sleep(.05)
+        wait_for_page(browser)
         if fields:
             result = browser.evaluate("(() => { const fields=" + json.dumps(fields, ensure_ascii=True) + "; const done=[]; for(const f of fields){ const e=document.querySelector(f.selector); if(!e || !['INPUT','TEXTAREA','SELECT'].includes(e.tagName) || e.disabled || ['password','file','hidden','submit','button','reset','image'].includes(e.type)) return {error:'BROWSER_FIELD_DENIED'}; const r=e.getBoundingClientRect(); if(!r.width||!r.height) return {error:'BROWSER_FIELD_DENIED'}; if(e.type==='checkbox'||e.type==='radio')e.checked=f.value==='true'; else {e.value=f.value;if(e.value!==f.value)return {error:'BROWSER_FIELD_VALUE_INVALID'};} done.push({selector:f.selector,value:e.type==='checkbox'||e.type==='radio'?String(e.checked):e.value}); } return {fields:done}; })()")
             require(isinstance(result, dict) and "error" not in result, (result or {}).get("error", "BROWSER_FIELD_DENIED"))

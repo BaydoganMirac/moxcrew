@@ -50,6 +50,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "images.edit",
     "browser.inspect",
     "browser.draft",
+    "browser.research",
 ];
 fn error(code: &str) -> Error {
     Error(code.into())
@@ -407,7 +408,10 @@ pub(crate) async fn run(
     inputs: &[(String, Vec<u8>)],
     active: Option<Arc<AtomicBool>>,
 ) -> Result<Output> {
-    if matches!(operation, "browser.inspect" | "browser.draft") {
+    if matches!(
+        operation,
+        "browser.inspect" | "browser.draft" | "browser.research"
+    ) {
         return crate::browser::run(data, operation, arguments, inputs, active).await;
     }
     if matches!(operation, "images.generate" | "images.edit") {

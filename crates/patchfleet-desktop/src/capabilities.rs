@@ -593,6 +593,7 @@ impl Console {
             | "capabilities-claim-check"
             | "capabilities-research-synthesis"
             | "capabilities-research-comparison"
+            | "capabilities-web-research"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -644,6 +645,7 @@ impl Console {
                 "capabilities-claim-check" => 16,
                 "capabilities-research-synthesis" => 17,
                 "capabilities-research-comparison" => 18,
+                "capabilities-web-research" => 19,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -826,6 +828,29 @@ impl Console {
                 }
                 .into();
                 *draft.value("comparisonOptions") = "Atlas | Boreal".into();
+            } else if scene == "capabilities-web-research" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "Launch market research"
+                } else {
+                    "Lansman pazar araştırması"
+                }
+                .into();
+                *draft.value("webResearchQuestion") = if english {
+                    "What do the public launch sources establish about demand and pricing?"
+                } else {
+                    "Herkese açık lansman kaynakları talep ve fiyatlama hakkında ne gösteriyor?"
+                }
+                .into();
+                *draft.value("webResearchSources") =
+                    "Market bulletin | https://example.com/market\nPricing brief | https://example.org/pricing"
+                        .into();
+                *draft.value("webResearchClaims") = if english {
+                    "Teams request weekly summaries.\nThe public price is 120 TRY."
+                } else {
+                    "Ekipler haftalık özet istiyor.\nHerkese açık fiyat 120 TRY."
+                }
+                .into();
             }
         }
     }
@@ -1657,6 +1682,7 @@ impl Console {
             "Check claims",
             "Synthesize sources",
             "Compare options",
+            "Web research report",
         ];
         form_combo(
             ui,
@@ -1668,13 +1694,13 @@ impl Console {
                 }
             },
         );
-        if ![10, 11, 12, 13, 14, 15, 16, 17, 18].contains(&draft.kind) {
+        if ![10, 11, 12, 13, 14, 15, 16, 17, 18, 19].contains(&draft.kind) {
             hint(
                 ui,
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
             );
         }
-        if ![15, 16, 17, 18].contains(&draft.kind)
+        if ![15, 16, 17, 18, 19].contains(&draft.kind)
             && studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked()
         {
             self.create.select_productive_view(2);
@@ -1683,7 +1709,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15, 16, 17, 18].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -2874,6 +2900,103 @@ impl Console {
                     }));
                 }
             }
+            19 => {
+                hint(
+                    ui,
+                    "Retrieve 1–4 public pages with scripts disabled. Every material claim keeps an access time, response hash and literal quote.",
+                );
+                ui.columns(2, |columns| {
+                    field(
+                        &mut columns[0],
+                        "Research report title",
+                        draft.value("title"),
+                        160,
+                        false,
+                    );
+                    field(
+                        &mut columns[1],
+                        "Research question",
+                        draft.value("webResearchQuestion"),
+                        2000,
+                        false,
+                    );
+                });
+                ui.columns(2, |columns| {
+                    multiline(
+                        &mut columns[0],
+                        "Public sources · label | URL",
+                        draft.value("webResearchSources"),
+                        9200,
+                        2,
+                    );
+                    multiline(
+                        &mut columns[1],
+                        "Claims to verify · one per line",
+                        draft.value("webResearchClaims"),
+                        12000,
+                        2,
+                    );
+                });
+                hint(
+                    ui,
+                    "Chat inspects each page first, then fills only exact quotes. Unknowns stay explicit; nothing is submitted or published.",
+                );
+                let mut seen_urls = HashSet::new();
+                let mut seen_labels = HashSet::new();
+                let sources: Option<Vec<Value>> = draft
+                    .get("webResearchSources")
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(|line| {
+                        let (label, url) = line.split_once('|')?;
+                        let label = label.trim();
+                        let url = url.trim();
+                        (valid_input(label, 200)
+                            && (url.starts_with("https://") || url.starts_with("http://"))
+                            && valid_input(url, 4096)
+                            && seen_labels.insert(label)
+                            && seen_urls.insert(url))
+                        .then(|| json!({"url":url,"label":label}))
+                    })
+                    .collect();
+                let mut seen_claims = HashSet::new();
+                let claims: Option<Vec<Value>> = draft
+                    .get("webResearchClaims")
+                    .lines()
+                    .map(str::trim)
+                    .filter(|claim| !claim.is_empty())
+                    .map(|claim| {
+                        (valid_input(claim, 2000) && seen_claims.insert(claim)).then(|| {
+                            json!({
+                                "claim":claim,
+                                "classification":"fact",
+                                "evidence":[],
+                                "note":null
+                            })
+                        })
+                    })
+                    .collect();
+                if valid_input(draft.get("title"), 160)
+                    && valid_input(draft.get("webResearchQuestion"), 2000)
+                    && sources
+                        .as_ref()
+                        .is_some_and(|sources| (1..=4).contains(&sources.len()))
+                    && claims
+                        .as_ref()
+                        .is_some_and(|claims| (1..=50).contains(&claims.len()))
+                {
+                    operation = Some(json!({
+                        "operation":"browser.research",
+                        "arguments":{
+                            "title":draft.get("title"),
+                            "question":draft.get("webResearchQuestion"),
+                            "sources":sources,
+                            "claims":claims
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -2910,6 +3033,7 @@ impl Console {
                         16 => "Read every selected frozen source before calling the typed local tool. For each claim, list every source actually checked as {source}, add only literal quotes with source and supports, disputes or context stance, and give an explicit unresolvedReason when no support or dispute exists. Do not invent evidence, copy a requested status or present the derived status as an automatic truth score.",
                         17 => "Read every selected frozen source before calling the typed local tool. Cite every selected source, populate at least one finding with literal evidence from two or more distinct sources, and preserve each disagreement as two or more source-distinct positions with literal quotes. Keep disagreements unresolved; use an empty list only when none was found, and never turn absence of a supplied disagreement into a consensus claim.",
                         18 => "Read every selected frozen source before calling the typed local tool. Apply every owner criterion to every option using the exact criterion keys. For each cell, use confirmed or uncertain with an assessment and literal source evidence, or missing with null assessment and no evidence. Cite every selected source. Keep recommendation.option, reason and basedOnCriteria separate from uncertainty; use a null option and empty basedOnCriteria when the evidence cannot support a recommendation. Never invent quotes, silently score criteria or present the recommendation as automatic truth.",
+                        19 => "Inspect each requested public URL with browser.inspect before calling browser.research. For every claim, use fact with literal evidence and null note, inference with literal evidence and an explicit review note, or unknown with no evidence and a reason. Cite every requested URL by its exact source value. The typed browser will retrieve the pages again, reject changed or invented quotes, record UTC access times and response/text hashes, and emit research-report.md, sources.csv and research-evidence.json. Do not use private pages, submit forms, invent citations or present classifications as automatic truth.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -4126,6 +4250,76 @@ mod tests {
         assert!(request.contains("Apply every owner criterion to every option"));
         assert!(request.contains("Never invent quotes"));
         assert!(request.contains("automatic truth"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn web_research_request_stages_public_sources_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let data = fixture();
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 19;
+        *draft.value("title") = "Launch market research".into();
+        *draft.value("webResearchQuestion") =
+            "What do public sources establish about demand and pricing?".into();
+        *draft.value("webResearchSources") =
+            "Market bulletin | https://example.com/market\nPricing brief | https://example.org/pricing"
+                .into();
+        *draft.value("webResearchClaims") =
+            "Teams request weekly summaries.\nThe public price is 120 TRY.".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let visibility = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                "test-action-visibility",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        let action = ctx.data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new((
+                "test-action",
+                "memory_control",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        assert!(visibility.1, "button visibility: {visibility:?}");
+        assert!(
+            visibility.0.contains(action.center()),
+            "web research button center must fit the 800×560 clip: clip={:?}, action={action:?}",
+            visibility.0
+        );
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"browser.research\""));
+        assert!(request.contains("https://example.com/market"));
+        assert!(request.contains("https://example.org/pricing"));
+        assert!(request.contains("Teams request weekly summaries."));
+        assert!(request.contains("\"classification\": \"fact\""));
+        assert!(request.contains("\"evidence\": []"));
+        assert!(request.contains("Inspect each requested public URL"));
+        assert!(request.contains("record UTC access times"));
+        assert!(request.contains("Do not use private pages"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

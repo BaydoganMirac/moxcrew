@@ -392,6 +392,66 @@ def documents_brief(args,tools):
     return result
 
 
+def documents_rewrite(args,tools):
+    exact(args,('source','mode','target','preserve','segments'))
+    path=source(args['source']);suffix=path.suffix.lower()
+    if suffix=='.docx':
+        parts=read_zip(path);node=xml(parts['word/document.xml'])
+        units=[''.join(item.text or '' for item in paragraph.findall('.//w:t',NS))
+               for paragraph in node.findall('.//w:body/w:p',NS)]
+    elif suffix in ('.txt','.md'):
+        try: content=path.read_bytes().decode('utf-8-sig')
+        except UnicodeDecodeError: raise ValueError('PRODUCTION_REWRITE_FORMAT_UNSUPPORTED')
+        content=content.replace('\r\n','\n').replace('\r','\n');units=content.split('\n')
+    else: raise ValueError('PRODUCTION_REWRITE_FORMAT_UNSUPPORTED')
+    units=[value for value in units if value.strip()]
+    require(1<=len(units)<=200 and sum(len(value) for value in units)<=100000,'PRODUCTION_REWRITE_SOURCE_LIMIT')
+    for value in units: text(value,4000)
+    mode=args['mode'];require(isinstance(mode,str) and mode in ('translate','rewrite'))
+    target=text(args['target'],240).strip();require(target and '\n' not in target and '\r' not in target)
+    preserve=args['preserve'];require(isinstance(preserve,list) and len(preserve)<=30)
+    checked_preserve=[]
+    source_text='\n'.join(units)
+    for value in preserve:
+        value=text(value,120).strip()
+        require(value and '\n' not in value and '\r' not in value and value in source_text and value not in checked_preserve)
+        checked_preserve.append(value)
+    segments=args['segments'];require(isinstance(segments,list) and len(segments)==len(units))
+    checked=[]
+    for expected,item in zip(units,segments):
+        exact(item,('source','result'));original=text(item['source'],4000);result=text(item['result'],4000).strip()
+        require(original==expected,'PRODUCTION_REWRITE_SOURCE_MISMATCH')
+        require(result and '\n' not in result and '\r' not in result)
+        checked.append({'index':len(checked)+1,'source':original,'result':result})
+    require(any(item['source']!=item['result'] for item in checked),'PRODUCTION_REWRITE_NO_CHANGE')
+    result_text='\n'.join(item['result'] for item in checked)
+    fact_pattern=re.compile(r'https?://[^\s<>()\[\]{}]+|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|(?<![\w])(?:[+-]?\d(?:[\d.,:/-]*\d)?(?:\s?(?:%|[A-Z]{3}))?)(?![\w])')
+    automatic=[]
+    for match in fact_pattern.finditer(source_text):
+        value=match[0].rstrip('.,;:!?') if match[0].startswith(('http://','https://')) else match[0]
+        if value and value not in automatic: automatic.append(value)
+    protected=[]
+    for value in automatic+checked_preserve:
+        if value not in protected: protected.append(value)
+    require(all(value in result_text for value in protected),'PRODUCTION_REWRITE_FACT_CHANGED')
+    title=('Translation' if mode=='translate' else 'Rewrite')+' · '+target
+    documents({'title':title,'paragraphs':[item['result'] for item in checked]},False)
+    audit={'kind':'document_rewrite','mode':mode,'target':target,
+           'sourceSha256':hashlib.sha256(path.read_bytes()).hexdigest(),'sourceFormat':suffix[1:],
+           'segmentCount':len(checked),'automaticFacts':automatic,'preservedTerms':checked_preserve,
+           'segments':checked,'file':'document.docx'}
+    (OUT/'rewrite-audit.json').write_text(json.dumps(audit,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+    markdown=lambda value:''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character
+                                  for character in html.escape(str(value),quote=True).replace('\r',' ').replace('\n',' '))
+    report=['# '+markdown(title),'',f'- Source SHA-256: `{audit["sourceSha256"]}`',
+            f'- Segments: {len(checked)}',f'- Protected facts/terms: {len(protected)}','']
+    for item in checked:
+        report.extend((f'## Segment {item["index"]}','','**Source**',markdown(item['source']),'',
+                       '**Result**',markdown(item['result']),''))
+    (OUT/'rewrite-comparison.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+    return audit
+
+
 def documents_template(args,tools):
     exact(args,('source','fields'))
     path=source(args['source']);require(path.suffix.lower()=='.docx','PRODUCTION_TEMPLATE_FORMAT_UNSUPPORTED')
@@ -686,6 +746,7 @@ def execute(operation,args,tools):
     if operation=='data.scenario': return data_scenario(args,tools)
     if operation=='data.extract': return data_extract(args,tools)
     if operation=='documents.brief': return documents_brief(args,tools)
+    if operation=='documents.rewrite': return documents_rewrite(args,tools)
     if operation=='documents.template': return documents_template(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)

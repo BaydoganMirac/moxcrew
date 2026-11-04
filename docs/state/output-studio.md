@@ -76,6 +76,7 @@ scenario workbooks with checked totals, image resizing,
 literal-evidence structured tables with visible uncertain/missing cells,
 editable attributed briefs with explicit questions and action assignments,
 explicit DOCX template filling with visible missing values,
+source-pinned text/DOCX translation and rewrite with protected facts and paired review,
 2–12 image batch conversion with per-source results, video clip concatenation
 with an optional SRT sidecar, audio cleanup, and 1–12 segment podcast packaging
 to checked M4A plus output-relative chapter JSON. Python
@@ -95,6 +96,8 @@ See [attributed brief and action plan](attributed-brief-action-plan.md) for its
 finding/action evidence and explicit question/assignment contract.
 See [DOCX template filling](explicit-docx-template-filling.md) for its exact
 placeholder set, split-run handling and visible missing-value contract.
+See [source-pinned document rewrite](source-pinned-document-rewrite.md) for its
+exact segment coverage, protected-fact and human meaning-review contract.
 
 Limits: 25 MiB total input/output per production job, 12 sources, 16 produced
 files, 120 seconds per job, 20 minutes maximum media input/edit duration, bounded

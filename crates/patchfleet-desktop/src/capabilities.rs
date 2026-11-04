@@ -139,6 +139,12 @@ fn template_source(resource: &Value) -> bool {
         .to_ascii_lowercase()
         .ends_with(".docx")
 }
+fn rewrite_source(resource: &Value) -> bool {
+    let name = text(resource, "name").to_ascii_lowercase();
+    [".txt", ".md", ".docx"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+}
 fn extraction_source(resource: &Value) -> bool {
     let name = text(resource, "name").to_ascii_lowercase();
     [
@@ -584,6 +590,7 @@ impl Console {
             | "capabilities-data-scenario"
             | "capabilities-data-extract"
             | "capabilities-documents-brief"
+            | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
             | "capabilities-interactive" => 5,
             "capabilities-browser" => 6,
@@ -622,6 +629,7 @@ impl Console {
                 "capabilities-data-extract" => 11,
                 "capabilities-documents-brief" => 12,
                 "capabilities-documents-template" => 13,
+                "capabilities-documents-rewrite" => 14,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -714,6 +722,17 @@ impl Console {
                     "client_name | Atlas Bulut\napproval_date |\ncontact_email | operasyon@atlas.example"
                 }
                 .into();
+            } else if scene == "capabilities-documents-rewrite" {
+                draft.record = available
+                    .iter()
+                    .find(|resource| rewrite_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("rewriteMode") = "translate".into();
+                *draft.value("rewriteTarget") =
+                    if english { "Turkish" } else { "İngilizce" }.into();
+                *draft.value("preserveTerms") = "Moxcrew, Launch OS".into();
             }
         }
     }
@@ -1540,6 +1559,7 @@ impl Console {
             "Extract table",
             "Brief + action plan",
             "Fill Word template",
+            "Translate or rewrite",
         ];
         form_combo(
             ui,
@@ -1551,7 +1571,7 @@ impl Console {
                 }
             },
         );
-        if ![10, 11, 12, 13].contains(&draft.kind) {
+        if ![10, 11, 12, 13, 14].contains(&draft.kind) {
             hint(
                 ui,
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
@@ -1576,6 +1596,7 @@ impl Console {
                                     8 => podcast_source(r),
                                     9 | 10 => chart_source(r),
                                     13 => template_source(r),
+                                    14 => rewrite_source(r),
                                     _ => true,
                                 }
                         })
@@ -1584,7 +1605,7 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![8, 9, 10, 13].contains(&kind) {
+                        if ![8, 9, 10, 13, 14].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
@@ -1592,6 +1613,7 @@ impl Console {
                                 8 => podcast_source(r),
                                 9 | 10 => chart_source(r),
                                 13 => template_source(r),
+                                14 => rewrite_source(r),
                                 _ => false,
                             }
                     }) {
@@ -2271,6 +2293,74 @@ impl Console {
                     }));
                 }
             }
+            14 => {
+                let mut mode = if draft.get("rewriteMode") == "rewrite" {
+                    1
+                } else {
+                    0
+                };
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Change"));
+                    ui.selectable_value(&mut mode, 0, t(ui, "Translate"));
+                    ui.selectable_value(&mut mode, 1, t(ui, "Rewrite style"));
+                });
+                *draft.value("rewriteMode") =
+                    if mode == 0 { "translate" } else { "rewrite" }.into();
+                let mut target = draft.get("rewriteTarget").to_owned();
+                let mut terms = draft.get("preserveTerms").to_owned();
+                ui.columns(2, |columns| {
+                    field(
+                        &mut columns[0],
+                        if mode == 0 {
+                            "Target language"
+                        } else {
+                            "Target style"
+                        },
+                        &mut target,
+                        240,
+                        false,
+                    );
+                    field(
+                        &mut columns[1],
+                        "Protected terms · comma separated (optional)",
+                        &mut terms,
+                        3630,
+                        false,
+                    );
+                });
+                *draft.value("rewriteTarget") = target;
+                *draft.value("preserveTerms") = terms;
+                hint(
+                    ui,
+                    "Every non-empty source line or DOCX paragraph stays paired for review. Numbers, dates, links and email addresses are protected automatically.",
+                );
+                let mut seen = HashSet::new();
+                let preserve: Option<Vec<&str>> = draft
+                    .get("preserveTerms")
+                    .split(',')
+                    .filter(|part| !part.trim().is_empty())
+                    .map(|part| {
+                        let value = part.trim();
+                        (value.encode_utf16().count() <= 120 && seen.insert(value)).then_some(value)
+                    })
+                    .collect();
+                if source.is_some_and(rewrite_source)
+                    && source_id.is_some()
+                    && valid_input(draft.get("rewriteTarget"), 240)
+                    && preserve.as_ref().is_some_and(|values| values.len() <= 30)
+                {
+                    operation = Some(json!({
+                        "operation":"documents.rewrite",
+                        "arguments":{
+                            "source":source_id,
+                            "mode":draft.get("rewriteMode"),
+                            "target":draft.get("rewriteTarget"),
+                            "preserve":preserve,
+                            "segments":[]
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -2302,6 +2392,7 @@ impl Console {
                         11 => "Read the exact Project sources and populate rows before calling the typed tool. Every confirmed or uncertain value must appear inside its literal evidence quote. Mark absent fields missing with null value and evidence; never infer or hide uncertainty.",
                         12 => "Read the exact Project sources and populate findings, questions and actions before calling the typed tool. Every finding and action needs literal evidence from its exact source. Keep unresolved questions explicit; use null owner or due when the notes do not supply them, and never guess.",
                         13 => "Inspect the exact DOCX template before calling the typed tool. Supply every {{field_key}} exactly once. Keep blank values missing with null instead of guessing, and preserve all non-placeholder template content.",
+                        14 => "Read the exact frozen source before calling the typed tool. Populate one segment for every non-empty text line or DOCX body paragraph in exact order. Keep each source string literal, preserve facts and requested terms, and never claim semantic equivalence without owner review.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -3125,6 +3216,56 @@ mod tests {
         assert!(request.contains("\"value\": null"));
         assert!(request.contains("Supply every {{field_key}} exactly once"));
         assert!(request.contains("preserve all non-placeholder template content"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn rewrite_request_pins_supported_source_and_stages_protected_terms_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"launch-copy.txt","kind":"text","sha256":"a".repeat(64),"bytes":512,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"reference.pdf","kind":"document","sha256":"b".repeat(64),"bytes":256,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 14;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("rewriteMode") = "translate".into();
+        *draft.value("rewriteTarget") = "Turkish".into();
+        *draft.value("preserveTerms") = "Moxcrew, Launch OS".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"documents.rewrite\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"mode\": \"translate\""));
+        assert!(request.contains("\"target\": \"Turkish\""));
+        assert!(request.contains("\"Moxcrew\""));
+        assert!(request.contains("\"Launch OS\""));
+        assert!(request.contains("\"segments\": []"));
+        assert!(request.contains("every non-empty text line or DOCX body paragraph"));
+        assert!(request.contains("never claim semantic equivalence without owner review"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

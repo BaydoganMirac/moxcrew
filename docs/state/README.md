@@ -68,6 +68,7 @@
 | Traceable structured extraction | Complete; literal evidence, explicit uncertainty and missing cells; 551-test gate | 2026-11-04 | [traceable-structured-data-extraction.md](traceable-structured-data-extraction.md) |
 | Attributed brief and action plan | Complete; literal-evidence findings/actions, explicit questions and missing assignments; 553-test gate | 2026-11-04 | [attributed-brief-action-plan.md](attributed-brief-action-plan.md) |
 | Explicit DOCX template filling | Complete; exact placeholders, visible missing values and editable output; 555-test gate | 2026-11-04 | [explicit-docx-template-filling.md](explicit-docx-template-filling.md) |
+| Source-pinned document translation and rewrite | Complete; exact segment coverage, protected facts and paired human review; 557-test gate | 2026-11-04 | [source-pinned-document-rewrite.md](source-pinned-document-rewrite.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

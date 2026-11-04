@@ -58,6 +58,10 @@ retain open questions and preserve missing owners or dates as null; see
 Explicit Word template requests bind a selected DOCX to one exact set of
 `{{field_key}}` values; blanks remain visible in the result instead of being
 silently removed. See [DOCX template filling](state/explicit-docx-template-filling.md).
+Translation and style-rewrite requests keep every exact source segment paired
+with its result, preserve detected stable facts and owner-selected terms, and
+publish the source hash beside a human-review comparison. See
+[source-pinned document rewrite](state/source-pinned-document-rewrite.md).
 An armed trigger is explicit time- and count-bounded delegation for its frozen
 recipe while the Host is awake.
 It watches a source condition; it does not import an entire folder automatically.

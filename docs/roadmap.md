@@ -88,6 +88,10 @@ commitments.
   [Task0076](state/explicit-docx-template-filling.md) closes the deterministic D5
   publication gap: one exact DOCX placeholder set is filled locally and every
   blank value stays visibly marked in the editable result.
+  [Task0077](state/source-pinned-document-rewrite.md) closes the bounded D4
+  publication gap: every text/DOCX source segment stays paired and ordered,
+  stable facts remain literal and the exact source hash follows the editable
+  result into human meaning review.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

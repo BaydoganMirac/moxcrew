@@ -51,6 +51,11 @@ the strongest format evidence that was actually inspected and the human review
 still required. Reopened text, Office structure, image bytes and media metadata
 remain distinct from claims about content accuracy, layout, visual fidelity or
 full playback. See [artifact verification](state/artifact-verification-summary.md).
+When a preserved parent version is present, the owner can explicitly load it
+and compare bounded text or Office structure beside the selected current
+version. The comparison restores the current exact preview and does not merge,
+accept, revise or claim semantic/layout quality. See
+[revision comparison](state/exact-revision-comparison.md).
 Ordinary coding tasks, teams and their
 Quick start guide keep Git worktrees. Recipes do not establish installed tools
 or verified output quality. The owner selected one broad general-purpose ability

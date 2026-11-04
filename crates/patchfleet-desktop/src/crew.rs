@@ -429,6 +429,7 @@ impl Console {
                 .insert(project.clone(), text(mission, "missionId").into());
         }
         if scene.starts_with("productive-output")
+            || scene == "productive-compare"
             || matches!(
                 scene,
                 "productive-resources"
@@ -450,6 +451,9 @@ impl Console {
                 output_studio::project_revision(snapshot, &project).unwrap_or(0),
             ));
             self.studio_select_first(snapshot);
+            if scene == "productive-compare" {
+                self.studio_compare_smoke(snapshot);
+            }
             if scene == "productive-delivery" {
                 self.delivery_smoke(snapshot);
             }

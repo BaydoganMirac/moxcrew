@@ -295,7 +295,7 @@ fn seed_create_scene(directory: &std::path::Path) {
             host.shutdown().await;
             return;
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| (scene.starts_with("crew-") || scene.starts_with("productive-")) && !matches!(scene.as_str(),"productive-output"|"productive-resources"|"productive-apps"|"productive-delivery")) {
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| (scene.starts_with("crew-") || scene.starts_with("productive-")) && !matches!(scene.as_str(),"productive-output"|"productive-compare"|"productive-resources"|"productive-apps"|"productive-delivery")) {
             let goal = if english { "Research the audience and create a launch presentation backed by sources." } else { "Hedef kitleyi araştır ve kaynaklarla desteklenen bir lansman sunumu hazırla." };
             let plan = host.action("project_crew_plan", serde_json::json!({"projectId":created["projectId"],"instruction":goal,"abilityId":"P1"})).await.unwrap();
             let prepared = host.action("project_crew_prepare", command::Command::new("project_crew_prepare", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":1,"title":if english {"Launch crew"} else {"Lansman ekibi"},"instruction":goal,"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})).payload).await.unwrap();
@@ -330,6 +330,17 @@ fn seed_create_scene(directory: &std::path::Path) {
         }
         std::fs::write(output.join("brief.md"), "# Launch presentation brief\n\nA real text file in this disposable project's output folder.\n\nThe job is queued. No model or presentation renderer was run for this interface fixture.\n\n## Requested deliverables\n\n- Source-backed research\n- Editable presentation\n- Short launch video\n\nOwner review remains explicit.\n").unwrap();
         std::fs::write(output.join("outline.csv"), "slide,topic\n1,The idea\n2,The audience\n3,The evidence\n").unwrap();
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("productive-compare") {
+            let page=host.action("project_studio_read",serde_json::json!({"projectId":created["projectId"]})).await.unwrap();
+            let artifact=page["artifacts"].as_array().unwrap().iter().find(|artifact|artifact["path"]=="outputs/brief.md").unwrap();
+            let current=host.snapshot().unwrap();
+            let project=current["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+            let revised=host.action("project_artifact_revise",command::Command::new("project_artifact_revise",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"],"instruction":"Tighten the owner review statement and preserve the source-backed deliverables.","providerId":"codex"})).payload).await.unwrap();
+            let current=host.snapshot().unwrap();
+            let work=current["work"]["items"].as_array().unwrap().iter().find(|work|work["workItemId"]==revised["workItemId"]).unwrap();
+            let output=std::path::Path::new(work["workingDirectory"].as_str().unwrap()).join("outputs");
+            std::fs::write(output.join("brief.md"),"# Launch presentation brief · reviewed\n\nThis preserved revision sharpens the launch story without replacing the original file.\n\n## Requested deliverables\n\n- Source-backed audience research\n- Editable presentation with evidence\n- Short launch video\n\nOwner review remains required before delivery.\n").unwrap();
+        }
         host.shutdown().await;
     });
 }

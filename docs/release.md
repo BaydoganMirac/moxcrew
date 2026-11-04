@@ -8,7 +8,7 @@ public signing and Cloud deployment remain explicit owner release actions.
 The owner authorized the unsigned
 [0.12.0 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0).
 It is a GitHub pre-release with native installers and SHA-256 checksums, not a
-claim of Apple notarization, Windows publisher signing or production readiness.
+claim of Apple notarization or production readiness.
 The first public asset set is macOS/Linux only. Windows remains an experimental
 CI lane and is withheld after its private-storage and native behavior gates failed.
 

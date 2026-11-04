@@ -139,6 +139,12 @@ does not claim an automatic truth or source-quality score.
 that require every selected source, at least one cross-source finding and
 literal source-distinct disagreement positions. An empty disagreement list is
 explicitly not treated as evidence of consensus.
+[Task0081](../plans/0081-evidence-backed-owner-criteria-comparison.md) adds a
+deterministic R2 comparison table whose exact owner criteria apply to every
+option. Confirmed/uncertain cells retain literal evidence; missing cells stay
+explicit, while recommendation and uncertainty remain separate reviewable
+fields. It does not rank options automatically or prove the recommendation is
+objectively correct.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

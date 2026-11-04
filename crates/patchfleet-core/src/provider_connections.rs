@@ -214,12 +214,14 @@ mod tests {
         probe(&programs.claude, "claude", programs.timeout)
             .await
             .unwrap();
-        programs.timeout = Duration::from_millis(300);
+        // Leave enough process-start headroom for Windows runners while keeping
+        // the bound below the 1.8 seconds three serial deadlines would require.
+        programs.timeout = Duration::from_millis(600);
         let started = Instant::now();
         let status = Controller::with_programs(programs)
             .connection_status()
             .await;
-        assert!(started.elapsed() < Duration::from_millis(750));
+        assert!(started.elapsed() < Duration::from_millis(1_500));
         for provider in &status["providers"].as_array().unwrap()[..2] {
             assert_eq!(provider["authentication"], "unknown");
             assert!(provider["reasonCode"]

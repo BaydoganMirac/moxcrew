@@ -478,6 +478,68 @@ else:
 }
 
 #[tokio::test]
+async fn csv_chart_aggregates_checked_values_and_escapes_static_outputs() {
+    let data = tempfile::tempdir().unwrap();
+    let source = b"region,revenue\nNorth,10\n<script>,4\nNorth,2\n".to_vec();
+    let output = run(
+        data.path(),
+        "data.chart",
+        &json!({
+            "source":"inputs/sales.csv",
+            "title":"Revenue <overview>\n# injected",
+            "categoryColumn":"region",
+            "valueColumn":"revenue",
+            "aggregation":"sum"
+        }),
+        &[("inputs/sales.csv".into(), source.clone())],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.value["kind"], "data_chart");
+    assert_eq!(output.value["rowsAnalyzed"], 3);
+    assert_eq!(output.value["categoryCount"], 2);
+    assert_eq!(output.value["series"][0]["label"], "North");
+    assert_eq!(output.value["series"][0]["value"], 12.0);
+    assert_eq!(output.value["series"][1]["value"], 4.0);
+    let svg = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "chart.svg")
+        .map(|(_, bytes)| String::from_utf8(bytes.clone()).unwrap())
+        .unwrap();
+    assert!(svg.starts_with("<svg "));
+    assert!(svg.contains("Revenue &lt;overview&gt;"));
+    assert!(svg.contains("&lt;script&gt;"));
+    assert!(!svg.contains("<script>"));
+    assert!(!svg.contains("href=") && !svg.contains("<foreignObject"));
+    let report = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "report.md")
+        .map(|(_, bytes)| String::from_utf8(bytes.clone()).unwrap())
+        .unwrap();
+    assert!(report.contains("| North | 12 | 2 |"));
+    assert!(report.contains("&lt;script&gt;"));
+    assert!(!report.contains("<script>"));
+    assert!(report.contains("\\# injected"));
+    assert!(!report.contains("\n# injected"));
+    assert!(!output.value.to_string().contains("inputs/"));
+    assert!(run(
+        data.path(),
+        "data.chart",
+        &json!({"source":"inputs/sales.csv","title":"Invalid","categoryColumn":"region","valueColumn":"revenue","aggregation":"average"}),
+        &[(
+            "inputs/sales.csv".into(),
+            b"region,revenue\nNorth,not-a-number\n".to_vec()
+        )],
+        None,
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
 async fn caption_renderer_is_required_and_fallback_rejects_unbounded_work_before_encoding() {
     use std::os::unix::fs::PermissionsExt;
     let data = tempfile::tempdir().unwrap();

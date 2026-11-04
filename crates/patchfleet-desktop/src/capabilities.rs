@@ -129,6 +129,11 @@ fn podcast_source(resource: &Value) -> bool {
         .iter()
         .any(|extension| name.ends_with(extension))
 }
+fn chart_source(resource: &Value) -> bool {
+    text(resource, "name")
+        .to_ascii_lowercase()
+        .ends_with(".csv")
+}
 fn source_refs(draft: &CapabilityDraft, resources: &[Value]) -> Vec<Value> {
     resources
         .iter()
@@ -553,6 +558,7 @@ impl Console {
             | "capabilities-video"
             | "capabilities-batch-images"
             | "capabilities-podcast"
+            | "capabilities-data-chart"
             | "capabilities-interactive" => 5,
             "capabilities-browser" => 6,
             _ => 0,
@@ -570,6 +576,10 @@ impl Console {
                 .iter()
                 .find(|resource| podcast_source(resource))
                 .map(|resource| text(resource, "resourceId").to_owned());
+            let csv = available
+                .iter()
+                .find(|resource| chart_source(resource))
+                .map(|resource| text(resource, "resourceId").to_owned());
             let draft = self
                 .create
                 .capabilities
@@ -581,6 +591,7 @@ impl Console {
                 "capabilities-interactive" => 3,
                 "capabilities-batch-images" => 7,
                 "capabilities-podcast" => 8,
+                "capabilities-data-chart" => 9,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -602,6 +613,18 @@ impl Console {
                     "0 | 18.5 | Açılış\n42 | 96 | Ana fikir\n128 | 176 | Çıkarımlar"
                 }
                 .into();
+            } else if scene == "capabilities-data-chart" {
+                draft.record = csv.unwrap_or_default();
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "Revenue by region"
+                } else {
+                    "Bölgelere göre gelir"
+                }
+                .into();
+                *draft.value("categoryColumn") = "region".into();
+                *draft.value("valueColumn") = "revenue".into();
+                *draft.value("aggregation") = "sum".into();
             }
         }
     }
@@ -1423,6 +1446,7 @@ impl Console {
             "Render document",
             "Batch images",
             "Edit podcast",
+            "Chart from CSV",
         ];
         form_combo(
             ui,
@@ -1453,17 +1477,26 @@ impl Console {
                     all.iter()
                         .find(|r| {
                             text(r, "resourceId") == draft.record
-                                && (kind != 8 || { podcast_source(r) })
+                                && match kind {
+                                    8 => podcast_source(r),
+                                    9 => chart_source(r),
+                                    _ => true,
+                                }
                         })
                         .map(|r| text(r, "name"))
                         .unwrap_or(t(ui, "Choose a resource").as_ref()),
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if kind != 8 {
+                        if ![8, 9].contains(&kind) {
                             return true;
                         }
-                        text(r, "status") == "available" && podcast_source(r)
+                        text(r, "status") == "available"
+                            && match kind {
+                                8 => podcast_source(r),
+                                9 => chart_source(r),
+                                _ => false,
+                            }
                     }) {
                         ui.selectable_value(
                             &mut draft.record,
@@ -1864,6 +1897,51 @@ impl Console {
                     operation = Some(json!({
                         "operation":"audio.podcast",
                         "arguments":{"title":draft.get("title"),"clips":clips}
+                    }));
+                }
+            }
+            9 => {
+                let csv_source = source.is_some_and(chart_source);
+                for (label, key) in [
+                    ("Chart title", "title"),
+                    ("Category column", "categoryColumn"),
+                    ("Value column", "valueColumn"),
+                ] {
+                    ui.horizontal(|ui| {
+                        ui.label(t(ui, label));
+                        studio::input(ui, draft.value(key), 160, "", false);
+                    });
+                }
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Calculation"));
+                    for (value, label) in [("sum", "Sum"), ("average", "Average")] {
+                        ui.selectable_value(
+                            draft.value("aggregation"),
+                            value.to_owned(),
+                            t(ui, label),
+                        );
+                    }
+                });
+                let aggregation = match draft.get("aggregation") {
+                    "average" => "average",
+                    _ => "sum",
+                };
+                if csv_source
+                    && source_id.is_some()
+                    && valid_input(draft.get("title"), 160)
+                    && valid_input(draft.get("categoryColumn"), 160)
+                    && valid_input(draft.get("valueColumn"), 160)
+                    && draft.get("categoryColumn") != draft.get("valueColumn")
+                {
+                    operation = Some(json!({
+                        "operation":"data.chart",
+                        "arguments":{
+                            "source":source_id,
+                            "title":draft.get("title"),
+                            "categoryColumn":draft.get("categoryColumn"),
+                            "valueColumn":draft.get("valueColumn"),
+                            "aggregation":aggregation
+                        }
                     }));
                 }
             }
@@ -2466,6 +2544,53 @@ mod tests {
         assert!(request.contains("\"end\": 12.5"));
         assert!(request.contains("\"title\": \"Opening\""));
         assert!(request.contains("\"title\": \"Main point\""));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn csv_chart_request_freezes_columns_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"sales.csv","kind":"data","sha256":"a".repeat(64),"bytes":64,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"notes.txt","kind":"text","sha256":"b".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 9;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("title") = "Revenue by region".into();
+        *draft.value("categoryColumn") = "region".into();
+        *draft.value("valueColumn") = "revenue".into();
+        *draft.value("aggregation") = "average".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"data.chart\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"categoryColumn\": \"region\""));
+        assert!(request.contains("\"valueColumn\": \"revenue\""));
+        assert!(request.contains("\"aggregation\": \"average\""));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

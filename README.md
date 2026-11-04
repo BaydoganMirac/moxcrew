@@ -46,7 +46,8 @@ a home.
   model or changing an account.
 - **Process real files locally.** Typed production can convert a selected image
   batch with an explicit result for every source, or turn an ordered podcast edit
-  plan into playable audio plus chapter data.
+  plan into playable audio plus chapter data. Checked CSV columns become a static
+  chart, plotted-data JSON and concise report from one traceable aggregate.
 - **Know what was checked.** Output previews identify the exact hash-matched
   version, the format evidence Moxcrew could inspect and the human review that
   still remains. Mark that exact version reviewed or needing changes without

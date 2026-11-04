@@ -1,6 +1,6 @@
 # Task0058: GitHub product surface
 
-Status: Implemented and locally verified; publication authorized
+Status: Implemented, verified and published to `origin/main`
 
 Updated: 2026-11-04
 

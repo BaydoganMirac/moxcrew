@@ -20,7 +20,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Documents | D1–D5 | DOCX creation/paragraph revision; real LibreOffice open proof; full area pending |
 | Presentations | P1–P5 | Editable PPTX creation/slide revision; real LibreOffice open proof; full area pending |
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
-| Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits and PNG validation; live model quality/full area pending |
+| Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |
 | Audio | A1–A5 | Real bounded cleanup to WAV; timed whisper.cpp transcription adapter with CLI-peer evidence; live model/full area pending |
 | Data | T1–T5 | CSV cleanup/statistics and XLSX output/open proof; full area pending |
 | Web/actions | W1–W5 | Explicit app actions, isolated static public-page/form-draft browser and offline interactive tools; live accounts/full area pending |
@@ -106,6 +106,10 @@ the owner retains explicit export control.
 [Task0069](exact-owner-review-notes.md) adds bounded local context to the exact
 review decision. V16 retains V15 replay, clearing removes the active note and
 delivery manifests intentionally keep only status.
+[Task0070](batch-image-conversion.md) adds the missing concrete I3 batch path:
+one typed request converts 2–12 exact Project images, preserves source order and
+reports partial failures without discarding successful outputs. This is local
+execution evidence, not image-generation/model-quality proof.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

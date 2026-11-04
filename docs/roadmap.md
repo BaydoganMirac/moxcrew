@@ -67,6 +67,9 @@ commitments.
   [Task0069](state/exact-owner-review-notes.md) makes the decision actionable with
   bounded exact-version local context while keeping private notes out of delivery
   archives and Cloud projections.
+  [Task0070](state/batch-image-conversion.md) closes the local I3 execution gap:
+  2–12 exact Project images convert through one bounded FFmpeg operation with an
+  inspectable result for every source and no model call.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

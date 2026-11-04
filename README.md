@@ -44,6 +44,9 @@ a home.
 - **Know what is ready.** One read-only System check shows agent connections,
   local production tools, the image engine and Project apps without running a
   model or changing an account.
+- **Process real files locally.** Typed production can convert a selected image
+  batch with an explicit result for every source; one malformed file does not
+  erase successful siblings.
 - **Know what was checked.** Output previews identify the exact hash-matched
   version, the format evidence Moxcrew could inspect and the human review that
   still remains. Mark that exact version reviewed or needing changes without

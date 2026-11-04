@@ -315,9 +315,18 @@ fn seed_create_scene(directory: &std::path::Path) {
             let snapshot=host.snapshot().unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":snapshot["projectMemory"]["projects"][0]["revision"],"sourcePath":source})).payload).await.unwrap();
         }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images") {
+            for (name, bytes) in [("campaign-cover.png", b"disposable image fixture one".as_slice()), ("product-photo.jpg", b"disposable image fixture two".as_slice())] {
+                let source=directory.join(name);std::fs::write(&source,bytes).unwrap();
+                let snapshot=host.snapshot().unwrap();
+                let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+                host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+            }
+        }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
-        let queued = host.action("project_work_enqueue", command::Command::new("project_work_enqueue", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"abilityId":"P1","title":"Launch presentation · UI fixture","instruction":"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."})).payload).await.unwrap();
+        let batch_images=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images");
+        let queued = host.action("project_work_enqueue", command::Command::new("project_work_enqueue", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"abilityId":if batch_images{"I3"}else{"P1"},"title":if batch_images {if english{"Campaign image batch"}else{"Kampanya görsel paketi"}} else {if english{"Launch presentation · UI fixture"}else{"Lansman sunumu · arayüz sahnesi"}},"instruction":if batch_images {if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."}} else {if english{"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."}else{"Bir lansman sunumu hazırla. Bu tek kullanımlık arayüz sahnesinde sağlayıcı çalıştırılmadı."}}})).payload).await.unwrap();
         assert_eq!(queued["outcome"], "applied");
         let snapshot = host.snapshot().unwrap();
         let work = snapshot["work"]["items"].as_array().unwrap().iter().find(|w|w["workItemId"]==queued["workItemId"]).unwrap();

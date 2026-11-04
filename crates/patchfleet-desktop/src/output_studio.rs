@@ -174,6 +174,14 @@ fn artifact_preview<'a>(
     .then_some(preview)
 }
 
+fn artifact_review<'a>(page: &'a Value, artifact: &Value) -> Option<&'a Value> {
+    array(&page["reviews"]).iter().find(|review| {
+        text(review, "workItemId") == text(artifact, "workItemId")
+            && text(review, "path") == text(artifact, "path")
+            && text(review, "sha256") == text(artifact, "sha256")
+    })
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct ArtifactVerification {
     status: &'static str,
@@ -1345,6 +1353,8 @@ impl Console {
         if let Some(preview) = artifact_preview(&self.create, snapshot, &artifact) {
             artifact_verification_card(ui, &artifact, &preview["preview"]);
             ui.add_space(studio::metrics::GAP);
+            self.studio_artifact_review(ui, page, &artifact, commands);
+            ui.add_space(studio::metrics::GAP);
             self.studio_artifact_comparison(ui, page, &artifact, &preview["preview"], commands);
             if !text(&artifact, "parentVersionId").is_empty() {
                 ui.add_space(studio::metrics::GAP);
@@ -1424,6 +1434,88 @@ impl Console {
                 }
             }
         });
+    }
+    fn studio_artifact_review(
+        &mut self,
+        ui: &mut Ui,
+        page: &Value,
+        artifact: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let review = artifact_review(page, artifact);
+        let status = review
+            .map(|review| text(review, "status"))
+            .unwrap_or("unreviewed");
+        let (label, description, accent) = match status {
+            "reviewed" => (
+                "Reviewed",
+                "You marked this exact file version as reviewed.",
+                colors(ui).success,
+            ),
+            "needs_changes" => (
+                "Changes needed",
+                "You marked this exact file version as needing changes.",
+                colors(ui).warning,
+            ),
+            _ => (
+                "Not reviewed",
+                "No owner decision is recorded for this exact version.",
+                colors(ui).info,
+            ),
+        };
+        let project = self.create.project.clone();
+        let work = text(artifact, "workItemId").to_owned();
+        let path = text(artifact, "path").to_owned();
+        let hash = text(artifact, "sha256").to_owned();
+        let card = studio::accent_surface(ui, accent, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(studio::title(t(ui, "Owner review"), 18.0));
+                ui.label(RichText::new(t(ui, label)).strong().color(accent));
+            });
+            hint(ui, description);
+            hint(
+                ui,
+                "This records your review; it does not verify factual or visual quality automatically.",
+            );
+            ui.add_space(studio::metrics::GAP);
+            ui.horizontal_wrapped(|ui| {
+                quiet_action(
+                    ui,
+                    commands,
+                    "Mark reviewed",
+                    "project_artifact_review_set",
+                    status != "reviewed",
+                    || json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":hash,"status":"reviewed"}),
+                );
+                quiet_action(
+                    ui,
+                    commands,
+                    "Needs changes",
+                    "project_artifact_review_set",
+                    status != "needs_changes",
+                    || json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":hash,"status":"needs_changes"}),
+                );
+                if status != "unreviewed" {
+                    quiet_action(
+                        ui,
+                        commands,
+                        "Clear review",
+                        "project_artifact_review_set",
+                        true,
+                        || json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":hash,"status":"unreviewed"}),
+                    );
+                }
+            });
+        });
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("artifact-owner-review-card"),
+                (card.response.rect, ui.clip_rect()),
+            )
+        });
+        #[cfg(not(test))]
+        let _ = card;
     }
     fn use_visual_in_chat(&mut self, artifact: &Value, section: String) {
         let key = (self.create.project.clone(), self.create.ability.clone());
@@ -2021,6 +2113,140 @@ mod tests {
         }
     }
 
+    #[test]
+    fn exact_owner_review_commands_are_scoped_localized_and_reversible() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"]["language"] = json!(language);
+                data["projectArtifact"] = json!({
+                    "reasonCode":"PROJECT_ARTIFACT_READ",
+                    "projectId":"project:one",
+                    "workItemId":"work:one",
+                    "path":"outputs/deck.pptx",
+                    "sha256":"hash-one",
+                    "preview":{"kind":"pages","pages":[{"id":"slide:1","title":"Launch","text":"Evidence"}]},
+                    "sections":[{"id":"slide:1","label":"Launch"}]
+                });
+                let mut console = console(&data);
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    let (commands, copy) = render(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        egui::vec2(1280.0, 2200.0),
+                        false,
+                        vec![],
+                    );
+                    assert!(commands.is_empty());
+                    for key in [
+                        "Owner review",
+                        "Not reviewed",
+                        "No owner decision is recorded for this exact version.",
+                        "This records your review; it does not verify factual or visual quality automatically.",
+                    ] {
+                        assert!(
+                            copy.iter().any(|line| {
+                                line == i18n::tr(Language::from_code(language), key).as_ref()
+                            }),
+                            "{language}/{theme:?}: missing {key}; copy={copy:?}"
+                        );
+                    }
+                }
+                for _ in 0..3 {
+                    render(&ctx, &mut console, &data, size, false, vec![]);
+                }
+                render(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    size,
+                    false,
+                    vec![
+                        egui::Event::PointerMoved(egui::pos2(650.0, 360.0)),
+                        egui::Event::MouseWheel {
+                            unit: egui::MouseWheelUnit::Page,
+                            delta: egui::vec2(0.0, -1.0),
+                            phase: egui::TouchPhase::Move,
+                            modifiers: egui::Modifiers::default(),
+                        },
+                    ],
+                );
+                render(&ctx, &mut console, &data, size, false, vec![]);
+                let (card, clip): (egui::Rect, egui::Rect) = ctx.data(|data| {
+                    data.get_temp(egui::Id::new("artifact-owner-review-card"))
+                        .unwrap()
+                });
+                assert!(card.intersects(clip));
+
+                let commands = super::super::tests::click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    egui::vec2(1280.0, 2200.0),
+                    false,
+                    "project_artifact_review_set",
+                    "Mark reviewed",
+                );
+                assert_eq!(commands.len(), 1);
+                assert_eq!(commands[0].action, "project_artifact_review_set");
+                assert_eq!(commands[0].payload["projectId"], "project:one");
+                assert_eq!(commands[0].payload["workItemId"], "work:one");
+                assert_eq!(commands[0].payload["path"], "outputs/deck.pptx");
+                assert_eq!(commands[0].payload["expectedSha256"], "hash-one");
+                assert_eq!(commands[0].payload["status"], "reviewed");
+                assert!(commands
+                    .iter()
+                    .all(|command| command.action != "work_start"));
+
+                data["projectStudio"]["reviews"] = json!([{
+                    "projectId":"project:one","workItemId":"work:one",
+                    "path":"outputs/deck.pptx","sha256":"hash-one",
+                    "status":"reviewed","reviewedAt":"2026-11-04T12:00:00.000Z"
+                }]);
+                let (_, copy) = render(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    egui::vec2(1280.0, 2200.0),
+                    false,
+                    vec![],
+                );
+                assert!(copy.iter().any(|line| {
+                    line == i18n::tr(Language::from_code(language), "Reviewed").as_ref()
+                }));
+                let clear = super::super::tests::click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    egui::vec2(1280.0, 2200.0),
+                    false,
+                    "project_artifact_review_set",
+                    "Clear review",
+                );
+                assert_eq!(clear.len(), 1);
+                assert_eq!(clear[0].payload["status"], "unreviewed");
+
+                data["projectStudio"]["reviews"][0]["sha256"] = json!("other-version");
+                let (_, copy) = render(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    egui::vec2(1280.0, 2200.0),
+                    false,
+                    vec![],
+                );
+                assert!(copy.iter().any(|line| {
+                    line == i18n::tr(Language::from_code(language), "Not reviewed").as_ref()
+                }));
+            }
+        }
+    }
+
     fn revision_fixture(language: &str) -> Value {
         let mut data = fixture();
         data["hostEpoch"] = json!("epoch:one");
@@ -2135,12 +2361,34 @@ mod tests {
                         .0
                         .is_empty());
                 }
+                for _ in 0..2 {
+                    render(
+                        &ctx,
+                        &mut console,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(650.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut console, &data, size, false, vec![]);
                 let (header, clip): (egui::Rect, egui::Rect) = ctx.data(|state| {
                     state
                         .get_temp(egui::Id::new("artifact-revision-comparison"))
                         .unwrap()
                 });
-                assert!(header.intersects(clip));
+                assert!(
+                    header.intersects(clip),
+                    "{language}/{theme:?}: comparison header must remain scroll-reachable: header={header:?} clip={clip:?}"
+                );
                 assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, size)
                     .contains_rect(header.intersect(clip)));
             }

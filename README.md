@@ -46,7 +46,8 @@ a home.
   model or changing an account.
 - **Know what was checked.** Output previews identify the exact hash-matched
   version, the format evidence Moxcrew could inspect and the human review that
-  still remains.
+  still remains. Mark that exact version reviewed or needing changes without
+  changing the file or inheriting the decision into a later version.
 - **Stay local by default.** Local use is free, needs no Moxcrew account and keeps
   source, prompts, paths, outputs and credentials off Cloud by default.
 
@@ -56,7 +57,7 @@ a home.
 2. **Review Mox's proposal**—plan, crew, tools and boundaries stay visible.
 3. **Prepare, then start** when you are ready. Queueing never silently executes.
 4. **Inspect, compare and revise the output** without losing the original goal
-   or source versions.
+   or source versions; record your decision against the exact file hash.
 5. **Keep the decisions** that should guide the next task in the same Project.
 
 Moxcrew is designed for research, writing, analysis, planning, personal work and

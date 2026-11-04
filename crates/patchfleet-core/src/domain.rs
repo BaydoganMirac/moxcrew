@@ -857,6 +857,9 @@ pub fn validate_event(v: &Value) -> Result<()> {
     if v["schemaVersion"] == 14 {
         return crate::project_capabilities::validate_event(v);
     }
+    if v["schemaVersion"] == 15 {
+        return crate::project_studio::validate_event(v);
+    }
     if v["schemaVersion"] == 12 {
         return crate::project_studio::validate_event(v);
     }

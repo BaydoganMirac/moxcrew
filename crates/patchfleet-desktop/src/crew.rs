@@ -429,7 +429,7 @@ impl Console {
                 .insert(project.clone(), text(mission, "missionId").into());
         }
         if scene.starts_with("productive-output")
-            || scene == "productive-compare"
+            || matches!(scene, "productive-compare" | "productive-review")
             || matches!(
                 scene,
                 "productive-resources"

@@ -61,6 +61,7 @@ fn productive_key(action: &str) -> Option<&'static str> {
         | "project_schedule_save"
         | "project_schedule_set_enabled" => "projectWorkflowReceipt",
         "project_delivery_export"
+        | "project_artifact_review_set"
         | "project_artifact_revise"
         | "project_resource_import"
         | "project_resource_import_batch"
@@ -1790,6 +1791,7 @@ impl Bridge {
                 | "project_tool_configure"
                 | "project_connection_set"
                 | "project_connection_remove"
+                | "project_artifact_review_set"
                 | "project_artifact_revise"
         ) {
             self.productive_pages.remove("projectStudio");

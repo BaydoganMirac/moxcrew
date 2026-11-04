@@ -35,11 +35,14 @@ The bundled-guide recommendation remains available as a labelled alternative.
 Files can be attached in the composer; targeted output selections return to the
 same conversation. Optional Project tools contain brand guidance, taught skills,
 bounded folder/URL triggers, parallel alternatives and inspectable source evidence.
-Typed requests for images, bounded batch conversion, video packages, static
-browser work and interactive outputs enter this same plan/prepare/start flow.
+Typed requests for images, bounded batch conversion, podcast edits, video
+packages, static browser work and interactive outputs enter this same
+plan/prepare/start flow.
 Batch conversion reports every selected source separately and keeps successful
 siblings when one file is malformed. See
-[batch image conversion](state/batch-image-conversion.md). An armed trigger is explicit
+[batch image conversion](state/batch-image-conversion.md). Podcast edits turn
+explicit ordered source ranges into checked playable audio and output-relative
+chapter data; see [podcast editing](state/podcast-editing.md). An armed trigger is explicit
 time- and count-bounded delegation for its frozen recipe while the Host is awake.
 It watches a source condition; it does not import an entire folder automatically.
 See [eleven capabilities](state/eleven-product-capabilities.md) for engine and format limits.

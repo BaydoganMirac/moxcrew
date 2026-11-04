@@ -105,7 +105,7 @@
     "revision": 1,
     "name": "Podcast crew",
     "description": "Prepare a sourced podcast script and actual supported audio outputs, reporting missing tools.",
-    "abilityId": "A1",
+    "abilityId": "A4",
     "members": [
       {
         "name": "Researcher",
@@ -122,7 +122,7 @@
       {
         "name": "Audio producer",
         "role": "audio",
-        "abilityId": "A1",
+        "abilityId": "A4",
         "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
       },
       {
@@ -146,7 +146,7 @@
     "toolRequirements": [
       "Connected research provider",
       "Python 3.9+ for editable scripts",
-      "FFmpeg and FFprobe for audio cleanup"
+      "FFmpeg and FFprobe for audio cleanup and podcast editing"
     ]
   },
   {

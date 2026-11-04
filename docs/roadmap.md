@@ -70,6 +70,9 @@ commitments.
   [Task0070](state/batch-image-conversion.md) closes the local I3 execution gap:
   2–12 exact Project images convert through one bounded FFmpeg operation with an
   inspectable result for every source and no model call.
+  [Task0071](state/podcast-editing.md) closes the deterministic A4 execution gap:
+  an ordered edit plan produces checked playable M4A and recomputed chapter data
+  without transcription, publishing or a model call.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

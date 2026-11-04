@@ -323,10 +323,24 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-podcast") {
+            let source=directory.join("raw-episode.wav");std::fs::write(&source,b"disposable audio fixture").unwrap();
+            let snapshot=host.snapshot().unwrap();
+            let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+            host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+        }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
         let batch_images=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images");
-        let queued = host.action("project_work_enqueue", command::Command::new("project_work_enqueue", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"abilityId":if batch_images{"I3"}else{"P1"},"title":if batch_images {if english{"Campaign image batch"}else{"Kampanya görsel paketi"}} else {if english{"Launch presentation · UI fixture"}else{"Lansman sunumu · arayüz sahnesi"}},"instruction":if batch_images {if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."}} else {if english{"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."}else{"Bir lansman sunumu hazırla. Bu tek kullanımlık arayüz sahnesinde sağlayıcı çalıştırılmadı."}}})).payload).await.unwrap();
+        let podcast=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-podcast");
+        let (ability,title,instruction)=if batch_images {
+            ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
+        } else if podcast {
+            ("A4",if english{"Podcast edit package"}else{"Podcast kurgu paketi"},if english{"Edit the selected recording into ordered chapters and produce a playable package."}else{"Seçili kaydı sıralı bölümlere kurgula ve oynatılabilir bir paket üret."})
+        } else {
+            ("P1",if english{"Launch presentation · UI fixture"}else{"Lansman sunumu · arayüz sahnesi"},if english{"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."}else{"Bir lansman sunumu hazırla. Bu tek kullanımlık arayüz sahnesinde sağlayıcı çalıştırılmadı."})
+        };
+        let queued = host.action("project_work_enqueue", command::Command::new("project_work_enqueue", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"abilityId":ability,"title":title,"instruction":instruction})).payload).await.unwrap();
         assert_eq!(queued["outcome"], "applied");
         let snapshot = host.snapshot().unwrap();
         let work = snapshot["work"]["items"].as_array().unwrap().iter().find(|w|w["workItemId"]==queued["workItemId"]).unwrap();

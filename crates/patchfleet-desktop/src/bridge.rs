@@ -327,6 +327,48 @@ impl Bridge {
     }
 
     #[cfg(feature = "ui-smoke")]
+    pub fn system_check_smoke(&mut self) {
+        self.smoke_provider_connections(true, "codex");
+        let Some(snapshot) = self.snapshot.clone() else {
+            return;
+        };
+        let Some(project) = snapshot["projectMemory"]["projects"]
+            .as_array()
+            .and_then(|projects| projects.first())
+            .map(|project| project["projectId"].clone())
+        else {
+            return;
+        };
+        self.productive_project = Some(project.clone());
+        self.productive_pages.insert(
+            "projectStudio",
+            serde_json::json!({
+                "reasonCode":"PROJECT_STUDIO_READ",
+                "commandId":"cmd:system-check-rendering-fixture",
+                "projectId":project,
+                "revision":1,
+                "resources":[],
+                "tools":[
+                    {"id":"python","name":"Python 3.9+ · Office / data","available":true},
+                    {"id":"ffmpeg","name":"FFmpeg · media transforms","available":true},
+                    {"id":"ffprobe","name":"FFprobe · media verification","available":true},
+                    {"id":"pdftotext","name":"Poppler · PDF text","available":true},
+                    {"id":"pdftoppm","name":"Poppler · page previews","available":true},
+                    {"id":"tesseract","name":"Tesseract · image text","available":false},
+                    {"id":"whisper","name":"whisper.cpp · transcription","available":false},
+                    {"id":"whisperModel","name":"whisper.cpp · local model file","available":false},
+                    {"id":"libreoffice","name":"LibreOffice · document rendering","available":true},
+                    {"id":"chrome","name":"Chrome · isolated browser work","available":true}
+                ],
+                "imageEngine":{"configured":false,"available":false,"reasonCode":"UI_FIXTURE_NO_IMAGE_ENGINE_PROBED"},
+                "connections":[{"providerId":"notion","label":"Rendering fixture · no account","connected":true,"authentication":"unverified","operations":["notion_page"]}],
+                "artifacts":[]
+            }),
+        );
+        self.apply_snapshot(Ok(snapshot));
+    }
+
+    #[cfg(feature = "ui-smoke")]
     pub fn productive_smoke(&mut self, scene: &str) {
         let snapshot = self.snapshot.clone().unwrap();
         let project = snapshot["projectMemory"]["projects"][0]["projectId"].clone();
@@ -838,7 +880,9 @@ impl Bridge {
                                 }
                                 "project_chat_read" => self.project_chat = Some(receipt.clone()),
                                 "provider_connections_read" => {
-                                    self.provider_connections = Some(receipt.clone())
+                                    let mut scoped = receipt.clone();
+                                    scoped["commandId"] = command.payload["commandId"].clone();
+                                    self.provider_connections = Some(scoped)
                                 }
                                 "project_results_read" => {
                                     self.project_results = Some(receipt.clone())
@@ -3216,6 +3260,34 @@ mod tests {
                 assert_eq!(bridge.snapshot, before);
             }
         }
+        bridge.shutdown();
+    }
+
+    #[test]
+    fn provider_connection_result_keeps_the_exact_desktop_command_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut bridge = Bridge::new(egui::Context::default(), directory.path().to_owned(), false);
+        await_idle(&mut bridge);
+        let command = Command::new("provider_connections_read", json!({}));
+        let command_id = command.payload["commandId"].clone();
+        bridge
+            .output
+            .blocking_send(Message::Outcome(
+                command,
+                Ok(json!({
+                    "schemaVersion":1,
+                    "reasonCode":"PROVIDER_CONNECTIONS_READ",
+                    "observedAt":"2026-11-04T10:00:00.000Z",
+                    "providers":[]
+                })),
+                bridge.snapshot.clone().ok_or_else(|| "NO_SNAPSHOT".into()),
+            ))
+            .unwrap();
+        bridge.poll();
+        assert_eq!(
+            bridge.snapshot.as_ref().unwrap()["providerConnections"]["commandId"],
+            command_id
+        );
         bridge.shutdown();
     }
 }

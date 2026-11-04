@@ -16,6 +16,10 @@ mod crew;
 mod output_studio;
 pub use output_studio::{DeliveryExportRequest, StudioPathKind, StudioPathRequest};
 
+pub(super) fn can_attempt_provider(snapshot: &Value, id: &str) -> bool {
+    connect::can_attempt_provider(snapshot, id)
+}
+
 // Inline project views share quiet secondary actions and a single accent action.
 fn view_control(ui: &mut Ui, label: &str, enabled: bool, primary: bool) -> egui::Response {
     let response = studio::button(
@@ -154,7 +158,7 @@ struct ChatState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AbilitySetupRoute {
+pub(super) enum AbilitySetupRoute {
     Tools,
     Images,
     Apps,
@@ -382,6 +386,14 @@ pub(super) struct CreateState {
 }
 
 impl CreateState {
+    pub(super) fn selected_project(&self) -> &str {
+        &self.project
+    }
+
+    pub(super) fn open_connections(&mut self) {
+        self.chat.connections_open = true;
+    }
+
     pub(super) fn sync(&mut self, snapshot: &Value) {
         if !snapshot["hostEpoch"].is_null() {
             if self
@@ -658,7 +670,7 @@ impl Console {
         ));
     }
 
-    fn open_ability_setup(&mut self, project: &str, route: AbilitySetupRoute) {
+    pub(super) fn open_ability_setup(&mut self, project: &str, route: AbilitySetupRoute) {
         self.create.project = project.into();
         if !matches!(self.tab, Tab::Create | Tab::Teams) {
             self.tab = Tab::Teams;

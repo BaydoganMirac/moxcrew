@@ -70,11 +70,32 @@ impl Tab {
                 "Inspect instructions, permissions and limits before selecting an agent."
             }
             Self::Providers => {
-                "Capabilities reflect the installed CLIs and last local observation."
+                "Check agent connections and the selected Project's local production setup."
             }
             Self::Cloud => "An optional sanitized remote view. Local operation stays available.",
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum SystemCheckPending {
+    Connections { command: String, project: String },
+    Project { command: String, project: String },
+}
+
+#[derive(Default)]
+struct SystemCheck {
+    project: String,
+    pending: Option<SystemCheckPending>,
+    saw_busy: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SystemCheckLevel {
+    Unchecked,
+    Ready,
+    NeedsSetup,
+    Optional,
 }
 
 #[derive(Default)]
@@ -722,6 +743,7 @@ pub struct Console {
     tab: Tab,
     create: create::CreateState,
     quick_start: QuickStart,
+    system_check: SystemCheck,
     navigation_tab: Option<Tab>,
     new_project_name: String,
     link_choices: HashMap<String, String>,
@@ -791,7 +813,7 @@ impl Console {
             "studio-work" => Tab::Work,
             "studio-teams" => Tab::Teams,
             "studio-agents" => Tab::Agents,
-            "studio-providers" => Tab::Providers,
+            "studio-providers" | "studio-system-check" => Tab::Providers,
             "studio-decisions" => Tab::Decisions,
             "studio-cloud" => Tab::Cloud,
             _ => Tab::Projects,
@@ -1141,7 +1163,14 @@ impl Console {
                 if self.tab != Tab::Create {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(studio::title(
-                            t(ui, self.tab.name()),
+                            t(
+                                ui,
+                                if self.tab == Tab::Providers {
+                                    "System check"
+                                } else {
+                                    self.tab.name()
+                                },
+                            ),
                             if ui.ctx().viewport_rect().height() < 700.0 {
                                 24.0
                             } else {
@@ -1165,7 +1194,7 @@ impl Console {
                                     self.form_error = None;
                                 }
                             }
-                            if matches!(self.tab, Tab::Providers | Tab::Work | Tab::Teams) {
+                            if matches!(self.tab, Tab::Work | Tab::Teams) {
                                 action(
                                     ui,
                                     &mut commands,
@@ -1285,7 +1314,7 @@ impl Console {
                                         .show(ui, |ui| self.teams(ui, snapshot, &mut commands));
                                 }
                                 Tab::Agents => self.agents(ui, snapshot, &mut commands),
-                                Tab::Providers => self.providers(ui, snapshot),
+                                Tab::Providers => self.providers(ui, snapshot, &mut commands),
                                 Tab::Cloud => self.cloud(ui, snapshot, &mut commands),
                             });
                         });
@@ -4324,7 +4353,269 @@ impl Console {
         });
     }
 
-    fn providers(&self, ui: &mut Ui, snapshot: &Value) {
+    fn advance_system_check(&mut self, snapshot: &Value, commands: &mut Vec<Command>) {
+        let Some(pending) = self.system_check.pending.clone() else {
+            self.system_check.saw_busy = false;
+            return;
+        };
+        if self.command_busy {
+            self.system_check.saw_busy = true;
+            return;
+        }
+        match pending {
+            SystemCheckPending::Connections { command, project } => {
+                if text(&snapshot["providerConnections"], "commandId") == command {
+                    if project.is_empty() {
+                        self.system_check.pending = None;
+                        self.system_check.saw_busy = false;
+                    } else if commands.is_empty() {
+                        let next =
+                            Command::new("project_studio_read", json!({"projectId":project}));
+                        let command = text(&next.payload, "commandId").to_owned();
+                        self.system_check.pending =
+                            Some(SystemCheckPending::Project { command, project });
+                        self.system_check.saw_busy = false;
+                        commands.push(next);
+                    }
+                } else if self.system_check.saw_busy {
+                    self.system_check.pending = None;
+                    self.system_check.saw_busy = false;
+                }
+            }
+            SystemCheckPending::Project { command, project } => {
+                let page = &snapshot["projectStudio"];
+                let error = &snapshot["projectStudioError"];
+                let completed = text(page, "commandId") == command
+                    && text(page, "projectId") == project
+                    && text(page, "reasonCode") == "PROJECT_STUDIO_READ";
+                let failed =
+                    text(error, "commandId") == command && text(error, "projectId") == project;
+                if completed || failed || self.system_check.saw_busy {
+                    self.system_check.pending = None;
+                    self.system_check.saw_busy = false;
+                }
+            }
+        }
+    }
+
+    fn providers(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        let projects = array(&snapshot["projectMemory"]["projects"]);
+        if !projects
+            .iter()
+            .any(|project| text(project, "projectId") == self.system_check.project)
+        {
+            self.system_check.project = projects
+                .iter()
+                .find(|project| text(project, "projectId") == self.create.selected_project())
+                .or_else(|| projects.first())
+                .map(|project| text(project, "projectId").to_owned())
+                .unwrap_or_default();
+        }
+        self.advance_system_check(snapshot, commands);
+
+        let connections_checked =
+            text(&snapshot["providerConnections"], "reasonCode") == "PROVIDER_CONNECTIONS_READ";
+        let ready_connections = ["codex", "claude", "gemini"]
+            .into_iter()
+            .filter(|id| create::can_attempt_provider(snapshot, id))
+            .count();
+        let project = self.system_check.project.clone();
+        let studio_page = &snapshot["projectStudio"];
+        let page = (text(studio_page, "projectId") == project
+            && text(studio_page, "reasonCode") == "PROJECT_STUDIO_READ")
+            .then_some(studio_page);
+        let (available_tools, total_tools) = page
+            .map(|page| {
+                let tools = array(&page["tools"]);
+                (
+                    tools
+                        .iter()
+                        .filter(|tool| tool["available"] == true)
+                        .count(),
+                    tools.len(),
+                )
+            })
+            .unwrap_or((0, 0));
+        let connected_apps = page
+            .map(|page| {
+                array(&page["connections"])
+                    .iter()
+                    .filter(|connection| connection["connected"] == true)
+                    .count()
+            })
+            .unwrap_or(0);
+        let image_level = match page.map(|page| &page["imageEngine"]) {
+            None => SystemCheckLevel::Unchecked,
+            Some(image) if image["available"] == true => SystemCheckLevel::Ready,
+            Some(image) if image["configured"] == true => SystemCheckLevel::NeedsSetup,
+            Some(_) => SystemCheckLevel::Optional,
+        };
+        let running = self.system_check.pending.is_some();
+        let overall = if running {
+            "Checking your local setup…"
+        } else if !connections_checked {
+            "Run one honest local check"
+        } else if ready_connections == 0 {
+            "Connect an agent to start"
+        } else if !project.is_empty() && page.is_none() {
+            "Agent checked · Project not checked"
+        } else {
+            "System check complete"
+        };
+
+        studio::accent_surface(ui, colors(ui).primary, |ui| {
+            ui.set_min_width((ui.available_width() - 1.0).max(0.0));
+            ui.label(
+                RichText::new(t(ui, "LOCAL SYSTEM CHECK"))
+                    .size(11.0)
+                    .strong()
+                    .color(colors(ui).primary),
+            );
+            ui.add_space(4.0);
+            ui.label(studio::title(t(ui, overall), 26.0));
+            ui.add_space(6.0);
+            hint(
+                ui,
+                "Checks installed CLIs and this Project's local production setup. It never runs a model or changes an account.",
+            );
+            ui.add_space(studio::metrics::GAP);
+            ui.horizontal_wrapped(|ui| {
+                status(ui, "Local engine active");
+                let run = ui
+                    .add_enabled_ui(!running, |ui| {
+                        submit(ui, "Run system check", "provider_connections_read")
+                    })
+                    .inner;
+                if run && commands.is_empty() {
+                    let command = Command::new("provider_connections_read", json!({}));
+                    self.system_check.pending = Some(SystemCheckPending::Connections {
+                        command: text(&command.payload, "commandId").to_owned(),
+                        project: project.clone(),
+                    });
+                    self.system_check.saw_busy = false;
+                    commands.push(command);
+                }
+                if connections_checked {
+                    raw_hint(
+                        ui,
+                        &localized_format!(
+                            ui,
+                            "Last checked {0}",
+                            format_time(ui, text(&snapshot["providerConnections"], "observedAt"))
+                        ),
+                    );
+                }
+            });
+        });
+
+        if !projects.is_empty() {
+            ui.add_space(studio::metrics::SECTION_GAP);
+            ui.add_enabled_ui(!running, |ui| {
+                project_switcher(
+                    ui,
+                    "system-check-project",
+                    &mut self.system_check.project,
+                    projects,
+                );
+            });
+        }
+
+        let connection_level = if !connections_checked {
+            SystemCheckLevel::Unchecked
+        } else if ready_connections > 0 {
+            SystemCheckLevel::Ready
+        } else {
+            SystemCheckLevel::NeedsSetup
+        };
+        let tool_level = if page.is_none() {
+            SystemCheckLevel::Unchecked
+        } else if available_tools == total_tools && total_tools > 0 {
+            SystemCheckLevel::Ready
+        } else {
+            SystemCheckLevel::Optional
+        };
+        let app_level = if page.is_none() {
+            SystemCheckLevel::Unchecked
+        } else if connected_apps > 0 {
+            SystemCheckLevel::Ready
+        } else {
+            SystemCheckLevel::Optional
+        };
+        let connection_detail = localized_format!(
+            ui,
+            "{0} of 3 supported connections can be attempted.",
+            ready_connections
+        );
+        let tool_detail = localized_format!(
+            ui,
+            "{0} of {1} local tools passed their version check.",
+            available_tools,
+            total_tools
+        );
+        let image_detail = t(
+            ui,
+            match image_level {
+                SystemCheckLevel::Ready => "Available for local image work.",
+                SystemCheckLevel::NeedsSetup => "Configured, but the local service is unavailable.",
+                SystemCheckLevel::Optional => "Set it up only when an image task needs it.",
+                SystemCheckLevel::Unchecked => "Choose a Project and run the check.",
+            },
+        )
+        .into_owned();
+        let app_detail =
+            localized_format!(ui, "{0} app connections are configured.", connected_apps);
+        let rows = [
+            ("Agent connections", connection_level, connection_detail),
+            ("Production tools", tool_level, tool_detail),
+            ("Image engine", image_level, image_detail),
+            ("Project apps", app_level, app_detail),
+        ];
+        if ui.available_width() >= 760.0 {
+            ui.columns(2, |columns| {
+                for (index, (title, level, detail)) in rows.iter().enumerate() {
+                    system_check_row(&mut columns[index % 2], title, *level, detail);
+                }
+            });
+        } else {
+            for (title, level, detail) in &rows {
+                system_check_row(ui, title, *level, detail);
+            }
+        }
+
+        ui.add_space(studio::metrics::GAP);
+        ui.horizontal_wrapped(|ui| {
+            if control(ui, "Review connections", !running).clicked() {
+                self.create.open_connections();
+                self.tab = Tab::Create;
+            }
+            if !project.is_empty() && control(ui, "Open project tools", !running).clicked() {
+                self.open_ability_setup(&project, create::AbilitySetupRoute::Tools);
+            }
+            if !project.is_empty() && control(ui, "Set up image engine", !running).clicked() {
+                self.open_ability_setup(&project, create::AbilitySetupRoute::Images);
+            }
+            if !project.is_empty() && control(ui, "Review project apps", !running).clicked() {
+                self.open_ability_setup(&project, create::AbilitySetupRoute::Apps);
+            }
+        });
+        ui.add_space(4.0);
+        hint(
+            ui,
+            "Saved sign-in does not prove model access, quota, tool permission or output quality.",
+        );
+
+        ui.add_space(studio::metrics::SECTION_GAP);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(studio::title(t(ui, "Provider observations"), 20.0));
+            action(
+                ui,
+                commands,
+                "Refresh observations",
+                "observe",
+                !running,
+                || json!({}),
+            );
+        });
         let observations = array(&snapshot["observation"]["observations"]);
         if observations.is_empty() {
             empty(
@@ -5646,6 +5937,25 @@ fn section_title(ui: &mut Ui, title: &str, description: &str) {
             .color(colors(ui).muted),
     );
 }
+
+fn system_check_row(ui: &mut Ui, title: &str, level: SystemCheckLevel, detail: &str) {
+    let (label, accent) = match level {
+        SystemCheckLevel::Unchecked => ("Not checked", colors(ui).muted),
+        SystemCheckLevel::Ready => ("Ready", colors(ui).success),
+        SystemCheckLevel::NeedsSetup => ("Setup needed", colors(ui).danger),
+        SystemCheckLevel::Optional => ("Set up when needed", colors(ui).accent),
+    };
+    ui.add_space(studio::metrics::CONTROL_GAP);
+    studio::ledger_row(ui, accent, false, |ui| {
+        ui.set_min_width((ui.available_width() - 1.0).max(0.0));
+        ui.horizontal_wrapped(|ui| {
+            ui.label(studio::title(t(ui, title), 17.0));
+            status(ui, label);
+        });
+        hint(ui, detail);
+    });
+}
+
 fn field_hint(ui: &mut Ui, label: &str, value: &mut String, max: usize, placeholder: &str) {
     ui.label(
         RichText::new(t(ui, label))
@@ -5670,6 +5980,8 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         ui,
         if tab == Tab::Create {
             "Your studio"
+        } else if tab == Tab::Providers {
+            "System check"
         } else {
             tab.name()
         },
@@ -8570,6 +8882,157 @@ mod tests {
                 }
                 assert!(shapes > 10, "{} should paint a usable frame", tab.name());
             }
+        }
+    }
+
+    #[test]
+    fn system_check_sequences_exact_local_reads_and_keeps_project_scope() {
+        let ctx = test_context();
+        let mut data = snapshot();
+        data["desktopPreferences"] = json!({"language":"en","error":false});
+        data["projectMemory"]["projects"] = json!([
+            {"projectId":"project:owner","name":"Owner project","revision":4},
+            {"projectId":"project:other","name":"Other project","revision":2}
+        ]);
+        let mut console = Console {
+            tab: Tab::Providers,
+            ..Default::default()
+        };
+
+        let commands = click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "provider_connections_read",
+            "Run system check",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "provider_connections_read");
+        let connection_command = text(&commands[0].payload, "commandId").to_owned();
+        assert_eq!(
+            console.system_check.pending,
+            Some(SystemCheckPending::Connections {
+                command: connection_command.clone(),
+                project: "project:owner".into()
+            })
+        );
+
+        assert!(render(&ctx, &mut console, &data, true, vec![]).0.is_empty());
+        data["providerConnections"] = json!({
+            "reasonCode":"PROVIDER_CONNECTIONS_READ",
+            "commandId":connection_command,
+            "observedAt":"2026-11-04T10:00:00.000Z",
+            "providers":[
+                {"id":"codex","installed":true,"version":"0.163.0","authentication":"present","controlSupported":true},
+                {"id":"claude","installed":false,"version":null,"authentication":"unknown","controlSupported":false},
+                {"id":"gemini","installed":false,"version":null,"authentication":"unknown","controlSupported":false}
+            ]
+        });
+        let commands = render(&ctx, &mut console, &data, false, vec![]).0;
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_studio_read");
+        assert_eq!(commands[0].payload["projectId"], "project:owner");
+        let studio_command = text(&commands[0].payload, "commandId").to_owned();
+
+        assert!(render(&ctx, &mut console, &data, true, vec![]).0.is_empty());
+        data["projectStudio"] = json!({
+            "reasonCode":"PROJECT_STUDIO_READ",
+            "commandId":studio_command,
+            "projectId":"project:other",
+            "tools":[],"imageEngine":{"configured":false,"available":false},"connections":[]
+        });
+        assert!(render(&ctx, &mut console, &data, false, vec![])
+            .0
+            .is_empty());
+        assert!(console.system_check.pending.is_none());
+        assert_eq!(console.system_check.project, "project:owner");
+        assert!(painted_copy(&ctx, &mut console, &data)
+            .join("\n")
+            .contains("Project not checked"));
+    }
+
+    #[test]
+    fn system_check_is_localized_honest_and_reachable_at_minimum_size() {
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let ctx = test_context();
+            ctx.set_theme(theme);
+            let mut data = snapshot();
+            data["desktopPreferences"] = json!({"language":"tr","error":false});
+            data["projectMemory"]["projects"] = json!([
+                {"projectId":"project:owner","name":"Cesur proje","revision":4}
+            ]);
+            data["providerConnections"] = json!({
+                "reasonCode":"PROVIDER_CONNECTIONS_READ",
+                "observedAt":"2026-11-04T10:00:00.000Z",
+                "providers":[
+                    {"id":"codex","installed":true,"version":"0.163.0","authentication":"present","controlSupported":true}
+                ]
+            });
+            data["projectStudio"] = json!({
+                "reasonCode":"PROJECT_STUDIO_READ","projectId":"project:owner",
+                "tools":[
+                    {"id":"python","available":true},
+                    {"id":"ffmpeg","available":false}
+                ],
+                "imageEngine":{"configured":false,"available":false},
+                "connections":[{"providerId":"notion","connected":true}]
+            });
+            let mut console = Console {
+                tab: Tab::Providers,
+                ..Default::default()
+            };
+            let copy = painted_copy(&ctx, &mut console, &data).join("\n");
+            for expected in [
+                "Sistem kontrolü tamamlandı",
+                "Yerel motor etkin",
+                "Ajan bağlantıları",
+                "2 yerel aracın 1 tanesi sürüm kontrolünü geçti.",
+                "Yalnızca bir görsel işi gerektiğinde ayarla.",
+                "1 uygulama bağlantısı ayarlı.",
+                "model erişimini, kotayı, araç iznini veya çıktı kalitesini kanıtlamaz",
+            ] {
+                assert!(
+                    copy.contains(expected),
+                    "missing localized copy: {expected}"
+                );
+            }
+
+            let output = ctx.run_ui(
+                RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 560.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    assert!(console.show(ui, &data, false, None, false).is_empty());
+                },
+            );
+            output.drop_without_applying_deltas();
+            let run: Rect = ctx.data(|state| {
+                state
+                    .get_temp(egui::Id::new((
+                        "test-action",
+                        "provider_connections_read",
+                        "Run system check",
+                    )))
+                    .unwrap()
+            });
+            assert!(
+                run.max.x <= 800.0 && run.max.y <= 560.0,
+                "{theme:?}: system check action must be initially reachable: {run:?}"
+            );
+
+            assert!(click(
+                &ctx,
+                &mut console,
+                &data,
+                false,
+                "memory_control",
+                "Open project tools",
+            )
+            .is_empty());
+            assert!(console.tab == Tab::Teams);
+            assert_eq!(console.create.productive_view(), 2);
         }
     }
 

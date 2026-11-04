@@ -41,6 +41,9 @@ a home.
   decisions.
 - **Use your own AI access.** Connect an existing local Codex, Claude Code or
   Gemini CLI installation. Moxcrew does not resell model tokens.
+- **Know what is ready.** One read-only System check shows agent connections,
+  local production tools, the image engine and Project apps without running a
+  model or changing an account.
 - **Stay local by default.** Local use is free, needs no Moxcrew account and keeps
   source, prompts, paths, outputs and credentials off Cloud by default.
 
@@ -75,7 +78,7 @@ available when needed; they are not prerequisites for the first request.
 </table>
 
 The native workbench also includes Project memory, task queues, reusable crews,
-provider diagnostics, output previews and an optional sanitized Cloud view.
+an owner-visible System check, output previews and an optional sanitized Cloud view.
 Turkish and English interfaces, light and dark themes, and keyboard navigation
 ship in the desktop application.
 

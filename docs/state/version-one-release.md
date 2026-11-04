@@ -82,6 +82,10 @@ Create, Crew and Tasks start actions. Required local setup that is missing or no
 yet read blocks the native Start control and routes to existing setup; optional
 tools and source/model/Host access checks remain non-blocking and explicit. This
 is a desktop guard, not a new Host protocol authorization or quality proof.
+[Task0064](owner-system-check.md) composes the same existing connection and
+selected-Project Studio reads into one read-only System check. It reports local
+engine, provider, tool, image and app evidence without installing, signing in,
+running a model or turning configuration into a quality claim.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

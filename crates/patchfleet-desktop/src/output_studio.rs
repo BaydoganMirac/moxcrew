@@ -85,6 +85,26 @@ pub(super) fn studio_page<'a>(snapshot: &'a Value, project: &str) -> Option<&'a 
     (text(page, "projectId") == project && text(page, "reasonCode") == "PROJECT_STUDIO_READ")
         .then_some(page)
 }
+fn resource_production_action(
+    name: &str,
+) -> Option<(&'static str, &'static str, Option<&'static str>)> {
+    let name = name.to_ascii_lowercase();
+    if name.ends_with(".pdf") {
+        Some(("Extract PDF text", "pdf.extract", Some("auto")))
+    } else if [".png", ".jpg", ".jpeg", ".webp"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+    {
+        Some(("Extract text (OCR)", "resources.ocr", None))
+    } else if [".wav", ".mp3", ".m4a", ".mp4", ".mov", ".mkv", ".webm"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+    {
+        Some(("Transcribe audio", "audio.transcribe", None))
+    } else {
+        None
+    }
+}
 #[cfg(test)]
 fn safe_png(bytes: &[u8]) -> bool {
     if bytes.len() < 24
@@ -1749,7 +1769,30 @@ impl Console {
                     if let Some(text)=preview["text"].as_str(){ui.add(egui::Label::new(text).wrap().selectable(true));}
                     let key=canvas::CanvasKey{project:self.create.project.clone(),work:text(resource,"resourceId").into(),path:String::new(),hash:text(resource,"sha256").into(),part:"resource".into()};
                     if let Some(texture)=canvas::texture(ui,preview,&key.hash){canvas::select_image(ui,&texture,&key,&mut self.create.canvas);multiline(ui,"Annotation",&mut self.create.canvas.draft(&key).note,2000,2);let annotation=self.create.canvas.draft(&key).clone();if view_control(ui,"Add annotation to Chat",studio::commands_ready(ui) && valid_input(&annotation.note,2000),false).clicked(){self.stage_operation(snapshot,"Apply this image annotation to the exact frozen resource.",json!({"resourceId":resource["resourceId"],"expectedSha256":resource["sha256"],"region":annotation.region.map(canvas::region_id),"annotation":annotation.note}),commands);}}
-                    ui.horizontal_wrapped(|ui|{for(label,operation)in [("Extract text (OCR)","resources.ocr"),("Transcribe audio","audio.transcribe")]{if view_control(ui,label,studio::commands_ready(ui),false).clicked(){self.stage_operation(snapshot,"Extract real text from this Project resource; report missing tools honestly.",json!({"operation":operation,"arguments":{"source":resource["resourceId"]},"expectedSha256":resource["sha256"]}),commands);}}});
+                    ui.horizontal_wrapped(|ui| {
+                        if let Some((label, operation, mode)) =
+                            resource_production_action(text(resource, "name"))
+                        {
+                            if view_control(ui, label, studio::commands_ready(ui), false).clicked() {
+                                let mut arguments = json!({"source":resource["resourceId"]});
+                                if let Some(mode) = mode {
+                                    arguments["mode"] = json!(mode);
+                                }
+                                self.stage_operation(
+                                    snapshot,
+                                    if operation == "pdf.extract" {
+                                        "Extract the exact PDF with automatic text/OCR fallback; report page limits or missing tools honestly."
+                                    } else if operation == "audio.transcribe" {
+                                        "Transcribe real audio from this Project resource; report missing tools honestly."
+                                    } else {
+                                        "Extract real text from this Project resource; report missing tools honestly."
+                                    },
+                                    json!({"operation":operation,"arguments":arguments,"expectedSha256":resource["sha256"]}),
+                                    commands,
+                                );
+                            }
+                        }
+                    });
                 }
 
                 ui.collapsing(t(ui,"Provenance"),|ui| {ui.monospace(text(resource,"sha256"));});
@@ -2025,6 +2068,23 @@ mod tests {
             create,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn resource_actions_are_format_specific_and_route_pdfs_to_bounded_extraction() {
+        assert_eq!(
+            resource_production_action("Board.PDF"),
+            Some(("Extract PDF text", "pdf.extract", Some("auto")))
+        );
+        assert_eq!(
+            resource_production_action("scan.png"),
+            Some(("Extract text (OCR)", "resources.ocr", None))
+        );
+        assert_eq!(
+            resource_production_action("episode.m4a"),
+            Some(("Transcribe audio", "audio.transcribe", None))
+        );
+        assert_eq!(resource_production_action("notes.txt"), None);
     }
 
     #[test]

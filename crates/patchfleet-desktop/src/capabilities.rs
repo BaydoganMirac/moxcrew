@@ -145,6 +145,11 @@ fn rewrite_source(resource: &Value) -> bool {
         .iter()
         .any(|extension| name.ends_with(extension))
 }
+fn pdf_source(resource: &Value) -> bool {
+    text(resource, "name")
+        .to_ascii_lowercase()
+        .ends_with(".pdf")
+}
 fn extraction_source(resource: &Value) -> bool {
     let name = text(resource, "name").to_ascii_lowercase();
     [
@@ -594,6 +599,7 @@ impl Console {
             | "capabilities-research-synthesis"
             | "capabilities-research-comparison"
             | "capabilities-web-research"
+            | "capabilities-pdf-merge"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -646,6 +652,7 @@ impl Console {
                 "capabilities-research-synthesis" => 17,
                 "capabilities-research-comparison" => 18,
                 "capabilities-web-research" => 19,
+                "capabilities-pdf-merge" => 21,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -851,6 +858,21 @@ impl Console {
                     "Ekipler haftalık özet istiyor.\nHerkese açık fiyat 120 TRY."
                 }
                 .into();
+            } else if scene == "capabilities-pdf-merge" {
+                let mut pdfs = available
+                    .iter()
+                    .filter(|resource| pdf_source(resource))
+                    .map(|resource| {
+                        (
+                            text(resource, "name").to_owned(),
+                            text(resource, "resourceId").to_owned(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                pdfs.sort_by(|left, right| left.0.cmp(&right.0));
+                let pdfs = pdfs.into_iter().map(|(_, id)| id).collect::<Vec<_>>();
+                draft.sources.extend(pdfs.iter().cloned());
+                *draft.value("pdfMergeOrder") = pdfs.join("\n");
             }
         }
     }
@@ -1683,6 +1705,8 @@ impl Console {
             "Synthesize sources",
             "Compare options",
             "Web research report",
+            "Extract PDF text",
+            "Merge PDFs",
         ];
         form_combo(
             ui,
@@ -1709,7 +1733,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -1722,6 +1746,7 @@ impl Console {
                                     9 | 10 => chart_source(r),
                                     13 => template_source(r),
                                     14 => rewrite_source(r),
+                                    20 => pdf_source(r),
                                     _ => true,
                                 }
                         })
@@ -1730,7 +1755,7 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![8, 9, 10, 13, 14].contains(&kind) {
+                        if ![8, 9, 10, 13, 14, 20].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
@@ -1739,6 +1764,7 @@ impl Console {
                                 9 | 10 => chart_source(r),
                                 13 => template_source(r),
                                 14 => rewrite_source(r),
+                                20 => pdf_source(r),
                                 _ => false,
                             }
                     }) {
@@ -2997,6 +3023,148 @@ impl Console {
                     }));
                 }
             }
+            20 => {
+                hint(
+                    ui,
+                    "Extract a PDF's text layer, force OCR, or use OCR only on pages without enough embedded text.",
+                );
+                let mut mode = match draft.get("pdfExtractMode") {
+                    "text" => 1,
+                    "ocr" => 2,
+                    _ => 0,
+                };
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Extraction mode"));
+                    ui.selectable_value(&mut mode, 0, t(ui, "Automatic"));
+                    ui.selectable_value(&mut mode, 1, t(ui, "Text layer"));
+                    ui.selectable_value(&mut mode, 2, "OCR");
+                });
+                let mode = match mode {
+                    1 => "text",
+                    2 => "ocr",
+                    _ => "auto",
+                };
+                *draft.value("pdfExtractMode") = mode.into();
+                if mode != "text" {
+                    field(ui, "OCR language", draft.value("language"), 40, false);
+                }
+                hint(
+                    ui,
+                    if mode == "text" {
+                        "Text mode supports up to 100 pages and never invents missing text."
+                    } else {
+                        "OCR and automatic mode are bounded to 12 pages; every page records the method used."
+                    },
+                );
+                if source.is_some_and(pdf_source) {
+                    if let Some(source) = source_id {
+                        let mut args = json!({"source":source,"mode":mode});
+                        if mode != "text" && !draft.get("language").is_empty() {
+                            args["language"] = json!(draft.get("language"));
+                        }
+                        operation = Some(json!({"operation":"pdf.extract","arguments":args}));
+                    }
+                }
+            }
+            21 => {
+                hint(
+                    ui,
+                    "Select 2–12 PDFs, then set their exact order. The merged file is reopened, counted and rendered before delivery.",
+                );
+                let candidates = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && pdf_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                let candidate_ids = candidates
+                    .iter()
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .collect::<HashSet<_>>();
+                let mut order = Vec::new();
+                let mut seen = HashSet::new();
+                for id in draft.get("pdfMergeOrder").lines().map(str::trim) {
+                    if candidate_ids.contains(id)
+                        && draft.sources.contains(id)
+                        && seen.insert(id.to_owned())
+                    {
+                        order.push(id.to_owned());
+                    }
+                }
+                for resource in &candidates {
+                    let id = text(resource, "resourceId");
+                    if draft.sources.contains(id) && seen.insert(id.to_owned()) {
+                        order.push(id.to_owned());
+                    }
+                }
+                ui.horizontal_wrapped(|ui| {
+                    for resource in &candidates {
+                        let id = text(resource, "resourceId");
+                        let mut selected = draft.sources.contains(id);
+                        if ui
+                            .add_enabled(
+                                selected || draft.sources.len() < 12,
+                                egui::Checkbox::new(&mut selected, text(resource, "name")),
+                            )
+                            .changed()
+                        {
+                            if selected {
+                                draft.sources.insert(id.into());
+                                if !order.iter().any(|value| value == id) {
+                                    order.push(id.into());
+                                }
+                            } else {
+                                draft.sources.remove(id);
+                                order.retain(|value| value != id);
+                            }
+                        }
+                    }
+                });
+                ui.label(t(ui, "Merge order"));
+                let mut movement = None;
+                for (index, id) in order.iter().enumerate() {
+                    if let Some(resource) = candidates
+                        .iter()
+                        .find(|resource| text(resource, "resourceId") == id)
+                    {
+                        ui.push_id(("pdf-merge-order", id), |ui| {
+                            ui.horizontal(|ui| {
+                                ui.monospace(format!("{:02}", index + 1));
+                                ui.label(text(resource, "name"));
+                                let move_up = t(ui, "Move up").into_owned();
+                                if ui
+                                    .add_enabled(index > 0, egui::Button::new(move_up))
+                                    .clicked()
+                                {
+                                    movement = Some((index, index - 1));
+                                }
+                                let move_down = t(ui, "Move down").into_owned();
+                                if ui
+                                    .add_enabled(
+                                        index + 1 < order.len(),
+                                        egui::Button::new(move_down),
+                                    )
+                                    .clicked()
+                                {
+                                    movement = Some((index, index + 1));
+                                }
+                            });
+                        });
+                    }
+                }
+                if let Some((from, to)) = movement {
+                    order.swap(from, to);
+                }
+                *draft.value("pdfMergeOrder") = order.join("\n");
+                let sources = order
+                    .iter()
+                    .map(|source| json!({"source":source}))
+                    .collect::<Vec<_>>();
+                if (2..=12).contains(&sources.len()) {
+                    operation =
+                        Some(json!({"operation":"pdf.merge","arguments":{"sources":sources}}));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -3034,6 +3202,8 @@ impl Console {
                         17 => "Read every selected frozen source before calling the typed local tool. Cite every selected source, populate at least one finding with literal evidence from two or more distinct sources, and preserve each disagreement as two or more source-distinct positions with literal quotes. Keep disagreements unresolved; use an empty list only when none was found, and never turn absence of a supplied disagreement into a consensus claim.",
                         18 => "Read every selected frozen source before calling the typed local tool. Apply every owner criterion to every option using the exact criterion keys. For each cell, use confirmed or uncertain with an assessment and literal source evidence, or missing with null assessment and no evidence. Cite every selected source. Keep recommendation.option, reason and basedOnCriteria separate from uncertainty; use a null option and empty basedOnCriteria when the evidence cannot support a recommendation. Never invent quotes, silently score criteria or present the recommendation as automatic truth.",
                         19 => "Inspect each requested public URL with browser.inspect before calling browser.research. For every claim, use fact with literal evidence and null note, inference with literal evidence and an explicit review note, or unknown with no evidence and a reason. Cite every requested URL by its exact source value. The typed browser will retrieve the pages again, reject changed or invented quotes, record UTC access times and response/text hashes, and emit research-report.md, sources.csv and research-evidence.json. Do not use private pages, submit forms, invent citations or present classifications as automatic truth.",
+                        20 => "Use pdf.extract on this exact Project PDF. Keep the selected text/OCR mode and language. Report page limits or missing Poppler/Tesseract honestly; do not infer text that the tool did not extract.",
+                        21 => "Use pdf.merge with the exact source order shown. Do not reorder, omit or duplicate a source. Deliver merged.pdf only after the tool reports the expected page count, verified order, source hashes and first/last render previews.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -4320,6 +4490,69 @@ mod tests {
         assert!(request.contains("Inspect each requested public URL"));
         assert!(request.contains("record UTC access times"));
         assert!(request.contains("Do not use private pages"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn pdf_merge_request_keeps_owner_order_and_stages_no_direct_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"executive-summary.pdf","kind":"document","sha256":"a".repeat(64),"bytes":256,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"financial-appendix.pdf","kind":"document","sha256":"b".repeat(64),"bytes":256,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"notes.txt","kind":"text","sha256":"c".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 21;
+        draft
+            .sources
+            .insert("resource:11111111-1111-4111-8111-111111111111".into());
+        draft
+            .sources
+            .insert("resource:22222222-2222-4222-8222-222222222222".into());
+        *draft.value("pdfMergeOrder") = "resource:22222222-2222-4222-8222-222222222222\nresource:11111111-1111-4111-8111-111111111111".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let visibility = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                "test-action-visibility",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        assert!(visibility.1, "button visibility: {visibility:?}");
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"pdf.merge\""));
+        let second = request
+            .find("resource:22222222-2222-4222-8222-222222222222")
+            .unwrap();
+        let first = request
+            .find("resource:11111111-1111-4111-8111-111111111111")
+            .unwrap();
+        assert!(second < first, "owner PDF order changed: {request}");
+        assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(request.contains("verified order"));
+        assert!(request.contains("first/last render previews"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

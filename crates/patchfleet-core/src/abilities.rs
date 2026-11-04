@@ -6,7 +6,11 @@ fn readiness_profile(id: &str) -> Option<Value> {
     let (required_tools, optional_tools, access): (&[&str], &[&str], &[&str]) = match id {
         "R1" | "R2" | "R3" | "R4" | "R5" => (&[], &[], &["sourceAccess"]),
         "D1" => (&["python"], &["libreoffice", "pdftoppm"], &[]),
-        "D2" => (&["python", "pdftotext"], &["pdftoppm", "tesseract"], &[]),
+        "D2" => (
+            &["python", "pdftotext", "pdftoppm", "pdfinfo", "pdfunite"],
+            &["tesseract"],
+            &[],
+        ),
         "D3" => (&["python"], &["pdftotext", "tesseract"], &[]),
         "D4" => (&["python"], &[], &[]),
         "D5" => (&["python"], &["libreoffice", "pdftoppm"], &[]),
@@ -137,6 +141,8 @@ mod tests {
                 "ffprobe",
                 "pdftotext",
                 "pdftoppm",
+                "pdfinfo",
+                "pdfunite",
                 "tesseract",
                 "whisper",
                 "whisperModel",

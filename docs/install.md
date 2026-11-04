@@ -129,7 +129,8 @@ and file presence do not verify content quality. Read the job's actual output
 list, preview supported UTF-8 Markdown/text/CSV up to 256 KiB, or export a file
 up to 100 MiB using the system save dialog. Export refuses existing destinations.
 On Windows this build does not yet support result listing, preview or export.
-A failed export may leave a partial new copy; choose another name when retrying.
+On Unix, a failed export publishes no incomplete copy; a complete competing file
+is preserved if the destination appears while Moxcrew is saving.
 Canceling the dialog changes nothing. Retries use a fresh job directory and
 retain the original Project and earlier outputs. Unsent text is session-only.
 

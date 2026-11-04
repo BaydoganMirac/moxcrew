@@ -37,10 +37,10 @@ Cloud serializers and remote intent allowlists do not change.
 
 Require1–32unique files, <=25MiB per file and <=64MiB aggregate. No ZIP64 or
 compression is needed for already-compressed Office/media files. Reuse pinned
-descriptor reads and checked no-overwrite export creation. A write failure may
-leave an incomplete destination, as in existing single-file export; never remove
-a public path that could have been replaced by another process. No new dependency
-or Python/tool requirement for packaging.
+descriptor reads and checked no-overwrite export creation. The initial
+implementation could retain an incomplete destination; [Task0060](0060-atomic-owner-exports.md)
+supersedes that Unix detail with atomic no-replace publication. Never remove the
+requested public path. No new dependency or Python/tool requirement for packaging.
 
 ## Ownership and verification
 

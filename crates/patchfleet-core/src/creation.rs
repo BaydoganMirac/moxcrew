@@ -561,18 +561,178 @@ fn export_destination(parent: &Path, name: &std::ffi::OsStr) -> Result<File> {
     }
 }
 
-fn copy_export(source: impl Read, destination: &mut File) -> Result<u64> {
+#[cfg(unix)]
+pub(crate) struct ExportDestination {
+    file: File,
+    directory: File,
+    temporary: std::ffi::CString,
+    target: std::ffi::CString,
+    committed: bool,
+}
+
+#[cfg(unix)]
+impl Write for ExportDestination {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.file.write(bytes)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
+    }
+}
+
+#[cfg(unix)]
+impl ExportDestination {
+    pub(crate) fn commit(mut self) -> Result<()> {
+        use std::os::fd::AsRawFd;
+
+        self.file.flush()?;
+        self.file.sync_all()?;
+        let directory = self.directory.as_raw_fd();
+        #[cfg(target_os = "linux")]
+        let status = unsafe {
+            libc::renameat2(
+                directory,
+                self.temporary.as_ptr(),
+                directory,
+                self.target.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        #[cfg(target_os = "macos")]
+        let status = unsafe {
+            libc::renameatx_np(
+                directory,
+                self.temporary.as_ptr(),
+                directory,
+                self.target.as_ptr(),
+                libc::RENAME_EXCL,
+            )
+        };
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        let status = unsafe {
+            let linked = libc::linkat(
+                directory,
+                self.temporary.as_ptr(),
+                directory,
+                self.target.as_ptr(),
+                0,
+            );
+            if linked == 0 {
+                let _ = libc::unlinkat(directory, self.temporary.as_ptr(), 0);
+            }
+            linked
+        };
+        if status != 0 {
+            return Err(invalid(
+                if std::io::Error::last_os_error().kind() == std::io::ErrorKind::AlreadyExists {
+                    "PROJECT_RESULT_EXPORT_EXISTS"
+                } else {
+                    "PROJECT_RESULT_EXPORT_FAILED"
+                },
+            ));
+        }
+        self.committed = true;
+        self.directory.sync_all()?;
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ExportDestination {
+    fn drop(&mut self) {
+        if !self.committed {
+            use std::os::fd::AsRawFd;
+            unsafe {
+                libc::unlinkat(self.directory.as_raw_fd(), self.temporary.as_ptr(), 0);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn staged_export_destination(parent: &Path, name: &std::ffi::OsStr) -> Result<ExportDestination> {
+    use std::{
+        ffi::CString,
+        os::{
+            fd::{AsRawFd, FromRawFd},
+            unix::ffi::OsStrExt,
+        },
+    };
+
+    let directory = directory_handle(parent)?;
+    let target =
+        CString::new(name.as_bytes()).map_err(|_| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?;
+    for _ in 0..8 {
+        let temporary =
+            CString::new(format!(".moxcrew-export-{}.tmp", uuid::Uuid::new_v4())).unwrap();
+        let descriptor = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                temporary.as_ptr(),
+                libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                0o600,
+            )
+        };
+        if descriptor >= 0 {
+            return Ok(ExportDestination {
+                file: unsafe { File::from_raw_fd(descriptor) },
+                directory,
+                temporary,
+                target,
+                committed: false,
+            });
+        }
+        if std::io::Error::last_os_error().kind() != std::io::ErrorKind::AlreadyExists {
+            break;
+        }
+    }
+    Err(invalid("PROJECT_RESULT_EXPORT_FAILED"))
+}
+
+#[cfg(not(unix))]
+pub(crate) struct ExportDestination;
+
+#[cfg(not(unix))]
+impl Write for ExportDestination {
+    fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "PROJECT_RESULTS_UNSUPPORTED_PLATFORM",
+        ))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "PROJECT_RESULTS_UNSUPPORTED_PLATFORM",
+        ))
+    }
+}
+
+#[cfg(not(unix))]
+impl ExportDestination {
+    pub(crate) fn commit(self) -> Result<()> {
+        Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"))
+    }
+}
+
+#[cfg(not(unix))]
+fn staged_export_destination(_parent: &Path, _name: &std::ffi::OsStr) -> Result<ExportDestination> {
+    Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"))
+}
+
+fn copy_export(source: impl Read, destination: &mut ExportDestination) -> Result<u64> {
     let count = std::io::copy(&mut source.take(EXPORT_BYTES + 1), destination)?;
     if count > EXPORT_BYTES {
         return Err(invalid("PROJECT_RESULT_TOO_LARGE"));
     }
     destination.flush()?;
-    destination.sync_all()?;
     Ok(count)
 }
 
 impl Host {
-    pub(crate) fn checked_export_destination(&self, target: &str) -> Result<File> {
+    pub(crate) fn checked_export_destination(&self, target: &str) -> Result<ExportDestination> {
         let target = Path::new(target);
         if !target.is_absolute()
             || target.components().any(|part| {
@@ -595,7 +755,7 @@ impl Host {
         let name = target
             .file_name()
             .ok_or_else(|| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?;
-        export_destination(&parent, name)
+        staged_export_destination(&parent, name)
     }
 
     pub(crate) fn crew_prepare_inputs(&self, mission_id: &str, payload: &Value) -> Result<Value> {
@@ -977,14 +1137,13 @@ impl Host {
                 };
                 let mut destination =
                     self.checked_export_destination(text(payload, "targetPath")?)?;
-                // On failure retain the partial file: the public path may already name somebody else's replacement.
                 response["bytes"] = if let Some(content) = pinned {
                     destination.write_all(&content)?;
-                    destination.sync_all()?;
                     json!(content.len())
                 } else {
                     json!(copy_export(file, &mut destination)?)
                 };
+                destination.commit()?;
                 response["reasonCode"] = json!("PROJECT_RESULT_EXPORTED");
             }
             _ => return Err(invalid("UNKNOWN_ACTION")),
@@ -1367,32 +1526,93 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn export_failure_never_unlinks_a_replacement_at_the_public_path() {
-        struct ReplacingReader {
-            target: PathBuf,
-            original: PathBuf,
+    fn staged_export_is_invisible_until_complete_and_never_overwrites() {
+        let directory = tempfile::tempdir().unwrap();
+        let parent = fs::canonicalize(directory.path()).unwrap();
+        let target = parent.join("export.md");
+        let mut destination =
+            staged_export_destination(&parent, target.file_name().unwrap()).unwrap();
+        destination.write_all(b"Complete export").unwrap();
+        assert!(!target.exists());
+        destination.commit().unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "Complete export");
+
+        let mut collision =
+            staged_export_destination(&parent, std::ffi::OsStr::new("collision.md")).unwrap();
+        collision.write_all(b"Moxcrew bytes").unwrap();
+        let collision_target = parent.join("collision.md");
+        fs::write(&collision_target, "Owner replacement").unwrap();
+        assert_eq!(
+            collision.commit().unwrap_err().0,
+            "PROJECT_RESULT_EXPORT_EXISTS"
+        );
+        assert_eq!(
+            fs::read_to_string(collision_target).unwrap(),
+            "Owner replacement"
+        );
+        assert!(fs::read_dir(&parent).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".moxcrew-export-")
+        }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn export_failure_never_publishes_partial_or_unlinks_a_replacement() {
+        struct FailingReader {
+            replacement: Option<PathBuf>,
+            delivered: bool,
         }
-        impl Read for ReplacingReader {
-            fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
-                fs::rename(&self.target, &self.original)?;
-                fs::write(&self.target, "Owner replacement")?;
+        impl Read for FailingReader {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                if !self.delivered {
+                    self.delivered = true;
+                    buffer[..7].copy_from_slice(b"partial");
+                    return Ok(7);
+                }
+                if let Some(target) = &self.replacement {
+                    fs::write(target, "Owner replacement")?;
+                }
                 Err(std::io::Error::other("injected source failure"))
             }
         }
         let directory = tempfile::tempdir().unwrap();
         let parent = fs::canonicalize(directory.path()).unwrap();
         let target = parent.join("export.md");
-        let original = parent.join("original.md");
-        let mut destination = export_destination(&parent, target.file_name().unwrap()).unwrap();
+
+        let mut failed = staged_export_destination(&parent, target.file_name().unwrap()).unwrap();
         assert!(copy_export(
-            ReplacingReader {
-                target: target.clone(),
-                original: original.clone()
+            FailingReader {
+                replacement: None,
+                delivered: false,
+            },
+            &mut failed
+        )
+        .is_err());
+        drop(failed);
+        assert!(!target.exists());
+
+        let mut destination =
+            staged_export_destination(&parent, target.file_name().unwrap()).unwrap();
+        assert!(copy_export(
+            FailingReader {
+                replacement: Some(target.clone()),
+                delivered: false,
             },
             &mut destination
         )
         .is_err());
+        drop(destination);
         assert_eq!(fs::read_to_string(target).unwrap(), "Owner replacement");
-        assert!(original.exists());
+        assert!(fs::read_dir(&parent).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".moxcrew-export-")
+        }));
     }
 }

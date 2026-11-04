@@ -34,10 +34,11 @@ or absolute source paths enter the manifest. Original source files remain intact
 Require 1–32 files from one Project, at most 25 MiB per file and 64 MiB total
 source bytes. ZIP uses STORE without compression/ZIP64; packaging needs no
 Python, FFmpeg, dependency or provider process. Windows export remains explicitly
-unsupported pending pinned no-reparse file operations. An I/O failure can leave
-an incomplete destination and reports failure; it never deletes a public path
-another process might have replaced. Existing V12 audit/replay behavior is reused;
-no event schema, Cloud contract or external account action was added.
+unsupported pending pinned no-reparse file operations. [Task0060](../plans/0060-atomic-owner-exports.md)
+now stages Unix exports privately and atomically publishes the complete file. An
+I/O failure publishes no incomplete destination, and a concurrent owner file is
+preserved. Existing V12 audit/replay behavior is reused; no event schema, Cloud
+contract or external account action was added.
 
 Archive names preserve sanitized Unix basenames. Windows-specific reserved names
 such as `CON.txt` can require renaming when a recipient extracts the archive on

@@ -37,8 +37,10 @@ exported within limits, but this slice does not embed Office/media editors.
 Result list/read/export currently work on Unix. Windows rejects these operations
 with `PROJECT_RESULTS_UNSUPPORTED_PLATFORM` until pinned path-handle protection
 and native verification exist. Windows task lifecycle support is not result access
-proof. A failed export may leave a partial new copy; cleanup never deletes a
-destination that another process could have replaced.
+proof. [Task0060](../plans/0060-atomic-owner-exports.md) now stages Unix exports
+privately and atomically publishes the complete file without overwriting a
+destination that appears concurrently. A failed write exposes no partial public
+copy.
 
 ## Persistence and trust
 

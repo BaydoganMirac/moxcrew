@@ -201,8 +201,10 @@ presentation without changing the conversation or provider contracts.
 
 Unix result access pins directory handles and rejects links. Windows result
 list/read/export fail closed until equivalent protection is implemented and
-verified. Failed export can leave a partial newly created copy; cleanup cannot
-unlink an owner destination by pathname after it might have been replaced.
+verified. On Unix, owner exports are written to a private sibling staging file,
+synced and atomically published without replacing an existing destination. A
+failed write exposes no partial public copy, and cleanup never unlinks the
+owner-requested target.
 
 ## Project memory boundary
 

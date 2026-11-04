@@ -105,9 +105,7 @@ pub(super) fn export(host: &Host, p: &Value) -> Result<Value> {
         // All source bytes and hashes have been checked before the target is created.
         let mut destination = host.checked_export_destination(text(p, "targetPath")?)?;
         let (bytes, sha) = write_zip(&mut destination, &entries)?;
-        // Retain partial writes on error; this public path may already name a replacement.
-        destination.flush()?;
-        destination.sync_all()?;
+        destination.commit()?;
         Ok(
             json!({"reasonCode":"PROJECT_DELIVERY_EXPORTED","projectId":p["projectId"],"fileCount":files.len(),"bytes":bytes,"sourceBytes":total,"archiveSha256":sha,"files":files}),
         )

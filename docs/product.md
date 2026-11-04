@@ -55,6 +55,9 @@ see [traceable structured extraction](state/traceable-structured-data-extraction
 Attributed brief requests bind every finding and action to literal evidence,
 retain open questions and preserve missing owners or dates as null; see
 [attributed brief and action plan](state/attributed-brief-action-plan.md).
+Explicit Word template requests bind a selected DOCX to one exact set of
+`{{field_key}}` values; blanks remain visible in the result instead of being
+silently removed. See [DOCX template filling](state/explicit-docx-template-filling.md).
 An armed trigger is explicit time- and count-bounded delegation for its frozen
 recipe while the Host is awake.
 It watches a source condition; it does not import an entire folder automatically.

@@ -85,6 +85,9 @@ commitments.
   [Task0075](state/attributed-brief-action-plan.md) closes the deterministic D3
   publication gap: findings and actions retain literal source evidence, open
   questions stay visible and missing owners or dates remain explicit.
+  [Task0076](state/explicit-docx-template-filling.md) closes the deterministic D5
+  publication gap: one exact DOCX placeholder set is filled locally and every
+  blank value stays visibly marked in the editable result.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

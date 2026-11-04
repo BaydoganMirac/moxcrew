@@ -1,6 +1,6 @@
 # Output Studio and local production
 
-Updated: 2026-10-20. Task0044 baseline; Task0052 extensions linked below.
+Updated: 2026-11-04. Task0044 baseline; later extensions linked below.
 
 Task0052 extends this baseline with real Office/PDF page rendering, native
 region/time selection, typed image generation, OCR/transcription, video packages,
@@ -75,6 +75,7 @@ sum/average charts with static SVG/data/report outputs, formula-backed three-cas
 scenario workbooks with checked totals, image resizing,
 literal-evidence structured tables with visible uncertain/missing cells,
 editable attributed briefs with explicit questions and action assignments,
+explicit DOCX template filling with visible missing values,
 2–12 image batch conversion with per-source results, video clip concatenation
 with an optional SRT sidecar, audio cleanup, and 1–12 segment podcast packaging
 to checked M4A plus output-relative chapter JSON. Python
@@ -92,6 +93,8 @@ See [traceable structured extraction](traceable-structured-data-extraction.md)
 for its source, literal-evidence and missing/uncertain-cell contract.
 See [attributed brief and action plan](attributed-brief-action-plan.md) for its
 finding/action evidence and explicit question/assignment contract.
+See [DOCX template filling](explicit-docx-template-filling.md) for its exact
+placeholder set, split-run handling and visible missing-value contract.
 
 Limits: 25 MiB total input/output per production job, 12 sources, 16 produced
 files, 120 seconds per job, 20 minutes maximum media input/edit duration, bounded

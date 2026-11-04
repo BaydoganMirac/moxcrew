@@ -134,6 +134,11 @@ fn chart_source(resource: &Value) -> bool {
         .to_ascii_lowercase()
         .ends_with(".csv")
 }
+fn template_source(resource: &Value) -> bool {
+    text(resource, "name")
+        .to_ascii_lowercase()
+        .ends_with(".docx")
+}
 fn extraction_source(resource: &Value) -> bool {
     let name = text(resource, "name").to_ascii_lowercase();
     [
@@ -579,6 +584,7 @@ impl Console {
             | "capabilities-data-scenario"
             | "capabilities-data-extract"
             | "capabilities-documents-brief"
+            | "capabilities-documents-template"
             | "capabilities-interactive" => 5,
             "capabilities-browser" => 6,
             _ => 0,
@@ -615,6 +621,7 @@ impl Console {
                 "capabilities-data-scenario" => 10,
                 "capabilities-data-extract" => 11,
                 "capabilities-documents-brief" => 12,
+                "capabilities-documents-template" => 13,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -692,6 +699,19 @@ impl Console {
                     "Pilot decision brief"
                 } else {
                     "Pilot karar özeti"
+                }
+                .into();
+            } else if scene == "capabilities-documents-template" {
+                draft.record = available
+                    .iter()
+                    .find(|resource| template_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("templateFields") = if english {
+                    "client_name | Atlas Cloud\napproval_date |\ncontact_email | ops@atlas.example"
+                } else {
+                    "client_name | Atlas Bulut\napproval_date |\ncontact_email | operasyon@atlas.example"
                 }
                 .into();
             }
@@ -1519,6 +1539,7 @@ impl Console {
             "Scenario workbook",
             "Extract table",
             "Brief + action plan",
+            "Fill Word template",
         ];
         form_combo(
             ui,
@@ -1530,7 +1551,7 @@ impl Console {
                 }
             },
         );
-        if ![10, 11, 12].contains(&draft.kind) {
+        if ![10, 11, 12, 13].contains(&draft.kind) {
             hint(
                 ui,
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
@@ -1554,6 +1575,7 @@ impl Console {
                                 && match kind {
                                     8 => podcast_source(r),
                                     9 | 10 => chart_source(r),
+                                    13 => template_source(r),
                                     _ => true,
                                 }
                         })
@@ -1562,13 +1584,14 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![8, 9, 10].contains(&kind) {
+                        if ![8, 9, 10, 13].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
                             && match kind {
                                 8 => podcast_source(r),
                                 9 | 10 => chart_source(r),
+                                13 => template_source(r),
                                 _ => false,
                             }
                     }) {
@@ -2208,6 +2231,46 @@ impl Console {
                     }));
                 }
             }
+            13 => {
+                ui.label(t(ui, "Template fields · key | value (blank stays missing)"));
+                multiline(ui, "", draft.value("templateFields"), 12000, 4);
+                hint(
+                    ui,
+                    "Use each {{field_key}} from the DOCX exactly once. Blank values remain visibly missing.",
+                );
+                let mut seen = HashSet::new();
+                let fields: Option<Vec<Value>> = draft
+                    .get("templateFields")
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .map(|line| {
+                        let (key, value) = line.split_once('|')?;
+                        let key = key.trim();
+                        let value = value.trim();
+                        (extraction_key(key)
+                            && value.encode_utf16().count() <= 4000
+                            && seen.insert(key.to_owned()))
+                        .then(|| {
+                            if value.is_empty() {
+                                json!({"key":key,"status":"missing","value":null})
+                            } else {
+                                json!({"key":key,"status":"provided","value":value})
+                            }
+                        })
+                    })
+                    .collect();
+                if source.is_some_and(template_source)
+                    && source_id.is_some()
+                    && fields
+                        .as_ref()
+                        .is_some_and(|fields| (1..=100).contains(&fields.len()))
+                {
+                    operation = Some(json!({
+                        "operation":"documents.template",
+                        "arguments":{"source":source_id,"fields":fields}
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -2238,6 +2301,7 @@ impl Console {
                     match draft.kind {
                         11 => "Read the exact Project sources and populate rows before calling the typed tool. Every confirmed or uncertain value must appear inside its literal evidence quote. Mark absent fields missing with null value and evidence; never infer or hide uncertainty.",
                         12 => "Read the exact Project sources and populate findings, questions and actions before calling the typed tool. Every finding and action needs literal evidence from its exact source. Keep unresolved questions explicit; use null owner or due when the notes do not supply them, and never guess.",
+                        13 => "Inspect the exact DOCX template before calling the typed tool. Supply every {{field_key}} exactly once. Keep blank values missing with null instead of guessing, and preserve all non-placeholder template content.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -3012,6 +3076,55 @@ mod tests {
         assert!(request.contains("\"actions\": []"));
         assert!(request.contains("literal evidence from its exact source"));
         assert!(request.contains("use null owner or due"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn word_template_request_keeps_blank_fields_missing_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"onboarding-template.docx","kind":"document","sha256":"a".repeat(64),"bytes":512,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"reference.pdf","kind":"document","sha256":"b".repeat(64),"bytes":256,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 13;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("templateFields") =
+            "client_name | Atlas Cloud\napproval_date |\ncontact_email | ops@atlas.example".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"documents.template\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"key\": \"client_name\""));
+        assert!(request.contains("\"value\": \"Atlas Cloud\""));
+        assert!(request.contains("\"key\": \"approval_date\""));
+        assert!(request.contains("\"status\": \"missing\""));
+        assert!(request.contains("\"value\": null"));
+        assert!(request.contains("Supply every {{field_key}} exactly once"));
+        assert!(request.contains("preserve all non-placeholder template content"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

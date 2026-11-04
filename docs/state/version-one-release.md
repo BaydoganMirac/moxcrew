@@ -17,7 +17,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Area | IDs | Current status |
 |---|---|---|
 | Research | R1–R5 | Frozen sources and bounded text extraction implemented; full research quality proof pending |
-| Documents | D1–D5 | DOCX creation/paragraph revision and attributed brief/action plans with explicit questions and missing assignments; real LibreOffice open proof; PDF merge, translation/templates and broader quality pending |
+| Documents | D1–D5 | DOCX creation/paragraph revision, attributed brief/action plans and exact DOCX template filling with visible missing values; real LibreOffice open proof; PDF merge, translation and broader quality pending |
 | Presentations | P1–P5 | Editable PPTX creation/slide revision; real LibreOffice open proof; full area pending |
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |

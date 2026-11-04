@@ -53,6 +53,8 @@ a home.
   keeps literal evidence and uncertain or missing cells stay visible. Project
   notes can also become an editable brief with attributed findings, explicit
   open questions and actions whose missing owners or dates are never guessed.
+  A Word template can be filled from explicit `{{field_key}}` values while every
+  blank value remains visibly marked instead of disappearing.
 - **Know what was checked.** Output previews identify the exact hash-matched
   version, the format evidence Moxcrew could inspect and the human review that
   still remains. Mark that exact version reviewed or needing changes without

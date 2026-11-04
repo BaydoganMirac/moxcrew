@@ -29,6 +29,86 @@ pub struct DeliveryExportRequest {
     pub host_epoch: Value,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ReviewCoverage {
+    reviewed: usize,
+    needs_changes: usize,
+    unreviewed: usize,
+}
+
+fn review_status(page: &Value, artifact: &Value) -> &'static str {
+    match artifact_review(page, artifact).map(|review| text(review, "status")) {
+        Some("reviewed") => "reviewed",
+        Some("needs_changes") => "needs_changes",
+        _ => "unreviewed",
+    }
+}
+
+fn review_label(status: &str) -> &'static str {
+    match status {
+        "reviewed" => "Reviewed",
+        "needs_changes" => "Changes needed",
+        _ => "Not reviewed",
+    }
+}
+
+fn review_color(ui: &Ui, status: &str) -> egui::Color32 {
+    match status {
+        "reviewed" => colors(ui).success,
+        "needs_changes" => colors(ui).warning,
+        _ => colors(ui).muted,
+    }
+}
+
+fn owner_review_copy(ui: &Ui, status: &str) -> String {
+    format!(
+        "{} · {}",
+        t(ui, "Owner review"),
+        t(ui, review_label(status))
+    )
+}
+
+fn selected_review_coverage(state: &CreateState, snapshot: &Value) -> Option<ReviewCoverage> {
+    selected_files(state, snapshot)?;
+    let selected = state.studio.packages.get(&state.project)?;
+    let page = studio_page(snapshot, &state.project)?;
+    let mut coverage = ReviewCoverage::default();
+    for key in selected {
+        let artifact = array(&page["artifacts"])
+            .iter()
+            .find(|artifact| artifact_key(artifact) == *key)?;
+        match review_status(page, artifact) {
+            "reviewed" => coverage.reviewed += 1,
+            "needs_changes" => coverage.needs_changes += 1,
+            _ => coverage.unreviewed += 1,
+        }
+    }
+    Some(coverage)
+}
+
+fn coverage_copy(ui: &Ui, coverage: ReviewCoverage) -> String {
+    tf(
+        ui,
+        "Review coverage · {0} reviewed · {1} need changes · {2} unreviewed",
+        &[
+            &coverage.reviewed.to_string(),
+            &coverage.needs_changes.to_string(),
+            &coverage.unreviewed.to_string(),
+        ],
+    )
+}
+
+fn coverage_warning(coverage: ReviewCoverage) -> Option<&'static str> {
+    match (coverage.needs_changes > 0, coverage.unreviewed > 0) {
+        (true, true) => {
+            Some("Selected package includes files that need changes and unreviewed files.")
+        }
+        (true, false) => Some("Selected package includes files that need changes."),
+        (false, true) => Some("Selected package includes unreviewed files."),
+        (false, false) => None,
+    }
+}
+
 fn file_type(artifact: &Value) -> usize {
     let path = std::path::Path::new(text(artifact, "path"));
     match path
@@ -216,6 +296,18 @@ pub(super) fn footer_height(ui: &Ui, state: &CreateState, snapshot: &Value) -> f
             ui.available_width().max(1.0),
         );
         height += warning.size().y + ui.spacing().item_spacing.y;
+    } else if let Some(coverage) = selected_review_coverage(state, snapshot) {
+        for copy in std::iter::once(coverage_copy(ui, coverage))
+            .chain(coverage_warning(coverage).map(|warning| t(ui, warning).into_owned()))
+        {
+            let line = ui.painter().layout(
+                copy,
+                egui::FontId::proportional(12.0),
+                colors(ui).muted,
+                ui.available_width().max(1.0),
+            );
+            height += line.size().y + ui.spacing().item_spacing.y;
+        }
     }
     height
 }
@@ -305,9 +397,9 @@ impl Console {
                             .show(ui, |ui| {
                                 for key in &selected {
                                     ui.push_id(key, |ui| {
-                                        let present = array(&page["artifacts"])
+                                        let artifact = array(&page["artifacts"])
                                             .iter()
-                                            .any(|file| artifact_key(file) == *key);
+                                            .find(|file| artifact_key(file) == *key);
                                         ui.add(egui::Label::new(&key.1).wrap());
                                         ui.label(
                                             RichText::new(
@@ -316,7 +408,13 @@ impl Console {
                                             .size(12.0)
                                             .color(colors(ui).muted),
                                         );
-                                        if !present {
+                                        if let Some(artifact) = artifact {
+                                            let status = review_status(page, artifact);
+                                            ui.colored_label(
+                                                review_color(ui, status),
+                                                owner_review_copy(ui, status),
+                                            );
+                                        } else {
                                             ui.colored_label(
                                                 colors(ui).warning,
                                                 t(ui, "Changed or unavailable"),
@@ -410,6 +508,12 @@ impl Console {
                     .size(12.0)
                     .color(colors(ui).muted),
                 );
+                let status = review_status(page, file);
+                ui.label(
+                    RichText::new(owner_review_copy(ui, status))
+                        .size(12.0)
+                        .color(review_color(ui, status)),
+                );
                 response.changed()
             });
             #[cfg(test)]
@@ -452,6 +556,7 @@ impl Console {
         } else {
             tf(ui, "{0} files selected", &[&count.to_string()])
         };
+        let coverage = selected_review_coverage(&self.create, snapshot);
         let footer = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(0, 8)).show(ui, |ui| {
             ui.separator();
             ui.label(RichText::new(summary).size(12.0).color(colors(ui).muted));
@@ -464,6 +569,25 @@ impl Console {
                     )
                     .wrap(),
                 );
+            } else if let Some(coverage) = coverage {
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(coverage_copy(ui, coverage))
+                            .size(12.0)
+                            .color(colors(ui).muted),
+                    )
+                    .wrap(),
+                );
+                if let Some(warning) = coverage_warning(coverage) {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(t(ui, warning))
+                                .size(12.0)
+                                .color(colors(ui).warning),
+                        )
+                        .wrap(),
+                    );
+                }
             }
             ui.add_space(studio::metrics::GAP);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -489,7 +613,7 @@ impl Console {
                     self.create.studio.package_mode = false;
                 }
                 let more = ui.menu_button(t(ui, "More"), |ui| {
-                    hint(ui, "Select up to 32 files, 64 MiB total. The ZIP includes a source and version manifest.");
+                    hint(ui, "Select up to 32 files, 64 MiB total. The ZIP manifest includes source, version and owner-review status.");
                     ui.separator();
                     if let Some(page) = studio_page(snapshot, &self.create.project) {
                         let before = commands.len();
@@ -618,6 +742,82 @@ mod tests {
                 assert_eq!(console.create.studio.packages["project:one"].len(), 1);
                 assert!(console.take_delivery_export_request(true).is_none());
             }
+        }
+    }
+
+    #[test]
+    fn exact_owner_review_status_informs_selection_without_blocking_export() {
+        for language in ["en", "tr"] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let (mut console, mut data) = fixture();
+            data["desktopPreferences"] = json!({"language":language,"reduceMotion":true});
+            let artifacts = data["projectStudio"]["artifacts"]
+                .as_array()
+                .unwrap()
+                .clone();
+            data["projectStudio"]["reviews"] = json!([
+                {"projectId":"project:one","workItemId":artifacts[0]["workItemId"],"path":artifacts[0]["path"],"sha256":artifacts[0]["sha256"],"status":"reviewed"},
+                {"projectId":"project:one","workItemId":artifacts[1]["workItemId"],"path":artifacts[1]["path"],"sha256":artifacts[1]["sha256"],"status":"needs_changes"}
+            ]);
+            console.create.studio.package_mode = true;
+            console.create.studio.packages.insert(
+                "project:one".into(),
+                artifacts.iter().map(artifact_key).collect(),
+            );
+            assert_eq!(
+                selected_review_coverage(&console.create, &data),
+                Some(ReviewCoverage {
+                    reviewed: 1,
+                    needs_changes: 1,
+                    unreviewed: 0,
+                })
+            );
+            let size = egui::vec2(1280.0, 820.0);
+            let mut copy = Vec::new();
+            for _ in 0..3 {
+                copy = render(&ctx, &mut console, &data, size, false, vec![]).1;
+            }
+            let expected = if language == "tr" {
+                [
+                    "Senin incelemen · İncelendi",
+                    "Senin incelemen · Değişiklik gerekiyor",
+                    "İnceleme durumu · 1 incelendi · 1 değişiklik gerekiyor · 0 incelenmedi",
+                    "Seçilen pakette değişiklik gerektiren dosyalar var.",
+                ]
+            } else {
+                [
+                    "Owner review · Reviewed",
+                    "Owner review · Changes needed",
+                    "Review coverage · 1 reviewed · 1 need changes · 0 unreviewed",
+                    "Selected package includes files that need changes.",
+                ]
+            };
+            for expected in expected {
+                assert!(
+                    copy.iter().any(|line| line == expected),
+                    "{language}: missing {expected:?} in {copy:?}"
+                );
+            }
+            let (_, enabled) = ctx.data(|data| {
+                data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                    "test-action-visibility",
+                    "Export package",
+                )))
+                .unwrap()
+            });
+            assert_eq!(enabled, !cfg!(target_os = "windows"));
+
+            data["projectStudio"]["reviews"][1]["sha256"] = json!("c".repeat(64));
+            assert_eq!(
+                selected_review_coverage(&console.create, &data),
+                Some(ReviewCoverage {
+                    reviewed: 1,
+                    needs_changes: 0,
+                    unreviewed: 1,
+                }),
+                "a decision for another hash must not follow the selected version"
+            );
         }
     }
 

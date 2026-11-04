@@ -1,6 +1,6 @@
 # Project delivery packages
 
-Updated: 2026-10-19
+Updated: 2026-11-04
 
 Status: Complete; independently reviewed, native captures and macOS development package verified.
 
@@ -18,6 +18,11 @@ files hidden by a filter. Count/size stay beside a primary **Export package**
 action. Changed or unavailable selections stay visible for correction and block
 export. There is no implicit replacement with a newer version.
 
+[Task0068](review-aware-delivery.md) also shows the exact owner-review state on
+every file, totals reviewed/needs-changes/unreviewed selections and warns about
+the latter two states. The warning does not block a deliberate export or silently
+change the selected package.
+
 Export freezes the Project/work/path/SHA-256 identities before the native ZIP
 save dialog. Cancel emits no command. A pending request survives a simultaneous
 automatic read and later view/Project changes without retargeting it. Replacing
@@ -25,9 +30,10 @@ the Host invalidates it. Host validation rechecks actual source bytes before any
 destination is created. Existing files are never overwritten.
 
 The standard UTF-8 ZIP keeps full sanitized basenames/extensions in numbered
-folders (`files/01/name.ext`) and includes `manifest.json` schema1 with Project,
-work, source path, archive path, SHA-256 and byte count. No prompts, credentials
-or absolute source paths enter the manifest. Original source files remain intact.
+folders (`files/01/name.ext`) and includes `manifest.json` schema2 with Project,
+work, source path, archive path, SHA-256, byte count and the owner-review status
+for that exact hash. No prompts, credentials, review timestamps or absolute
+source paths enter the manifest. Original source files remain intact.
 
 ## Limits
 

@@ -437,6 +437,7 @@ impl Console {
                     | "productive-app-preview"
                     | "productive-tools"
                     | "productive-delivery"
+                    | "productive-delivery-review"
             )
         {
             self.create.studio.open = true;
@@ -454,7 +455,7 @@ impl Console {
             if scene == "productive-compare" {
                 self.studio_compare_smoke(snapshot);
             }
-            if scene == "productive-delivery" {
+            if matches!(scene, "productive-delivery" | "productive-delivery-review") {
                 self.delivery_smoke(snapshot);
             }
             if scene == "productive-app-preview" {

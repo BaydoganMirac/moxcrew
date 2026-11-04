@@ -1,6 +1,6 @@
 # Project delivery packages: core
 
-Updated: 2026-10-19
+Updated: 2026-11-04
 
 Status: Complete; focused checks and integrated independent review pass.
 
@@ -19,10 +19,14 @@ aggregate. All source bytes are checked before creating the destination.
 The output is a standard UTF-8 STORE ZIP with CRC32, central directory and no
 ZIP64/compression dependency. Numbered relative folders (`files/01/name.ext`)
 prevent colliding names while retaining full sanitized Unicode basenames and
-extensions without increasing the basename length. `manifest.json` schema1 records
-Project ID and each work/path/archive-path/hash/byte identity. The manifest adds
-no absolute paths, goals, prompts, account state or credentials. Explicitly
-selected source bytes are exported unchanged; their content is not redacted.
+extensions without increasing the basename length. `manifest.json` schema2 records
+Project ID and each work/path/archive-path/hash/byte identity, plus
+`ownerReview.status` resolved from the exact Project/work/path/hash review
+projection. No matching decision is represented as `unreviewed`; another hash's
+decision is never inherited. The manifest adds no review time, absolute paths,
+goals, prompts, account state or credentials. Explicitly selected source bytes
+are exported unchanged; their content is not redacted. The command payload and
+success receipt remain backward-compatible and do not gain review fields.
 
 Single-file and package exports share the checked destination helper: absolute
 owner-selected target, existing parent, outside the canonical data directory,

@@ -16,6 +16,15 @@ Original outputs are retained. Images render natively; PPTX/DOCX previews expose
 their real text structure, and media exposes checked metadata and a thumbnail.
 This is not a full Office renderer, video editor timeline or inline media player.
 
+Task0065 adds a verification summary before the selected preview. It appears
+only when Project, work item, path and SHA-256 match the exact selected artifact.
+The card reports exact-version proof separately from format inspection: readable
+text was reopened, Office sections were parsed, image bytes were loaded or media
+streams and duration were parsed. Unsupported or malformed previews remain
+inspection-limited. Every state names the human check still required for content
+accuracy, completeness, Office layout, image fidelity or full media playback.
+See [artifact verification](artifact-verification-summary.md).
+
 Task0047 adds name/path search, file-type filtering and inspectable multi-file
 selection. **Create package** opens a dedicated selection view; **Export package**
 saves one standard ZIP and provenance manifest using checked original bytes.

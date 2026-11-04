@@ -44,6 +44,9 @@ a home.
 - **Know what is ready.** One read-only System check shows agent connections,
   local production tools, the image engine and Project apps without running a
   model or changing an account.
+- **Know what was checked.** Output previews identify the exact hash-matched
+  version, the format evidence Moxcrew could inspect and the human review that
+  still remains.
 - **Stay local by default.** Local use is free, needs no Moxcrew account and keeps
   source, prompts, paths, outputs and credentials off Cloud by default.
 
@@ -78,9 +81,9 @@ available when needed; they are not prerequisites for the first request.
 </table>
 
 The native workbench also includes Project memory, task queues, reusable crews,
-an owner-visible System check, output previews and an optional sanitized Cloud view.
-Turkish and English interfaces, light and dark themes, and keyboard navigation
-ship in the desktop application.
+an owner-visible System check, verification-aware output previews and an optional
+sanitized Cloud view. Turkish and English interfaces, light and dark themes, and
+keyboard navigation ship in the desktop application.
 
 ## Why local-first matters
 

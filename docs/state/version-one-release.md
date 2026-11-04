@@ -22,7 +22,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |
 | Audio | A1–A5 | Real bounded cleanup to WAV; timed whisper.cpp transcription adapter; checked ordered podcast segments to playable M4A plus chapter JSON; voice/translation/full area pending |
-| Data | T1–T5 | CSV cleanup/statistics, XLSX output/open proof, exact-column sum/average charts, and formula-backed Base/Upside/Downside workbooks with independent recalculation proof; structured extraction/full area pending |
+| Data | T1–T5 | CSV cleanup/statistics, XLSX output/open proof, exact-column charts, formula-backed scenario workbooks, and literal-evidence structured extraction with explicit uncertain/missing cells; broader quality proof pending |
 | Web/actions | W1–W5 | Explicit app actions, isolated static public-page/form-draft browser and offline interactive tools; live accounts/full area pending |
 | Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery, local schedules and checked multi-file delivery packages implemented; full ten-workflow release proof pending |
 

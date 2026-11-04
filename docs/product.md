@@ -36,8 +36,9 @@ Files can be attached in the composer; targeted output selections return to the
 same conversation. Optional Project tools contain brand guidance, taught skills,
 bounded folder/URL triggers, parallel alternatives and inspectable source evidence.
 Typed requests for images, bounded batch conversion, podcast edits, checked CSV
-charts, editable scenario workbooks, video packages, static browser work and
-interactive outputs enter this same plan/prepare/start flow.
+charts, editable scenario workbooks, evidence-bound structured extraction, video
+packages, static browser work and interactive outputs enter this same
+plan/prepare/start flow.
 Batch conversion reports every selected source separately and keeps successful
 siblings when one file is malformed. See
 [batch image conversion](state/batch-image-conversion.md). Podcast edits turn
@@ -48,6 +49,9 @@ data JSON and report; see [checked CSV charts](state/checked-csv-charts.md).
 Scenario requests bind exact item/base/upside/downside columns to a formula-backed
 XLSX, checked data and report; see
 [editable scenario workbooks](state/editable-scenario-workbooks.md).
+Structured extraction keeps confirmed, uncertain and missing cells explicit and
+rejects every populated value that lacks a literal quote from its frozen source;
+see [traceable structured extraction](state/traceable-structured-data-extraction.md).
 An armed trigger is explicit time- and count-bounded delegation for its frozen
 recipe while the Host is awake.
 It watches a source condition; it does not import an entire folder automatically.

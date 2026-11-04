@@ -48,7 +48,9 @@ a home.
   batch with an explicit result for every source, or turn an ordered podcast edit
   plan into playable audio plus chapter data. Checked CSV columns become a static
   chart, plotted-data JSON and concise report from one traceable aggregate, or an
-  editable Base/Upside/Downside workbook with checked formulas and totals.
+  editable Base/Upside/Downside workbook with checked formulas and totals. Text,
+  PDF and image facts can become a traceable table where every populated value
+  keeps literal evidence and uncertain or missing cells stay visible.
 - **Know what was checked.** Output previews identify the exact hash-matched
   version, the format evidence Moxcrew could inspect and the human review that
   still remains. Mark that exact version reviewed or needing changes without

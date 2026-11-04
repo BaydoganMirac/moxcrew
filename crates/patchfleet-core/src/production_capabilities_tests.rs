@@ -614,6 +614,135 @@ async fn scenario_workbook_has_checked_totals_fixed_formulas_and_bounded_inputs(
 }
 
 #[tokio::test]
+async fn structured_extraction_requires_literal_evidence_and_exposes_uncertainty_and_missing() {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::fs::PermissionsExt;
+    let data = tempfile::tempdir().unwrap();
+    let script = data.path().join("extract-peer");
+    fs::write(
+        &script,
+        r#"#!/usr/bin/python3
+import pathlib,sys
+kind=pathlib.Path(sys.argv[0]).name
+args=sys.argv[1:]
+if kind=='pdftotext':
+ assert args[0]=='-layout' and args[-1]=='-'
+ print('Vendor: Northwind AI\nRenewal: late Q2')
+elif kind=='tesseract':
+ assert args[1:]==['stdout','--psm','3']
+ print('Vendor: Paper Kite\nSeats: about 40')
+else: sys.exit(2)
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    for tool in ["pdftotext", "tesseract"] {
+        let path = data.path().join(tool);
+        fs::copy(&script, &path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        configure(data.path(), tool, path.to_str().unwrap()).unwrap();
+    }
+    let sources = vec![
+        (
+            "inputs/atlas.txt".into(),
+            b"Vendor: =Atlas Cloud\nRenewal: 2027-04-30\nSeats: 120\n".to_vec(),
+        ),
+        ("inputs/northwind.pdf".into(), b"fixture pdf".to_vec()),
+        ("inputs/paper.png".into(), raster()),
+    ];
+    let args = json!({
+        "title":"Vendor review <2027>\n# checked",
+        "sources":[
+            {"source":"inputs/atlas.txt","label":"Atlas brief"},
+            {"source":"inputs/northwind.pdf","label":"Northwind PDF"},
+            {"source":"inputs/paper.png","label":"Paper scan"}
+        ],
+        "columns":[
+            {"key":"vendor","label":"Vendor"},
+            {"key":"renewal","label":"Renewal"},
+            {"key":"seats","label":"Seats"}
+        ],
+        "rows":[
+            {"source":"inputs/atlas.txt","cells":{
+                "vendor":{"status":"confirmed","value":"=Atlas Cloud","evidence":"Vendor: =Atlas Cloud"},
+                "renewal":{"status":"confirmed","value":"2027-04-30","evidence":"Renewal: 2027-04-30"},
+                "seats":{"status":"confirmed","value":"120","evidence":"Seats: 120"}
+            }},
+            {"source":"inputs/northwind.pdf","cells":{
+                "vendor":{"status":"confirmed","value":"Northwind AI","evidence":"Vendor: Northwind AI"},
+                "renewal":{"status":"uncertain","value":"late Q2","evidence":"Renewal: late Q2"},
+                "seats":{"status":"missing","value":null,"evidence":null}
+            }},
+            {"source":"inputs/paper.png","cells":{
+                "vendor":{"status":"confirmed","value":"Paper Kite","evidence":"Vendor: Paper Kite"},
+                "renewal":{"status":"missing","value":null,"evidence":null},
+                "seats":{"status":"uncertain","value":"about 40","evidence":"Seats: about 40"}
+            }}
+        ]
+    });
+    let output = run(data.path(), "data.extract", &args, &sources, None)
+        .await
+        .unwrap();
+    assert_eq!(output.value["kind"], "data_extraction");
+    assert_eq!(output.value["rowCount"], 3);
+    assert_eq!(output.value["cellCount"], 9);
+    assert_eq!(output.value["statusCounts"]["confirmed"], 5);
+    assert_eq!(output.value["statusCounts"]["uncertain"], 2);
+    assert_eq!(output.value["statusCounts"]["missing"], 2);
+    assert_eq!(output.value["rows"][0]["cells"]["renewal"]["line"], 2);
+    let atlas = b"Vendor: =Atlas Cloud\nRenewal: 2027-04-30\nSeats: 120\n";
+    assert_eq!(
+        output.value["sources"][0]["sourceSha256"],
+        format!("{:x}", Sha256::digest(atlas))
+    );
+    assert_eq!(
+        output.value["sources"][0]["textSha256"],
+        format!("{:x}", Sha256::digest(atlas))
+    );
+    assert_eq!(
+        output.value["rows"][1]["cells"]["seats"]["value"],
+        Value::Null
+    );
+    assert!(!output.value.to_string().contains("inputs/"));
+    assert!(!output
+        .value
+        .to_string()
+        .contains(data.path().to_string_lossy().as_ref()));
+    let csv = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "extracted-table.csv")
+        .map(|(_, bytes)| String::from_utf8(bytes.clone()).unwrap())
+        .unwrap();
+    assert!(csv.contains("Renewal status"));
+    assert!(csv.contains("'=Atlas Cloud"));
+    assert!(csv.contains("late Q2,uncertain,2"));
+    assert!(csv.contains(",missing,"));
+    let report = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "report.md")
+        .map(|(_, bytes)| String::from_utf8(bytes.clone()).unwrap())
+        .unwrap();
+    assert!(report.contains("Vendor review &lt;2027&gt; \\# checked"));
+    assert!(report.contains("- Uncertain cells: 2"));
+    let mut fabricated = args.clone();
+    fabricated["rows"][0]["cells"]["vendor"]["evidence"] = json!("Vendor: Fabricated");
+    assert!(
+        run(data.path(), "data.extract", &fabricated, &sources, None)
+            .await
+            .is_err()
+    );
+    let mut hidden_missing = args;
+    hidden_missing["rows"][1]["cells"]["seats"]["value"] = json!("unknown");
+    assert!(
+        run(data.path(), "data.extract", &hidden_missing, &sources, None)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn caption_renderer_is_required_and_fallback_rejects_unbounded_work_before_encoding() {
     use std::os::unix::fs::PermissionsExt;
     let data = tempfile::tempdir().unwrap();

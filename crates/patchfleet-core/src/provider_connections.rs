@@ -121,8 +121,9 @@ mod tests {
         programs.claude = claude_programs.codex;
         programs.gemini = gemini_programs.codex;
         // These local peers answer immediately, but process scheduling on a loaded CI host
-        // can exceed two seconds before the child gets CPU time.
-        programs.timeout = Duration::from_secs(4);
+        // can be delayed while the full process-heavy suite runs. Deliberate timeout cases
+        // override this below, so production deadlines and timeout coverage stay unchanged.
+        programs.timeout = Duration::from_secs(8);
         (vec![codex_dir, claude_dir, gemini_dir], programs)
     }
 

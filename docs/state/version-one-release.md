@@ -22,7 +22,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |
 | Audio | A1–A5 | Real bounded cleanup to WAV; timed whisper.cpp transcription adapter; checked ordered podcast segments to playable M4A plus chapter JSON; voice/translation/full area pending |
-| Data | T1–T5 | CSV cleanup/statistics and XLSX output/open proof; full area pending |
+| Data | T1–T5 | CSV cleanup/statistics, XLSX output/open proof, and exact-column sum/average charts to static SVG/data/report; scenario/extraction/full area pending |
 | Web/actions | W1–W5 | Explicit app actions, isolated static public-page/form-draft browser and offline interactive tools; live accounts/full area pending |
 | Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery, local schedules and checked multi-file delivery packages implemented; full ten-workflow release proof pending |
 
@@ -113,6 +113,9 @@ execution evidence, not image-generation/model-quality proof.
 [Task0071](podcast-editing.md) adds the deterministic A4 edit path: 1–12 exact
 source ranges become one checked playable M4A with output-relative chapter data.
 It does not claim automatic editorial decisions, transcription or publication.
+[Task0072](checked-csv-charts.md) adds the deterministic T3 chart path: exact
+frozen CSV columns and an explicit aggregation produce a static SVG, plotted data
+JSON and matching concise report. It does not claim statistical interpretation.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

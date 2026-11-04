@@ -73,6 +73,9 @@ commitments.
   [Task0071](state/podcast-editing.md) closes the deterministic A4 execution gap:
   an ordered edit plan produces checked playable M4A and recomputed chapter data
   without transcription, publishing or a model call.
+  [Task0072](state/checked-csv-charts.md) closes the deterministic T3 chart gap:
+  exact CSV columns and an explicit aggregation produce one static SVG, plotted
+  data JSON and concise report with no model call.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

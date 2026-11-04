@@ -1,8 +1,12 @@
 """Fixed production capabilities loaded only from the bundled worker's private scratch."""
 import base64
 import binascii
+import csv
 import hashlib
 import html
+import io
+import itertools
+import math
 import struct
 import textwrap
 import zlib
@@ -133,6 +137,56 @@ def podcast(args,tools):
     (OUT/'chapters.json').write_text(json.dumps({'title':title,'durationSeconds':actual,'chapters':chapters},ensure_ascii=False),encoding='utf-8')
     (OUT/'validation.json').write_text(json.dumps(validation,ensure_ascii=False),encoding='utf-8')
     return package
+
+
+def data_chart(args,tools):
+    exact(args,('source','title','categoryColumn','valueColumn','aggregation'))
+    title=text(args['title'],160).strip();category=text(args['categoryColumn'],160).strip()
+    value=text(args['valueColumn'],160).strip();aggregation=args['aggregation']
+    require(title and category and value and category!=value and aggregation in ('sum','average'))
+    path=source(args['source']);require(path.suffix.lower()=='.csv','PRODUCTION_DATA_FORMAT_UNSUPPORTED')
+    rows=list(itertools.islice(csv.reader(io.StringIO(path.read_text(encoding='utf-8-sig'))),100002))
+    require(2<=len(rows)<=100001 and 1<=len(rows[0])<=100,'PRODUCTION_DATA_LIMIT')
+    require(sum(len(row) for row in rows)<=200000,'PRODUCTION_DATA_LIMIT')
+    require(all(len(row)==len(rows[0]) for row in rows),'PRODUCTION_CSV_SHAPE_INVALID')
+    cleaned=[[text(cell,20000).strip() for cell in row] for row in rows]
+    header=cleaned[0];require(len(set(header))==len(header) and category in header and value in header)
+    category_index=header.index(category);value_index=header.index(value);groups={}
+    for row in cleaned[1:]:
+        label=row[category_index];require(label)
+        try: number_value=float(row[value_index])
+        except ValueError: raise ValueError('PRODUCTION_NON_NUMERIC_VALUE')
+        require(math.isfinite(number_value) and -1e12<=number_value<=1e12,'PRODUCTION_NON_NUMERIC_VALUE')
+        groups.setdefault(label,[]).append(number_value);require(len(groups)<=40,'PRODUCTION_CHART_LIMIT')
+    require(groups)
+    series=[{'label':label,'value':math.fsum(values) if aggregation=='sum' else math.fsum(values)/len(values),'rows':len(values)}
+            for label,values in groups.items()]
+    values=[item['value'] for item in series];low=min(0,min(values));high=max(0,max(values));span=high-low or 1
+    width=1200;height=max(360,150+len(series)*48);left=320;right=80;top=105;plot=width-left-right
+    position=lambda item:left+(item-low)/span*plot;zero=position(0)
+    escape=lambda value:html.escape(str(value),quote=True)
+    markdown=lambda value:''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character
+                                  for character in escape(value).replace('\r',' ').replace('\n',' '))
+    elements=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">',
+              '<rect width="100%" height="100%" fill="#f8f7f3"/>',f'<title id="title">{escape(title)}</title>',
+              f'<desc id="desc">{escape(aggregation)} of {escape(value)} grouped by {escape(category)}</desc>',
+              f'<text x="48" y="55" font-family="system-ui,sans-serif" font-size="30" font-weight="700" fill="#15223d">{escape(title)}</text>',
+              f'<line x1="{zero:.2f}" y1="{top-20}" x2="{zero:.2f}" y2="{height-45}" stroke="#526079" stroke-width="2"/>']
+    for index,item in enumerate(series):
+        y=top+index*48;end=position(item['value']);x=min(zero,end);bar=max(2,abs(end-zero));colour='#2854f4' if item['value']>=0 else '#ff7a2f'
+        display=format(item['value'],'.8g')
+        elements.extend([f'<text x="48" y="{y+22}" font-family="system-ui,sans-serif" font-size="18" fill="#15223d">{escape(item["label"])}</text>',
+                         f'<rect x="{x:.2f}" y="{y}" width="{bar:.2f}" height="28" rx="6" fill="{colour}"/>',
+                         f'<text x="{min(width-70,max(left+8,end+10)):.2f}" y="{y+21}" font-family="ui-monospace,monospace" font-size="16" fill="#15223d">{escape(display)}</text>'])
+    elements.append('</svg>')
+    (OUT/'chart.svg').write_text(''.join(elements),encoding='utf-8')
+    result={'kind':'data_chart','title':title,'categoryColumn':category,'valueColumn':value,
+            'aggregation':aggregation,'rowsAnalyzed':len(cleaned)-1,'categoryCount':len(series),'series':series,'file':'chart.svg'}
+    (OUT/'chart-data.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+    report=['# '+markdown(title),'',f'- Source rows checked: {len(cleaned)-1}',f'- Grouping: {markdown(category)}',f'- Value: {aggregation} of {markdown(value)}',f'- Categories: {len(series)}','','| Category | Value | Rows |','|---|---:|---:|']
+    report.extend(f'| {markdown(item["label"])} | {format(item["value"],".8g")} | {item["rows"]} |' for item in series)
+    (OUT/'report.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+    return result
 
 
 def captions_file(captions,duration,path):
@@ -369,6 +423,7 @@ def execute(operation,args,tools):
     if operation=='resources.ocr': return ocr(args,tools)
     if operation=='audio.transcribe': return transcribe(args,tools)
     if operation=='audio.podcast': return podcast(args,tools)
+    if operation=='data.chart': return data_chart(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)
     if operation=='video.package': return package(args,tools)

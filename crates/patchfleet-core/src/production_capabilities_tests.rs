@@ -1930,3 +1930,157 @@ else: sys.exit(2)
         assert!(!String::from_utf8_lossy(&bytes).contains("DO_NOT_EXPORT_MODEL"));
     }
 }
+
+#[tokio::test]
+async fn pdf_extraction_and_merge_preserve_page_methods_order_and_source_evidence() {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::fs::PermissionsExt;
+
+    let data = tempfile::tempdir().unwrap();
+    let script = data.path().join("pdf-peer");
+    fs::write(
+        &script,
+        r#"#!/usr/bin/python3
+import base64,pathlib,re,sys
+kind=pathlib.Path(sys.argv[0]).name
+args=sys.argv[1:]
+png=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAHHRFWHRwcm9tcHQAUFJJVkFURV9FTkdJTkVfUFJPTVBUYA6ekwAAAHpJREFUeJztz1EJACAUwMAXxqBGNJIh/DiEwQLcZu3zdcMFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjx2AU8iQVoikf+xAAAAAElFTkSuQmCC')
+if args==['-v']:
+ print('fixture');sys.exit(0)
+if kind=='pdfinfo':
+ data=pathlib.Path(args[-1]).read_bytes();match=re.search(rb'PAGES=([0-9]+)',data)
+ assert data.startswith(b'%PDF-') and match
+ print('Pages: '+match.group(1).decode()+'\nEncrypted: no\nForm: none\nJavaScript: '+('yes' if b'UNSAFE' in data else 'no'))
+elif kind=='pdftotext':
+ data=pathlib.Path(args[-2]).read_bytes()
+ if b'MERGED' in data: value='Executive summary\f\f'
+ elif b'FIRST' in data: value='Executive summary\f'
+ elif b'SECOND' in data: value='\f'
+ elif b'MIXED' in data: value='Embedded page text is complete\f\f'
+ else: raise AssertionError('unknown fixture')
+ sys.stdout.write(value)
+elif kind=='pdftoppm':
+ pathlib.Path(args[-1]+'.png').write_bytes(png)
+elif kind=='tesseract':
+ assert args[1:]==['stdout','-l','eng','--psm','3']
+ print('Scanned page')
+elif kind=='pdfunite':
+ inputs=[pathlib.Path(value) for value in args[:-1]]
+ assert len(inputs)==2 and b'FIRST' in inputs[0].read_bytes() and b'SECOND' in inputs[1].read_bytes()
+ pathlib.Path(args[-1]).write_bytes(b'%PDF-1.4\nMERGED\nPAGES=2\n%%EOF\n')
+else: sys.exit(2)
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    for tool in ["pdfinfo", "pdftotext", "pdftoppm", "tesseract", "pdfunite"] {
+        let path = data.path().join(tool);
+        fs::copy(&script, &path).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        configure(data.path(), tool, path.to_str().unwrap()).unwrap();
+    }
+
+    let mixed = b"%PDF-1.4\nMIXED\nPAGES=2\n%%EOF\n".to_vec();
+    let extracted = run(
+        data.path(),
+        "pdf.extract",
+        &json!({"source":"inputs/mixed.pdf","mode":"auto","language":"eng"}),
+        &[("inputs/mixed.pdf".into(), mixed.clone())],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(extracted.value["kind"], "pdf_extraction");
+    assert_eq!(extracted.value["pageCount"], 2);
+    assert_eq!(extracted.value["textPageCount"], 1);
+    assert_eq!(extracted.value["ocrPageCount"], 1);
+    assert_eq!(extracted.value["pages"][0]["method"], "text");
+    assert_eq!(extracted.value["pages"][1]["method"], "ocr");
+    assert_eq!(
+        extracted.value["sourceSha256"],
+        format!("{:x}", Sha256::digest(&mixed))
+    );
+    let text = extracted
+        .files
+        .iter()
+        .find(|(name, _)| name == "extracted.txt")
+        .map(|(_, bytes)| String::from_utf8(bytes.clone()).unwrap())
+        .unwrap();
+    assert!(text.contains("[Page 1]\nEmbedded page text is complete"));
+    assert!(text.contains("[Page 2]\nScanned page"));
+
+    let first = b"%PDF-1.4\nFIRST\nPAGES=1\n%%EOF\n".to_vec();
+    let second = b"%PDF-1.4\nSECOND\nPAGES=1\n%%EOF\n".to_vec();
+    let merged = run(
+        data.path(),
+        "pdf.merge",
+        &json!({"sources":[{"source":"inputs/first.pdf"},{"source":"inputs/second.pdf"}]}),
+        &[
+            ("inputs/first.pdf".into(), first.clone()),
+            ("inputs/second.pdf".into(), second.clone()),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(merged.value["kind"], "pdf_merge");
+    assert_eq!(merged.value["pageCount"], 2);
+    assert_eq!(merged.value["sourceCount"], 2);
+    assert_eq!(merged.value["verifiedOrder"], true);
+    assert_eq!(merged.value["sources"][0]["startPage"], 1);
+    assert_eq!(merged.value["sources"][1]["startPage"], 2);
+    assert_eq!(merged.value["sources"][0]["orderProof"], "text");
+    assert_eq!(merged.value["sources"][1]["orderProof"], "render");
+    assert_eq!(
+        merged.value["sources"][0]["sourceSha256"],
+        format!("{:x}", Sha256::digest(&first))
+    );
+    assert_eq!(
+        merged.value["sources"][1]["sourceSha256"],
+        format!("{:x}", Sha256::digest(&second))
+    );
+    assert!(merged
+        .files
+        .iter()
+        .any(|(name, bytes)| name == "merged.pdf" && bytes.starts_with(b"%PDF-")));
+    assert!(merged
+        .files
+        .iter()
+        .any(|(name, bytes)| name == "preview-first.png" && bytes.starts_with(b"\x89PNG")));
+    assert!(merged
+        .files
+        .iter()
+        .any(|(name, _)| name == "merge-manifest.json"));
+    assert!(OPERATIONS.contains(&"pdf.extract"));
+    assert!(OPERATIONS.contains(&"pdf.merge"));
+
+    let too_many = b"%PDF-1.4\nMIXED\nPAGES=13\n%%EOF\n".to_vec();
+    let error = match run(
+        data.path(),
+        "pdf.extract",
+        &json!({"source":"inputs/long.pdf","mode":"ocr"}),
+        &[("inputs/long.pdf".into(), too_many)],
+        None,
+    )
+    .await
+    {
+        Ok(_) => panic!("over-limit OCR PDF was accepted"),
+        Err(error) => error,
+    };
+    assert_eq!(error.0, "PRODUCTION_PDF_PAGE_LIMIT");
+
+    let unsafe_pdf = b"%PDF-1.4\nUNSAFE\nPAGES=1\n%%EOF\n".to_vec();
+    let error = match run(
+        data.path(),
+        "pdf.extract",
+        &json!({"source":"inputs/unsafe.pdf","mode":"text"}),
+        &[("inputs/unsafe.pdf".into(), unsafe_pdf)],
+        None,
+    )
+    .await
+    {
+        Ok(_) => panic!("active-content PDF was accepted"),
+        Err(error) => error,
+    };
+    assert_eq!(error.0, "PRODUCTION_PDF_UNSAFE");
+}

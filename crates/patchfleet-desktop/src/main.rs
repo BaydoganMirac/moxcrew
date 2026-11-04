@@ -310,6 +310,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-research-comparison");
         let web_research = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-web-research");
+        let pdf_merge = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-pdf-merge");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
@@ -330,6 +332,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Vendor decision" } else { "Tedarikçi kararı" }
         } else if web_research {
             if english { "Launch research" } else { "Lansman araştırması" }
+        } else if pdf_merge {
+            if english { "Board packet" } else { "Yönetim kurulu paketi" }
         } else if english {
             "Product launch"
         } else {
@@ -465,6 +469,14 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-pdf-merge") {
+            for name in ["01-executive-summary.pdf", "02-financial-appendix.pdf"] {
+                let source=directory.join(name);std::fs::write(&source,b"%PDF-1.4\n% disposable UI resource\n%%EOF\n").unwrap();
+                let snapshot=host.snapshot().unwrap();
+                let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+                host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+            }
+        }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
         let batch_images=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images");
@@ -479,6 +491,7 @@ fn seed_create_scene(directory: &std::path::Path) {
         let research_synthesis=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-synthesis");
         let research_comparison=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-comparison");
         let web_research=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-web-research");
+        let pdf_merge=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-pdf-merge");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
@@ -505,6 +518,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             ("R2",if english{"Vendor decision comparison"}else{"Tedarikçi karar karşılaştırması"},if english{"Apply the owner's criteria evenly across vendor options while keeping the recommendation and uncertainty separate."}else{"Sahibin kriterlerini tedarikçi seçeneklerine eşit uygula; öneri ile belirsizliği ayrı tut."})
         } else if web_research {
             ("R1",if english{"Source-backed launch research"}else{"Kaynaklı lansman araştırması"},if english{"Retrieve public launch sources and keep access times, response hashes and literal evidence for every material claim."}else{"Herkese açık lansman kaynaklarını getir; her önemli iddia için erişim zamanını, yanıt özetini ve birebir kanıtı koru."})
+        } else if pdf_merge {
+            ("D2",if english{"Verified board packet"}else{"Doğrulanmış yönetim kurulu paketi"},if english{"Merge the selected PDFs in the owner's exact order and verify page counts, source hashes and rendered boundaries."}else{"Seçili PDF'leri sahibin kesin sırasıyla birleştir; sayfa sayılarını, kaynak özetlerini ve render sınırlarını doğrula."})
         } else {
             ("P1",if english{"Launch presentation · UI fixture"}else{"Lansman sunumu · arayüz sahnesi"},if english{"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."}else{"Bir lansman sunumu hazırla. Bu tek kullanımlık arayüz sahnesinde sağlayıcı çalıştırılmadı."})
         };

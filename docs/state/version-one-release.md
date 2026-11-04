@@ -17,7 +17,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Area | IDs | Current status |
 |---|---|---|
 | Research | R1–R5 | Bounded public-page retrieval with UTC access/hash evidence, frozen sources, owner-criteria comparisons, attributed multi-source synthesis with preserved disagreements, literal-evidence claim reports, and dated source-hashed change reports implemented; live source/provider quality proof pending |
-| Documents | D1–D5 | DOCX creation/paragraph revision, attributed briefs, source-pinned translation/style rewrite with protected facts, and exact template filling; real LibreOffice open proof; PDF merge and broader semantic/layout quality pending |
+| Documents | D1–D5 | DOCX creation/paragraph revision, attributed briefs, source-pinned translation/style rewrite, exact template filling, and bounded PDF text/OCR extraction plus source-hashed order-verified merge implemented; broader semantic/layout and live OCR quality proof pending |
 | Presentations | P1–P5 | Editable PPTX creation/slide revision; real LibreOffice open proof; full area pending |
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |
@@ -150,6 +150,11 @@ path that re-fetches one to four public pages in the isolated no-script browser,
 pins UTC access times and response/text hashes, and rejects non-literal claim
 evidence. It emits Markdown, CSV and JSON while keeping inference notes and
 unknowns explicit; it does not access private pages or prove source quality.
+[Task0083](../plans/0083-verified-pdf-processing.md) adds bounded D2 PDF
+text/OCR extraction and ordered merge. Every extraction records per-page method
+and text hashes; every merge reopens the output, verifies page count/source
+blocks and retains first/last renders. It does not claim OCR semantic accuracy
+or support signing, encryption removal or form editing.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

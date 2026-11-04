@@ -41,6 +41,8 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "audio.podcast",
     "resources.extract",
     "resources.ocr",
+    "pdf.extract",
+    "pdf.merge",
     "audio.transcribe",
     "documents.render",
     "video.frame",
@@ -92,6 +94,8 @@ pub(crate) fn paths(data: &Path) -> Result<Value> {
         ("ffprobe", "ffprobe"),
         ("pdftotext", "pdftotext"),
         ("pdftoppm", "pdftoppm"),
+        ("pdfinfo", "pdfinfo"),
+        ("pdfunite", "pdfunite"),
         ("tesseract", "tesseract"),
         ("whisper", "whisper-cli"),
         ("whisperModel", "moxcrew-no-default-whisper-model"),
@@ -124,6 +128,8 @@ pub(crate) fn configure(data: &Path, id: &str, selected: &str) -> Result<()> {
         "ffprobe",
         "pdftotext",
         "pdftoppm",
+        "pdfinfo",
+        "pdfunite",
         "tesseract",
         "whisper",
         "whisperModel",
@@ -189,6 +195,16 @@ pub(crate) async fn readiness(data: &Path) -> Result<Value> {
             "https://poppler.freedesktop.org/",
         ),
         (
+            "pdfinfo",
+            "Poppler · PDF structure",
+            "https://poppler.freedesktop.org/",
+        ),
+        (
+            "pdfunite",
+            "Poppler · ordered PDF merge",
+            "https://poppler.freedesktop.org/",
+        ),
+        (
             "tesseract",
             "Tesseract · image text",
             "https://tesseract-ocr.github.io/tessdoc/Installation.html",
@@ -226,7 +242,7 @@ pub(crate) async fn readiness(data: &Path) -> Result<Value> {
                     let mut command = tokio::process::Command::new(path);
                     match id {
                         "python" => { command.args(["-I", "-B", "-c", "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)"]); }
-                        "pdftotext" | "pdftoppm" => { command.arg("-v"); }
+                        "pdftotext" | "pdftoppm" | "pdfinfo" | "pdfunite" => { command.arg("-v"); }
                         "whisper" => { command.arg("--help"); }
                         "libreoffice" | "tesseract" | "chrome" => { command.arg("--version"); }
                         _ => { command.arg("-version"); }

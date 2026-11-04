@@ -884,6 +884,115 @@ def captions_file(captions,duration,path):
     path.write_text('\n'.join(lines),encoding='utf-8')
 
 
+def pdf_page_count(path,tools):
+    require(path.suffix.lower()=='.pdf' and path.read_bytes()[:5]==b'%PDF-','PRODUCTION_PDF_FORMAT_UNSUPPORTED')
+    raw=run_tool(tools,'pdfinfo',[str(path)]).decode('utf-8')
+    match=re.search(r'(?m)^Pages:\s+([0-9]+)\s*$',raw)
+    require(match is not None,'PRODUCTION_PDF_INFO_INVALID')
+    encrypted=re.search(r'(?mi)^Encrypted:\s+([^\r\n]+)',raw)
+    javascript=re.search(r'(?mi)^JavaScript:\s+([^\r\n]+)',raw)
+    form=re.search(r'(?mi)^Form:\s+([^\r\n]+)',raw)
+    require(encrypted is not None and encrypted[1].strip().lower()=='no','PRODUCTION_PDF_UNSAFE')
+    require(javascript is None or javascript[1].strip().lower()=='no','PRODUCTION_PDF_UNSAFE')
+    require(form is None or form[1].strip().lower()=='none','PRODUCTION_PDF_UNSAFE')
+    pages=int(match[1]);require(1<=pages<=300,'PRODUCTION_PDF_PAGE_LIMIT')
+    return pages
+
+
+def pdf_text_pages(path,pages,tools):
+    raw=run_tool(tools,'pdftotext',['-f','1','-l',str(pages),'-enc','UTF-8','-layout',str(path),'-']).decode('utf-8')
+    values=raw.split('\f')
+    while len(values)>pages and not values[-1].strip(): values.pop()
+    require(len(values)<=pages,'PRODUCTION_PDF_TEXT_INVALID')
+    values.extend(['']*(pages-len(values)))
+    return [value.replace('\r\n','\n').replace('\r','\n') for value in values]
+
+
+def pdf_page_png(path,page,prefix,tools):
+    run_tool(tools,'pdftoppm',['-f',str(page),'-l',str(page),'-singlefile','-scale-to','1280','-png',str(path),str(prefix)])
+    image=prefix.with_suffix('.png');require(image.is_file(),'PRODUCTION_PDF_RENDER_FAILED')
+    checked,w,h=png(image.read_bytes());image.write_bytes(checked)
+    return checked,w,h
+
+
+def pdf_extract(args,tools):
+    exact(args,('source','mode'),('language',));mode=args['mode']
+    require(mode in ('text','ocr','auto'),'PRODUCTION_PDF_MODE_INVALID')
+    language=text(args.get('language','eng'),40)
+    require(re.fullmatch(r'[a-zA-Z_]{2,20}(\+[a-zA-Z_]{2,20})?',language) is not None)
+    path=source(args['source']);pages=pdf_page_count(path,tools)
+    require(pages<=(100 if mode=='text' else 12),'PRODUCTION_PDF_PAGE_LIMIT')
+    extracted=pdf_text_pages(path,pages,tools) if mode!='ocr' else ['']*pages
+    page_records=[];used_ocr=0
+    for index,value in enumerate(extracted,1):
+        method='text'
+        if mode=='ocr' or (mode=='auto' and len(value.strip())<20):
+            require(tools.get('pdftoppm') and tools.get('tesseract'),'PRODUCTION_OCR_ENGINE_REQUIRED')
+            raster=ROOT/f'pdf-ocr-{index:03}'
+            pdf_page_png(path,index,raster,tools)
+            value=run_tool(tools,'tesseract',[str(raster.with_suffix('.png')),'stdout','-l',language,'--psm','3']).decode('utf-8')
+            method='ocr';used_ocr+=1
+        text(value,150000);extracted[index-1]=value
+        page_records.append({'page':index,'method':method,'characters':len(value),
+                             'textSha256':hashlib.sha256(value.encode()).hexdigest()})
+    require(any(value.strip() for value in extracted),'PRODUCTION_PDF_TEXT_EMPTY')
+    combined=''.join(f'[Page {index}]\n{value.rstrip()}\n\n' for index,value in enumerate(extracted,1))
+    text(combined,150000)
+    (OUT/'extracted.txt').write_text(combined,encoding='utf-8')
+    result={'kind':'pdf_extraction','mode':mode,'language':language if used_ocr else None,
+            'sourceSha256':hashlib.sha256(path.read_bytes()).hexdigest(),'pageCount':pages,
+            'textPageCount':pages-used_ocr,'ocrPageCount':used_ocr,'pages':page_records,
+            'text':combined,'file':'extracted.txt'}
+    (OUT/'extraction.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+    return result
+
+
+def pdf_merge(args,tools):
+    exact(args,('sources',));requested=args['sources']
+    require(isinstance(requested,list) and 2<=len(requested)<=12,'PRODUCTION_PDF_SOURCE_LIMIT')
+    records=[];paths=[];total=0
+    for index,item in enumerate(requested,1):
+        exact(item,('source',));path=source(item['source']);pages=pdf_page_count(path,tools)
+        require(pages<=100 and total+pages<=300,'PRODUCTION_PDF_PAGE_LIMIT')
+        records.append({'index':index,'sourceSha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+                        'pages':pages,'startPage':total+1,'endPage':total+pages})
+        paths.append(path);total+=pages
+    output=OUT/'merged.pdf'
+    run_tool(tools,'pdfunite',[*[str(path) for path in paths],str(output)])
+    require(output.is_file() and output.stat().st_size<=MAX_FILE and output.read_bytes()[:5]==b'%PDF-',
+            'PRODUCTION_PDF_MERGE_FAILED')
+    require(pdf_page_count(output,tools)==total,'PRODUCTION_PDF_MERGE_PAGE_MISMATCH')
+    merged_text=pdf_text_pages(output,total,tools)
+    for path,record in zip(paths,records):
+        source_text=pdf_text_pages(path,record['pages'],tools)
+        merged_slice=merged_text[record['startPage']-1:record['endPage']]
+        require(source_text==merged_slice,'PRODUCTION_PDF_MERGE_ORDER_MISMATCH')
+        if not any(value.strip() for value in source_text):
+            source_png,_,_=pdf_page_png(path,1,ROOT/f'pdf-source-{record["index"]:02}',tools)
+            merged_png,_,_=pdf_page_png(output,record['startPage'],ROOT/f'pdf-merged-{record["index"]:02}',tools)
+            require(source_png==merged_png,'PRODUCTION_PDF_MERGE_ORDER_MISMATCH')
+            record['orderProof']='render'
+            record['firstPageRenderSha256']=hashlib.sha256(source_png).hexdigest()
+            if record['pages']>1:
+                source_last,_,_=pdf_page_png(path,record['pages'],ROOT/f'pdf-source-last-{record["index"]:02}',tools)
+                merged_last,_,_=pdf_page_png(output,record['endPage'],ROOT/f'pdf-merged-last-{record["index"]:02}',tools)
+                require(source_last==merged_last,'PRODUCTION_PDF_MERGE_ORDER_MISMATCH')
+                record['lastPageRenderSha256']=hashlib.sha256(source_last).hexdigest()
+        else:
+            record['orderProof']='text'
+            record['textSha256']=hashlib.sha256('\f'.join(source_text).encode()).hexdigest()
+    first,w1,h1=pdf_page_png(output,1,ROOT/'pdf-preview-first',tools)
+    last,w2,h2=pdf_page_png(output,total,ROOT/'pdf-preview-last',tools)
+    (OUT/'preview-first.png').write_bytes(first);(OUT/'preview-last.png').write_bytes(last)
+    result={'kind':'pdf_merge','pageCount':total,'sourceCount':len(records),'verifiedOrder':True,
+            'sources':records,'mergedSha256':hashlib.sha256(output.read_bytes()).hexdigest(),
+            'previews':[{'page':1,'file':'preview-first.png','width':w1,'height':h1},
+                        {'page':total,'file':'preview-last.png','width':w2,'height':h2}],
+            'file':'merged.pdf'}
+    (OUT/'merge-manifest.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+    return result
+
+
 def ocr(args,tools):
     exact(args,('source',),('language',));language=text(args.get('language','eng'),40)
     require(re.fullmatch(r'[a-zA-Z_]{2,20}(\+[a-zA-Z_]{2,20})?',language) is not None)
@@ -1102,6 +1211,8 @@ def execute(operation,args,tools):
         return {'kind':'image','width':w,'height':h}
     if operation=='images.batch': return batch_images(args,tools)
     if operation=='images.mask': return make_mask(args,tools)
+    if operation=='pdf.extract': return pdf_extract(args,tools)
+    if operation=='pdf.merge': return pdf_merge(args,tools)
     if operation=='resources.ocr': return ocr(args,tools)
     if operation=='audio.transcribe': return transcribe(args,tools)
     if operation=='audio.podcast': return podcast(args,tools)

@@ -370,7 +370,7 @@ impl Bridge {
 
     #[cfg(feature = "ui-smoke")]
     pub fn productive_smoke(&mut self, scene: &str) {
-        let snapshot = self.snapshot.clone().unwrap();
+        let mut snapshot = self.snapshot.clone().unwrap();
         let project = snapshot["projectMemory"]["projects"][0]["projectId"].clone();
         self.productive_project = Some(project.clone());
         let host = self.host.lock().unwrap().as_ref().cloned().unwrap();
@@ -390,6 +390,18 @@ impl Bridge {
         if let Some(artifact) = page["artifacts"].as_array().and_then(|rows| rows.first()) {
             let preview=self.runtime.block_on(host.action("project_artifact_read",serde_json::json!({"projectId":project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]}))).unwrap();
             self.productive_pages.insert("projectArtifact", preview);
+            if scene == "productive-compare" {
+                let parent = page["artifacts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|candidate| {
+                        candidate["versionId"] == artifact["parentVersionId"]
+                            && candidate["path"] == artifact["path"]
+                    })
+                    .unwrap();
+                snapshot["projectArtifactComparison"]=self.runtime.block_on(host.action("project_artifact_read",serde_json::json!({"projectId":project,"workItemId":parent["workItemId"],"path":parent["path"],"expectedSha256":parent["sha256"]}))).unwrap();
+            }
         }
         let workflows = self
             .runtime

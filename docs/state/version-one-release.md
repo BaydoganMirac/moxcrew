@@ -91,6 +91,10 @@ read understandable in Output Studio. It separates hash-matched version proof,
 format-specific inspection and human quality review for text, Office structure,
 images, media and unsupported formats. This common evidence layer does not add
 live-model proof or complete any ability's content-quality acceptance row.
+[Task0066](exact-revision-comparison.md) lets the owner explicitly read a
+preserved parent and compare its bounded text or Office structure with the
+selected exact current version. It is a local review aid, not semantic diff,
+output acceptance, rendered-layout proof or new ability evidence.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

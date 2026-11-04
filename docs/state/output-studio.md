@@ -25,6 +25,15 @@ inspection-limited. Every state names the human check still required for content
 accuracy, completeness, Office layout, image fidelity or full media playback.
 See [artifact verification](artifact-verification-summary.md).
 
+Task0066 turns the existing `parentVersionId` into an explicit local review
+flow. If the exact parent hash remains in the selected Project's current Studio
+listing, **Compare with previous version** reads that
+file once, restores the selected current exact preview and presents bounded text
+or Office structure together. The ephemeral cache holds at most eight scoped
+comparison excerpts and clears on Project or Host-epoch changes. The view does
+not compare image pixels, play media, infer meaning, merge versions or accept an
+output. See [revision comparison](exact-revision-comparison.md).
+
 Task0047 adds name/path search, file-type filtering and inspectable multi-file
 selection. **Create package** opens a dedicated selection view; **Export package**
 saves one standard ZIP and provenance manifest using checked original bytes.

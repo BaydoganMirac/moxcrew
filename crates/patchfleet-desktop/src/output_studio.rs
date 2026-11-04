@@ -22,6 +22,33 @@ struct ArtifactResourceRequest {
     input: String,
     epoch: Option<Value>,
 }
+
+type ArtifactKey = (String, String, String);
+type ComparisonCacheKey = (String, String, String, String);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ComparisonPreview {
+    format: &'static str,
+    body: String,
+    sections: usize,
+    truncated: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ComparisonStage {
+    LoadingParent,
+    RestoreCurrent,
+    Ready,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ArtifactComparison {
+    project: String,
+    current: ArtifactKey,
+    parent: ArtifactKey,
+    stage: ComparisonStage,
+}
+
 #[derive(Default)]
 pub(super) struct StudioState {
     resource_bundle: Option<ArtifactResourceRequest>,
@@ -48,6 +75,8 @@ pub(super) struct StudioState {
     package_mode: bool,
     packages: HashMap<String, std::collections::BTreeSet<(String, String, String)>>,
     delivery_request: Option<DeliveryExportRequest>,
+    comparison_previews: HashMap<ComparisonCacheKey, ComparisonPreview>,
+    comparison: Option<ArtifactComparison>,
 }
 
 pub(super) fn studio_page<'a>(snapshot: &'a Value, project: &str) -> Option<&'a Value> {
@@ -67,12 +96,65 @@ fn safe_png(bytes: &[u8]) -> bool {
     let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap());
     width > 0 && height > 0 && width <= 4096 && height <= 4096
 }
-fn artifact_key(artifact: &Value) -> (String, String, String) {
+fn artifact_key(artifact: &Value) -> ArtifactKey {
     (
         text(artifact, "workItemId").into(),
         text(artifact, "path").into(),
         text(artifact, "sha256").into(),
     )
+}
+
+fn comparison_cache_key(project: &str, artifact: &Value) -> ComparisonCacheKey {
+    let (work, path, hash) = artifact_key(artifact);
+    (project.into(), work, path, hash)
+}
+
+fn bounded_comparison_copy(value: String) -> (String, bool) {
+    const LIMIT: usize = 12_000;
+    let mut chars = value.chars();
+    let body: String = chars.by_ref().take(LIMIT).collect();
+    (body, chars.next().is_some())
+}
+
+fn comparison_preview(preview: &Value) -> Option<ComparisonPreview> {
+    let (format, sections, body) = match text(preview, "kind") {
+        "text" => ("Text", 1, text(preview, "text").to_owned()),
+        "pages" if !array(&preview["pages"]).is_empty() => {
+            let pages = array(&preview["pages"]);
+            let body = pages
+                .iter()
+                .map(|page| {
+                    let title = text(page, "title");
+                    let content = text(page, "text");
+                    if title.is_empty() {
+                        content.to_owned()
+                    } else if content.is_empty() {
+                        title.to_owned()
+                    } else {
+                        format!("{title}\n{content}")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            ("Office structure", pages.len(), body)
+        }
+        _ => return None,
+    };
+    let (body, truncated) = bounded_comparison_copy(body);
+    Some(ComparisonPreview {
+        format,
+        body,
+        sections,
+        truncated,
+    })
+}
+
+fn parent_artifact<'a>(page: &'a Value, artifact: &Value) -> Option<&'a Value> {
+    let parent = text(artifact, "parentVersionId");
+    (!parent.is_empty()).then_some(())?;
+    array(&page["artifacts"]).iter().find(|candidate| {
+        text(candidate, "versionId") == parent && text(candidate, "sha256") == parent
+    })
 }
 fn selected_artifact<'a>(state: &CreateState, snapshot: &'a Value) -> Option<&'a Value> {
     let key = state.studio.selected.get(&state.project)?;
@@ -196,6 +278,48 @@ fn artifact_verification_card(ui: &mut Ui, artifact: &Value, preview: &Value) {
     });
     #[cfg(not(test))]
     let _ = card;
+}
+
+fn comparison_version_card(
+    ui: &mut Ui,
+    label: &str,
+    artifact: &Value,
+    preview: &ComparisonPreview,
+) {
+    studio::accent_surface(ui, colors(ui).primary, |ui| {
+        ui.set_min_width((ui.available_width() - 1.0).max(0.0));
+        ui.horizontal_wrapped(|ui| {
+            ui.label(studio::title(t(ui, label), 15.0));
+            status(ui, "Exact version");
+        });
+        let version = text(artifact, "sha256")
+            .chars()
+            .take(12)
+            .collect::<String>();
+        raw_hint(ui, &format!("{} · {version}", t(ui, preview.format)));
+        if preview.sections > 1 {
+            raw_hint(
+                ui,
+                &tf(
+                    ui,
+                    "{0} structured sections",
+                    &[&preview.sections.to_string()],
+                ),
+            );
+        }
+        ui.add_space(studio::metrics::GAP);
+        if preview.body.is_empty() {
+            hint(ui, "No readable text in this version.");
+        } else {
+            short_copy(ui, &preview.body, 13.0, colors(ui).text, 2);
+        }
+        if preview.truncated {
+            hint(
+                ui,
+                "Comparison preview is truncated to a bounded local excerpt.",
+            );
+        }
+    });
 }
 
 pub(super) fn project_revision(snapshot: &Value, project: &str) -> Option<u64> {
@@ -424,6 +548,8 @@ impl CreateState {
             self.studio.package_mode = false;
             self.studio.section.clear();
             self.studio.page = 0;
+            self.studio.comparison_previews.clear();
+            self.studio.comparison = None;
         }
         self.studio
             .packages
@@ -434,6 +560,66 @@ impl CreateState {
             self.studio.prepared = None;
             self.studio.pending_prepare = None;
             self.studio.executing = None;
+            self.studio.comparison_previews.clear();
+            self.studio.comparison = None;
+        }
+
+        if let Some(page) = studio_page(snapshot, &self.project) {
+            let known: HashSet<_> = array(&page["artifacts"])
+                .iter()
+                .map(|artifact| comparison_cache_key(&self.project, artifact))
+                .collect();
+            self.studio
+                .comparison_previews
+                .retain(|key, _| known.contains(key));
+            if self.studio.comparison.as_ref().is_some_and(|comparison| {
+                comparison.project != self.project
+                    || !known.contains(&(
+                        comparison.project.clone(),
+                        comparison.current.0.clone(),
+                        comparison.current.1.clone(),
+                        comparison.current.2.clone(),
+                    ))
+                    || !known.contains(&(
+                        comparison.project.clone(),
+                        comparison.parent.0.clone(),
+                        comparison.parent.1.clone(),
+                        comparison.parent.2.clone(),
+                    ))
+            }) {
+                self.studio.comparison = None;
+            }
+
+            let read = &snapshot["projectArtifact"];
+            if text(read, "reasonCode") == "PROJECT_ARTIFACT_READ"
+                && text(read, "projectId") == self.project
+            {
+                let key = (
+                    self.project.clone(),
+                    text(read, "workItemId").into(),
+                    text(read, "path").into(),
+                    text(read, "sha256").into(),
+                );
+                if known.contains(&key) {
+                    if let Some(preview) = comparison_preview(&read["preview"]) {
+                        if self.studio.comparison_previews.len() >= 8
+                            && !self.studio.comparison_previews.contains_key(&key)
+                        {
+                            self.studio.comparison_previews.clear();
+                        }
+                        self.studio.comparison_previews.insert(key.clone(), preview);
+                    }
+                    if let Some(comparison) = self.studio.comparison.as_mut() {
+                        let read_key = (key.1.clone(), key.2.clone(), key.3.clone());
+                        if comparison.project == self.project
+                            && comparison.stage == ComparisonStage::LoadingParent
+                            && comparison.parent == read_key
+                        {
+                            comparison.stage = ComparisonStage::RestoreCurrent;
+                        }
+                    }
+                }
+            }
         }
 
         let receipt = &snapshot["projectStudioReceipt"];
@@ -494,6 +680,128 @@ impl CreateState {
 }
 
 impl Console {
+    fn studio_artifact_comparison(
+        &mut self,
+        ui: &mut Ui,
+        page: &Value,
+        artifact: &Value,
+        preview: &Value,
+        commands: &mut Vec<Command>,
+    ) {
+        let Some(current_preview) = comparison_preview(preview) else {
+            return;
+        };
+        let Some(parent) = parent_artifact(page, artifact).cloned() else {
+            if !text(artifact, "parentVersionId").is_empty() {
+                hint(
+                    ui,
+                    "The previous exact version is outside the loaded output list.",
+                );
+            }
+            return;
+        };
+        let project = self.create.project.clone();
+        let current = artifact_key(artifact);
+        let parent_key = artifact_key(&parent);
+        let active = self
+            .create
+            .studio
+            .comparison
+            .as_ref()
+            .is_some_and(|comparison| {
+                comparison.project == project
+                    && comparison.current == current
+                    && comparison.parent == parent_key
+            });
+        if !active {
+            let before = commands.len();
+            quiet_action(
+                ui,
+                commands,
+                "Compare with previous version",
+                "project_artifact_read",
+                studio::commands_ready(ui) && !cfg!(target_os = "windows"),
+                || json!({"projectId":project,"workItemId":parent["workItemId"],"path":parent["path"],"expectedSha256":parent["sha256"]}),
+            );
+            if commands.len() > before {
+                self.create.studio.comparison = Some(ArtifactComparison {
+                    project,
+                    current,
+                    parent: parent_key,
+                    stage: ComparisonStage::LoadingParent,
+                });
+            }
+            return;
+        }
+
+        let current_cached = self
+            .create
+            .studio
+            .comparison_previews
+            .get(&comparison_cache_key(&project, artifact))
+            .cloned()
+            .unwrap_or(current_preview);
+        let parent_cached = self
+            .create
+            .studio
+            .comparison_previews
+            .get(&comparison_cache_key(&project, &parent))
+            .cloned();
+        let Some(parent_preview) = parent_cached else {
+            hint(ui, "Loading the exact previous version…");
+            return;
+        };
+
+        let comparison = egui::CollapsingHeader::new(t(ui, "Revision comparison"))
+            .default_open(true)
+            .show(ui, |ui| {
+                hint(
+                    ui,
+                    "Exact text/structure comparison. This does not verify meaning or rendered layout.",
+                );
+                ui.add_space(studio::metrics::GAP);
+                if ui.available_width() >= 620.0 {
+                    ui.columns(2, |columns| {
+                        comparison_version_card(
+                            &mut columns[0],
+                            "Previous exact version",
+                            &parent,
+                            &parent_preview,
+                        );
+                        comparison_version_card(
+                            &mut columns[1],
+                            "Current exact version",
+                            artifact,
+                            &current_cached,
+                        );
+                    });
+                } else {
+                    comparison_version_card(
+                        ui,
+                        "Previous exact version",
+                        &parent,
+                        &parent_preview,
+                    );
+                    ui.add_space(studio::metrics::GAP);
+                    comparison_version_card(
+                        ui,
+                        "Current exact version",
+                        artifact,
+                        &current_cached,
+                    );
+                }
+            });
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("artifact-revision-comparison"),
+                (comparison.header_response.rect, ui.clip_rect()),
+            );
+        });
+        #[cfg(not(test))]
+        let _ = comparison;
+    }
+
     #[cfg(feature = "ui-smoke")]
     pub(super) fn studio_canvas_smoke(&mut self, snapshot: &Value) {
         self.create.select_productive_view(2);
@@ -542,6 +850,33 @@ impl Console {
                 .insert(self.create.project.clone(), artifact_key(artifact));
         }
     }
+    #[cfg(feature = "ui-smoke")]
+    pub(super) fn studio_compare_smoke(&mut self, snapshot: &Value) {
+        self.create.sync_studio(snapshot);
+        let project = self.create.project.clone();
+        let page = studio_page(snapshot, &project).unwrap();
+        let current = selected_artifact(&self.create, snapshot).unwrap().clone();
+        let parent = parent_artifact(page, &current).unwrap().clone();
+        for (artifact, response) in [
+            (&current, &snapshot["projectArtifact"]),
+            (&parent, &snapshot["projectArtifactComparison"]),
+        ] {
+            assert_eq!(response["projectId"], project);
+            assert_eq!(response["workItemId"], artifact["workItemId"]);
+            assert_eq!(response["path"], artifact["path"]);
+            assert_eq!(response["sha256"], artifact["sha256"]);
+            self.create.studio.comparison_previews.insert(
+                comparison_cache_key(&project, artifact),
+                comparison_preview(&response["preview"]).unwrap(),
+            );
+        }
+        self.create.studio.comparison = Some(ArtifactComparison {
+            project,
+            current: artifact_key(&current),
+            parent: artifact_key(&parent),
+            stage: ComparisonStage::Ready,
+        });
+    }
     pub fn take_studio_path_request(&mut self) -> Option<StudioPathRequest> {
         self.create.studio.path_request.take()
     }
@@ -581,6 +916,36 @@ impl Console {
             self.create.close_studio();
             return;
         };
+        let restore = self
+            .create
+            .studio
+            .comparison
+            .as_ref()
+            .filter(|comparison| {
+                comparison.project == project && comparison.stage == ComparisonStage::RestoreCurrent
+            })
+            .map(|comparison| comparison.current.clone());
+        if let Some(current) = restore {
+            if ui.is_enabled()
+                && !self.hold_automatic_reads
+                && studio::commands_ready(ui)
+                && commands.is_empty()
+            {
+                if let Some(artifact) = studio_page(snapshot, &project).and_then(|page| {
+                    array(&page["artifacts"])
+                        .iter()
+                        .find(|artifact| artifact_key(artifact) == current)
+                }) {
+                    commands.push(Command::new(
+                        "project_artifact_read",
+                        json!({"projectId":project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]}),
+                    ));
+                    if let Some(comparison) = self.create.studio.comparison.as_mut() {
+                        comparison.stage = ComparisonStage::Ready;
+                    }
+                }
+            }
+        }
         let key = (project.clone(), rev);
         if ui.is_enabled()
             && !self.hold_automatic_reads
@@ -945,6 +1310,7 @@ impl Console {
                                 .studio
                                 .selected
                                 .insert(self.create.project.clone(), key);
+                            self.create.studio.comparison = None;
                             self.create.studio.page = 0;
                             self.create.studio.section.clear();
                         }
@@ -979,6 +1345,10 @@ impl Console {
         if let Some(preview) = artifact_preview(&self.create, snapshot, &artifact) {
             artifact_verification_card(ui, &artifact, &preview["preview"]);
             ui.add_space(studio::metrics::GAP);
+            self.studio_artifact_comparison(ui, page, &artifact, &preview["preview"], commands);
+            if !text(&artifact, "parentVersionId").is_empty() {
+                ui.add_space(studio::metrics::GAP);
+            }
             self.studio_visual_preview(ui, snapshot, &artifact, &preview["preview"], commands);
             if text(&preview["preview"], "kind") == "text" {
                 quiet_action(
@@ -1649,6 +2019,164 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn revision_fixture(language: &str) -> Value {
+        let mut data = fixture();
+        data["hostEpoch"] = json!("epoch:one");
+        data["desktopPreferences"]["language"] = json!(language);
+        data["projectStudio"]["artifacts"] = json!([
+            {
+                "artifactId":"artifact:current","versionId":"hash-current",
+                "parentVersionId":"hash-parent","workItemId":"work:one",
+                "path":"outputs/deck.pptx","name":"deck.pptx",
+                "sha256":"hash-current","bytes":140,"kind":"presentation"
+            },
+            {
+                "artifactId":"artifact:parent","versionId":"hash-parent",
+                "workItemId":"work:parent","path":"outputs/original-deck.pptx",
+                "name":"deck.pptx","sha256":"hash-parent","bytes":120,
+                "kind":"presentation"
+            }
+        ]);
+        data["projectArtifact"] = json!({
+            "reasonCode":"PROJECT_ARTIFACT_READ","projectId":"project:one",
+            "workItemId":"work:one","path":"outputs/deck.pptx","sha256":"hash-current",
+            "preview":{"kind":"pages","pages":[{"id":"slide:1","title":"Current launch","text":"Current evidence and clear owner action."}]},
+            "sections":[{"id":"slide:1","label":"Current launch"}]
+        });
+        data
+    }
+
+    #[test]
+    fn exact_revision_comparison_reads_parent_then_restores_current_without_mutation() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = revision_fixture(language);
+                let mut console = console(&data);
+                console.create.studio.selected.insert(
+                    "project:one".into(),
+                    (
+                        "work:one".into(),
+                        "outputs/deck.pptx".into(),
+                        "hash-current".into(),
+                    ),
+                );
+                let size = egui::vec2(800.0, 560.0);
+                let full = egui::vec2(1280.0, 2200.0);
+                for _ in 0..3 {
+                    assert!(render(&ctx, &mut console, &data, size, false, vec![])
+                        .0
+                        .is_empty());
+                }
+                let selected = console.create.studio.selected.clone();
+                let load = super::super::tests::click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    full,
+                    false,
+                    "project_artifact_read",
+                    "Compare with previous version",
+                );
+                assert_eq!(load.len(), 1);
+                assert_eq!(load[0].action, "project_artifact_read");
+                assert_eq!(
+                    &load[0].payload,
+                    &json!({
+                        "projectId":"project:one","workItemId":"work:parent",
+                    "path":"outputs/original-deck.pptx","expectedSha256":"hash-parent",
+                        "commandId":load[0].payload["commandId"],
+                        "createdAt":load[0].payload["createdAt"],
+                        "expiresAt":load[0].payload["expiresAt"]
+                    })
+                );
+
+                data["projectArtifact"] = json!({
+                    "reasonCode":"PROJECT_ARTIFACT_READ","projectId":"project:one",
+                    "workItemId":"work:parent","path":"outputs/original-deck.pptx","sha256":"hash-parent",
+                    "preview":{"kind":"pages","pages":[{"id":"slide:1","title":"Previous launch","text":"Previous evidence."}]},
+                    "sections":[{"id":"slide:1","label":"Previous launch"}]
+                });
+                let restore = render(&ctx, &mut console, &data, full, false, vec![]).0;
+                assert_eq!(restore.len(), 1);
+                assert_eq!(restore[0].action, "project_artifact_read");
+                assert_eq!(restore[0].payload["workItemId"], "work:one");
+                assert_eq!(restore[0].payload["expectedSha256"], "hash-current");
+
+                data["projectArtifact"] = revision_fixture(language)["projectArtifact"].clone();
+                let mut copy = Vec::new();
+                for _ in 0..3 {
+                    let (commands, painted) =
+                        render(&ctx, &mut console, &data, full, false, vec![]);
+                    assert!(commands.is_empty());
+                    copy = painted;
+                }
+                let copy = copy.join("\n");
+                for key in [
+                    "Revision comparison",
+                    "Previous exact version",
+                    "Current exact version",
+                    "Exact text/structure comparison. This does not verify meaning or rendered layout.",
+                ] {
+                    assert!(
+                        copy.contains(i18n::tr(Language::from_code(language), key).as_ref()),
+                        "{language}/{theme:?}: missing {key}"
+                    );
+                }
+                assert!(copy.contains("Previous evidence."));
+                assert!(copy.contains("Current evidence and clear owner action."));
+                assert_eq!(console.create.studio.selected, selected);
+                for _ in 0..3 {
+                    assert!(render(&ctx, &mut console, &data, size, false, vec![])
+                        .0
+                        .is_empty());
+                }
+                let (header, clip): (egui::Rect, egui::Rect) = ctx.data(|state| {
+                    state
+                        .get_temp(egui::Id::new("artifact-revision-comparison"))
+                        .unwrap()
+                });
+                assert!(header.intersects(clip));
+                assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, size)
+                    .contains_rect(header.intersect(clip)));
+            }
+        }
+    }
+
+    #[test]
+    fn revision_comparison_cache_is_bounded_exact_and_cleared_with_scope() {
+        let mut data = revision_fixture("en");
+        data["projectArtifact"]["projectId"] = json!("project:foreign");
+        let mut create = console(&data).create;
+        create.sync(&data);
+        assert!(create.studio.comparison_previews.is_empty());
+
+        data = revision_fixture("en");
+        create.sync(&data);
+        assert_eq!(create.studio.comparison_previews.len(), 1);
+        let long = "a".repeat(12_001);
+        let preview = comparison_preview(&json!({"kind":"text","text":long})).unwrap();
+        assert_eq!(preview.body.chars().count(), 12_000);
+        assert!(preview.truncated);
+        assert!(comparison_preview(&json!({"kind":"image","pngBytes":[1]})).is_none());
+
+        create.project = "project:two".into();
+        create.sync(&data);
+        assert!(create.studio.comparison_previews.is_empty());
+        assert!(create.studio.comparison.is_none());
+
+        let mut create = console(&data).create;
+        create.sync(&data);
+        assert_eq!(create.studio.comparison_previews.len(), 1);
+        data["hostEpoch"] = json!("epoch:two");
+        data["projectArtifact"] = Value::Null;
+        create.sync(&data);
+        assert!(create.studio.comparison_previews.is_empty());
+        assert!(create.studio.comparison.is_none());
     }
 
     #[test]

@@ -57,6 +57,7 @@
 | Ability readiness and Start preflight | Complete; forty profiles and all native Project start surfaces locally verified | 2026-11-04 | [start-readiness-preflight.md](start-readiness-preflight.md) |
 | Owner-visible System check | Complete; exact read-only sequencing, 534-test gate and native evidence | 2026-11-04 | [owner-system-check.md](owner-system-check.md) |
 | Artifact verification summary | Complete; exact-version, bounded format and human-review evidence separated | 2026-11-04 | [artifact-verification-summary.md](artifact-verification-summary.md) |
+| Exact revision comparison | Complete; explicit parent read and scoped text/Office comparison | 2026-11-04 | [exact-revision-comparison.md](exact-revision-comparison.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

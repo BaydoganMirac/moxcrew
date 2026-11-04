@@ -53,6 +53,10 @@ commitments.
   reads legible as evidence: hash-matched version proof, bounded format
   inspection and remaining human review stay separate instead of turning any
   available preview into a quality claim.
+  [Task0066](state/exact-revision-comparison.md) makes preserved revisions
+  reviewable in place: one explicit read loads the exact parent, bounded text or
+  Office structure appears beside the current version and the selected current
+  preview is restored without starting work.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

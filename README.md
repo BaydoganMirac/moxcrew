@@ -55,8 +55,8 @@ a home.
 1. **Describe the result** and attach the files that matter.
 2. **Review Mox's proposal**—plan, crew, tools and boundaries stay visible.
 3. **Prepare, then start** when you are ready. Queueing never silently executes.
-4. **Inspect and revise the output** without losing the original goal or source
-   versions.
+4. **Inspect, compare and revise the output** without losing the original goal
+   or source versions.
 5. **Keep the decisions** that should guide the next task in the same Project.
 
 Moxcrew is designed for research, writing, analysis, planning, personal work and

@@ -46,6 +46,11 @@ Closed agents do not automatically wake when sent a message. Single task remains
 available for direct work. See [crew state](state/project-crew-orchestration.md).
 Follow-ups can copy selected prior outputs; a side panel previews/exports actual
 files. It offers forty inspectable recipes and eight bundled workflow guides.
+Every exact Output Studio read now states the selected hash-matched version,
+the strongest format evidence that was actually inspected and the human review
+still required. Reopened text, Office structure, image bytes and media metadata
+remain distinct from claims about content accuracy, layout, visual fidelity or
+full playback. See [artifact verification](state/artifact-verification-summary.md).
 Ordinary coding tasks, teams and their
 Quick start guide keep Git worktrees. Recipes do not establish installed tools
 or verified output quality. The owner selected one broad general-purpose ability

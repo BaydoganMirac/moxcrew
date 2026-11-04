@@ -91,6 +91,113 @@ fn artifact_preview<'a>(
         && artifact_key(preview) == artifact_key(artifact))
     .then_some(preview)
 }
+
+#[derive(Debug, PartialEq, Eq)]
+struct ArtifactVerification {
+    status: &'static str,
+    evidence: &'static str,
+    count: Option<usize>,
+    review: &'static str,
+    inspected: bool,
+}
+
+fn artifact_verification(preview: &Value) -> ArtifactVerification {
+    match text(preview, "kind") {
+        "text" => ArtifactVerification {
+            status: "Format inspected",
+            evidence: "Readable text reopened from the exact file.",
+            count: None,
+            review: "Review factual accuracy, completeness and wording before use.",
+            inspected: true,
+        },
+        "pages" if !array(&preview["pages"]).is_empty() => ArtifactVerification {
+            status: "Format inspected",
+            evidence: "{0} structured sections reopened from the exact file.",
+            count: Some(array(&preview["pages"]).len()),
+            review: "The outline does not verify rendered layout, clipping or typography.",
+            inspected: true,
+        },
+        "image"
+            if preview["pngBytes"]
+                .as_array()
+                .is_some_and(|bytes| !bytes.is_empty()) =>
+        {
+            ArtifactVerification {
+                status: "Format inspected",
+                evidence: "Exact image bytes loaded for the native preview.",
+                count: None,
+                review: "Review visual fidelity, crop, text and brand accuracy at full size.",
+                inspected: true,
+            }
+        }
+        "media"
+            if preview["durationSeconds"]
+                .as_f64()
+                .is_some_and(|duration| duration.is_finite() && duration > 0.0)
+                && !array(&preview["metadata"]["streams"]).is_empty() =>
+        {
+            ArtifactVerification {
+                status: "Format inspected",
+                evidence: "{0} media streams and duration parsed from the exact file.",
+                count: Some(array(&preview["metadata"]["streams"]).len()),
+                review: "Export and play the full file to review timing, audio and visual quality.",
+                inspected: true,
+            }
+        }
+        _ => ArtifactVerification {
+            status: "Inspection limited",
+            evidence: "The exact file version is available, but this format was not inspected.",
+            count: None,
+            review: "Export and inspect the file in a compatible application before use.",
+            inspected: false,
+        },
+    }
+}
+
+fn artifact_verification_card(ui: &mut Ui, artifact: &Value, preview: &Value) {
+    let verification = artifact_verification(preview);
+    let accent = if verification.inspected {
+        colors(ui).success
+    } else {
+        colors(ui).accent
+    };
+    let card = studio::accent_surface(ui, accent, |ui| {
+        ui.set_min_width((ui.available_width() - 1.0).max(0.0));
+        ui.horizontal_wrapped(|ui| {
+            ui.label(studio::title(t(ui, "Verification"), 17.0));
+            status(ui, "Exact version");
+            status(ui, verification.status);
+        });
+        hint(
+            ui,
+            "The file hash matches the selected Project output version.",
+        );
+        let evidence = verification
+            .count
+            .map(|count| tf(ui, verification.evidence, &[&count.to_string()]))
+            .unwrap_or_else(|| t(ui, verification.evidence).into_owned());
+        raw_hint(ui, &evidence);
+        hint(ui, verification.review);
+        raw_hint(
+            ui,
+            &format!(
+                "{} · {} B",
+                text(artifact, "name"),
+                artifact["bytes"].as_u64().unwrap_or(0)
+            ),
+        );
+    });
+    #[cfg(test)]
+    ui.data_mut(|data| {
+        data.insert_temp(
+            egui::Id::new("artifact-verification-card"),
+            (card.response.rect, ui.clip_rect()),
+        );
+    });
+    #[cfg(not(test))]
+    let _ = card;
+}
+
 pub(super) fn project_revision(snapshot: &Value, project: &str) -> Option<u64> {
     array(&snapshot["projectMemory"]["projects"])
         .iter()
@@ -870,6 +977,8 @@ impl Console {
             );
         }
         if let Some(preview) = artifact_preview(&self.create, snapshot, &artifact) {
+            artifact_verification_card(ui, &artifact, &preview["preview"]);
+            ui.add_space(studio::metrics::GAP);
             self.studio_visual_preview(ui, snapshot, &artifact, &preview["preview"], commands);
             if text(&preview["preview"], "kind") == "text" {
                 quiet_action(
@@ -1431,6 +1540,117 @@ mod tests {
             ..Default::default()
         }
     }
+
+    #[test]
+    fn verification_summary_separates_exact_bytes_format_evidence_and_human_review() {
+        for (preview, status, evidence, count, inspected) in [
+            (
+                json!({"kind":"text","text":"Owner text"}),
+                "Format inspected",
+                "Readable text reopened from the exact file.",
+                None,
+                true,
+            ),
+            (
+                json!({"kind":"pages","pages":[{"id":"slide:1"},{"id":"slide:2"}]}),
+                "Format inspected",
+                "{0} structured sections reopened from the exact file.",
+                Some(2),
+                true,
+            ),
+            (
+                json!({"kind":"image","pngBytes":[1,2,3]}),
+                "Format inspected",
+                "Exact image bytes loaded for the native preview.",
+                None,
+                true,
+            ),
+            (
+                json!({"kind":"media","durationSeconds":2.5,"metadata":{"streams":[{"codec_type":"video"},{"codec_type":"audio"}]}}),
+                "Format inspected",
+                "{0} media streams and duration parsed from the exact file.",
+                Some(2),
+                true,
+            ),
+            (
+                json!({"kind":"unsupported","reasonCode":"PROJECT_PREVIEW_UNSUPPORTED"}),
+                "Inspection limited",
+                "The exact file version is available, but this format was not inspected.",
+                None,
+                false,
+            ),
+        ] {
+            let summary = artifact_verification(&preview);
+            assert_eq!(summary.status, status);
+            assert_eq!(summary.evidence, evidence);
+            assert_eq!(summary.count, count);
+            assert_eq!(summary.inspected, inspected);
+            assert!(!summary.review.is_empty());
+        }
+        assert!(!artifact_verification(&json!({"kind":"pages","pages":[]})).inspected);
+        assert!(
+            !artifact_verification(
+                &json!({"kind":"media","durationSeconds":0,"metadata":{"streams":[]}})
+            )
+            .inspected
+        );
+    }
+
+    #[test]
+    fn exact_verification_card_is_localized_and_visible_at_minimum_size() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"]["language"] = json!(language);
+                data["projectArtifact"] = json!({
+                    "reasonCode":"PROJECT_ARTIFACT_READ",
+                    "projectId":"project:one",
+                    "workItemId":"work:one",
+                    "path":"outputs/deck.pptx",
+                    "sha256":"hash-one",
+                    "preview":{"kind":"pages","pages":[{"id":"slide:1","title":"Launch","text":"Evidence"}]},
+                    "sections":[{"id":"slide:1","label":"Launch"}]
+                });
+                let mut console = console(&data);
+                let size = egui::vec2(800.0, 560.0);
+                let mut copy = Vec::new();
+                for _ in 0..3 {
+                    let (commands, painted) =
+                        render(&ctx, &mut console, &data, size, false, vec![]);
+                    assert!(commands.is_empty());
+                    copy = painted;
+                }
+                for key in [
+                    "Verification",
+                    "Exact version",
+                    "Format inspected",
+                    "The file hash matches the selected Project output version.",
+                    "The outline does not verify rendered layout, clipping or typography.",
+                ] {
+                    assert!(
+                        copy.iter()
+                            .any(|line| line
+                                == i18n::tr(Language::from_code(language), key).as_ref()),
+                        "{language}/{theme:?}: missing {key}"
+                    );
+                }
+                let (card, clip): (egui::Rect, egui::Rect) = ctx.data(|data| {
+                    data.get_temp(egui::Id::new("artifact-verification-card"))
+                        .unwrap()
+                });
+                assert!(
+                    card.intersects(clip)
+                        && egui::Rect::from_min_size(egui::Pos2::ZERO, size)
+                            .contains_rect(card.intersect(clip)),
+                    "{language}/{theme:?}: verification evidence must stay reachable: card={card:?} clip={clip:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn revise_in_chat_preserves_exact_selected_version_and_never_starts_work() {
         let ctx = egui::Context::default();

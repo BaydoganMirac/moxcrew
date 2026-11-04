@@ -86,6 +86,11 @@ is a desktop guard, not a new Host protocol authorization or quality proof.
 selected-Project Studio reads into one read-only System check. It reports local
 engine, provider, tool, image and app evidence without installing, signing in,
 running a model or turning configuration into a quality claim.
+[Task0065](artifact-verification-summary.md) makes the existing exact artifact
+read understandable in Output Studio. It separates hash-matched version proof,
+format-specific inspection and human quality review for text, Office structure,
+images, media and unsupported formats. This common evidence layer does not add
+live-model proof or complete any ability's content-quality acceptance row.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

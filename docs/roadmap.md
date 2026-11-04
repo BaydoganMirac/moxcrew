@@ -49,6 +49,10 @@ commitments.
   [Task0064](state/owner-system-check.md) also composes the existing bounded
   connection and selected-Project Studio reads into one owner-visible System
   check, with direct setup routes and no model turn or account mutation.
+  [Task0065](state/artifact-verification-summary.md) makes exact Output Studio
+  reads legible as evidence: hash-matched version proof, bounded format
+  inspection and remaining human review stay separate instead of turning any
+  available preview into a quality claim.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

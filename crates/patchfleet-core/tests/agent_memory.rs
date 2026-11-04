@@ -703,6 +703,7 @@ async fn final_mcp_size_bound_is_checked_after_structured_and_text_duplication()
         let head=format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len());
         socket.write_all(head.as_bytes()).await.unwrap();
         socket.write_all(body.as_bytes()).await.unwrap();
+        socket.shutdown().await.unwrap();
     });
     let mut child = Mcp::spawn(&path, dir.path());
     child.initialize().await;

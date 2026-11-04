@@ -65,7 +65,7 @@ jobs:
       - name: Native behavior tests
         # Several suites intentionally contend for the single local event writer.
         # Keep the release matrix deterministic across differently sized runners.
-        run: cargo test --locked --workspace --target ${{ matrix.target }} -- --test-threads=1
+        run: cargo test --locked --workspace --target ${{ matrix.target }} --no-fail-fast -- --test-threads=1
       - name: Native lint checks
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
       - name: Build standalone Rust desktop

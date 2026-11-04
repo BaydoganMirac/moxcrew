@@ -1299,6 +1299,215 @@ async fn claim_report_verifies_literal_evidence_and_keeps_unresolved_work_visibl
 }
 
 #[tokio::test]
+async fn multi_source_synthesis_attributes_cross_source_findings_and_disagreements() {
+    use sha2::{Digest, Sha256};
+    let data = tempfile::tempdir().unwrap();
+    let market = b"Market study\nIstanbul teams request weekly summaries.\nPreferred price: below 100 TRY.\n".to_vec();
+    let support = b"Support notes\nCustomers repeatedly request weekly summaries.\nCurrent price feels high at 120 TRY.\n".to_vec();
+    let finance = b"Finance review\nA price below 100 TRY is not sustainable.\nA 120 TRY price covers support costs.\n".to_vec();
+    let sources = json!([
+        {"source":"inputs/market.md","label":"Market study"},
+        {"source":"inputs/support.txt","label":"Support notes"},
+        {"source":"inputs/finance.md","label":"Finance review"}
+    ]);
+    let findings = json!([
+        {
+            "finding":"Weekly summaries are a repeated customer need across research and support.",
+            "evidence":[
+                {"source":"inputs/market.md","quote":"Istanbul teams request weekly summaries."},
+                {"source":"inputs/support.txt","quote":"Customers repeatedly request weekly summaries."}
+            ]
+        },
+        {
+            "finding":"The current price covers support costs but customers report price pressure.",
+            "evidence":[
+                {"source":"inputs/support.txt","quote":"Current price feels high at 120 TRY."},
+                {"source":"inputs/finance.md","quote":"A 120 TRY price covers support costs."}
+            ]
+        }
+    ]);
+    let disagreements = json!([{
+        "topic":"Whether a price below 100 TRY is viable.",
+        "positions":[
+            {"source":"inputs/market.md","position":"Research records a preference below 100 TRY.","quote":"Preferred price: below 100 TRY."},
+            {"source":"inputs/finance.md","position":"Finance says that price is unsustainable.","quote":"A price below 100 TRY is not sustainable."}
+        ]
+    }]);
+    let args = json!({
+        "title":"Launch source synthesis",
+        "focus":"Where do customer needs and pricing evidence agree or conflict?",
+        "sources":sources,
+        "findings":findings,
+        "disagreements":disagreements
+    });
+    let inputs = [
+        ("inputs/market.md".into(), market.clone()),
+        ("inputs/support.txt".into(), support.clone()),
+        ("inputs/finance.md".into(), finance.clone()),
+    ];
+    let output = run(data.path(), "research.synthesis", &args, &inputs, None)
+        .await
+        .unwrap();
+    assert_eq!(output.value["kind"], "research_synthesis");
+    assert_eq!(
+        output.value["summary"],
+        json!({"sources":3,"findings":2,"crossSourceFindings":2,"disagreements":1})
+    );
+    assert_eq!(
+        output.value["findings"][0]["sourceIds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(output.value["findings"][0]["evidence"][0]["line"], 2);
+    assert_eq!(output.value["findings"][0]["evidence"][0]["startByte"], 13);
+    assert_eq!(output.value["disagreements"][0]["status"], "unresolved");
+    assert_eq!(
+        output.value["disagreements"][0]["positions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        output.value["sources"][2]["sourceSha256"],
+        format!("{:x}", Sha256::digest(&finance))
+    );
+    assert!(!output.value.to_string().contains("inputs/"));
+    assert!(!output
+        .value
+        .to_string()
+        .contains(data.path().to_string_lossy().as_ref()));
+    let report = String::from_utf8(
+        output
+            .files
+            .iter()
+            .find(|(name, _)| name == "synthesis-report.md")
+            .unwrap()
+            .1
+            .clone(),
+    )
+    .unwrap();
+    assert!(report.contains("Finding 1"));
+    assert!(report.contains("Disagreement 1"));
+    assert!(report.contains("Unresolved source disagreement"));
+    assert!(report.contains("Finance review · line 3"));
+    let evidence: Value = serde_json::from_slice(
+        &output
+            .files
+            .iter()
+            .find(|(name, _)| name == "synthesis-evidence.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(evidence["findings"], output.value["findings"]);
+    assert_eq!(evidence["disagreements"], output.value["disagreements"]);
+    assert!(evidence.get("files").is_none());
+
+    let no_disagreement = json!({
+        "title":"No recorded conflict",
+        "focus":"Summarize the shared observations without claiming consensus.",
+        "sources":sources,
+        "findings":[{
+            "finding":"All three sources discuss weekly summaries or pricing.",
+            "evidence":[
+                {"source":"inputs/market.md","quote":"Istanbul teams request weekly summaries."},
+                {"source":"inputs/support.txt","quote":"Customers repeatedly request weekly summaries."},
+                {"source":"inputs/finance.md","quote":"A 120 TRY price covers support costs."}
+            ]
+        }],
+        "disagreements":[]
+    });
+    let no_disagreement = run(
+        data.path(),
+        "research.synthesis",
+        &no_disagreement,
+        &inputs,
+        None,
+    )
+    .await
+    .unwrap();
+    let no_disagreement_report = String::from_utf8(
+        no_disagreement
+            .files
+            .iter()
+            .find(|(name, _)| name == "synthesis-report.md")
+            .unwrap()
+            .1
+            .clone(),
+    )
+    .unwrap();
+    assert!(no_disagreement_report.contains("not evidence of consensus"));
+
+    let mut fabricated = args.clone();
+    fabricated["findings"][0]["evidence"][0]["quote"] = json!("Fabricated evidence");
+    assert_eq!(
+        run(
+            data.path(),
+            "research.synthesis",
+            &fabricated,
+            &inputs,
+            None,
+        )
+        .await
+        .err()
+        .unwrap()
+        .0,
+        "PRODUCTION_SYNTHESIS_EVIDENCE_MISMATCH"
+    );
+    let mut unused = args.clone();
+    unused["findings"] = json!([unused["findings"][0].clone()]);
+    unused["disagreements"] = json!([]);
+    assert_eq!(
+        run(data.path(), "research.synthesis", &unused, &inputs, None)
+            .await
+            .err()
+            .unwrap()
+            .0,
+        "PRODUCTION_SYNTHESIS_UNUSED_SOURCE"
+    );
+    let mut single_source = args.clone();
+    single_source["findings"] = json!([{
+        "finding":"Only one source supports this finding.",
+        "evidence":[{"source":"inputs/market.md","quote":"Preferred price: below 100 TRY."}]
+    }]);
+    assert_eq!(
+        run(
+            data.path(),
+            "research.synthesis",
+            &single_source,
+            &inputs,
+            None,
+        )
+        .await
+        .err()
+        .unwrap()
+        .0,
+        "PRODUCTION_SYNTHESIS_CROSS_SOURCE_REQUIRED"
+    );
+    let mut same_source = args;
+    same_source["disagreements"][0]["positions"][1]["source"] = json!("inputs/market.md");
+    same_source["disagreements"][0]["positions"][1]["quote"] =
+        json!("Istanbul teams request weekly summaries.");
+    assert_eq!(
+        run(
+            data.path(),
+            "research.synthesis",
+            &same_source,
+            &inputs,
+            None,
+        )
+        .await
+        .err()
+        .unwrap()
+        .0,
+        "PRODUCTION_SYNTHESIS_DISAGREEMENT_SOURCE_DUPLICATE"
+    );
+}
+
+#[tokio::test]
 async fn docx_template_fill_replaces_exact_fields_and_keeps_missing_values_visible() {
     use sha2::{Digest, Sha256};
     let data = tempfile::tempdir().unwrap();

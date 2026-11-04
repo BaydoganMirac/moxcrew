@@ -304,6 +304,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-source-changes");
         let claim_check = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-claim-check");
+        let research_synthesis = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-research-synthesis");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
@@ -318,6 +320,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Launch monitoring" } else { "Lansman takibi" }
         } else if claim_check {
             if english { "Launch evidence" } else { "Lansman kanıtları" }
+        } else if research_synthesis {
+            if english { "Launch synthesis" } else { "Lansman sentezi" }
         } else if english {
             "Product launch"
         } else {
@@ -430,6 +434,18 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-synthesis") {
+            for (name, body) in [
+                ("market-study.md", "Market study\nIstanbul teams request weekly summaries.\nPreferred price: below 100 TRY.\n"),
+                ("support-notes.txt", "Support notes\nCustomers repeatedly request weekly summaries.\nCurrent price feels high at 120 TRY.\n"),
+                ("finance-review.md", "Finance review\nA price below 100 TRY is not sustainable.\nA 120 TRY price covers support costs.\n"),
+            ] {
+                let source=directory.join(name);std::fs::write(&source,body).unwrap();
+                let snapshot=host.snapshot().unwrap();
+                let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+                host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+            }
+        }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
         let batch_images=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images");
@@ -441,6 +457,7 @@ fn seed_create_scene(directory: &std::path::Path) {
         let documents_template=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-template");
         let documents_rewrite=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-rewrite");
         let claim_check=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-claim-check");
+        let research_synthesis=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-synthesis");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
@@ -461,6 +478,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             ("R5",if english{"Launch source changes"}else{"Lansman kaynağı değişiklikleri"},if english{"Compare two dated frozen launch snapshots and keep exact source hashes and explicit no-change handling."}else{"Tarihli iki dondurulmuş lansman sürümünü karşılaştır; kaynak özetlerini ve açık değişiklik yok sonucunu koru."})
         } else if claim_check {
             ("R4",if english{"Launch claim check"}else{"Lansman iddia doğrulaması"},if english{"Check launch claims against frozen sources while keeping support, disputes and unresolved evidence visible."}else{"Lansman iddialarını dondurulmuş kaynaklara göre kontrol et; destek, itiraz ve çözümlenmemiş kanıtları görünür tut."})
+        } else if research_synthesis {
+            ("R3",if english{"Launch source synthesis"}else{"Lansman kaynak sentezi"},if english{"Combine frozen launch sources into attributed findings while preserving source disagreements."}else{"Dondurulmuş lansman kaynaklarını, kaynak çelişkilerini koruyan atıflı bulgularda birleştir."})
         } else {
             ("P1",if english{"Launch presentation · UI fixture"}else{"Lansman sunumu · arayüz sahnesi"},if english{"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."}else{"Bir lansman sunumu hazırla. Bu tek kullanımlık arayüz sahnesinde sağlayıcı çalıştırılmadı."})
         };

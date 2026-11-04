@@ -438,6 +438,89 @@ def claim_check(args,tools):
     return result
 
 
+def research_synthesis(args,tools):
+    exact(args,('title','focus','sources','findings','disagreements'))
+    title=text(args['title'],160).strip();focus=text(args['focus'],2000).strip()
+    require(title,'PRODUCTION_TITLE_REQUIRED');require(focus,'PRODUCTION_SYNTHESIS_FOCUS_REQUIRED')
+    require(isinstance(args['sources'],list) and 2<=len(args['sources'])<=8,'PRODUCTION_SYNTHESIS_SOURCE_LIMIT')
+    prepared=extracted_sources(args['sources'],tools)
+    by_input={item['source']:record for item,record in zip(args['sources'],prepared)}
+    used_sources=set();total_evidence=0
+
+    def verified(entry):
+        nonlocal total_evidence
+        exact(entry,('source','quote'));source_input=entry['source']
+        require(source_input in by_input,'PRODUCTION_SYNTHESIS_SOURCE_INVALID')
+        quote=text(entry['quote'],4000);require(quote.strip(),'PRODUCTION_SYNTHESIS_EVIDENCE_REQUIRED')
+        record=by_input[source_input];start=record['content'].find(quote)
+        require(start>=0,'PRODUCTION_SYNTHESIS_EVIDENCE_MISMATCH')
+        total_evidence+=1;require(total_evidence<=500,'PRODUCTION_SYNTHESIS_LIMIT')
+        used_sources.add(source_input);byte_start=len(record['content'][:start].encode('utf-8'))
+        return record,{'sourceId':record['id'],'sourceLabel':record['label'],'quote':quote,
+                       'line':record['content'].count('\n',0,start)+1,'startByte':byte_start,
+                       'endByte':byte_start+len(quote.encode('utf-8'))}
+
+    findings=args['findings'];require(isinstance(findings,list) and 1<=len(findings)<=100,'PRODUCTION_SYNTHESIS_LIMIT')
+    checked_findings=[];seen_findings=set();cross_source=0
+    for index,item in enumerate(findings,1):
+        exact(item,('finding','evidence'));finding=text(item['finding'],2000).strip()
+        require(finding and finding not in seen_findings,'PRODUCTION_SYNTHESIS_FINDING_INVALID');seen_findings.add(finding)
+        evidence=item['evidence'];require(isinstance(evidence,list) and 1<=len(evidence)<=8,'PRODUCTION_SYNTHESIS_EVIDENCE_REQUIRED')
+        checked=[];pairs=set();source_ids=set()
+        for entry in evidence:
+            record,value=verified(entry);pair=(record['id'],value['quote'])
+            require(pair not in pairs,'PRODUCTION_SYNTHESIS_EVIDENCE_DUPLICATE');pairs.add(pair)
+            source_ids.add(record['id']);checked.append(value)
+        if len(source_ids)>=2: cross_source+=1
+        checked_findings.append({'index':index,'finding':finding,'sourceIds':sorted(source_ids),'evidence':checked})
+    require(cross_source>=1,'PRODUCTION_SYNTHESIS_CROSS_SOURCE_REQUIRED')
+
+    disagreements=args['disagreements'];require(isinstance(disagreements,list) and len(disagreements)<=50,'PRODUCTION_SYNTHESIS_LIMIT')
+    checked_disagreements=[];seen_topics=set()
+    for index,item in enumerate(disagreements,1):
+        exact(item,('topic','positions'));topic=text(item['topic'],1000).strip()
+        require(topic and topic not in seen_topics,'PRODUCTION_SYNTHESIS_DISAGREEMENT_INVALID');seen_topics.add(topic)
+        positions=item['positions'];require(isinstance(positions,list) and 2<=len(positions)<=8,'PRODUCTION_SYNTHESIS_DISAGREEMENT_INVALID')
+        checked=[];position_sources=set()
+        for position_index,position in enumerate(positions,1):
+            exact(position,('source','position','quote'));summary=text(position['position'],2000).strip()
+            require(summary,'PRODUCTION_SYNTHESIS_DISAGREEMENT_INVALID')
+            record,value=verified({'source':position['source'],'quote':position['quote']})
+            require(record['id'] not in position_sources,'PRODUCTION_SYNTHESIS_DISAGREEMENT_SOURCE_DUPLICATE')
+            position_sources.add(record['id']);value.update({'index':position_index,'position':summary});checked.append(value)
+        checked_disagreements.append({'index':index,'topic':topic,'positions':checked,'status':'unresolved'})
+    require(used_sources==set(by_input),'PRODUCTION_SYNTHESIS_UNUSED_SOURCE')
+    public_sources=[{key:item[key] for key in ('id','label','sourceSha256','textSha256')} for item in prepared]
+    result={'kind':'research_synthesis','title':title,'focus':focus,'sources':public_sources,
+            'summary':{'sources':len(prepared),'findings':len(checked_findings),
+                       'crossSourceFindings':cross_source,'disagreements':len(checked_disagreements)},
+            'findings':checked_findings,'disagreements':checked_disagreements,'file':'synthesis-report.md'}
+    markdown=lambda value:''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character
+                                  for character in html.escape(str(value),quote=True).replace('\r',' ').replace('\n',' '))
+    report=['# '+markdown(title),'','**Focus:** '+markdown(focus),'',
+            '> Findings are attributed synthesis; disagreement remains unresolved unless the sources themselves resolve it.','',
+            '## Inspected sources','']
+    report.extend(f'- **{markdown(record["id"])} · {markdown(record["label"])}** · source `{record["sourceSha256"]}` · text `{record["textSha256"]}`'
+                  for record in public_sources)
+    report.extend(('', '## Findings'))
+    for item in checked_findings:
+        report.extend(('',f'### Finding {item["index"]}','',markdown(item['finding'])))
+        for evidence_index,evidence in enumerate(item['evidence'],1):
+            report.extend(('',f'**Evidence {evidence_index} · {markdown(evidence["sourceId"])} · {markdown(evidence["sourceLabel"])} · line {evidence["line"]} · bytes {evidence["startByte"]}–{evidence["endByte"]}**','',f'> {markdown(evidence["quote"])}'))
+    report.extend(('', '## Disagreements'))
+    if not checked_disagreements:
+        report.extend(('', 'No source disagreement was supplied. This is not evidence of consensus.'))
+    for item in checked_disagreements:
+        report.extend(('',f'### Disagreement {item["index"]}','',markdown(item['topic'])))
+        for position in item['positions']:
+            report.extend(('',f'**Position {position["index"]} · {markdown(position["sourceId"])} · {markdown(position["sourceLabel"])} · line {position["line"]}**','',
+                           markdown(position['position']),'',f'> {markdown(position["quote"])}'))
+        report.extend(('', '**Status:** Unresolved source disagreement.'))
+    (OUT/'synthesis-report.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+    (OUT/'synthesis-evidence.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+    return result
+
+
 def data_extract(args,tools):
     exact(args,('title','sources','columns','rows'))
     title=text(args['title'],160).strip();require(title)
@@ -909,6 +992,7 @@ def execute(operation,args,tools):
     if operation=='documents.rewrite': return documents_rewrite(args,tools)
     if operation=='documents.template': return documents_template(args,tools)
     if operation=='research.claims': return claim_check(args,tools)
+    if operation=='research.synthesis': return research_synthesis(args,tools)
     if operation=='research.changes': return source_changes(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)

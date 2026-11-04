@@ -591,6 +591,7 @@ impl Console {
             | "capabilities-data-extract"
             | "capabilities-documents-brief"
             | "capabilities-claim-check"
+            | "capabilities-research-synthesis"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -640,6 +641,7 @@ impl Console {
                 "capabilities-documents-rewrite" => 14,
                 "capabilities-source-changes" => 15,
                 "capabilities-claim-check" => 16,
+                "capabilities-research-synthesis" => 17,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -773,6 +775,26 @@ impl Console {
                     "The launch reached 72% adoption.\nRetention lasted twelve months."
                 } else {
                     "Lansman %72 benimsenmeye ulaştı.\nKullanım on iki ay sürdü."
+                }
+                .into();
+            } else if scene == "capabilities-research-synthesis" {
+                draft.sources.extend(
+                    available
+                        .iter()
+                        .filter(|resource| extraction_source(resource))
+                        .map(|resource| text(resource, "resourceId").to_owned()),
+                );
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "Launch source synthesis"
+                } else {
+                    "Lansman kaynak sentezi"
+                }
+                .into();
+                *draft.value("synthesisFocus") = if english {
+                    "Where do customer needs and pricing evidence agree or conflict?"
+                } else {
+                    "Müşteri ihtiyaçları ve fiyat kanıtları nerede uyuşuyor veya çelişiyor?"
                 }
                 .into();
             }
@@ -1604,6 +1626,7 @@ impl Console {
             "Translate or rewrite",
             "Track source changes",
             "Check claims",
+            "Synthesize sources",
         ];
         form_combo(
             ui,
@@ -1615,13 +1638,13 @@ impl Console {
                 }
             },
         );
-        if ![10, 11, 12, 13, 14, 15, 16].contains(&draft.kind) {
+        if ![10, 11, 12, 13, 14, 15, 16, 17].contains(&draft.kind) {
             hint(
                 ui,
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
             );
         }
-        if ![15, 16].contains(&draft.kind)
+        if ![15, 16, 17].contains(&draft.kind)
             && studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked()
         {
             self.create.select_productive_view(2);
@@ -1630,7 +1653,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15, 16].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15, 16, 17].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -2604,6 +2627,71 @@ impl Console {
                     }));
                 }
             }
+            17 => {
+                hint(
+                    ui,
+                    "Select 2–8 sources. Every source must be cited, and at least one finding must combine evidence from multiple sources.",
+                );
+                let candidates = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && extraction_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                ui.horizontal_wrapped(|ui| {
+                    for resource in &candidates {
+                        let id = text(resource, "resourceId");
+                        let mut selected = draft.sources.contains(id);
+                        let enabled = selected || draft.sources.len() < 8;
+                        if ui
+                            .add_enabled(
+                                enabled,
+                                egui::Checkbox::new(&mut selected, text(resource, "name")),
+                            )
+                            .changed()
+                        {
+                            if selected {
+                                draft.sources.insert(id.into());
+                            } else {
+                                draft.sources.remove(id);
+                            }
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Synthesis report title"));
+                    studio::input(ui, draft.value("title"), 160, "", false);
+                });
+                ui.label(t(ui, "Synthesis focus"));
+                multiline(ui, "", draft.value("synthesisFocus"), 2000, 2);
+                hint(
+                    ui,
+                    "Chat drafts attributed findings and source-distinct disagreements. The local tool rejects unused sources and invented quotes.",
+                );
+                let sources = candidates
+                    .iter()
+                    .filter(|resource| draft.sources.contains(text(resource, "resourceId")))
+                    .take(8)
+                    .map(|resource| {
+                        json!({"source":resource["resourceId"],"label":resource["name"]})
+                    })
+                    .collect::<Vec<_>>();
+                if (2..=8).contains(&sources.len())
+                    && valid_input(draft.get("title"), 160)
+                    && valid_input(draft.get("synthesisFocus"), 2000)
+                {
+                    operation = Some(json!({
+                        "operation":"research.synthesis",
+                        "arguments":{
+                            "title":draft.get("title"),
+                            "focus":draft.get("synthesisFocus"),
+                            "sources":sources,
+                            "findings":[],
+                            "disagreements":[]
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -2638,6 +2726,7 @@ impl Console {
                         14 => "Read the exact frozen source before calling the typed tool. Populate one segment for every non-empty text line or DOCX body paragraph in exact order. Keep each source string literal, preserve facts and requested terms, and never claim semantic equivalence without owner review.",
                         15 => "Compare only these two exact frozen snapshots with the typed local tool. Keep the supplied capture dates and source hashes in the report; do not substitute a live page, infer a capture date or hide an explicit no-change result.",
                         16 => "Read every selected frozen source before calling the typed local tool. For each claim, list every source actually checked as {source}, add only literal quotes with source and supports, disputes or context stance, and give an explicit unresolvedReason when no support or dispute exists. Do not invent evidence, copy a requested status or present the derived status as an automatic truth score.",
+                        17 => "Read every selected frozen source before calling the typed local tool. Cite every selected source, populate at least one finding with literal evidence from two or more distinct sources, and preserve each disagreement as two or more source-distinct positions with literal quotes. Keep disagreements unresolved; use an empty list only when none was found, and never turn absence of a supplied disagreement into a consensus claim.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -3692,6 +3781,85 @@ mod tests {
         assert!(request.contains("list every source actually checked"));
         assert!(request.contains("Do not invent evidence"));
         assert!(request.contains("automatic truth score"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn synthesis_request_requires_multiple_supported_sources_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"market.md","kind":"text","sha256":"a".repeat(64),"bytes":512,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"support.txt","kind":"text","sha256":"b".repeat(64),"bytes":640,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"finance.md","kind":"text","sha256":"c".repeat(64),"bytes":700,"status":"available"},
+            {"resourceId":"resource:44444444-4444-4444-8444-444444444444","revision":1,"name":"archive.bin","kind":"file","sha256":"d".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 17;
+        draft.sources.extend([
+            "resource:11111111-1111-4111-8111-111111111111".into(),
+            "resource:22222222-2222-4222-8222-222222222222".into(),
+            "resource:33333333-3333-4333-8333-333333333333".into(),
+            "resource:44444444-4444-4444-8444-444444444444".into(),
+        ]);
+        *draft.value("title") = "Launch source synthesis".into();
+        *draft.value("synthesisFocus") =
+            "Where do customer needs and pricing evidence agree or conflict?".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let visibility = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                "test-action-visibility",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        let action = ctx.data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new((
+                "test-action",
+                "memory_control",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        assert!(visibility.1, "button visibility: {visibility:?}");
+        assert!(
+            visibility.0.contains(action.center()),
+            "synthesis button center must fit the 800×560 clip: clip={:?}, action={action:?}",
+            visibility.0
+        );
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"research.synthesis\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(!request.contains("44444444-4444-4444-8444-444444444444"));
+        assert!(request.contains("customer needs and pricing evidence"));
+        assert!(request.contains("\"findings\": []"));
+        assert!(request.contains("\"disagreements\": []"));
+        assert!(request.contains("Cite every selected source"));
+        assert!(request.contains("two or more distinct sources"));
+        assert!(request.contains("never turn absence"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

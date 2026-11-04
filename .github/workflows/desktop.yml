@@ -63,7 +63,9 @@ jobs:
         run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy --target ${{ matrix.target }}
       - run: cargo fmt --all -- --check
       - name: Native behavior tests
-        run: cargo test --locked --workspace --target ${{ matrix.target }}
+        # Several suites intentionally contend for the single local event writer.
+        # Keep the release matrix deterministic across differently sized runners.
+        run: cargo test --locked --workspace --target ${{ matrix.target }} -- --test-threads=1
       - name: Native lint checks
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
       - name: Build standalone Rust desktop

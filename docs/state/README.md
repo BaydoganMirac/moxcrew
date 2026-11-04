@@ -51,6 +51,7 @@
 | Distinctive desktop workbench | Implemented; 230 tests, strict Clippy and native normal/minimum/plan captures; owner visual judgment pending | 2026-11-04 | [distinctive-desktop-workbench.md](distinctive-desktop-workbench.md) |
 | Distinctive desktop flows | Implemented; 231 tests, strict Clippy and 12 native route captures; owner visual judgment pending | 2026-11-04 | [distinctive-desktop-flows.md](distinctive-desktop-flows.md) |
 | GitHub product surface | Implemented; marketing README, current native screenshots, aligned package/About metadata and full workspace verification | 2026-11-04 | [github-product-surface.md](github-product-surface.md) |
+| Moxcrew 0.12.0 Public Preview | Release candidate; publication awaiting clean native CI | 2026-11-04 | [public-preview-release.md](public-preview-release.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

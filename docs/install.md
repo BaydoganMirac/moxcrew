@@ -1,8 +1,29 @@
 # Install and operate Moxcrew Desktop
 
-Status: 0.12.0 native Rust desktop development distribution
+Status: 0.12.0 native Rust desktop Public Preview
 
-Updated: 2026-10-19
+Updated: 2026-11-04
+
+## Download
+
+Download the installer for your platform from the
+[Moxcrew 0.12.0 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0):
+
+- macOS Apple Silicon or Intel: DMG;
+- Windows x64: setup EXE or MSI;
+- Linux x64 or ARM64: AppImage or Deb.
+
+No Rust, Node or source checkout is needed. Compare the installer's SHA-256
+digest with `SHA256SUMS.txt` on the release before opening it. Provider CLIs are
+separate: install and authenticate Codex, Claude Code or Gemini CLI according to
+the provider you intend to use.
+
+The Public Preview is not notarized with an Apple Developer ID and is not signed
+with a Windows publisher certificate. On macOS, use Finder's **Open** action or
+the explicit **Open Anyway** control in Privacy & Security after verifying the
+checksum. On Windows, inspect the SmartScreen details and publisher status before
+choosing to run it. Moxcrew does not require a shell command that disables an OS
+security feature.
 
 ## Application requirements
 
@@ -10,16 +31,15 @@ Updated: 2026-10-19
   X11/Wayland and OpenGL runtime libraries. No WebView runtime is required.
 - Provider CLIs installed separately. Their own Node/model/account requirements
   are independent of the Rust Moxcrew application.
-- Native Windows/Linux installer and runtime checks remain CI/release evidence;
-  the local development package has been built on macOS ARM64.
+- Native packages are built by the public release matrix. Publisher signing and
+  hands-on fresh-install/upgrade evidence remain production-release gates.
 - Linux folder selection needs a working XDG desktop portal with a desktop
   backend, or Zenity as the fallback. The Deb declares these runtime packages;
   AppImage users need them supplied by their distribution. GTK is not bundled.
 
 Use the platform installer: macOS DMG/application, Windows NSIS/MSI, or Linux
-Deb/AppImage. Development artifacts have no public Developer ID notarization or
-Windows publisher signature. Installers are built from source/CI; no public
-release is claimed by this change.
+Deb/AppImage. The public artifacts are produced from the exact tagged source by
+the repository's native CI and published with checksums.
 
 For development, install Rust 1.99+ and platform compiler/window prerequisites.
 Run `cargo run --locked -p patchfleet-desktop`. Build a production executable with

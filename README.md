@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0"><img alt="Moxcrew 0.12.0 Public Preview" src="https://img.shields.io/badge/download-0.12.0%20Public%20Preview-2854F4"></a>
   <a href="https://github.com/BaydoganMirac/moxcrew/actions/workflows/desktop.yml"><img alt="Native desktop CI" src="https://github.com/BaydoganMirac/moxcrew/actions/workflows/desktop.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2854F4"></a>
   <img alt="Rust native desktop" src="https://img.shields.io/badge/desktop-native%20Rust-FF7A2F">
@@ -21,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="#try-the-development-preview"><strong>Try the development preview</strong></a>
+  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0"><strong>Download Moxcrew</strong></a>
   · <a href="docs/roadmap.md">Roadmap</a>
   · <a href="https://github.com/BaydoganMirac/moxcrew/issues/new">Share feedback</a>
 </p>
@@ -96,35 +97,35 @@ That means:
 Read the full [product boundaries](docs/product.md),
 [architecture](docs/architecture.md) and [security policy](SECURITY.md).
 
-## Try the development preview
+## Download Moxcrew
 
-> **Pre-release:** there are no public release downloads yet. Build from source
-> to evaluate the current desktop, or watch the repository for the first signed
-> release.
+Moxcrew 0.12.0 Public Preview ships as native installers—no Rust, Node or source
+build is needed.
 
-You need Rust 1.99+ and the native compiler/window prerequisites for your OS.
+| Platform | Download |
+|---|---|
+| macOS Apple Silicon | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
+| macOS Intel | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
+| Windows x64 | [Download setup EXE or MSI](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
+| Linux x64 / ARM64 | [Download AppImage or Deb](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0) |
+
+This is an unsigned public preview. macOS may show a Gatekeeper warning and
+Windows may show a SmartScreen warning; verify the published SHA-256 checksums
+before opening an installer. Moxcrew never asks you to bypass protection with a
+terminal command.
+
 For real planning or execution, install and authenticate at least one supported
-provider CLI separately.
-
-```sh
-git clone https://github.com/BaydoganMirac/moxcrew.git
-cd moxcrew
-cargo run --locked -p patchfleet-desktop
-```
-
-The compatibility binary name remains `patchfleet-desktop`; the product and
-packaged application are Moxcrew. Node is not required for the native desktop.
-
-See [installation and recovery](docs/install.md) for platform prerequisites,
-data locations, upgrades and rollback. Development packages can be built with
-the commands in [release checks](docs/release.md).
+provider CLI separately. See [installation and recovery](docs/install.md) for
+platform steps, data locations, upgrades and rollback. Contributors can still
+[build from source](docs/release.md#packaging).
 
 ## Current status
 
-Moxcrew is under active pre-release development. The native macOS build is the
-reference environment; CI builds and checks development artifacts for macOS,
-Windows and Linux. Signed public distribution, live quality evidence across
-every provider/capability and moderated usability testing remain release gates.
+Moxcrew 0.12.0 is an active Public Preview. CI builds and checks native artifacts
+for macOS, Windows and Linux. Publisher-signed distribution, live quality
+evidence across every provider/capability and moderated usability testing remain
+production-release gates. Windows result listing, preview and export are not yet
+available; text-only work remains supported.
 
 The repository intentionally separates implemented behavior from future scope:
 
@@ -138,7 +139,7 @@ The repository intentionally separates implemented behavior from future scope:
 If local-first, inspectable AI teamwork is useful to you:
 
 - **Star the repository** to help more people discover the project.
-- **Watch releases** to hear when signed downloads are available.
+- **Watch releases** to hear about preview updates and signed downloads.
 - **Open an issue** with the outcome you want Moxcrew to handle or a problem you
   found in the development preview.
 

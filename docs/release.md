@@ -5,6 +5,11 @@ cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or deskt
 build requirements. npm publication is retired. Pushing, publishing installers,
 public signing and Cloud deployment remain explicit owner release actions.
 
+The owner authorized the unsigned
+[0.12.0 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0).
+It is a GitHub pre-release with native installers and SHA-256 checksums, not a
+claim of Apple notarization, Windows publisher signing or production readiness.
+
 The owner-approved [1.0.0 master plan](plans/0039-version-one-release.md) is the
 next broad release target. Its [state](state/version-one-release.md) and ability
 acceptance matrix add output/integration requirements to this release procedure.

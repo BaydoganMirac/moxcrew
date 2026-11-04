@@ -36,6 +36,7 @@ fn project_revision(host: &Host, project: &Value) -> Value {
         .clone()
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn atomic_batch_preserves_order_hashes_idempotency_and_recovery() {
     let (tmp, host, project) = fixture().await;
@@ -158,6 +159,7 @@ async fn incomplete_batch_never_publishes_partial_resources() {
     host.shutdown().await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn multi_variant_sources_require_current_hashes_and_same_project() {
     let (_tmp, host, project) = fixture().await;
@@ -211,6 +213,7 @@ async fn multi_variant_sources_require_current_hashes_and_same_project() {
     host.shutdown().await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn canonical_image_selection_is_frozen_without_mutating_original() {
     use base64::Engine;

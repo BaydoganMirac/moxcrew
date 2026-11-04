@@ -1574,6 +1574,7 @@ struct WorkflowState {
     offset: usize,
     recipe: HashMap<String, String>,
     recipe_goal: HashMap<(String, String), String>,
+    schedule_provider: String,
     schedule_interval: u32,
     schedule_count: u32,
     first_run: String,
@@ -2749,6 +2750,22 @@ impl Console {
                 }
             },
         );
+        ui.horizontal_wrapped(|ui| {
+            ui.label(t(ui, "Provider"));
+            provider_picker(ui, "schedule-provider", &mut state.schedule_provider);
+        });
+        let provider_ready = connect::can_attempt_provider(snapshot, &state.schedule_provider);
+        if provider_ready {
+            hint(
+                ui,
+                "Scheduled runs will use this provider while Moxcrew is awake.",
+            );
+        } else {
+            hint(
+                ui,
+                connect::selection_status(snapshot, &state.schedule_provider),
+            );
+        }
         state.schedule_interval = state.schedule_interval.clamp(15, 10080);
         state.schedule_count = state.schedule_count.clamp(1, 100);
         ui.horizontal_wrapped(|ui| {
@@ -2780,13 +2797,14 @@ impl Console {
                 commands,
                 "Create enabled schedule",
                 "project_schedule_save",
-                first_run.is_some(),
-                || json!({"projectId":project,"expectedProjectRevision":output_studio::project_revision(snapshot,&project),"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"],"intervalMinutes":state.schedule_interval,"firstRunAt":first_run,"maxOccurrences":state.schedule_count,"budgets":state.schedule_budgets}),
+                first_run.is_some() && provider_ready,
+                || json!({"projectId":project,"expectedProjectRevision":output_studio::project_revision(snapshot,&project),"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"],"providerId":state.schedule_provider,"intervalMinutes":state.schedule_interval,"firstRunAt":first_run,"maxOccurrences":state.schedule_count,"budgets":state.schedule_budgets}),
             );
         }
         for schedule in workflow_values(snapshot, &project, "schedules") {
             ui.push_id(text(schedule,"scheduleId"),|ui|card(ui,|ui|{
                 ui.label(text(schedule,"scheduleId"));hint(ui,if schedule["enabled"]==true{"Enabled"}else{"Paused"});
+                ui.label(format!("{}: {}",t(ui,"Provider"),connect::provider_name(schedule["providerId"].as_str().unwrap_or("codex"))));
                 ui.label(format!("{}: {}",t(ui,"Next run"),text(schedule,"nextRunAt")));
                 ui.label(format!("{} / {}",schedule["occurrences"],schedule["maxOccurrences"]));
                 action(ui,commands,if schedule["enabled"]==true{"Pause schedule"}else{"Resume schedule"},"project_schedule_set_enabled",revision(schedule)>0,||json!({"projectId":project,"scheduleId":schedule["scheduleId"],"expectedScheduleRevision":schedule["revision"],"enabled":schedule["enabled"]!=true}));
@@ -4319,6 +4337,20 @@ mod tests {
                             .0
                             .is_empty());
                     }
+                    if tab == 3 {
+                        let provider = ctx.data(|data| {
+                            data.get_temp::<egui::Rect>(egui::Id::new((
+                                "test-action",
+                                "memory_control",
+                                "Choose provider",
+                            )))
+                            .unwrap()
+                        });
+                        assert!(
+                            screen.contains_rect(provider),
+                            "{language}/{theme:?} provider picker {provider:?}"
+                        );
+                    }
                     assert!(click_at_size(
                         &ctx,
                         &mut console,
@@ -4406,6 +4438,11 @@ mod tests {
             .recipe
             .insert("project:one".into(), "recipe:one".into());
         console.create.crew.workflow.first_run = "2100-01-01T10:00:00Z".into();
+        console.create.crew.workflow.schedule_provider = "claude".into();
+        data["providerConnections"]["providers"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":"claude","installed":true,"version":"2.1.170","authentication":"present","controlSupported":true}));
         assert!(render(
             &ctx,
             &mut console,
@@ -4426,10 +4463,22 @@ mod tests {
         );
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].payload["expectedRecipeRevision"], 3);
+        assert_eq!(commands[0].payload["providerId"], "claude");
         assert_eq!(
             commands[0].payload["firstRunAt"],
             "2100-01-01T10:00:00.000Z"
         );
+        console.create.crew.workflow.schedule_provider = "gemini".into();
+        assert!(click(
+            &ctx,
+            &mut console,
+            &data,
+            false,
+            "project_schedule_save",
+            "Create enabled schedule",
+        )
+        .is_empty());
+        console.create.crew.workflow.schedule_provider = "claude".into();
         console.create.crew.workflow.first_run = "2100-01-01T10:00:00.123456+03:00".into();
         let offset_commands = click(
             &ctx,
@@ -4440,6 +4489,7 @@ mod tests {
             "Create enabled schedule",
         );
         assert_eq!(offset_commands.len(), 1);
+        assert_eq!(offset_commands[0].payload["providerId"], "claude");
         assert_eq!(
             offset_commands[0].payload["firstRunAt"],
             "2100-01-01T07:00:00.123Z"

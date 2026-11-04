@@ -43,10 +43,12 @@ explicitly. Agent guidance explains this requirement and the typed production to
 Seven bundled launch/content/podcast/research/travel/study/data recipes describe
 roles, deliverables and external tool requirements. Owners can save a Project
 composition and prepare another mission from it. Recipes retain roles/settings;
-provider assignments are configured on the prepared mission. Recurring local
-recipes currently use Codex. Durable schedules pause/resume, retain exact occurrence
-identity, prevent overlap and skip missed intervals. They run only while the Host
-is awake, with at most one new occurrence per tick and at most 100 occurrences.
+provider assignments are configured on the prepared mission. New recurring
+local schedules freeze the owner's ready Codex, Claude Code or Gemini CLI
+selection; legacy schedules without a provider retain their Codex default.
+Durable schedules pause/resume, retain exact occurrence identity, prevent overlap
+and skip missed intervals. They run only while the Host is awake, with at most
+one new occurrence per tick and at most 100 occurrences.
 RFC3339 schedule inputs are normalized to UTC milliseconds; due checks compare
 instants. Replay binds saved/enabled schedules to the exact owner payload and
 frozen recipe. Each occurrence checks due time, terminal previous mission,

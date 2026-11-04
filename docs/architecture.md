@@ -268,15 +268,13 @@ The first read-only slice needs only:
   be observed;
 - observe: return normalized current sessions and lifecycle state.
 
-Phase 2 adds bounded same-boot start/cancel control for compatible stable Codex
-versions. Claude Code and Gemini CLI remain observation-only. The shared
-interface must not pretend every provider supports pause, resume, follow-up, or
-structured questions. Each adapter reports a capability map, and the UI
-exposes only proven actions.
-
-Codex is implemented first because the existing Agent Console provides the most
-reusable evidence for its lifecycle. Claude Code and Gemini CLI follow against
-the same conformance cases. V0 is not provider-complete until all three pass.
+Phase 2 adds bounded same-boot start/cancel control for compatible Codex,
+Claude Code and Gemini CLI versions. Codex uses its app-server surface; the
+other two use checked headless adapters. The shared interface does not pretend
+every provider supports pause, resume, follow-up, structured questions or
+complete usage measurement. Each adapter reports a capability map, and the UI
+exposes only proven actions. Installation, saved authentication and compatible
+control do not prove live account/model access or quota.
 
 ## Local persistence
 

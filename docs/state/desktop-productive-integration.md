@@ -20,7 +20,8 @@ The existing crew surface opens project-bound direction/provider controls,
 recipes, schedules and activity. Provider assignments and job/time/review limits
 are saved explicitly. Direction names actual affected task IDs and observes the
 Host's asynchronous state. Recipes prepare only; schedules require an explicit
-create/enable action and disclose host-awake execution. Handoffs, reviewer
+ready-provider selection plus create/enable action and disclose host-awake
+execution. Schedule cards retain that provider. Handoffs, reviewer
 reported checks, real starts/elapsed time and nullable usage measurements are
 read from scoped records. Missing token/cost measurements remain unknown.
 

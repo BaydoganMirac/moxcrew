@@ -280,8 +280,9 @@ original receipt even if that folder has since lost access or been deleted.
 Select an added folder when queueing work, and use
 the provider cards to verify availability. Codex control requires a tested
 stable app-server surface on 0.144.1 or newer. The sandbox remains
-`workspace-write` with approval policy `never`. Claude and Gemini control are
-not advertised.
+`workspace-write` with approval policy `never`. Supported Claude and Gemini
+headless adapters also provide bounded start/cancel control; compatible CLI
+diagnostics still do not prove account/model access or quota.
 
 Create a stable Project and explicitly link one or more registered worktrees
 from its card after adding them.

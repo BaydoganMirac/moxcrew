@@ -98,8 +98,10 @@ directory. Support for non-Git workspaces requires a later policy decision.
 - Patchfleet must keep the owning app-server child alive while work is active.
 - Restarted or lost sessions become visible blocked/session-lost states instead
   of being resumed or duplicated.
-- Claude Code and Gemini CLI remain observation-only; adding control requires
-  new provider evidence and the same fail-closed conformance cases.
+- At this decision's scope, Claude Code and Gemini CLI remained observation-only;
+  the later [provider execution state](../state/provider-execution.md) records
+  the bounded adapters and fail-closed conformance evidence that supersede that
+  limitation.
 
 ## References
 

@@ -300,6 +300,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-documents-template");
         let rewrite = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-documents-rewrite");
+        let source_changes = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-source-changes");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
@@ -310,6 +312,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Partner onboarding" } else { "İş ortağı başlangıcı" }
         } else if rewrite {
             if english { "Launch translation" } else { "Lansman çevirisi" }
+        } else if source_changes {
+            if english { "Launch monitoring" } else { "Lansman takibi" }
         } else if english {
             "Product launch"
         } else {
@@ -400,6 +404,17 @@ fn seed_create_scene(directory: &std::path::Path) {
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
         }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-source-changes") {
+            for (name, body) in [
+                ("launch-page-may.md", "Plan: Private beta\nPrice: 100 TRY\nRegions: Türkiye\n"),
+                ("launch-page-june.md", "Plan: Public launch\nPrice: 120 TRY\nRegions: Türkiye, Europe\n"),
+            ] {
+                let source=directory.join(name);std::fs::write(&source,body).unwrap();
+                let snapshot=host.snapshot().unwrap();
+                let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+                host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+            }
+        }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
         let batch_images=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images");
@@ -426,6 +441,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             ("D5",if english{"Partner onboarding form"}else{"İş ortağı başlangıç formu"},if english{"Fill every supported Word template field while keeping missing values explicit."}else{"Desteklenen tüm Word şablon alanlarını doldur ve eksik değerleri açık tut."})
         } else if documents_rewrite {
             ("D4",if english{"Launch translation"}else{"Lansman çevirisi"},if english{"Translate the exact launch copy while preserving its facts and reviewable source pairs."}else{"Lansman metnini bilgilerini ve incelenebilir kaynak eşlerini koruyarak çevir."})
+        } else if source_changes {
+            ("R5",if english{"Launch source changes"}else{"Lansman kaynağı değişiklikleri"},if english{"Compare two dated frozen launch snapshots and keep exact source hashes and explicit no-change handling."}else{"Tarihli iki dondurulmuş lansman sürümünü karşılaştır; kaynak özetlerini ve açık değişiklik yok sonucunu koru."})
         } else {
             ("P1",if english{"Launch presentation · UI fixture"}else{"Lansman sunumu · arayüz sahnesi"},if english{"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."}else{"Bir lansman sunumu hazırla. Bu tek kullanımlık arayüz sahnesinde sağlayıcı çalıştırılmadı."})
         };

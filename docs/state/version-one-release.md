@@ -2,7 +2,7 @@
 
 Status: Scope approved; productive crews and bounded production implemented, complete ability/release evidence pending
 
-Updated: 2026-11-04
+Updated: 2026-11-05
 
 ## Approved baseline
 
@@ -16,7 +16,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 
 | Area | IDs | Current status |
 |---|---|---|
-| Research | R1–R5 | Frozen sources and bounded text extraction implemented; full research quality proof pending |
+| Research | R1–R5 | Frozen sources, bounded text extraction and dated source-hashed line change reports with explicit no-change handling implemented; full research quality proof pending |
 | Documents | D1–D5 | DOCX creation/paragraph revision, attributed briefs, source-pinned translation/style rewrite with protected facts, and exact template filling; real LibreOffice open proof; PDF merge and broader semantic/layout quality pending |
 | Presentations | P1–P5 | Editable PPTX creation/slide revision; real LibreOffice open proof; full area pending |
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
@@ -123,6 +123,14 @@ data and report. It does not claim forecasting, optimization or financial advice
 path: every finding and action retains literal evidence from its exact frozen
 source, questions remain explicit and absent owners/dates stay null. It does not
 claim semantic truth, prioritization or staffing quality.
+[Task0076](explicit-docx-template-filling.md) fills an exact DOCX placeholder set,
+keeps absent values visibly missing and preserves unrelated template content.
+[Task0077](source-pinned-document-rewrite.md) adds ordered source/result coverage,
+protected facts and editable DOCX review evidence for D4.
+[Task0078](dated-source-change-tracking.md) adds deterministic R5 comparison for
+two strictly dated frozen snapshots, including exact hashes, line-bound changes
+and explicit no-meaningful-change handling. It does not fetch or monitor a live
+source and does not claim semantic equivalence.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

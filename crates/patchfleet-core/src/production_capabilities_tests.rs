@@ -1019,6 +1019,131 @@ async fn document_rewrite_pins_exact_source_segments_and_preserves_stable_facts(
 }
 
 #[tokio::test]
+async fn source_change_report_binds_dated_snapshots_and_handles_no_meaningful_change() {
+    use sha2::{Digest, Sha256};
+    let data = tempfile::tempdir().unwrap();
+    let before = b"# Product\nPrice: 100 TRY\nBeta access: Invite only\nSupport: Email\n".to_vec();
+    let after = b"# Product\nPrice: 120 TRY\nPublic launch: 2027-06-01\nSupport: Email\nNew region: Europe\n".to_vec();
+    let output = run(
+        data.path(),
+        "research.changes",
+        &json!({
+            "title":"Product page changes",
+            "before":{"source":"inputs/product-2027-05-01.md","label":"Product · May 1","capturedAt":"2027-05-01"},
+            "after":{"source":"inputs/product-2027-06-01.md","label":"Product · June 1","capturedAt":"2027-06-01"}
+        }),
+        &[
+            ("inputs/product-2027-05-01.md".into(), before.clone()),
+            ("inputs/product-2027-06-01.md".into(), after.clone()),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.value["kind"], "source_change_report");
+    assert_eq!(output.value["hasChanges"], true);
+    assert_eq!(output.value["ignoredFormattingOnly"], false);
+    assert_eq!(output.value["before"]["capturedAt"], "2027-05-01");
+    assert_eq!(output.value["after"]["capturedAt"], "2027-06-01");
+    assert_eq!(output.value["summary"]["modified"], 2);
+    assert_eq!(output.value["summary"]["added"], 1);
+    assert_eq!(output.value["summary"]["removed"], 0);
+    assert_eq!(output.value["summary"]["unchanged"], 2);
+    assert_eq!(
+        output.value["before"]["sourceSha256"],
+        format!("{:x}", Sha256::digest(&before))
+    );
+    assert_eq!(
+        output.value["after"]["sourceSha256"],
+        format!("{:x}", Sha256::digest(&after))
+    );
+    assert!(!output.value.to_string().contains("inputs/"));
+    assert!(!output
+        .value
+        .to_string()
+        .contains(data.path().to_string_lossy().as_ref()));
+    let report = String::from_utf8(
+        output
+            .files
+            .iter()
+            .find(|(name, _)| name == "change-report.md")
+            .unwrap()
+            .1
+            .clone(),
+    )
+    .unwrap();
+    assert!(report.contains("Earlier snapshot: Product · May 1 · 2027-05-01"));
+    assert!(report.contains("**Before · line 2**"));
+    assert!(report.contains("Price: 120 TRY"));
+    let audit: Value = serde_json::from_slice(
+        &output
+            .files
+            .iter()
+            .find(|(name, _)| name == "change-report.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(audit["changes"], output.value["changes"]);
+    assert!(audit.get("files").is_none());
+
+    let same_before = b"Policy A\nLimit 25\n".to_vec();
+    let same_after = b" Policy   A \n\nLimit 25\n".to_vec();
+    let unchanged = run(
+        data.path(),
+        "research.changes",
+        &json!({
+            "title":"Policy check",
+            "before":{"source":"inputs/policy-old.txt","label":"Policy old","capturedAt":"2027-07-01"},
+            "after":{"source":"inputs/policy-new.txt","label":"Policy new","capturedAt":"2027-07-02"}
+        }),
+        &[
+            ("inputs/policy-old.txt".into(), same_before),
+            ("inputs/policy-new.txt".into(), same_after),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(unchanged.value["hasChanges"], false);
+    assert_eq!(unchanged.value["ignoredFormattingOnly"], true);
+    assert_eq!(unchanged.value["summary"]["unchanged"], 2);
+    assert_eq!(unchanged.value["changes"], json!([]));
+    let unchanged_report = String::from_utf8(
+        unchanged
+            .files
+            .iter()
+            .find(|(name, _)| name == "change-report.md")
+            .unwrap()
+            .1
+            .clone(),
+    )
+    .unwrap();
+    assert!(unchanged_report.contains("No meaningful text changes detected."));
+    assert!(unchanged_report.contains("Whitespace or blank-line differences were ignored."));
+
+    let invalid = run(
+        data.path(),
+        "research.changes",
+        &json!({
+            "title":"Bad dates",
+            "before":{"source":"inputs/a.txt","label":"A","capturedAt":"2027-08-02"},
+            "after":{"source":"inputs/b.txt","label":"B","capturedAt":"2027-08-01"}
+        }),
+        &[
+            ("inputs/a.txt".into(), b"A".to_vec()),
+            ("inputs/b.txt".into(), b"B".to_vec()),
+        ],
+        None,
+    )
+    .await;
+    assert_eq!(
+        invalid.err().unwrap().0,
+        "PRODUCTION_SOURCE_DATE_ORDER_INVALID"
+    );
+}
+
+#[tokio::test]
 async fn docx_template_fill_replaces_exact_fields_and_keeps_missing_values_visible() {
     use sha2::{Digest, Sha256};
     let data = tempfile::tempdir().unwrap();

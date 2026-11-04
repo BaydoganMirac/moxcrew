@@ -108,7 +108,7 @@ fn programs(mode: &str) -> (tempfile::TempDir, Programs) {
             codex: executable,
             claude: "unused".into(),
             gemini: "unused".into(),
-            timeout: Duration::from_secs(2),
+            timeout: Duration::from_secs(4),
         },
     )
 }

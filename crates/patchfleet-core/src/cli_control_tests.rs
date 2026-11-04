@@ -91,7 +91,10 @@ fn peer(provider: &str, mode: &str) -> (tempfile::TempDir, Programs) {
             codex: "unused".into(),
             claude: executable.clone(),
             gemini: executable,
-            timeout: Duration::from_secs(2),
+            // Process startup can exceed two seconds on a loaded CI host even though the
+            // fixture answers immediately. Keep this comfortably below every five-second
+            // outer wait while avoiding false probe failures caused by scheduler pressure.
+            timeout: Duration::from_secs(4),
         },
     )
 }

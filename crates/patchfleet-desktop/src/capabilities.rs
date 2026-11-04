@@ -559,6 +559,7 @@ impl Console {
             | "capabilities-batch-images"
             | "capabilities-podcast"
             | "capabilities-data-chart"
+            | "capabilities-data-scenario"
             | "capabilities-interactive" => 5,
             "capabilities-browser" => 6,
             _ => 0,
@@ -592,6 +593,7 @@ impl Console {
                 "capabilities-batch-images" => 7,
                 "capabilities-podcast" => 8,
                 "capabilities-data-chart" => 9,
+                "capabilities-data-scenario" => 10,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -625,6 +627,18 @@ impl Console {
                 *draft.value("categoryColumn") = "region".into();
                 *draft.value("valueColumn") = "revenue".into();
                 *draft.value("aggregation") = "sum".into();
+            } else if scene == "capabilities-data-scenario" {
+                draft.record = csv.unwrap_or_default();
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "2027 operating plan"
+                } else {
+                    "2027 faaliyet planı"
+                }
+                .into();
+                *draft.value("scenarioColumns") =
+                    "line_item | base_plan | growth_case | lean_case".into();
+                *draft.value("currency") = "TRY".into();
             }
         }
     }
@@ -1447,6 +1461,7 @@ impl Console {
             "Batch images",
             "Edit podcast",
             "Chart from CSV",
+            "Scenario workbook",
         ];
         form_combo(
             ui,
@@ -1458,10 +1473,12 @@ impl Console {
                 }
             },
         );
-        hint(
-            ui,
-            "This adds a precise request to Chat. Send, review the plan and start explicitly.",
-        );
+        if draft.kind != 10 {
+            hint(
+                ui,
+                "This adds a precise request to Chat. Send, review the plan and start explicitly.",
+            );
+        }
         if studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked() {
             self.create.select_productive_view(2);
             self.create.studio.tab = 2;
@@ -1479,7 +1496,7 @@ impl Console {
                             text(r, "resourceId") == draft.record
                                 && match kind {
                                     8 => podcast_source(r),
-                                    9 => chart_source(r),
+                                    9 | 10 => chart_source(r),
                                     _ => true,
                                 }
                         })
@@ -1488,13 +1505,13 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![8, 9].contains(&kind) {
+                        if ![8, 9, 10].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
                             && match kind {
                                 8 => podcast_source(r),
-                                9 => chart_source(r),
+                                9 | 10 => chart_source(r),
                                 _ => false,
                             }
                     }) {
@@ -1941,6 +1958,53 @@ impl Console {
                             "categoryColumn":draft.get("categoryColumn"),
                             "valueColumn":draft.get("valueColumn"),
                             "aggregation":aggregation
+                        }
+                    }));
+                }
+            }
+            10 => {
+                let csv_source = source.is_some_and(chart_source);
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Model title"));
+                    studio::input(ui, draft.value("title"), 160, "", false);
+                });
+                ui.label(t(ui, "Columns · item | base | upside | downside"));
+                studio::input(ui, draft.value("scenarioColumns"), 640, "", false);
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Currency"));
+                    studio::input(ui, draft.value("currency"), 3, "", false);
+                });
+                hint(
+                    ui,
+                    "This only adds to Chat. The workbook keeps editable inputs and recalculates when its scenario selector changes.",
+                );
+                let currency = draft.get("currency").trim().to_ascii_uppercase();
+                let columns = draft
+                    .get("scenarioColumns")
+                    .split('|')
+                    .map(str::trim)
+                    .collect::<Vec<_>>();
+                if csv_source
+                    && source_id.is_some()
+                    && valid_input(draft.get("title"), 160)
+                    && columns.len() == 4
+                    && columns.iter().all(|column| valid_input(column, 160))
+                    && columns.iter().enumerate().all(|(index, column)| {
+                        !columns[..index].iter().any(|previous| previous == column)
+                    })
+                    && currency.len() == 3
+                    && currency.bytes().all(|byte| byte.is_ascii_uppercase())
+                {
+                    operation = Some(json!({
+                        "operation":"data.scenario",
+                        "arguments":{
+                            "source":source_id,
+                            "title":draft.get("title"),
+                            "itemColumn":columns[0],
+                            "baseColumn":columns[1],
+                            "upsideColumn":columns[2],
+                            "downsideColumn":columns[3],
+                            "currency":currency
                         }
                     }));
                 }
@@ -2591,6 +2655,54 @@ mod tests {
         assert!(request.contains("\"categoryColumn\": \"region\""));
         assert!(request.contains("\"valueColumn\": \"revenue\""));
         assert!(request.contains("\"aggregation\": \"average\""));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn scenario_workbook_request_freezes_columns_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"budget.csv","kind":"data","sha256":"a".repeat(64),"bytes":128,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"notes.txt","kind":"text","sha256":"b".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 10;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("title") = "2027 operating plan".into();
+        *draft.value("scenarioColumns") = "line_item | base_plan | growth_case | lean_case".into();
+        *draft.value("currency") = "try".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"data.scenario\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"itemColumn\": \"line_item\""));
+        assert!(request.contains("\"baseColumn\": \"base_plan\""));
+        assert!(request.contains("\"upsideColumn\": \"growth_case\""));
+        assert!(request.contains("\"downsideColumn\": \"lean_case\""));
+        assert!(request.contains("\"currency\": \"TRY\""));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

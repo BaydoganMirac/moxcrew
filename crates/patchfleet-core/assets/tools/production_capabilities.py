@@ -3,6 +3,7 @@ import base64
 import binascii
 import csv
 import datetime
+import difflib
 import hashlib
 import html
 import io
@@ -276,6 +277,89 @@ def extracted_sources(sources,tools):
         prepared.append({'path':str(path),'id':f'source-{index:02}','label':label,'sourceSha256':source_hash,
                          'textSha256':hashlib.sha256(content.encode()).hexdigest(),'content':content})
     return prepared
+
+
+def source_changes(args,tools):
+    exact(args,('title','before','after'))
+    title=text(args['title'],160).strip();require(title)
+    snapshots=[]
+    for key in ('before','after'):
+        item=args[key];exact(item,('source','label','capturedAt'))
+        label=text(item['label'],200).strip();captured=text(item['capturedAt'],10)
+        require(label and '/' not in label and '\\' not in label)
+        try: captured_date=datetime.date.fromisoformat(captured)
+        except ValueError: raise ValueError('PRODUCTION_SOURCE_DATE_INVALID')
+        snapshots.append({'source':item['source'],'label':label,'capturedAt':captured,'date':captured_date})
+    require(snapshots[1]['date']>snapshots[0]['date'],'PRODUCTION_SOURCE_DATE_ORDER_INVALID')
+    prepared=extracted_sources([{'source':item['source'],'label':item['label']} for item in snapshots],tools)
+
+    def units(record):
+        result=[]
+        for line_number,value in enumerate(record['content'].splitlines(),1):
+            normalized=re.sub(r'\s+',' ',value).strip()
+            if normalized:
+                text(value,4000);result.append({'line':line_number,'text':value.strip(),'normalized':normalized})
+        require(1<=len(result)<=2000 and sum(len(item['text']) for item in result)<=200000,
+                'PRODUCTION_SOURCE_CHANGE_LIMIT')
+        return result
+
+    before_units=units(prepared[0]);after_units=units(prepared[1])
+    matcher=difflib.SequenceMatcher(None,[item['normalized'] for item in before_units],
+                                    [item['normalized'] for item in after_units],autojunk=False)
+    changes=[];unchanged=0
+    def append(kind,before=None,after=None):
+        require(len(changes)<1000,'PRODUCTION_SOURCE_CHANGE_LIMIT')
+        changes.append({'index':len(changes)+1,'type':kind,
+                        'beforeLine':before['line'] if before else None,
+                        'afterLine':after['line'] if after else None,
+                        'before':before['text'] if before else None,
+                        'after':after['text'] if after else None})
+    for tag,i1,i2,j1,j2 in matcher.get_opcodes():
+        if tag=='equal':
+            unchanged+=i2-i1
+        elif tag=='delete':
+            for item in before_units[i1:i2]: append('removed',before=item)
+        elif tag=='insert':
+            for item in after_units[j1:j2]: append('added',after=item)
+        else:
+            before_block=before_units[i1:i2];after_block=after_units[j1:j2]
+            paired=min(len(before_block),len(after_block))
+            for index in range(paired): append('modified',before_block[index],after_block[index])
+            for item in before_block[paired:]: append('removed',before=item)
+            for item in after_block[paired:]: append('added',after=item)
+    counts={kind:sum(item['type']==kind for item in changes) for kind in ('added','removed','modified')}
+    public=[]
+    for snapshot,record,items in zip(snapshots,prepared,(before_units,after_units)):
+        public.append({'label':snapshot['label'],'capturedAt':snapshot['capturedAt'],
+                       'sourceSha256':record['sourceSha256'],'textSha256':record['textSha256'],
+                       'meaningfulLineCount':len(items)})
+    result={'kind':'source_change_report','title':title,'before':public[0],'after':public[1],
+            'hasChanges':bool(changes),
+            'ignoredFormattingOnly':not changes and prepared[0]['textSha256']!=prepared[1]['textSha256'],
+            'summary':{'added':counts['added'],'removed':counts['removed'],'modified':counts['modified'],
+                       'unchanged':unchanged},'changes':changes,'file':'change-report.md'}
+    markdown=lambda value:''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character
+                                  for character in html.escape(str(value),quote=True).replace('\r',' ').replace('\n',' '))
+    report=['# '+markdown(title),'',
+            f'- Earlier snapshot: {markdown(public[0]["label"])} · {public[0]["capturedAt"]} · `{public[0]["sourceSha256"]}`',
+            f'- Later snapshot: {markdown(public[1]["label"])} · {public[1]["capturedAt"]} · `{public[1]["sourceSha256"]}`','',
+            '| Result | Count |','|---|---:|',f'| Added | {counts["added"]} |',
+            f'| Removed | {counts["removed"]} |',f'| Modified | {counts["modified"]} |',
+            f'| Unchanged | {unchanged} |','']
+    if not changes:
+        report.append('No meaningful text changes detected.')
+        if result['ignoredFormattingOnly']:
+            report.extend(('', 'Whitespace or blank-line differences were ignored.'))
+    else:
+        for item in changes:
+            report.extend((f'## {item["type"].title()} {item["index"]}',''))
+            if item['before'] is not None:
+                report.extend((f'**Before · line {item["beforeLine"]}**',markdown(item['before']),'',))
+            if item['after'] is not None:
+                report.extend((f'**After · line {item["afterLine"]}**',markdown(item['after']),'',))
+    (OUT/'change-report.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+    (OUT/'change-report.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+    return result
 
 
 def data_extract(args,tools):
@@ -748,6 +832,7 @@ def execute(operation,args,tools):
     if operation=='documents.brief': return documents_brief(args,tools)
     if operation=='documents.rewrite': return documents_rewrite(args,tools)
     if operation=='documents.template': return documents_template(args,tools)
+    if operation=='research.changes': return source_changes(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)
     if operation=='video.package': return package(args,tools)

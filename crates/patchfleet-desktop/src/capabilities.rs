@@ -590,6 +590,7 @@ impl Console {
             | "capabilities-data-scenario"
             | "capabilities-data-extract"
             | "capabilities-documents-brief"
+            | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
             | "capabilities-interactive" => 5,
@@ -613,6 +614,12 @@ impl Console {
                 .iter()
                 .find(|resource| chart_source(resource))
                 .map(|resource| text(resource, "resourceId").to_owned());
+            let change_sources = available
+                .iter()
+                .filter(|resource| extraction_source(resource))
+                .take(2)
+                .map(|resource| text(resource, "resourceId").to_owned())
+                .collect::<Vec<_>>();
             let draft = self
                 .create
                 .capabilities
@@ -630,6 +637,7 @@ impl Console {
                 "capabilities-documents-brief" => 12,
                 "capabilities-documents-template" => 13,
                 "capabilities-documents-rewrite" => 14,
+                "capabilities-source-changes" => 15,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -733,6 +741,18 @@ impl Console {
                 *draft.value("rewriteTarget") =
                     if english { "Turkish" } else { "İngilizce" }.into();
                 *draft.value("preserveTerms") = "Moxcrew, Launch OS".into();
+            } else if scene == "capabilities-source-changes" {
+                draft.record = change_sources.first().cloned().unwrap_or_default();
+                *draft.value("afterSource") = change_sources.get(1).cloned().unwrap_or_default();
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "Launch source changes"
+                } else {
+                    "Lansman kaynağı değişiklikleri"
+                }
+                .into();
+                *draft.value("beforeDate") = "2027-05-01".into();
+                *draft.value("afterDate") = "2027-06-01".into();
             }
         }
     }
@@ -1560,6 +1580,7 @@ impl Console {
             "Brief + action plan",
             "Fill Word template",
             "Translate or rewrite",
+            "Track source changes",
         ];
         form_combo(
             ui,
@@ -1571,20 +1592,20 @@ impl Console {
                 }
             },
         );
-        if ![10, 11, 12, 13, 14].contains(&draft.kind) {
+        if ![10, 11, 12, 13, 14, 15].contains(&draft.kind) {
             hint(
                 ui,
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
             );
         }
-        if studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked() {
+        if draft.kind != 15 && studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked() {
             self.create.select_productive_view(2);
             self.create.studio.tab = 2;
             return;
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -2361,6 +2382,121 @@ impl Console {
                     }));
                 }
             }
+            15 => {
+                let candidates = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && extraction_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                let mut after_source = draft.get("afterSource").to_owned();
+                let earlier_placeholder = t(ui, "Choose earlier snapshot").into_owned();
+                let later_placeholder = t(ui, "Choose later snapshot").into_owned();
+                ui.columns(2, |columns| {
+                    form_combo(
+                        &mut columns[0],
+                        egui::ComboBox::from_id_salt("source-change-before").selected_text(
+                            candidates
+                                .iter()
+                                .find(|resource| text(resource, "resourceId") == draft.record)
+                                .map(|resource| text(resource, "name"))
+                                .unwrap_or(earlier_placeholder.as_str()),
+                        ),
+                        |ui| {
+                            for resource in &candidates {
+                                ui.selectable_value(
+                                    &mut draft.record,
+                                    text(resource, "resourceId").into(),
+                                    text(resource, "name"),
+                                );
+                            }
+                        },
+                    );
+                    form_combo(
+                        &mut columns[1],
+                        egui::ComboBox::from_id_salt("source-change-after").selected_text(
+                            candidates
+                                .iter()
+                                .find(|resource| text(resource, "resourceId") == after_source)
+                                .map(|resource| text(resource, "name"))
+                                .unwrap_or(later_placeholder.as_str()),
+                        ),
+                        |ui| {
+                            for resource in &candidates {
+                                ui.selectable_value(
+                                    &mut after_source,
+                                    text(resource, "resourceId").into(),
+                                    text(resource, "name"),
+                                );
+                            }
+                        },
+                    );
+                });
+                *draft.value("afterSource") = after_source;
+                let mut title = draft.get("title").to_owned();
+                let mut before_date = draft.get("beforeDate").to_owned();
+                let mut after_date = draft.get("afterDate").to_owned();
+                field(ui, "Report title", &mut title, 160, false);
+                ui.columns(2, |columns| {
+                    field(
+                        &mut columns[0],
+                        "Earlier date · YYYY-MM-DD",
+                        &mut before_date,
+                        10,
+                        false,
+                    );
+                    field(
+                        &mut columns[1],
+                        "Later date · YYYY-MM-DD",
+                        &mut after_date,
+                        10,
+                        false,
+                    );
+                });
+                *draft.value("title") = title;
+                *draft.value("beforeDate") = before_date;
+                *draft.value("afterDate") = after_date;
+                hint(
+                    ui,
+                    "The local tool compares exact frozen text, dates and hashes. Whitespace-only differences are reported as no meaningful change.",
+                );
+                let before = candidates
+                    .iter()
+                    .find(|resource| text(resource, "resourceId") == draft.record);
+                let after = candidates
+                    .iter()
+                    .find(|resource| text(resource, "resourceId") == draft.get("afterSource"));
+                let dates = chrono::NaiveDate::parse_from_str(draft.get("beforeDate"), "%Y-%m-%d")
+                    .ok()
+                    .zip(
+                        chrono::NaiveDate::parse_from_str(draft.get("afterDate"), "%Y-%m-%d").ok(),
+                    );
+                if let (Some(before), Some(after), Some((before_date, after_date))) =
+                    (before, after, dates)
+                {
+                    if before["resourceId"] != after["resourceId"]
+                        && after_date > before_date
+                        && valid_input(draft.get("title"), 160)
+                    {
+                        operation = Some(json!({
+                            "operation":"research.changes",
+                            "arguments":{
+                                "title":draft.get("title"),
+                                "before":{
+                                    "source":before["resourceId"],
+                                    "label":before["name"],
+                                    "capturedAt":draft.get("beforeDate")
+                                },
+                                "after":{
+                                    "source":after["resourceId"],
+                                    "label":after["name"],
+                                    "capturedAt":draft.get("afterDate")
+                                }
+                            }
+                        }));
+                    }
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -2393,6 +2529,7 @@ impl Console {
                         12 => "Read the exact Project sources and populate findings, questions and actions before calling the typed tool. Every finding and action needs literal evidence from its exact source. Keep unresolved questions explicit; use null owner or due when the notes do not supply them, and never guess.",
                         13 => "Inspect the exact DOCX template before calling the typed tool. Supply every {{field_key}} exactly once. Keep blank values missing with null instead of guessing, and preserve all non-placeholder template content.",
                         14 => "Read the exact frozen source before calling the typed tool. Populate one segment for every non-empty text line or DOCX body paragraph in exact order. Keep each source string literal, preserve facts and requested terms, and never claim semantic equivalence without owner review.",
+                        15 => "Compare only these two exact frozen snapshots with the typed local tool. Keep the supplied capture dates and source hashes in the report; do not substitute a live page, infer a capture date or hide an explicit no-change result.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -3266,6 +3403,84 @@ mod tests {
         assert!(request.contains("\"segments\": []"));
         assert!(request.contains("every non-empty text line or DOCX body paragraph"));
         assert!(request.contains("never claim semantic equivalence without owner review"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn source_change_request_pins_two_ordered_dated_snapshots_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"launch-may.md","kind":"text","sha256":"a".repeat(64),"bytes":512,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"launch-june.md","kind":"text","sha256":"b".repeat(64),"bytes":640,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"archive.bin","kind":"file","sha256":"c".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 15;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("afterSource") = "resource:22222222-2222-4222-8222-222222222222".into();
+        *draft.value("title") = "Launch source changes".into();
+        *draft.value("beforeDate") = "2027-05-01".into();
+        *draft.value("afterDate") = "2027-06-01".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let rendered = c
+            .create
+            .capabilities
+            .drafts
+            .get(&("project:one".into(), 5))
+            .unwrap();
+        assert_eq!(rendered.kind, 15);
+        assert_eq!(
+            rendered.record,
+            "resource:11111111-1111-4111-8111-111111111111"
+        );
+        assert_eq!(
+            rendered.get("afterSource"),
+            "resource:22222222-2222-4222-8222-222222222222"
+        );
+        assert_eq!(rendered.get("beforeDate"), "2027-05-01");
+        assert_eq!(rendered.get("afterDate"), "2027-06-01");
+        let visibility = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                "test-action-visibility",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        assert!(visibility.1, "button visibility: {visibility:?}");
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(
+            request.contains("\"operation\": \"research.changes\""),
+            "{request}"
+        );
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(request.contains("\"capturedAt\": \"2027-05-01\""));
+        assert!(request.contains("\"capturedAt\": \"2027-06-01\""));
+        assert!(request.contains("do not substitute a live page"));
+        assert!(request.contains("hide an explicit no-change result"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

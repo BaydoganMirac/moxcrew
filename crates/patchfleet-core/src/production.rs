@@ -21,6 +21,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "documents.create",
     "documents.revise",
     "documents.brief",
+    "documents.rewrite",
     "documents.template",
     "data.clean",
     "data.analyze",

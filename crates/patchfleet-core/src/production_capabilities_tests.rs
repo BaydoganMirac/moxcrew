@@ -855,6 +855,170 @@ async fn attributed_brief_keeps_literal_sources_open_questions_and_unassigned_ac
 }
 
 #[tokio::test]
+async fn document_rewrite_pins_exact_source_segments_and_preserves_stable_facts() {
+    use sha2::{Digest, Sha256};
+    let data = tempfile::tempdir().unwrap();
+    let source =
+        b"Moxcrew launches on 2027-03-15.\nDetails: https://mox.example/launch\nBudget: 1,250 USD."
+            .to_vec();
+    let segments = json!([
+        {"source":"Moxcrew launches on 2027-03-15.","result":"Moxcrew 2027-03-15 tarihinde kullanıma açılıyor."},
+        {"source":"Details: https://mox.example/launch","result":"Ayrıntılar: https://mox.example/launch"},
+        {"source":"Budget: 1,250 USD.","result":"Bütçe: 1,250 USD."}
+    ]);
+    let output = run(
+        data.path(),
+        "documents.rewrite",
+        &json!({
+            "source":"inputs/launch.txt",
+            "mode":"translate",
+            "target":"Turkish",
+            "preserve":["Moxcrew"],
+            "segments":segments
+        }),
+        &[("inputs/launch.txt".into(), source.clone())],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.value["kind"], "document_rewrite");
+    assert_eq!(output.value["mode"], "translate");
+    assert_eq!(output.value["sourceFormat"], "txt");
+    assert_eq!(output.value["segmentCount"], 3);
+    assert_eq!(
+        output.value["sourceSha256"],
+        format!("{:x}", Sha256::digest(&source))
+    );
+    assert!(output.value["automaticFacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value == "2027-03-15"));
+    assert!(output.value["automaticFacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value == "https://mox.example/launch"));
+    assert!(!output.value.to_string().contains("inputs/"));
+    assert!(!output
+        .value
+        .to_string()
+        .contains(data.path().to_string_lossy().as_ref()));
+    let document = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "document.docx")
+        .unwrap();
+    let reopened = run(
+        data.path(),
+        "inspect",
+        &json!({"source":"inputs/result.docx"}),
+        &[("inputs/result.docx".into(), document.1.clone())],
+        None,
+    )
+    .await
+    .unwrap();
+    let pages = reopened.value["pages"].to_string();
+    assert!(pages.contains("Moxcrew 2027-03-15 tarihinde"));
+    assert!(pages.contains("https://mox.example/launch"));
+    assert!(pages.contains("1,250 USD"));
+    let audit: Value = serde_json::from_slice(
+        &output
+            .files
+            .iter()
+            .find(|(name, _)| name == "rewrite-audit.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(audit["segments"], output.value["segments"]);
+    let comparison = String::from_utf8(
+        output
+            .files
+            .iter()
+            .find(|(name, _)| name == "rewrite-comparison.md")
+            .unwrap()
+            .1
+            .clone(),
+    )
+    .unwrap();
+    assert!(comparison.contains("**Source**"));
+    assert!(comparison.contains("**Result**"));
+
+    let mut changed_source = segments.clone();
+    changed_source[0]["source"] = json!("A different source sentence.");
+    assert!(run(
+        data.path(),
+        "documents.rewrite",
+        &json!({"source":"inputs/launch.txt","mode":"translate","target":"Turkish","preserve":["Moxcrew"],"segments":changed_source}),
+        &[("inputs/launch.txt".into(), source.clone())],
+        None,
+    )
+    .await
+    .is_err());
+    let mut changed_fact = segments.clone();
+    changed_fact[1]["result"] = json!("Ayrıntılar daha sonra paylaşılacak.");
+    assert!(run(
+        data.path(),
+        "documents.rewrite",
+        &json!({"source":"inputs/launch.txt","mode":"translate","target":"Turkish","preserve":["Moxcrew"],"segments":changed_fact}),
+        &[("inputs/launch.txt".into(), source.clone())],
+        None,
+    )
+    .await
+    .is_err());
+    let unchanged = json!([
+        {"source":"Moxcrew launches on 2027-03-15.","result":"Moxcrew launches on 2027-03-15."},
+        {"source":"Details: https://mox.example/launch","result":"Details: https://mox.example/launch"},
+        {"source":"Budget: 1,250 USD.","result":"Budget: 1,250 USD."}
+    ]);
+    assert!(run(
+        data.path(),
+        "documents.rewrite",
+        &json!({"source":"inputs/launch.txt","mode":"rewrite","target":"Concise","preserve":["Moxcrew"],"segments":unchanged}),
+        &[("inputs/launch.txt".into(), source.clone())],
+        None,
+    )
+    .await
+    .is_err());
+
+    let created = run(
+        data.path(),
+        "documents.create",
+        &json!({"paragraphs":["Owner: Moxcrew","Deadline: 2027-03-15"]}),
+        &[],
+        None,
+    )
+    .await
+    .unwrap();
+    let docx = created
+        .files
+        .iter()
+        .find(|(name, _)| name == "document.docx")
+        .unwrap();
+    let rewritten = run(
+        data.path(),
+        "documents.rewrite",
+        &json!({
+            "source":"inputs/source.docx",
+            "mode":"rewrite",
+            "target":"Concise executive tone",
+            "preserve":["Moxcrew"],
+            "segments":[
+                {"source":"Owner: Moxcrew","result":"Owner · Moxcrew"},
+                {"source":"Deadline: 2027-03-15","result":"Deadline · 2027-03-15"}
+            ]
+        }),
+        &[("inputs/source.docx".into(), docx.1.clone())],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(rewritten.value["sourceFormat"], "docx");
+    assert_eq!(rewritten.value["mode"], "rewrite");
+}
+
+#[tokio::test]
 async fn docx_template_fill_replaces_exact_fields_and_keeps_missing_values_visible() {
     use sha2::{Digest, Sha256};
     let data = tempfile::tempdir().unwrap();

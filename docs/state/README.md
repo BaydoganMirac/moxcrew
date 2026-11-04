@@ -61,6 +61,7 @@
 | Exact artifact owner review | Complete; durable reviewed/needs-changes decision bound to one exact file version | 2026-11-04 | [exact-artifact-owner-review.md](exact-artifact-owner-review.md) |
 | Review-aware delivery packages | Complete; exact review coverage and schema2 ZIP manifest status | 2026-11-04 | [review-aware-delivery.md](review-aware-delivery.md) |
 | Exact owner review notes | Complete; bounded local context bound to one reviewed artifact hash | 2026-11-04 | [exact-owner-review-notes.md](exact-owner-review-notes.md) |
+| Batch image conversion | Complete; 2–12 exact Project images with per-source results and real FFmpeg proof | 2026-11-04 | [batch-image-conversion.md](batch-image-conversion.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

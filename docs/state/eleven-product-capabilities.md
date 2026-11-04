@@ -15,7 +15,7 @@ real output/failure, replay/privacy, native review and package gates for every r
 |---|---|---|
 | Rich input | Implemented | Exact ordered multi-file import, private immutable copies, attachment manifest bound to the request even with over 32 old resources; CLI-peer OCR/timed transcription |
 | Visual revisions | Implemented | Actual LibreOffice/Poppler pages, native image regions and canonical millisecond video ranges; frozen source hash/selection and original preservation |
-| Image generation/edit | Implemented; local engine required | Fixed ComfyUI generation/reference/mask graph, real PNG protocol peer, metadata removal, scoped cancellation/abort and canonical Project configuration |
+| Image generation/edit | Implemented; local engine required | Fixed ComfyUI generation/reference/mask graph, bounded 2–12 source FFmpeg batch conversion with per-file results, real PNG protocol peer, metadata removal, scoped cancellation/abort and canonical Project configuration |
 | Video content package | Implemented; real files checked | Three actual 1.6s MP4 exports, covers/content/SRT, caption pixels present only during the requested interval |
 | Brand/style profile | Implemented | Project-local logo hashes/colours/tone/style; revision checks, accepted guidance in planner/run context, empty-field clearing |
 | Browser work | Implemented; actual macOS Chrome proof | Actual public-page source/screenshot and frozen form draft, disabled page scripts, selected original debugger session, no submission or remote requests from frozen input |

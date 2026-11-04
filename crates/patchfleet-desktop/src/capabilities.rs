@@ -545,6 +545,7 @@ impl Console {
             "capabilities-production"
             | "capabilities-images"
             | "capabilities-video"
+            | "capabilities-batch-images"
             | "capabilities-interactive" => 5,
             "capabilities-browser" => 6,
             _ => 0,
@@ -553,16 +554,27 @@ impl Console {
             Some((self.create.project.clone(), self.create.capabilities.tab, 0));
         if self.create.capabilities.tab == 5 {
             let project = self.create.project.clone();
-            self.create
+            let selected = resources(snapshot, &project)
+                .iter()
+                .map(|resource| text(resource, "resourceId").to_owned())
+                .collect::<Vec<_>>();
+            let draft = self
+                .create
                 .capabilities
                 .drafts
                 .entry((project, 5))
-                .or_default()
-                .kind = match scene {
+                .or_default();
+            draft.kind = match scene {
                 "capabilities-video" => 2,
                 "capabilities-interactive" => 3,
+                "capabilities-batch-images" => 7,
                 _ => 0,
             };
+            if scene == "capabilities-batch-images" {
+                draft.sources.extend(selected);
+                *draft.value("width") = "1600".into();
+                *draft.value("height") = "1600".into();
+            }
         }
     }
     pub fn take_capability_path_request(&mut self) -> Option<CapabilityPathRequest> {
@@ -1381,6 +1393,7 @@ impl Console {
             "Extract text (OCR)",
             "Transcribe audio",
             "Render document",
+            "Batch images",
         ];
         form_combo(
             ui,
@@ -1403,7 +1416,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if draft.kind != 0 && draft.kind != 3 {
+        if ![0, 3, 7].contains(&draft.kind) {
             form_combo(
                 ui,
                 egui::ComboBox::from_id_salt("production-source").selected_text(
@@ -1692,6 +1705,63 @@ impl Console {
                 };
                 if valid && valid_input(draft.get("title"), 160) {
                     operation = Some(json!({"operation":"interactive.create","arguments":args}));
+                }
+            }
+            7 => {
+                hint(
+                    ui,
+                    "Select 2–12 images. Every source gets its own success or failure result.",
+                );
+                let images = all
+                    .iter()
+                    .filter(|resource| {
+                        let name = text(resource, "name").to_ascii_lowercase();
+                        text(resource, "status") == "available"
+                            && (text(resource, "kind") == "image"
+                                || [".png", ".jpg", ".jpeg", ".webp"]
+                                    .iter()
+                                    .any(|extension| name.ends_with(extension)))
+                    })
+                    .collect::<Vec<_>>();
+                for resource in &images {
+                    let id = text(resource, "resourceId");
+                    let mut selected = draft.sources.contains(id);
+                    if ui.checkbox(&mut selected, text(resource, "name")).changed() {
+                        if selected {
+                            draft.sources.insert(id.into());
+                        } else {
+                            draft.sources.remove(id);
+                        }
+                    }
+                }
+                let mut width = draft.get("width").parse::<u64>().unwrap_or(1600);
+                let mut height = draft.get("height").parse::<u64>().unwrap_or(1600);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Width"));
+                    ui.add(
+                        egui::DragValue::new(&mut width)
+                            .range(64..=4096)
+                            .speed(64.0),
+                    );
+                    ui.label(t(ui, "Height"));
+                    ui.add(
+                        egui::DragValue::new(&mut height)
+                            .range(64..=4096)
+                            .speed(64.0),
+                    );
+                });
+                *draft.value("width") = width.to_string();
+                *draft.value("height") = height.to_string();
+                hint(ui, "Images keep their aspect ratio within these bounds.");
+                let sources = images
+                    .iter()
+                    .filter(|resource| draft.sources.contains(text(resource, "resourceId")))
+                    .map(|resource| json!({"source":text(resource,"resourceId")}))
+                    .collect::<Vec<_>>();
+                if (2..=12).contains(&sources.len()) {
+                    operation = Some(
+                        json!({"operation":"images.batch","arguments":{"sources":sources,"width":width,"height":height}}),
+                    );
                 }
             }
             _ => {
@@ -2196,6 +2266,57 @@ mod tests {
             .conversation_input()
             .starts_with("Keep my unsent request\n\nMake a chart"));
         assert!(c.create.conversation_input().contains("interactive.create"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn batch_image_request_freezes_two_selected_resources_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"cover.png","kind":"image","sha256":"a".repeat(64),"bytes":64,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"photo.jpg","kind":"image","sha256":"b".repeat(64),"bytes":64,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"notes.txt","kind":"text","sha256":"c".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 7;
+        draft
+            .sources
+            .insert("resource:11111111-1111-4111-8111-111111111111".into());
+        draft
+            .sources
+            .insert("resource:22222222-2222-4222-8222-222222222222".into());
+        *draft.value("width") = "1280".into();
+        *draft.value("height") = "720".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"images.batch\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(request.contains("\"width\": 1280"));
+        assert!(request.contains("\"height\": 720"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

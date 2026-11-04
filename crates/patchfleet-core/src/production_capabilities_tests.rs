@@ -305,6 +305,79 @@ async fn html_escapes_untrusted_cells_and_masks_are_actual_png_files() {
 }
 
 #[tokio::test]
+async fn batch_image_conversion_reports_each_source_and_strips_metadata() {
+    use std::os::unix::fs::PermissionsExt;
+    let data = tempfile::tempdir().unwrap();
+    let ffmpeg = if let Ok(path) = std::env::var("MOXCREW_IMAGE_BATCH_TEST_FFMPEG") {
+        path.into()
+    } else {
+        let path = data.path().join("fixture-ffmpeg");
+        fs::write(
+            &path,
+            r#"#!/usr/bin/env python3
+import pathlib,sys
+args=sys.argv[1:]
+if args==['-version']:
+ print('fixture ffmpeg');sys.exit(0)
+source=pathlib.Path(args[args.index('-i')+1]);target=pathlib.Path(args[-1])
+data=source.read_bytes()
+if not data.startswith(b'\x89PNG\r\n\x1a\n'): sys.exit(2)
+target.write_bytes(data)
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        path
+    };
+    configure(data.path(), "ffmpeg", ffmpeg.to_str().unwrap()).unwrap();
+    let output = run(
+        data.path(),
+        "images.batch",
+        &json!({"sources":[{"source":"inputs/good.png"},{"source":"inputs/bad.png"}],"width":64,"height":64}),
+        &[
+            ("inputs/good.png".into(), raster()),
+            ("inputs/bad.png".into(), b"not an image".to_vec()),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.value["kind"], "image_batch");
+    assert_eq!(output.value["successCount"], 1);
+    assert_eq!(output.value["failedCount"], 1);
+    assert_eq!(output.value["items"][0]["status"], "converted");
+    assert_eq!(output.value["items"][0]["width"], 64);
+    assert_eq!(output.value["items"][0]["height"], 64);
+    assert_eq!(
+        output.value["items"][1]["reasonCode"],
+        "PRODUCTION_IMAGE_CONVERSION_FAILED"
+    );
+    assert!(output.files.iter().any(|(name, bytes)| {
+        name == "image-01.png"
+            && bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+            && !String::from_utf8_lossy(bytes).contains("PRIVATE_ENGINE_PROMPT")
+    }));
+    assert!(!output.files.iter().any(|(name, _)| name == "image-02.png"));
+    assert!(output.files.iter().any(|(name, bytes)| {
+        name == "batch.json" && serde_json::from_slice::<Value>(bytes).unwrap()["failedCount"] == 1
+    }));
+    assert!(run(
+        data.path(),
+        "images.batch",
+        &json!({"sources":[{"source":"inputs/good.png"}],"width":64,"height":64}),
+        &[("inputs/good.png".into(), raster())],
+        None,
+    )
+    .await
+    .is_err());
+    let too_many = json!({"sources":(0..13).map(|index|json!({"source":format!("inputs/{index}.png")})).collect::<Vec<_>>()});
+    assert_eq!(
+        input_paths(&too_many).unwrap_err().0,
+        "PRODUCTION_INPUT_LIMIT"
+    );
+}
+
+#[tokio::test]
 async fn caption_renderer_is_required_and_fallback_rejects_unbounded_work_before_encoding() {
     use std::os::unix::fs::PermissionsExt;
     let data = tempfile::tempdir().unwrap();

@@ -72,6 +72,32 @@ def make_mask(args, tools):
     return {'kind':'mask','width':w,'height':h,'region':region,'file':'mask.png'}
 
 
+def batch_images(args, tools):
+    exact(args,('sources','width','height'))
+    sources=args['sources'];require(isinstance(sources,list) and 2<=len(sources)<=12)
+    width=int(number(args['width'],1,4096));height=int(number(args['height'],1,4096))
+    require(isinstance(tools.get('ffmpeg'),str),'PRODUCTION_TOOL_UNAVAILABLE')
+    inputs=[]
+    for item in sources:
+        exact(item,('source',));inputs.append(source(item['source']))
+    common=['-nostdin','-hide_banner','-loglevel','error','-n','-protocol_whitelist','file,pipe']
+    items=[]
+    for index,path in enumerate(inputs,1):
+        output=OUT/f'image-{index:02}.png'
+        try:
+            run_tool(tools,'ffmpeg',common+input_format(path)+['-i',str(path),'-vf',f'scale={width}:{height}:force_original_aspect_ratio=decrease','-frames:v','1',str(output)])
+            checked,w,h=png(output.read_bytes());output.write_bytes(checked)
+            items.append({'index':index,'status':'converted','file':output.name,'width':w,'height':h})
+        except (OSError,ValueError):
+            output.unlink(missing_ok=True)
+            items.append({'index':index,'status':'failed','reasonCode':'PRODUCTION_IMAGE_CONVERSION_FAILED'})
+    value={'kind':'image_batch','maxWidth':width,'maxHeight':height,
+           'successCount':sum(item['status']=='converted' for item in items),
+           'failedCount':sum(item['status']=='failed' for item in items),'items':items}
+    (OUT/'batch.json').write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8')
+    return value
+
+
 def stamp(value):
     ms=round(value*1000)
     return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02},{ms%1000:03}'
@@ -306,6 +332,7 @@ def execute(operation,args,tools):
         exact(args,('source','width','height'));w=int(number(args['width'],1,4096));h=int(number(args['height'],1,4096))
         checked,w,h=png(source(args['source']).read_bytes(),(w,h));(OUT/'image.png').write_bytes(checked)
         return {'kind':'image','width':w,'height':h}
+    if operation=='images.batch': return batch_images(args,tools)
     if operation=='images.mask': return make_mask(args,tools)
     if operation=='resources.ocr': return ocr(args,tools)
     if operation=='audio.transcribe': return transcribe(args,tools)

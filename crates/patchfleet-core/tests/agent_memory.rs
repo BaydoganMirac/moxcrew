@@ -675,15 +675,29 @@ async fn final_mcp_size_bound_is_checked_after_structured_and_text_duplication()
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut bytes = Vec::new();
         let mut block = [0u8; 4096];
-        loop {
+        let header_end = loop {
             let n = socket.read(&mut block).await.unwrap();
             if n == 0 {
                 return;
             }
             bytes.extend_from_slice(&block[..n]);
-            if bytes.windows(4).any(|w| w == b"\r\n\r\n") {
-                break;
+            if let Some(index) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                break index + 4;
             }
+        };
+        let content_length = String::from_utf8_lossy(&bytes[..header_end])
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().ok())
+                    .flatten()
+            })
+            .unwrap();
+        while bytes.len() < header_end + content_length {
+            let n = socket.read(&mut block).await.unwrap();
+            assert_ne!(n, 0);
+            bytes.extend_from_slice(&block[..n]);
         }
         let body = json!({"decision":"x".repeat(100*1024)}).to_string();
         let head=format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len());

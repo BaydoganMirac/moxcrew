@@ -137,7 +137,7 @@ mod tests {
             .as_str()
             .expect("Python is required by production fixture tests");
         store::atomic_write(&tmp.path().join("browser.py"), SCRIPT.as_bytes()).unwrap();
-        let code = r#"import runpy
+        let code = r#"import os,runpy
 b=runpy.run_path('browser.py',run_name='policy_test')
 for ip in ('127.0.0.1','10.0.0.1','100.64.0.1','192.168.1.1','192.0.0.8','192.88.99.1','::1','::ffff:127.0.0.1','2001:db8::1','2002:7f00:1::','3fff::1'):
  assert not b['public_address'](ip),ip
@@ -164,11 +164,12 @@ class Peer:
   return {'title':'Source','url':'https://example.com/','text':'Actual source','fields':[]}
  def close(self):pass
 b['run'].__globals__['Browser']=Peer
-result=b['run']({'operation':'browser.inspect','arguments':{'url':'https://example.com/'},'tools':{'chrome':'/fixture/chrome'}})
+result=b['run']({'operation':'browser.inspect','arguments':{'url':'https://example.com/'},'tools':{'chrome':os.environ['MOXCREW_TEST_CHROME']}})
 assert result['requests']==1 and not result['submitted']
 "#;
         let result = std::process::Command::new(python)
             .args(["-I", "-B", "-c", code])
+            .env("MOXCREW_TEST_CHROME", tmp.path().join("chrome"))
             .current_dir(tmp.path())
             .output()
             .unwrap();

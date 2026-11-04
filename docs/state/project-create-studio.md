@@ -2,7 +2,7 @@
 
 Status: Bounded foundation complete; simplified interface reviewed and locally verified
 
-Updated: 2026-10-19
+Updated: 2026-11-04
 
 ## Scope
 
@@ -14,6 +14,10 @@ It does not narrow or complete the forty-ability release target.
 
 - Forty localized, inspectable recipes across eight categories; these are
   guidance, not installed tool/model/format capability claims.
+- [Task0062](ability-readiness-matrix.md) adds exhaustive declared prerequisites
+  to those forty entries and combines them with the selected Project's existing
+  live Studio readiness. Missing setup routes to Tools, image-engine or Apps;
+  recipe selection still performs no work and quality remains unclaimed.
 - Project-scoped queueing without Git, explicit supported Codex start/cancel,
   fresh managed folders for retry and preserved original project identity.
 - Scoped real output listing, bounded UTF-8 Markdown/text/CSV preview and native
@@ -82,8 +86,9 @@ No new provider account, key, executable dependency or hosted compute was added.
 layout with a durable Project conversation, copied selected-file follow-ups,
 connection diagnostics and saved reduced motion. Its separate evidence records
 the current interface; this file preserves Task0040's original acceptance.
-Live installed-Codex inference, tool-dependent ability quality, native Windows/
-Linux behavior and the rest of the 1.0.0 pipeline remain unverified. No push,
+Live installed-provider inference, tool-dependent ability quality, native Windows/
+Linux behavior and the rest of the 1.0.0 pipeline remain unverified. Task0062
+makes declared prerequisites inspectable but does not close those evidence rows. No push,
 public package/signing, production installation, Cloud deployment or migration
 has occurred.
 

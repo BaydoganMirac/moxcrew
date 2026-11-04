@@ -4878,6 +4878,14 @@ mod tests {
         let mut console = console();
         let mut data = fixture();
         data["projectCrews"]["missions"] = json!([]);
+        data["projectStudio"] = json!({
+            "reasonCode":"PROJECT_STUDIO_READ",
+            "projectId":"project:one",
+            "revision":3,
+            "tools":[],
+            "imageEngine":{"configured":false,"available":false},
+            "connections":[]
+        });
         assert!(click(
             &ctx,
             &mut console,

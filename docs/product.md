@@ -2,7 +2,7 @@
 
 Status: working product contract
 
-Updated: 2026-10-20
+Updated: 2026-11-04
 
 ## One-line promise
 
@@ -56,6 +56,13 @@ web and connected actions. Resource ingestion, tool integration and the full
 ability paths still need bounded implementation and output verification.
 See [conversation state](state/connected-project-conversation.md). Current internal
 workspace/schema identifiers retain their meaning.
+
+The native ability catalog exposes each recipe's declared local-tool,
+optional-tool and separately checked access profile before selection. It reads
+actual Project Studio readiness and routes missing setup to existing surfaces;
+it never installs, prepares or starts work. “Local checks ready” is intentionally
+narrow and does not prove provider entitlement, live-model quality or a useful
+result. See [ability readiness state](state/ability-readiness-matrix.md).
 
 The owner accepted the broad plan as the
 [1.0.0 release baseline](decisions/0040-version-one-release-baseline.md): eight

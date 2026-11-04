@@ -153,6 +153,152 @@ struct ChatState {
     conversation: conversation::ConversationState,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AbilitySetupRoute {
+    Tools,
+    Images,
+    Apps,
+}
+
+struct AbilityReadinessView {
+    status: &'static str,
+    detail: String,
+    setup: Option<AbilitySetupRoute>,
+}
+
+fn readiness_tool_name(id: &str) -> &str {
+    match id {
+        "python" => "Python 3.9+",
+        "ffmpeg" => "FFmpeg",
+        "ffprobe" => "FFprobe",
+        "pdftotext" => "Poppler · pdftotext",
+        "pdftoppm" => "Poppler · pdftoppm",
+        "tesseract" => "Tesseract",
+        "whisper" => "whisper.cpp",
+        "whisperModel" => "whisper.cpp model",
+        "libreoffice" => "LibreOffice",
+        "chrome" => "Chrome",
+        _ => "Unknown tool",
+    }
+}
+
+fn readiness_ids<'a>(profile: &'a Value, field: &str) -> Vec<&'a str> {
+    array(&profile[field])
+        .iter()
+        .filter_map(Value::as_str)
+        .collect()
+}
+
+fn ability_readiness_view(
+    ui: &Ui,
+    ability: &Value,
+    studio_page: Option<&Value>,
+    project_selected: bool,
+) -> AbilityReadinessView {
+    let profile = &ability["readiness"];
+    let required = readiness_ids(profile, "requiredTools");
+    let optional = readiness_ids(profile, "optionalTools");
+    let access = readiness_ids(profile, "access");
+    let available = |id: &str| {
+        studio_page.is_some_and(|page| {
+            array(&page["tools"])
+                .iter()
+                .any(|tool| text(tool, "id") == id && tool["available"] == true)
+        })
+    };
+    let missing: Vec<_> = required
+        .iter()
+        .copied()
+        .filter(|id| studio_page.is_some() && !available(id))
+        .collect();
+    let image_needed = access.contains(&"imageEngine");
+    let image_missing =
+        image_needed && studio_page.is_some_and(|page| page["imageEngine"]["available"] != true);
+    let apps_needed = access.contains(&"appConnection");
+    let apps_missing = apps_needed
+        && studio_page.is_some_and(|page| {
+            !array(&page["connections"])
+                .iter()
+                .any(|connection| connection["connected"] == true)
+        });
+    let has_live_checks = !required.is_empty() || image_needed || apps_needed;
+    let separately_checked = access
+        .iter()
+        .any(|id| matches!(*id, "sourceAccess" | "voiceModelAccess" | "hostAwake"));
+
+    let setup = if !missing.is_empty() {
+        Some(AbilitySetupRoute::Tools)
+    } else if image_missing || (studio_page.is_none() && image_needed) {
+        Some(AbilitySetupRoute::Images)
+    } else if apps_missing || (studio_page.is_none() && apps_needed) {
+        Some(AbilitySetupRoute::Apps)
+    } else if studio_page.is_none() && !required.is_empty() {
+        Some(AbilitySetupRoute::Tools)
+    } else {
+        None
+    };
+    let status = if !project_selected && has_live_checks {
+        "Check setup"
+    } else if studio_page.is_none() && has_live_checks {
+        "Checking setup"
+    } else if !missing.is_empty() || image_missing || apps_missing {
+        "Setup needed"
+    } else if separately_checked {
+        "Access check"
+    } else {
+        "Local checks ready"
+    };
+
+    let mut details = Vec::new();
+    if !missing.is_empty() {
+        let names = missing
+            .iter()
+            .map(|id| readiness_tool_name(id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        details.push(tf(ui, "Missing locally: {0}", &[&names]));
+    } else if !required.is_empty() {
+        let names = required
+            .iter()
+            .map(|id| readiness_tool_name(id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        details.push(tf(ui, "Required locally: {0}", &[&names]));
+    }
+    if !optional.is_empty() {
+        let names = optional
+            .iter()
+            .map(|id| readiness_tool_name(id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        details.push(tf(ui, "Optional enhancements: {0}", &[&names]));
+    }
+    for requirement in access {
+        details.push(
+            t(
+                ui,
+                match requirement {
+                    "sourceAccess" => "Source or browsing access is checked when work starts.",
+                    "imageEngine" => "A configured local image engine is required.",
+                    "voiceModelAccess" => "Voice or speech-model access must be confirmed.",
+                    "appConnection" => "A supported Project app connection is required.",
+                    "hostAwake" => "Moxcrew must stay open for recurring work.",
+                    _ => "Additional access must be confirmed.",
+                },
+            )
+            .into_owned(),
+        );
+    }
+    if details.is_empty() {
+        details.push(t(ui, "No extra local setup is declared.").into_owned());
+    }
+    AbilityReadinessView {
+        status,
+        detail: details.join("  ·  "),
+        setup,
+    }
+}
+
 #[derive(Default)]
 pub(super) struct CreateState {
     project: String,
@@ -411,8 +557,11 @@ impl Console {
     pub fn chat_smoke(&mut self, snapshot: &Value, show_files: bool, show_connections: bool) {
         self.create_smoke(snapshot, show_files);
         self.create.chat.connections_open = show_connections;
-        self.create.catalog_open =
-            std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("chat-catalog");
+        let scene = std::env::var("PATCHFLEET_SMOKE_SCENE").unwrap_or_default();
+        self.create.catalog_open = matches!(scene.as_str(), "chat-catalog" | "chat-readiness");
+        if scene == "chat-readiness" {
+            self.create.search = "A1".into();
+        }
     }
 
     #[cfg(feature = "ui-smoke")]
@@ -469,7 +618,7 @@ impl Console {
     ) {
         self.chat_studio(ui, snapshot, commands);
         self.crew_roster_dialog(ui, snapshot);
-        self.create_catalog_dialog(ui, snapshot);
+        self.create_catalog_dialog(ui, snapshot, commands);
         self.connection_dialog(ui, snapshot, commands);
     }
 
@@ -486,15 +635,39 @@ impl Console {
             _ => self.crew_hub_view(ui, snapshot, commands),
         }
         self.crew_roster_dialog(ui, snapshot);
-        self.create_catalog_dialog(ui, snapshot);
+        self.create_catalog_dialog(ui, snapshot, commands);
         self.connection_dialog(ui, snapshot, commands);
     }
 
-    fn create_catalog_dialog(&mut self, ui: &mut Ui, snapshot: &Value) {
+    fn create_catalog_dialog(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+    ) {
         if !self.create.catalog_open {
             return;
         }
         let ready = ui.is_enabled();
+        let project = self.create.project.clone();
+        if ready
+            && !project.is_empty()
+            && !self.hold_automatic_reads
+            && output_studio::studio_page(snapshot, &project).is_none()
+            && studio::commands_ready(ui)
+            && commands.is_empty()
+        {
+            if let Some(revision) = output_studio::project_revision(snapshot, &project) {
+                let key = (project.clone(), revision);
+                if self.create.studio.requested.as_ref() != Some(&key) {
+                    self.create.studio.requested = Some(key);
+                    commands.push(Command::new(
+                        "project_studio_read",
+                        json!({"projectId":project}),
+                    ));
+                }
+            }
+        }
         let id = egui::Id::new("create-ability-catalog");
         let modal = egui::Modal::new(id)
             .area(egui::Modal::default_area(id).fade_in(false))
@@ -510,6 +683,7 @@ impl Console {
                                 ui,
                                 array(&snapshot["abilities"]),
                                 Language::from_snapshot(snapshot),
+                                output_studio::studio_page(snapshot, &self.create.project),
                             )
                         });
                     });
@@ -524,7 +698,13 @@ impl Console {
         }
     }
 
-    fn create_catalog(&mut self, ui: &mut Ui, abilities: &[Value], language: Language) {
+    fn create_catalog(
+        &mut self,
+        ui: &mut Ui,
+        abilities: &[Value],
+        language: Language,
+        studio_page: Option<&Value>,
+    ) {
         egui::Frame::NONE.show(ui, |ui| {
             section_title(
                 ui,
@@ -588,45 +768,83 @@ impl Console {
                         ui.push_id(text(ability, "id"), |ui| {
                             let selected = self.create.ability == text(ability, "id");
                             let label = ability_text(ability, "name", language);
-                            let response = studio::button(
+                            let readiness = ability_readiness_view(
                                 ui,
-                                label,
-                                if selected {
-                                    studio::ButtonKind::Primary
-                                } else {
-                                    studio::ButtonKind::Secondary
-                                },
-                                true,
+                                ability,
+                                studio_page,
+                                !self.create.project.is_empty(),
                             );
-                            response.widget_info(|| {
-                                egui::WidgetInfo::selected(
-                                    egui::WidgetType::SelectableLabel,
-                                    response.enabled(),
-                                    selected,
-                                    label,
-                                )
+                            let accent = match readiness.status {
+                                "Local checks ready" => colors(ui).success,
+                                "Setup needed" => colors(ui).danger,
+                                _ => colors(ui).warning,
+                            };
+                            studio::ledger_row(ui, accent, selected, |ui| {
+                                ui.horizontal_wrapped(|ui| {
+                                    let response = studio::compact_button(
+                                        ui,
+                                        label,
+                                        if selected {
+                                            studio::ButtonKind::Primary
+                                        } else {
+                                            studio::ButtonKind::Ghost
+                                        },
+                                        true,
+                                    );
+                                    response.widget_info(|| {
+                                        egui::WidgetInfo::selected(
+                                            egui::WidgetType::SelectableLabel,
+                                            response.enabled(),
+                                            selected,
+                                            label,
+                                        )
+                                    });
+                                    #[cfg(test)]
+                                    ui.data_mut(|data| {
+                                        data.insert_temp(
+                                            egui::Id::new(("test-ability-id", text(ability, "id"))),
+                                            response.id,
+                                        );
+                                        data.insert_temp(
+                                            egui::Id::new((
+                                                "test-action",
+                                                "ability",
+                                                text(ability, "id"),
+                                            )),
+                                            response.rect,
+                                        )
+                                    });
+                                    if response.clicked() {
+                                        if self.create.crew.catalog_target.is_some() {
+                                            self.create.add_crew_member(ability, language);
+                                        } else {
+                                            self.create.select_ability(text(ability, "id"));
+                                        }
+                                        self.create.catalog_open = false;
+                                    }
+                                    status(ui, readiness.status);
+                                    if let Some(route) = readiness.setup {
+                                        if view_control(ui, "Review setup", true, false).clicked() {
+                                            match route {
+                                                AbilitySetupRoute::Tools => {
+                                                    self.create.select_productive_view(2);
+                                                    self.create.studio.tab = 2;
+                                                }
+                                                AbilitySetupRoute::Images => {
+                                                    self.create.select_productive_view(3);
+                                                    self.create.capabilities.tab = 5;
+                                                }
+                                                AbilitySetupRoute::Apps => {
+                                                    self.create.select_productive_view(2);
+                                                    self.create.studio.tab = 3;
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                                raw_hint(ui, ability_text(ability, "description", language));
+                                raw_hint(ui, &readiness.detail);
                             });
-                            #[cfg(test)]
-                            ui.data_mut(|data| {
-                                data.insert_temp(
-                                    egui::Id::new(("test-ability-id", text(ability, "id"))),
-                                    response.id,
-                                );
-                                data.insert_temp(
-                                    egui::Id::new(("test-action", "ability", text(ability, "id"))),
-                                    response.rect,
-                                )
-                            });
-                            if response.clicked() {
-                                if self.create.crew.catalog_target.is_some() {
-                                    self.create.add_crew_member(ability, language);
-                                } else {
-                                    self.create.select_ability(text(ability, "id"));
-                                }
-                                self.create.catalog_open = false;
-                            }
-                            raw_hint(ui, ability_text(ability, "description", language));
-                            ui.add_space(studio::metrics::GAP);
                         });
                     }
                 });
@@ -990,22 +1208,43 @@ mod tests {
                     assert!(commands.is_empty());
                     assert!(!copy.join("\n").contains("Search abilities"));
                     assert!(!console.create.catalog_open);
-                    assert!(click_at_size(
+                    let reads = click_at_size(
                         &ctx,
                         &mut console,
                         &data,
                         size,
                         false,
                         "memory_control",
-                        "Skills"
-                    )
-                    .is_empty());
+                        "Skills",
+                    );
+                    assert_eq!(reads.len(), 1);
+                    assert_eq!(reads[0].action, "project_studio_read");
+                    assert_eq!(reads[0].payload["projectId"], "project:one");
+                    data["projectStudio"] = json!({
+                        "reasonCode":"PROJECT_STUDIO_READ",
+                        "projectId":"project:one",
+                        "revision":3,
+                        "tools":[
+                            {"id":"python","available":true},
+                            {"id":"ffmpeg","available":true},
+                            {"id":"ffprobe","available":true},
+                            {"id":"libreoffice","available":false},
+                            {"id":"pdftoppm","available":false}
+                        ],
+                        "imageEngine":{"configured":false,"available":false},
+                        "connections":[]
+                    });
                     console.create.search = "V1".into();
+                    let mut rendered_copy = Vec::new();
                     for _ in 0..3 {
-                        assert!(render(&ctx, &mut console, &data, size, false, vec![])
-                            .0
-                            .is_empty());
+                        let (commands, copy) =
+                            render(&ctx, &mut console, &data, size, false, vec![]);
+                        assert!(commands.is_empty());
+                        rendered_copy = copy;
                     }
+                    assert!(rendered_copy.iter().any(|value| value
+                        == i18n::tr(Language::from_code(language), "Local checks ready").as_ref()));
+                    assert!(rendered_copy.iter().any(|value| value.contains("FFmpeg")));
                     let rect = ctx.data(|data| {
                         data.get_temp::<egui::Rect>(egui::Id::new(("test-action", "ability", "V1")))
                             .unwrap()
@@ -1046,6 +1285,125 @@ mod tests {
                     assert!(!console.create.catalog_open);
                 }
             }
+        }
+    }
+
+    fn readiness_view_for(
+        ctx: &egui::Context,
+        ability: &Value,
+        page: Option<&Value>,
+        project_selected: bool,
+    ) -> AbilityReadinessView {
+        let mut result = None;
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            result = Some(ability_readiness_view(ui, ability, page, project_selected));
+        });
+        output.drop_without_applying_deltas();
+        result.unwrap()
+    }
+
+    #[test]
+    fn ability_readiness_distinguishes_blockers_optional_tools_and_access() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let catalog = patchfleet_core::abilities::catalog();
+        let find = |id: &str| {
+            array(&catalog)
+                .iter()
+                .find(|ability| text(ability, "id") == id)
+                .unwrap()
+        };
+        let ready = json!({
+            "tools":[
+                {"id":"python","available":true},
+                {"id":"ffmpeg","available":true},
+                {"id":"ffprobe","available":true},
+                {"id":"libreoffice","available":false},
+                {"id":"pdftoppm","available":false}
+            ],
+            "imageEngine":{"available":false},
+            "connections":[]
+        });
+        let presentation = readiness_view_for(&ctx, find("P1"), Some(&ready), true);
+        assert_eq!(presentation.status, "Local checks ready");
+        assert_eq!(presentation.setup, None, "optional renderers never block");
+
+        let mut missing_media = ready.clone();
+        missing_media["tools"][2]["available"] = json!(false);
+        let video = readiness_view_for(&ctx, find("V1"), Some(&missing_media), true);
+        assert_eq!(video.status, "Setup needed");
+        assert_eq!(video.setup, Some(AbilitySetupRoute::Tools));
+        assert!(video.detail.contains("FFprobe"));
+
+        let image = readiness_view_for(&ctx, find("I1"), Some(&ready), true);
+        assert_eq!(image.status, "Setup needed");
+        assert_eq!(image.setup, Some(AbilitySetupRoute::Images));
+        let app = readiness_view_for(&ctx, find("W4"), Some(&ready), true);
+        assert_eq!(app.status, "Setup needed");
+        assert_eq!(app.setup, Some(AbilitySetupRoute::Apps));
+        let research = readiness_view_for(&ctx, find("R1"), Some(&ready), true);
+        assert_eq!(research.status, "Access check");
+        assert_eq!(research.setup, None);
+        let pending = readiness_view_for(&ctx, find("P1"), None, true);
+        assert_eq!(pending.status, "Checking setup");
+        assert_eq!(pending.setup, Some(AbilitySetupRoute::Tools));
+        assert_eq!(
+            readiness_view_for(&ctx, find("P1"), None, false).status,
+            "Check setup"
+        );
+    }
+
+    #[test]
+    fn catalog_setup_actions_open_the_existing_exact_setup_surface() {
+        let size = egui::vec2(800.0, 560.0);
+        for (ability, expected_view, expected_tab) in [("P1", 2, 2), ("I1", 3, 5), ("W4", 2, 3)] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut console = Console {
+                tab: Tab::Create,
+                create: state(),
+                ..Default::default()
+            };
+            console.create.catalog_open = true;
+            console.create.search = ability.into();
+            let mut data = snapshot();
+            data["desktopPreferences"] = json!({"language":"en"});
+            data["abilities"] = patchfleet_core::abilities::catalog();
+            data["projectStudio"] = json!({
+                "reasonCode":"PROJECT_STUDIO_READ",
+                "projectId":"project:one",
+                "revision":3,
+                "tools":[
+                    {"id":"python","available":false},
+                    {"id":"ffmpeg","available":false},
+                    {"id":"ffprobe","available":false}
+                ],
+                "imageEngine":{"configured":false,"available":false},
+                "connections":[]
+            });
+            for _ in 0..2 {
+                assert!(render(&ctx, &mut console, &data, size, false, vec![])
+                    .0
+                    .is_empty());
+            }
+            assert!(click_at_size(
+                &ctx,
+                &mut console,
+                &data,
+                size,
+                false,
+                "memory_control",
+                "Review setup"
+            )
+            .is_empty());
+            assert_eq!(console.create.productive_view(), expected_view, "{ability}");
+            let actual_tab = if expected_view == 3 {
+                console.create.capabilities.tab
+            } else {
+                console.create.studio.tab
+            };
+            assert_eq!(actual_tab, expected_tab, "{ability}");
+            assert!(!console.create.catalog_open);
         }
     }
 
@@ -1227,6 +1585,14 @@ mod tests {
             };
             let mut data = snapshot();
             data["desktopPreferences"] = json!({"language":"en"});
+            data["projectStudio"] = json!({
+                "reasonCode":"PROJECT_STUDIO_READ",
+                "projectId":"project:one",
+                "revision":3,
+                "tools":[],
+                "imageEngine":{"configured":false,"available":false},
+                "connections":[]
+            });
             data["abilities"]
                 .as_array_mut()
                 .unwrap()
@@ -1362,6 +1728,14 @@ mod tests {
             let mut data = snapshot();
             data["desktopPreferences"] = json!({"language":language});
             data["abilities"] = patchfleet_core::abilities::catalog();
+            data["projectStudio"] = json!({
+                "reasonCode":"PROJECT_STUDIO_READ",
+                "projectId":"project:one",
+                "revision":3,
+                "tools":[],
+                "imageEngine":{"configured":false,"available":false},
+                "connections":[]
+            });
             let mut console = Console::launch();
             console.create.project = "project:one".into();
             console.create.draft().goal = "Owner launch idea".into();

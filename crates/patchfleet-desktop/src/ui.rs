@@ -5264,9 +5264,12 @@ fn status(ui: &mut Ui, value: &str) {
     let p = colors(ui);
     let (color, background) = match value {
         "available" | "completed" | "applied" | "accepted" | "active" | "Connected"
-        | "Codex ready" | "Paired" => (p.success, p.success_surface),
+        | "Codex ready" | "Paired" | "Ready" | "Local checks ready" => {
+            (p.success, p.success_surface)
+        }
         "running" | "launching" | "queued" | "proposed" => (p.info, p.info_surface),
-        "cancelling" | "waiting_question" | "waiting_approval" => (p.warning, p.warning_surface),
+        "cancelling" | "waiting_question" | "waiting_approval" | "Setup needed"
+        | "Access check" | "Checking setup" | "Check setup" => (p.warning, p.warning_surface),
         "failed" | "rejected" | "timed_out" => (p.danger, p.danger_surface),
         _ => (p.muted, p.raised),
     };

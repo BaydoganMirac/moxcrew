@@ -1,6 +1,6 @@
 # Eleven product capabilities
 
-Updated: 2026-10-20
+Updated: 2026-11-04
 
 Status: Complete; independently reviewed, final integrated tests and macOS development package verified.
 
@@ -45,6 +45,12 @@ Evidence, Create outputs and Browser. Typed production/browser requests are stag
 into the same Chat plan/prepare/start path. A skill proposal is not standing
 guidance until accepted. Source labels and agent claims are untrusted material,
 never extra permissions. Evidence opens actual text; it is not a truth score.
+
+The forty-recipe catalog now reuses this Studio readiness through
+[Task0062](ability-readiness-matrix.md). It distinguishes required local tools,
+optional enhancements and separately checked access before selection and links
+missing setup to the existing surfaces. This does not upgrade protocol-peer or
+fixture evidence into live engine/model quality.
 
 Saving a trigger leaves it paused. Arm it for 1–1440 minutes and 1–100 occurrences;
 the current source becomes its baseline and only later changes create work.

@@ -35,7 +35,7 @@ struct RevisionRequest {
 #[derive(Default)]
 pub(super) struct CapabilityState {
     pub open: bool,
-    tab: usize,
+    pub(super) tab: usize,
     drafts: HashMap<(String, usize), CapabilityDraft>,
     pub attachments: HashMap<Scope, Vec<String>>,
     pub selection: HashMap<Scope, VisualSelection>,

@@ -44,6 +44,16 @@ output.
   zero failures, six explicit opt-in tests ignored**.
 - Strict workspace/all-target/all-feature Clippy, workspace formatting and
   `git diff --check` pass.
+- Test-only native OpenGL captures use a disposable Project and queued job; no
+  provider was probed or started. The normal
+  [Chat preflight](../screenshots/start-readiness/chat-preflight-tr-dark.png)
+  capture is 2560×1760 physical pixels. The
+  [minimum-window capture](../screenshots/start-readiness/chat-preflight-tr-dark-min.png)
+  is 1600×1120 physical pixels for an 800×560 logical viewport and keeps the
+  readiness, files, provider setup and composer controls in the bounded scroll
+  layout. Their SHA-256 values are respectively
+  `f264c16dc188d37218c99bb22c0022c5582b77427ff962825720f0dff94e34e0` and
+  `028d4ab07aa04b93e9dd9c0be5fc0fe2e1e0aa9a87e9e3a40558292178e82558`.
 
 This is a native desktop guard, not a new authorization boundary in the Host
 command protocol. Direct CLI/API callers retain the existing explicit start

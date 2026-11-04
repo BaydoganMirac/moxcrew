@@ -68,7 +68,11 @@ mod tests {
             }
             assert!(entry["instruction"].as_str().unwrap().len() < 1000);
             let guide = skill_guide(entry["id"].as_str().unwrap()).unwrap();
-            assert!(guide.starts_with("---\nname: moxcrew-"));
+            let mut lines = guide.lines();
+            assert_eq!(lines.next(), Some("---"));
+            assert!(lines
+                .next()
+                .is_some_and(|line| line.starts_with("name: moxcrew-")));
             assert!(guide.contains("## Verify and revise"));
             assert!(guide.contains("outputs/summary.md"));
             assert!(guide.len() < 8_000);

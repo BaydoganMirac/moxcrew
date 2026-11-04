@@ -60,8 +60,13 @@ fn configured(data: &Path) -> Result<Value> {
 }
 
 fn discover(name: &str) -> Option<PathBuf> {
+    let candidate = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    };
     std::env::split_paths(&std::env::var_os("PATH")?)
-        .map(|p| p.join(name))
+        .map(|p| p.join(candidate.as_str()))
         .find(|p| p.is_file())
         .and_then(|p| fs::canonicalize(p).ok())
 }
@@ -69,7 +74,7 @@ pub(crate) fn paths(data: &Path) -> Result<Value> {
     let configured = configured(data)?;
     let mut paths = json!({});
     for (id, binary) in [
-        ("python", "python3"),
+        ("python", if cfg!(windows) { "python" } else { "python3" }),
         ("ffmpeg", "ffmpeg"),
         ("ffprobe", "ffprobe"),
         ("pdftotext", "pdftotext"),

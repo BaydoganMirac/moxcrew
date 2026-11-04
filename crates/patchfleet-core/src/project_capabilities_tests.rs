@@ -46,6 +46,7 @@ async fn local() -> (tempfile::TempDir, Arc<Host>, Value) {
         .clone();
     (tmp, host, project)
 }
+#[cfg(unix)]
 async fn resource(host: &Host, tmp: &Path, project: &Value, source: &str) -> Value {
     let path = tmp.join(format!("source-{}.txt", uuid::Uuid::new_v4()));
     fs::write(&path, source).unwrap();
@@ -165,6 +166,7 @@ fn standing_context_bounds_complete_serialized_unicode_libraries_and_profiles() 
     assert_eq!(packed["acceptedSkillTotal"], 1);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn brand_and_taught_skills_are_scoped_edited_accepted_revoked_and_durable() {
     let (tmp, host, p) = local().await;
@@ -277,6 +279,7 @@ async fn brand_and_taught_skills_are_scoped_edited_accepted_revoked_and_durable(
     assert_eq!(state(&reopened).unwrap()["skills"][0]["status"], "revoked");
     reopened.shutdown().await;
 }
+#[cfg(unix)]
 #[tokio::test]
 async fn evidence_is_a_literal_frozen_utf8_byte_quote_and_preserves_disputes() {
     let (tmp, host, p) = local().await;

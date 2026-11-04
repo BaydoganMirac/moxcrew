@@ -77,6 +77,11 @@ declared required/optional tools and separately checked access, displays actual
 selected-Project readiness before selection and links missing prerequisites to
 existing setup. This closes the catalog-preflight visibility gap only; it adds no
 live model or output-quality evidence to the area rows above.
+[Task0063](start-readiness-preflight.md) carries the same evidence into Chat,
+Create, Crew and Tasks start actions. Required local setup that is missing or not
+yet read blocks the native Start control and routes to existing setup; optional
+tools and source/model/Host access checks remain non-blocking and explicit. This
+is a desktop guard, not a new Host protocol authorization or quality proof.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

@@ -2198,6 +2198,16 @@ fn main(){let exe=env::current_exe().unwrap();let mode=exe.file_stem().unwrap().
         assert!(array(&completed, "tasks")
             .iter()
             .all(|t| t["status"] == "completed"));
+        let snapshot = host.snapshot().unwrap();
+        for task in array(&completed, "tasks") {
+            let local_job = array(&snapshot, "projectJobs")
+                .iter()
+                .find(|job| job["workItemId"] == task["workItemId"])
+                .unwrap();
+            assert_eq!(local_job["projectId"], p);
+            assert_eq!(local_job["abilityId"], task["abilityId"]);
+            assert!(local_job.get("instruction").is_none());
+        }
         let mut copied = 0;
         for task in array(&completed, "tasks") {
             let work = host.snapshot().unwrap()["work"]["items"]

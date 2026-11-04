@@ -55,11 +55,11 @@ already exist. Detail that implementation in a bounded card before runtime work.
 
 ## Delivery truth
 
-The current controller supports Codex execution; Claude Code and Gemini CLI are
-observation-only. Create has forty recipes and managed jobs/output inspection,
-not forty completed skills or a persistent conversation runtime. Supporting
-all three for work, connection onboarding, verified default tools and animation
-states are release work, with independent conformance and native evidence.
+At this decision's scope, the controller supported only Codex execution and the
+other providers were observation-only. The later
+[provider execution state](../state/provider-execution.md) records bounded
+Claude/Gemini control that supersedes that limitation. Create's forty recipes
+still must not be confused with forty independently quality-proven skills.
 
 No provider login, credential creation, skill/tool installation, protocol
 extension or runtime change follows from recording these requirements.

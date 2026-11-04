@@ -2,6 +2,7 @@
 import base64
 import binascii
 import csv
+import datetime
 import hashlib
 import html
 import io
@@ -250,10 +251,8 @@ def data_scenario(args,tools):
     return result
 
 
-def data_extract(args,tools):
-    exact(args,('title','sources','columns','rows'))
-    title=text(args['title'],160).strip();require(title)
-    sources=args['sources'];require(isinstance(sources,list) and 1<=len(sources)<=8)
+def extracted_sources(sources,tools):
+    require(isinstance(sources,list) and 1<=len(sources)<=8)
     prepared=[];seen_paths=set()
     for index,item in enumerate(sources,1):
         exact(item,('source','label'));path=source(item['source']);label=text(item['label'],200).strip()
@@ -276,6 +275,13 @@ def data_extract(args,tools):
         require(content.strip(),'PRODUCTION_EXTRACTION_EMPTY_SOURCE')
         prepared.append({'path':str(path),'id':f'source-{index:02}','label':label,'sourceSha256':source_hash,
                          'textSha256':hashlib.sha256(content.encode()).hexdigest(),'content':content})
+    return prepared
+
+
+def data_extract(args,tools):
+    exact(args,('title','sources','columns','rows'))
+    title=text(args['title'],160).strip();require(title)
+    prepared=extracted_sources(args['sources'],tools)
     columns=args['columns'];require(isinstance(columns,list) and 1<=len(columns)<=12)
     checked_columns=[];keys=set()
     for column in columns:
@@ -325,6 +331,64 @@ def data_extract(args,tools):
         source_counts={status:sum(cell['status']==status for row in source_rows for cell in row['cells'].values()) for status in counts}
         report.append(f'| {markdown(item["label"])} | {source_counts["confirmed"]} | {source_counts["uncertain"]} | {source_counts["missing"]} |')
     (OUT/'report.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+    return result
+
+
+def documents_brief(args,tools):
+    exact(args,('title','sources','findings','questions','actions'))
+    title=text(args['title'],160).strip();require(title)
+    prepared=extracted_sources(args['sources'],tools)
+    by_path={item['path']:item for item in prepared}
+    def evidence(item):
+        path=source(item['source']);record=by_path.get(str(path));require(record is not None)
+        quote=text(item['evidence'],4000).strip();require(quote,'PRODUCTION_BRIEF_EVIDENCE_INVALID')
+        offset=record['content'].find(quote);require(offset>=0,'PRODUCTION_BRIEF_EVIDENCE_INVALID')
+        return record,quote,record['content'].count('\n',0,offset)+1
+    findings=args['findings'];require(isinstance(findings,list) and 1<=len(findings)<=100)
+    checked_findings=[]
+    for item in findings:
+        exact(item,('source','summary','evidence'));summary=text(item['summary'],1000).strip();require(summary)
+        record,quote,line=evidence(item)
+        checked_findings.append({'sourceId':record['id'],'sourceLabel':record['label'],'summary':summary,'evidence':quote,'line':line})
+    questions=args['questions'];require(isinstance(questions,list) and len(questions)<=50)
+    checked_questions=[]
+    for item in questions:
+        exact(item,('question','reason'));question=text(item['question'],500).strip();reason=text(item['reason'],1000).strip()
+        require(question and reason);checked_questions.append({'question':question,'reason':reason})
+    actions=args['actions'];require(isinstance(actions,list) and 1<=len(actions)<=100)
+    checked_actions=[]
+    for item in actions:
+        exact(item,('source','task','evidence','owner','due'));task=text(item['task'],1000).strip();require(task)
+        owner=item['owner'];require(owner is None or bool(text(owner,160).strip()))
+        due=item['due']
+        if due is not None:
+            due=text(due,10);require(re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}',due) is not None)
+            try: datetime.date.fromisoformat(due)
+            except ValueError: raise ValueError('PRODUCTION_BRIEF_DATE_INVALID')
+        record,quote,line=evidence(item)
+        checked_actions.append({'sourceId':record['id'],'sourceLabel':record['label'],'task':task,
+                                'owner':owner.strip() if owner is not None else None,'due':due,
+                                'evidence':quote,'line':line,'status':'open'})
+    public_sources=[{key:item[key] for key in ('id','label','sourceSha256','textSha256')} for item in prepared]
+    result={'kind':'attributed_brief','title':title,'sources':public_sources,'findings':checked_findings,
+            'questions':checked_questions,'actions':checked_actions,
+            'counts':{'sources':len(prepared),'findings':len(checked_findings),'questions':len(checked_questions),'actions':len(checked_actions)},
+            'file':'document.docx'}
+    paragraphs=['BRIEF']
+    for index,item in enumerate(checked_findings,1):
+        paragraphs.extend((f'Finding {index} · {item["sourceLabel"]}',item['summary'],f'Evidence · line {item["line"]} · {item["evidence"]}'))
+    paragraphs.append('OPEN QUESTIONS')
+    if checked_questions:
+        for index,item in enumerate(checked_questions,1): paragraphs.extend((f'Question {index} · {item["question"]}',f'Why unresolved · {item["reason"]}'))
+    else: paragraphs.append('No open questions identified.')
+    paragraphs.append('ACTION PLAN')
+    for index,item in enumerate(checked_actions,1):
+        paragraphs.extend((f'Action {index} · {item["task"]}',f'Owner · {item["owner"] or "Unassigned"}',
+                           f'Due · {item["due"] or "Not set"}',f'Source · {item["sourceLabel"]}',
+                           f'Evidence · line {item["line"]} · {item["evidence"]}'))
+    require(len(paragraphs)<=500,'PRODUCTION_BRIEF_LIMIT')
+    documents({'title':title,'paragraphs':paragraphs},False)
+    (OUT/'brief.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
     return result
 
 
@@ -565,6 +629,7 @@ def execute(operation,args,tools):
     if operation=='data.chart': return data_chart(args,tools)
     if operation=='data.scenario': return data_scenario(args,tools)
     if operation=='data.extract': return data_extract(args,tools)
+    if operation=='documents.brief': return documents_brief(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)
     if operation=='video.package': return package(args,tools)

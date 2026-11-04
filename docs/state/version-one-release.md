@@ -17,7 +17,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Area | IDs | Current status |
 |---|---|---|
 | Research | R1–R5 | Frozen sources and bounded text extraction implemented; full research quality proof pending |
-| Documents | D1–D5 | DOCX creation/paragraph revision; real LibreOffice open proof; full area pending |
+| Documents | D1–D5 | DOCX creation/paragraph revision and attributed brief/action plans with explicit questions and missing assignments; real LibreOffice open proof; PDF merge, translation/templates and broader quality pending |
 | Presentations | P1–P5 | Editable PPTX creation/slide revision; real LibreOffice open proof; full area pending |
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |
@@ -119,6 +119,10 @@ JSON and matching concise report. It does not claim statistical interpretation.
 [Task0073](editable-scenario-workbooks.md) adds the deterministic T4 model path:
 exact frozen CSV columns produce an editable Base/Upside/Downside XLSX, checked
 data and report. It does not claim forecasting, optimization or financial advice.
+[Task0075](attributed-brief-action-plan.md) adds the deterministic D3 publication
+path: every finding and action retains literal evidence from its exact frozen
+source, questions remain explicit and absent owners/dates stay null. It does not
+claim semantic truth, prioritization or staffing quality.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

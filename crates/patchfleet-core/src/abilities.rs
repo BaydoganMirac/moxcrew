@@ -7,7 +7,8 @@ fn readiness_profile(id: &str) -> Option<Value> {
         "R1" | "R2" | "R3" | "R4" | "R5" => (&[], &[], &["sourceAccess"]),
         "D1" => (&["python"], &["libreoffice", "pdftoppm"], &[]),
         "D2" => (&["python", "pdftotext"], &["pdftoppm", "tesseract"], &[]),
-        "D3" | "D4" => (&[], &[], &[]),
+        "D3" => (&["python"], &["pdftotext", "tesseract"], &[]),
+        "D4" => (&[], &[], &[]),
         "D5" => (&["python"], &["libreoffice", "pdftoppm"], &[]),
         "P1" | "P2" | "P3" | "P4" => (&["python"], &["libreoffice", "pdftoppm"], &[]),
         "P5" => (

@@ -578,6 +578,7 @@ impl Console {
             | "capabilities-data-chart"
             | "capabilities-data-scenario"
             | "capabilities-data-extract"
+            | "capabilities-documents-brief"
             | "capabilities-interactive" => 5,
             "capabilities-browser" => 6,
             _ => 0,
@@ -613,6 +614,7 @@ impl Console {
                 "capabilities-data-chart" => 9,
                 "capabilities-data-scenario" => 10,
                 "capabilities-data-extract" => 11,
+                "capabilities-documents-brief" => 12,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -676,6 +678,20 @@ impl Console {
                     "vendor: Vendor | renewal: Renewal | seats: Seats"
                 } else {
                     "vendor: Tedarikçi | renewal: Yenileme | seats: Kullanıcı"
+                }
+                .into();
+            } else if scene == "capabilities-documents-brief" {
+                draft.sources.extend(
+                    available
+                        .iter()
+                        .filter(|resource| extraction_source(resource))
+                        .map(|resource| text(resource, "resourceId").to_owned()),
+                );
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "Pilot decision brief"
+                } else {
+                    "Pilot karar özeti"
                 }
                 .into();
             }
@@ -1502,6 +1518,7 @@ impl Console {
             "Chart from CSV",
             "Scenario workbook",
             "Extract table",
+            "Brief + action plan",
         ];
         form_combo(
             ui,
@@ -1513,7 +1530,7 @@ impl Console {
                 }
             },
         );
-        if ![10, 11].contains(&draft.kind) {
+        if ![10, 11, 12].contains(&draft.kind) {
             hint(
                 ui,
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
@@ -1526,7 +1543,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -2131,6 +2148,66 @@ impl Console {
                     }));
                 }
             }
+            12 => {
+                hint(
+                    ui,
+                    "Select 1–8 sources. Findings and actions keep literal evidence; unresolved questions stay explicit.",
+                );
+                let candidates = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && extraction_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                ui.horizontal_wrapped(|ui| {
+                    for resource in &candidates {
+                        let id = text(resource, "resourceId");
+                        let mut selected = draft.sources.contains(id);
+                        let enabled = selected || draft.sources.len() < 8;
+                        if ui
+                            .add_enabled(
+                                enabled,
+                                egui::Checkbox::new(&mut selected, text(resource, "name")),
+                            )
+                            .changed()
+                        {
+                            if selected {
+                                draft.sources.insert(id.into());
+                            } else {
+                                draft.sources.remove(id);
+                            }
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Brief title"));
+                    studio::input(ui, draft.value("title"), 160, "", false);
+                });
+                hint(
+                    ui,
+                    "Chat drafts the content. The local tool rejects invented evidence and keeps missing owners or dates visible.",
+                );
+                let sources = candidates
+                    .iter()
+                    .filter(|resource| draft.sources.contains(text(resource, "resourceId")))
+                    .take(8)
+                    .map(|resource| {
+                        json!({"source":resource["resourceId"],"label":resource["name"]})
+                    })
+                    .collect::<Vec<_>>();
+                if (1..=8).contains(&sources.len()) && valid_input(draft.get("title"), 160) {
+                    operation = Some(json!({
+                        "operation":"documents.brief",
+                        "arguments":{
+                            "title":draft.get("title"),
+                            "sources":sources,
+                            "findings":[],
+                            "questions":[],
+                            "actions":[]
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -2158,10 +2235,10 @@ impl Console {
             if let Some(operation) = operation {
                 self.stage_operation(
                     snapshot,
-                    if draft.kind == 11 {
-                        "Read the exact Project sources and populate rows before calling the typed tool. Every confirmed or uncertain value must appear inside its literal evidence quote. Mark absent fields missing with null value and evidence; never infer or hide uncertainty."
-                    } else {
-                        "Produce these deliverables using the exact Project sources."
+                    match draft.kind {
+                        11 => "Read the exact Project sources and populate rows before calling the typed tool. Every confirmed or uncertain value must appear inside its literal evidence quote. Mark absent fields missing with null value and evidence; never infer or hide uncertainty.",
+                        12 => "Read the exact Project sources and populate findings, questions and actions before calling the typed tool. Every finding and action needs literal evidence from its exact source. Keep unresolved questions explicit; use null owner or due when the notes do not supply them, and never guess.",
+                        _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
                     commands,
@@ -2883,6 +2960,58 @@ mod tests {
         assert!(request.contains("\"rows\": []"));
         assert!(request.contains("literal evidence quote"));
         assert!(request.contains("Mark absent fields missing"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn attributed_brief_request_freezes_supported_sources_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"pilot-notes.md","kind":"text","sha256":"a".repeat(64),"bytes":128,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"security.pdf","kind":"document","sha256":"b".repeat(64),"bytes":256,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"archive.bin","kind":"file","sha256":"c".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 12;
+        draft.sources.extend([
+            "resource:11111111-1111-4111-8111-111111111111".into(),
+            "resource:22222222-2222-4222-8222-222222222222".into(),
+            "resource:33333333-3333-4333-8333-333333333333".into(),
+        ]);
+        *draft.value("title") = "Pilot decision brief".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"documents.brief\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(request.contains("\"findings\": []"));
+        assert!(request.contains("\"questions\": []"));
+        assert!(request.contains("\"actions\": []"));
+        assert!(request.contains("literal evidence from its exact source"));
+        assert!(request.contains("use null owner or due"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

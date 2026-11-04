@@ -82,6 +82,9 @@ commitments.
   [Task0074](state/traceable-structured-data-extraction.md) closes the bounded T5
   publication gap: every populated table cell needs literal evidence from its
   exact frozen source while uncertainty and missing values remain explicit.
+  [Task0075](state/attributed-brief-action-plan.md) closes the deterministic D3
+  publication gap: findings and actions retain literal source evidence, open
+  questions stay visible and missing owners or dates remain explicit.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

@@ -37,7 +37,7 @@ same conversation. Optional Project tools contain brand guidance, taught skills,
 bounded folder/URL triggers, parallel alternatives and inspectable source evidence.
 Typed requests for images, bounded batch conversion, podcast edits, checked CSV
 charts, editable scenario workbooks, evidence-bound structured extraction, video
-packages, static browser work and interactive outputs enter this same
+packages, attributed briefs/action plans, static browser work and interactive outputs enter this same
 plan/prepare/start flow.
 Batch conversion reports every selected source separately and keeps successful
 siblings when one file is malformed. See
@@ -52,6 +52,9 @@ XLSX, checked data and report; see
 Structured extraction keeps confirmed, uncertain and missing cells explicit and
 rejects every populated value that lacks a literal quote from its frozen source;
 see [traceable structured extraction](state/traceable-structured-data-extraction.md).
+Attributed brief requests bind every finding and action to literal evidence,
+retain open questions and preserve missing owners or dates as null; see
+[attributed brief and action plan](state/attributed-brief-action-plan.md).
 An armed trigger is explicit time- and count-bounded delegation for its frozen
 recipe while the Host is awake.
 It watches a source condition; it does not import an entire folder automatically.

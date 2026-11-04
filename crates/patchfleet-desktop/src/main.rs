@@ -294,10 +294,14 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-data-scenario");
         let extraction = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-data-extract");
+        let brief = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-documents-brief");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
             if english { "Vendor review" } else { "Tedarikçi incelemesi" }
+        } else if brief {
+            if english { "Pilot decision" } else { "Pilot kararı" }
         } else if english {
             "Product launch"
         } else {
@@ -365,6 +369,17 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-brief") {
+            for (name, body) in [
+                ("pilot-notes.md", "Decision: Launch the pilot in May.\nOwner: Ece\nBudget approval is pending.\n"),
+                ("security-review.txt", "Risk: Security review has not started.\nNext step: Schedule the review.\nOwner and date are not stated.\n"),
+            ] {
+                let source=directory.join(name);std::fs::write(&source,body).unwrap();
+                let snapshot=host.snapshot().unwrap();
+                let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+                host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+            }
+        }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
         let batch_images=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images");
@@ -372,6 +387,7 @@ fn seed_create_scene(directory: &std::path::Path) {
         let data_chart=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-chart");
         let data_scenario=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-scenario");
         let data_extract=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-extract");
+        let documents_brief=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-brief");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
@@ -382,6 +398,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             ("T4",if english{"Operating plan scenarios"}else{"Faaliyet planı senaryoları"},if english{"Create an editable workbook whose checked formulas recalculate across base, upside and downside scenarios."}else{"Temel, iyimser ve temkinli senaryolarda yeniden hesaplanan doğrulanmış formüllü düzenlenebilir bir çalışma kitabı oluştur."})
         } else if data_extract {
             ("T5",if english{"Traceable vendor table"}else{"İzlenebilir tedarikçi tablosu"},if english{"Extract a structured table with literal evidence while keeping uncertain and missing fields visible."}else{"Belirsiz ve eksik alanları görünür tutarak birebir kanıtlı yapılandırılmış bir tablo çıkar."})
+        } else if documents_brief {
+            ("D3",if english{"Pilot decision brief"}else{"Pilot karar özeti"},if english{"Turn the selected notes into an attributed brief, explicit questions and an actionable plan."}else{"Seçili notları kaynaklı bir briefe, açık sorulara ve uygulanabilir eylem planına dönüştür."})
         } else {
             ("P1",if english{"Launch presentation · UI fixture"}else{"Lansman sunumu · arayüz sahnesi"},if english{"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."}else{"Bir lansman sunumu hazırla. Bu tek kullanımlık arayüz sahnesinde sağlayıcı çalıştırılmadı."})
         };

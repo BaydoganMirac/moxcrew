@@ -2,7 +2,7 @@
 
 Updated: 2026-11-04
 
-Status: Implemented and locally verified; owner-authorized publication pending.
+Status: Implemented, locally verified and published to `origin/main`.
 
 ## Outcome
 
@@ -45,5 +45,5 @@ changed. No credential or private Cloud implementation was added.
 - GitHub About description and ten repository topics were read back through the
   GitHub API after update.
 
-This state records implementation and verification. The commit SHA and remote
-push result are reported in the owner handoff rather than predicted here.
+The product/UI/README delivery was published in commit `7779a53` and verified as
+the remote `main` head before this final state handoff was recorded.

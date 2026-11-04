@@ -590,6 +590,7 @@ impl Console {
             | "capabilities-data-scenario"
             | "capabilities-data-extract"
             | "capabilities-documents-brief"
+            | "capabilities-claim-check"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -638,6 +639,7 @@ impl Console {
                 "capabilities-documents-template" => 13,
                 "capabilities-documents-rewrite" => 14,
                 "capabilities-source-changes" => 15,
+                "capabilities-claim-check" => 16,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -753,6 +755,26 @@ impl Console {
                 .into();
                 *draft.value("beforeDate") = "2027-05-01".into();
                 *draft.value("afterDate") = "2027-06-01".into();
+            } else if scene == "capabilities-claim-check" {
+                draft.sources.extend(
+                    available
+                        .iter()
+                        .filter(|resource| extraction_source(resource))
+                        .map(|resource| text(resource, "resourceId").to_owned()),
+                );
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "Launch claim check"
+                } else {
+                    "Lansman iddia doğrulaması"
+                }
+                .into();
+                *draft.value("claims") = if english {
+                    "The launch reached 72% adoption.\nRetention lasted twelve months."
+                } else {
+                    "Lansman %72 benimsenmeye ulaştı.\nKullanım on iki ay sürdü."
+                }
+                .into();
             }
         }
     }
@@ -1581,6 +1603,7 @@ impl Console {
             "Fill Word template",
             "Translate or rewrite",
             "Track source changes",
+            "Check claims",
         ];
         form_combo(
             ui,
@@ -1592,20 +1615,22 @@ impl Console {
                 }
             },
         );
-        if ![10, 11, 12, 13, 14, 15].contains(&draft.kind) {
+        if ![10, 11, 12, 13, 14, 15, 16].contains(&draft.kind) {
             hint(
                 ui,
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
             );
         }
-        if draft.kind != 15 && studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked() {
+        if ![15, 16].contains(&draft.kind)
+            && studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked()
+        {
             self.create.select_productive_view(2);
             self.create.studio.tab = 2;
             return;
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15, 16].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -2497,6 +2522,88 @@ impl Console {
                     }
                 }
             }
+            16 => {
+                hint(
+                    ui,
+                    "Select 1–8 sources. Every status is derived from literal evidence; unresolved claims require an explicit reason.",
+                );
+                let candidates = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && extraction_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                ui.horizontal_wrapped(|ui| {
+                    for resource in &candidates {
+                        let id = text(resource, "resourceId");
+                        let mut selected = draft.sources.contains(id);
+                        let enabled = selected || draft.sources.len() < 8;
+                        if ui
+                            .add_enabled(
+                                enabled,
+                                egui::Checkbox::new(&mut selected, text(resource, "name")),
+                            )
+                            .changed()
+                        {
+                            if selected {
+                                draft.sources.insert(id.into());
+                            } else {
+                                draft.sources.remove(id);
+                            }
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Claim report title"));
+                    studio::input(ui, draft.value("title"), 160, "", false);
+                });
+                ui.label(t(ui, "Claims · one per line"));
+                multiline(ui, "", draft.value("claims"), 12000, 3);
+                hint(
+                    ui,
+                    "Chat inspects the selected frozen sources. The local tool rejects invented quotes and never assigns an automatic truth score.",
+                );
+                let sources = candidates
+                    .iter()
+                    .filter(|resource| draft.sources.contains(text(resource, "resourceId")))
+                    .take(8)
+                    .map(|resource| {
+                        json!({"source":resource["resourceId"],"label":resource["name"]})
+                    })
+                    .collect::<Vec<_>>();
+                let mut seen = HashSet::new();
+                let claims: Option<Vec<Value>> = draft
+                    .get("claims")
+                    .lines()
+                    .map(str::trim)
+                    .filter(|claim| !claim.is_empty())
+                    .map(|claim| {
+                        (valid_input(claim, 2000) && seen.insert(claim)).then(|| {
+                            json!({
+                                "claim":claim,
+                                "checkedSources":[],
+                                "evidence":[],
+                                "unresolvedReason":null
+                            })
+                        })
+                    })
+                    .collect();
+                if (1..=8).contains(&sources.len())
+                    && valid_input(draft.get("title"), 160)
+                    && claims
+                        .as_ref()
+                        .is_some_and(|claims| (1..=50).contains(&claims.len()))
+                {
+                    operation = Some(json!({
+                        "operation":"research.claims",
+                        "arguments":{
+                            "title":draft.get("title"),
+                            "sources":sources,
+                            "claims":claims
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -2530,6 +2637,7 @@ impl Console {
                         13 => "Inspect the exact DOCX template before calling the typed tool. Supply every {{field_key}} exactly once. Keep blank values missing with null instead of guessing, and preserve all non-placeholder template content.",
                         14 => "Read the exact frozen source before calling the typed tool. Populate one segment for every non-empty text line or DOCX body paragraph in exact order. Keep each source string literal, preserve facts and requested terms, and never claim semantic equivalence without owner review.",
                         15 => "Compare only these two exact frozen snapshots with the typed local tool. Keep the supplied capture dates and source hashes in the report; do not substitute a live page, infer a capture date or hide an explicit no-change result.",
+                        16 => "Read every selected frozen source before calling the typed local tool. For each claim, list every source actually checked as {source}, add only literal quotes with source and supports, disputes or context stance, and give an explicit unresolvedReason when no support or dispute exists. Do not invent evidence, copy a requested status or present the derived status as an automatic truth score.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -3459,6 +3567,19 @@ mod tests {
             .unwrap()
         });
         assert!(visibility.1, "button visibility: {visibility:?}");
+        let action = ctx.data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new((
+                "test-action",
+                "memory_control",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        assert!(
+            visibility.0.contains(action.center()),
+            "button center must be inside the 800×560 clip: clip={:?}, action={action:?}",
+            visibility.0
+        );
         let commands = click_at_size(
             &ctx,
             &mut c,
@@ -3481,6 +3602,96 @@ mod tests {
         assert!(request.contains("\"capturedAt\": \"2027-06-01\""));
         assert!(request.contains("do not substitute a live page"));
         assert!(request.contains("hide an explicit no-change result"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn claim_check_request_stages_frozen_sources_and_unresolved_contract_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"survey.md","kind":"text","sha256":"a".repeat(64),"bytes":512,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"audit.txt","kind":"text","sha256":"b".repeat(64),"bytes":640,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"archive.bin","kind":"file","sha256":"c".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 16;
+        draft
+            .sources
+            .insert("resource:11111111-1111-4111-8111-111111111111".into());
+        draft
+            .sources
+            .insert("resource:22222222-2222-4222-8222-222222222222".into());
+        *draft.value("title") = "Launch claim check".into();
+        *draft.value("claims") =
+            "The launch reached 72% adoption.\nRetention lasted twelve months.".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let rendered = c
+            .create
+            .capabilities
+            .drafts
+            .get(&("project:one".into(), 5))
+            .unwrap();
+        assert_eq!(rendered.kind, 16);
+        assert_eq!(rendered.sources.len(), 2);
+        let visibility = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                "test-action-visibility",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        assert!(visibility.1, "button visibility: {visibility:?}");
+        let action = ctx.data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new((
+                "test-action",
+                "memory_control",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        assert!(
+            visibility.0.contains(action.center()),
+            "claim button center must be inside the 800×560 clip: clip={:?}, action={action:?}",
+            visibility.0
+        );
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(
+            request.contains("\"operation\": \"research.claims\""),
+            "{request}"
+        );
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(request.contains("The launch reached 72% adoption."));
+        assert!(request.contains("Retention lasted twelve months."));
+        assert!(request.contains("\"checkedSources\": []"));
+        assert!(request.contains("\"evidence\": []"));
+        assert!(request.contains("\"unresolvedReason\": null"));
+        assert!(request.contains("list every source actually checked"));
+        assert!(request.contains("Do not invent evidence"));
+        assert!(request.contains("automatic truth score"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

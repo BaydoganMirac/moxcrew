@@ -362,6 +362,82 @@ def source_changes(args,tools):
     return result
 
 
+def claim_check(args,tools):
+    exact(args,('title','sources','claims'))
+    title=text(args['title'],160).strip();require(title,'PRODUCTION_TITLE_REQUIRED')
+    prepared=extracted_sources(args['sources'],tools)
+    source_inputs=[item['source'] for item in args['sources']]
+    require(len(source_inputs)==len(set(source_inputs)),'PRODUCTION_DUPLICATE_SOURCE')
+    by_input={item['source']:record for item,record in zip(args['sources'],prepared)}
+    claims=args['claims'];require(isinstance(claims,list) and 1<=len(claims)<=100,'PRODUCTION_CLAIM_LIMIT')
+    checked_claims=[];seen_claims=set();total_evidence=0
+    for claim_index,item in enumerate(claims,1):
+        exact(item,('claim','checkedSources','evidence','unresolvedReason'))
+        statement=text(item['claim'],2000).strip();require(statement and statement not in seen_claims,'PRODUCTION_DUPLICATE_CLAIM')
+        seen_claims.add(statement)
+        checked_entries=item['checkedSources'];require(isinstance(checked_entries,list) and 1<=len(checked_entries)<=len(prepared),'PRODUCTION_CHECKED_SOURCE_REQUIRED')
+        for entry in checked_entries: exact(entry,('source',))
+        checked=[entry['source'] for entry in checked_entries]
+        require(len(checked)==len(set(checked)) and all(value in by_input for value in checked),'PRODUCTION_CHECKED_SOURCE_INVALID')
+        evidence=item['evidence'];require(isinstance(evidence,list) and len(evidence)<=20,'PRODUCTION_CLAIM_LIMIT')
+        total_evidence+=len(evidence);require(total_evidence<=500,'PRODUCTION_CLAIM_LIMIT')
+        verified=[];stances=[]
+        for evidence_index,entry in enumerate(evidence,1):
+            exact(entry,('source','stance','quote'))
+            source_input=entry['source'];require(source_input in checked and source_input in by_input,'PRODUCTION_EVIDENCE_SOURCE_UNCHECKED')
+            stance=entry['stance'];require(stance in ('supports','disputes','context'),'PRODUCTION_EVIDENCE_STANCE_INVALID')
+            quote=text(entry['quote'],4000);require(quote.strip(),'PRODUCTION_EVIDENCE_QUOTE_REQUIRED')
+            record=by_input[source_input];start=record['content'].find(quote)
+            require(start>=0,'PRODUCTION_EVIDENCE_QUOTE_MISMATCH')
+            byte_start=len(record['content'][:start].encode('utf-8'))
+            byte_end=byte_start+len(quote.encode('utf-8'))
+            line=record['content'].count('\n',0,start)+1
+            verified.append({'index':evidence_index,'sourceId':record['id'],'sourceLabel':record['label'],
+                             'stance':stance,'quote':quote,'line':line,
+                             'startByte':byte_start,'endByte':byte_end})
+            stances.append(stance)
+        status='disputed' if 'disputes' in stances else ('supported' if 'supports' in stances else 'unresolved')
+        reason=item['unresolvedReason']
+        if status=='unresolved':
+            reason=text(reason,1000).strip() if isinstance(reason,str) else ''
+            require(reason,'PRODUCTION_UNRESOLVED_REASON_REQUIRED')
+        else:
+            require(reason is None,'PRODUCTION_CLAIM_STATUS_CONFLICT')
+        checked_claims.append({'index':claim_index,'claim':statement,'status':status,
+                               'checkedSourceIds':[by_input[value]['id'] for value in checked],
+                               'unresolvedReason':reason if status=='unresolved' else None,
+                               'evidence':verified,
+                               'evidenceCounts':{stance:sum(value==stance for value in stances)
+                                                 for stance in ('supports','disputes','context')}})
+    public_sources=[{'id':record['id'],'label':record['label'],'sourceSha256':record['sourceSha256'],
+                     'textSha256':record['textSha256']} for record in prepared]
+    counts={status:sum(item['status']==status for item in checked_claims)
+            for status in ('supported','disputed','unresolved')}
+    result={'kind':'claim_check_report','title':title,'sources':public_sources,'summary':counts,
+            'claims':checked_claims,'file':'claim-check-report.md'}
+    markdown=lambda value:''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character
+                                  for character in html.escape(str(value),quote=True).replace('\r',' ').replace('\n',' '))
+    report=['# '+markdown(title),'',
+            '> Statuses are evidence classifications, not automatic truth scores.','',
+            '| Status | Claims |','|---|---:|',f'| Supported | {counts["supported"]} |',
+            f'| Disputed | {counts["disputed"]} |',f'| Unresolved | {counts["unresolved"]} |','',
+            '## Inspected sources','']
+    report.extend(f'- **{markdown(record["id"])} · {markdown(record["label"])}** · source `{record["sourceSha256"]}` · text `{record["textSha256"]}`'
+                  for record in public_sources)
+    for item in checked_claims:
+        report.extend(('',f'## Claim {item["index"]} · {item["status"].title()}','',markdown(item['claim']),'',
+                       '**Sources checked:** '+', '.join(markdown(value) for value in item['checkedSourceIds'])))
+        if item['unresolvedReason'] is not None:
+            report.extend(('', '**Unresolved because:** '+markdown(item['unresolvedReason'])))
+        for evidence in item['evidence']:
+            report.extend(('',f'### Evidence {evidence["index"]} · {evidence["stance"].title()}','',
+                           f'{markdown(evidence["sourceId"])} · {markdown(evidence["sourceLabel"])} · line {evidence["line"]} · bytes {evidence["startByte"]}–{evidence["endByte"]}',
+                           '',f'> {markdown(evidence["quote"])}'))
+    (OUT/'claim-check-report.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+    (OUT/'claim-check.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+    return result
+
+
 def data_extract(args,tools):
     exact(args,('title','sources','columns','rows'))
     title=text(args['title'],160).strip();require(title)
@@ -832,6 +908,7 @@ def execute(operation,args,tools):
     if operation=='documents.brief': return documents_brief(args,tools)
     if operation=='documents.rewrite': return documents_rewrite(args,tools)
     if operation=='documents.template': return documents_template(args,tools)
+    if operation=='research.claims': return claim_check(args,tools)
     if operation=='research.changes': return source_changes(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)

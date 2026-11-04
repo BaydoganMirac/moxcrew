@@ -1144,6 +1144,161 @@ async fn source_change_report_binds_dated_snapshots_and_handles_no_meaningful_ch
 }
 
 #[tokio::test]
+async fn claim_report_verifies_literal_evidence_and_keeps_unresolved_work_visible() {
+    use sha2::{Digest, Sha256};
+    let data = tempfile::tempdir().unwrap();
+    let survey = "Survey results\nİstanbul adoption reached 72%.\nThe sample included 50 teams.\n"
+        .as_bytes()
+        .to_vec();
+    let audit = "Independent audit\nThe 72% figure was not reproducible.\nNo retention data was collected.\n"
+        .as_bytes()
+        .to_vec();
+    let sources = json!([
+        {"source":"inputs/survey.md","label":"Customer survey"},
+        {"source":"inputs/audit.txt","label":"Independent audit"}
+    ]);
+    let claims = json!([
+        {
+            "claim":"The survey reports 72% adoption.",
+            "checkedSources":[{"source":"inputs/survey.md"}],
+            "evidence":[{"source":"inputs/survey.md","stance":"supports","quote":"İstanbul adoption reached 72%."}],
+            "unresolvedReason":null
+        },
+        {
+            "claim":"The 72% result is independently reproducible.",
+            "checkedSources":[{"source":"inputs/survey.md"},{"source":"inputs/audit.txt"}],
+            "evidence":[
+                {"source":"inputs/survey.md","stance":"supports","quote":"adoption reached 72%"},
+                {"source":"inputs/audit.txt","stance":"disputes","quote":"The 72% figure was not reproducible."}
+            ],
+            "unresolvedReason":null
+        },
+        {
+            "claim":"Adoption persisted for twelve months.",
+            "checkedSources":[{"source":"inputs/survey.md"},{"source":"inputs/audit.txt"}],
+            "evidence":[{"source":"inputs/audit.txt","stance":"context","quote":"No retention data was collected."}],
+            "unresolvedReason":"Neither inspected source reports twelve-month retention."
+        }
+    ]);
+    let output = run(
+        data.path(),
+        "research.claims",
+        &json!({"title":"Launch claim check","sources":sources,"claims":claims}),
+        &[
+            ("inputs/survey.md".into(), survey.clone()),
+            ("inputs/audit.txt".into(), audit.clone()),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.value["kind"], "claim_check_report");
+    assert_eq!(
+        output.value["summary"],
+        json!({"supported":1,"disputed":1,"unresolved":1})
+    );
+    assert_eq!(output.value["claims"][0]["status"], "supported");
+    assert_eq!(output.value["claims"][1]["status"], "disputed");
+    assert_eq!(output.value["claims"][1]["evidenceCounts"]["supports"], 1);
+    assert_eq!(output.value["claims"][1]["evidenceCounts"]["disputes"], 1);
+    assert_eq!(output.value["claims"][2]["status"], "unresolved");
+    assert_eq!(output.value["claims"][0]["evidence"][0]["line"], 2);
+    assert_eq!(output.value["claims"][0]["evidence"][0]["startByte"], 15);
+    assert_eq!(
+        output.value["sources"][0]["sourceSha256"],
+        format!("{:x}", Sha256::digest(&survey))
+    );
+    assert!(!output.value.to_string().contains("inputs/"));
+    assert!(!output
+        .value
+        .to_string()
+        .contains(data.path().to_string_lossy().as_ref()));
+    let report = String::from_utf8(
+        output
+            .files
+            .iter()
+            .find(|(name, _)| name == "claim-check-report.md")
+            .unwrap()
+            .1
+            .clone(),
+    )
+    .unwrap();
+    assert!(report.contains("Statuses are evidence classifications, not automatic truth scores."));
+    assert!(report.contains("Claim 2 · Disputed"));
+    assert!(report.contains("Neither inspected source reports twelve"));
+    assert!(report.contains("line 2 · bytes"));
+    let audit_file: Value = serde_json::from_slice(
+        &output
+            .files
+            .iter()
+            .find(|(name, _)| name == "claim-check.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(audit_file["claims"], output.value["claims"]);
+    assert!(audit_file.get("files").is_none());
+
+    let inputs = [
+        ("inputs/survey.md".into(), survey),
+        ("inputs/audit.txt".into(), audit),
+    ];
+    let mut bad_quote = claims.clone();
+    bad_quote[0]["evidence"][0]["quote"] = json!("A fabricated quote");
+    assert_eq!(
+        run(
+            data.path(),
+            "research.claims",
+            &json!({"title":"Bad quote","sources":sources,"claims":bad_quote}),
+            &inputs,
+            None,
+        )
+        .await
+        .err()
+        .unwrap()
+        .0,
+        "PRODUCTION_EVIDENCE_QUOTE_MISMATCH"
+    );
+    let mut unchecked = claims.clone();
+    unchecked[1]["checkedSources"] = json!([{"source":"inputs/survey.md"}]);
+    assert!(run(
+        data.path(),
+        "research.claims",
+        &json!({"title":"Unchecked source","sources":sources,"claims":unchecked}),
+        &inputs,
+        None,
+    )
+    .await
+    .is_err());
+    let mut missing_reason = claims.clone();
+    missing_reason[2]["unresolvedReason"] = Value::Null;
+    assert_eq!(
+        run(
+            data.path(),
+            "research.claims",
+            &json!({"title":"Missing reason","sources":sources,"claims":missing_reason}),
+            &inputs,
+            None,
+        )
+        .await
+        .err()
+        .unwrap()
+        .0,
+        "PRODUCTION_UNRESOLVED_REASON_REQUIRED"
+    );
+    let duplicate = json!([claims[0].clone(), claims[0].clone()]);
+    assert!(run(
+        data.path(),
+        "research.claims",
+        &json!({"title":"Duplicate claim","sources":sources,"claims":duplicate}),
+        &inputs,
+        None,
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
 async fn docx_template_fill_replaces_exact_fields_and_keeps_missing_values_visible() {
     use sha2::{Digest, Sha256};
     let data = tempfile::tempdir().unwrap();

@@ -1213,10 +1213,19 @@ impl Console {
             if let Some(issue) = issue {
                 hint(ui, issue);
             }
+            let start_ready = if text(work, "status") == "queued" {
+                job_start_scope(snapshot, text(work, "workItemId"))
+                    .filter(|(project, _)| *project == self.create.project)
+                    .is_none_or(|(project, ability)| {
+                        self.start_readiness_preflight(ui, snapshot, commands, project, &[ability])
+                    })
+            } else {
+                true
+            };
             ui.add_space(studio::metrics::GAP);
             ui.horizontal_wrapped(|ui| {
                     if text(work,"status")=="queued" {
-                        action(ui,commands,"Start task","work_start",connect::can_start(snapshot) && issue.is_none() && revision(work)>0,
+                        action(ui,commands,"Start task","work_start",start_ready && connect::can_start(snapshot) && issue.is_none() && revision(work)>0,
                             ||json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
                     }
                     if matches!(text(work,"status"),"failed"|"interrupted"|"blocked") {
@@ -1594,6 +1603,76 @@ mod tests {
         assert_eq!(suggestion("Build a presentation and video"), None);
         assert_eq!(suggestion("Help me with my project"), None);
         assert!(!terminal("blocked"));
+    }
+
+    #[test]
+    fn chat_task_start_uses_the_same_local_readiness_preflight() {
+        use super::super::tests::{render, snapshot, state};
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = snapshot();
+        data["desktopPreferences"] = json!({"language":"en"});
+        data["abilities"] = patchfleet_core::abilities::catalog();
+        data["projectJobs"][0]["abilityId"] = json!("V1");
+        data["work"]["revision"] = json!(4);
+        data["work"]["items"][0]["title"] = json!("Video edit");
+        data["work"]["items"][0]["instruction"] = json!("Edit the selected video.");
+        data["projectChat"] = json!({
+            "reasonCode":"PROJECT_CHAT_READ","projectId":"project:one","workRevision":4,
+            "offset":0,"nextOffset":null,"total":1,
+            "items":[{"workItemId":"work:one","abilityId":"V1","goal":"Edit the selected video.","status":"queued","revision":2,"replyToWorkItemId":null}]
+        });
+        data["projectStudio"] = json!({
+            "reasonCode":"PROJECT_STUDIO_READ","projectId":"project:one","revision":2,
+            "tools":[{"id":"python","available":true},{"id":"ffmpeg","available":true},{"id":"ffprobe","available":false}],
+            "imageEngine":{"available":false},"connections":[]
+        });
+        let mut console = Console {
+            tab: Tab::Create,
+            create: state(),
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            assert!(render(
+                &ctx,
+                &mut console,
+                &data,
+                egui::vec2(1280.0, 900.0),
+                false,
+                vec![]
+            )
+            .0
+            .is_empty());
+        }
+        assert!(!ctx.data(|state| {
+            state
+                .get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                    "test-action-state",
+                    "work_start",
+                    "Start task",
+                )))
+                .unwrap()
+                .0
+        }));
+        data["projectStudio"]["tools"][2]["available"] = json!(true);
+        render(
+            &ctx,
+            &mut console,
+            &data,
+            egui::vec2(1280.0, 900.0),
+            false,
+            vec![],
+        );
+        assert!(ctx.data(|state| {
+            state
+                .get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                    "test-action-state",
+                    "work_start",
+                    "Start task",
+                )))
+                .unwrap()
+                .0
+        }));
     }
 
     fn fixture() -> Value {

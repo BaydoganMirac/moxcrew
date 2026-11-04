@@ -612,6 +612,17 @@ async fn failed_managed_revision_retry_keeps_provider_schema_and_frozen_inputs()
                 .iter()
                 .any(|item| &item["workItemId"] == id));
         }
+        let snapshot = host.snapshot().unwrap();
+        for id in [&queued["workItemId"], &retried["workItemId"]] {
+            let local_job = snapshot["projectJobs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|job| &job["workItemId"] == id)
+                .unwrap();
+            assert_eq!(local_job["abilityId"], "W1");
+            assert!(local_job.get("instruction").is_none());
+        }
         // A separately requested retry cannot accept modified frozen bytes.
         std::fs::write(
             revision_root.join("inputs/reference-01.md"),

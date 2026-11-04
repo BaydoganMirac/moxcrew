@@ -51,6 +51,10 @@ The forty-recipe catalog now reuses this Studio readiness through
 optional enhancements and separately checked access before selection and links
 missing setup to the existing surfaces. This does not upgrade protocol-peer or
 fixture evidence into live engine/model quality.
+[Task0063](start-readiness-preflight.md) reuses the same profiles for queued Chat
+and Create work, prepared Crews and the Tasks queue. Missing or unread required
+local setup disables the native Start action; optional tools and access-only
+checks remain visible without being treated as proven blockers.
 
 Saving a trigger leaves it paused. Arm it for 1–1440 minutes and 1–100 occurrences;
 the current source becomes its baseline and only later changes create work.

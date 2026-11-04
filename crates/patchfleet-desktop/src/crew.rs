@@ -1237,10 +1237,31 @@ impl Console {
         commands: &mut Vec<Command>,
     ) {
         let valid = text(mission, "projectId") == self.create.project && revision(mission) > 0;
+        let mut abilities = Vec::new();
+        if !text(mission, "abilityId").is_empty() {
+            abilities.push(text(mission, "abilityId"));
+        }
+        for task in array(&mission["tasks"]) {
+            let ability = text(task, "abilityId");
+            if !ability.is_empty() && !abilities.contains(&ability) {
+                abilities.push(ability);
+            }
+        }
+        let start_ready = if text(mission, "status") == "prepared" {
+            self.start_readiness_preflight(
+                ui,
+                snapshot,
+                commands,
+                text(mission, "projectId"),
+                &abilities,
+            )
+        } else {
+            true
+        };
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if text(mission,"status")=="prepared" {
-                    action(ui,commands,"Start crew","project_crew_start",valid && connect::crew_can_start(snapshot,mission),||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
+                    action(ui,commands,"Start crew","project_crew_start",start_ready && valid && connect::crew_can_start(snapshot,mission),||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
                 }
                 if matches!(text(mission,"status"),"prepared"|"active") {
                     action(ui,commands,"Stop crew","project_crew_cancel",valid,||json!({"projectId":mission["projectId"],"missionId":mission["missionId"],"expectedMissionRevision":mission["revision"]}));
@@ -2996,6 +3017,18 @@ mod tests {
             "missions":[{"missionId":"mission:one","crewId":"crew:one","projectId":"project:one","title":"Launch deck","instruction":"Create a launch presentation","abilityId":"P1","revision":4,"status":"prepared",
                 "tasks":[{"taskId":"task:builder","agentId":"agent:builder","status":"queued","attempt":0,"workItemId":"work:one"},{"taskId":"task:reviewer","agentId":"agent:reviewer","status":"pending","attempt":0,"workItemId":null}],
                 "settings":{"concurrency":2,"retryLimit":1,"timeoutMinutes":30}}]});
+        data["projectStudio"] = json!({
+            "reasonCode":"PROJECT_STUDIO_READ","projectId":"project:one","revision":3,
+            "tools":[
+                {"id":"python","available":true},{"id":"ffmpeg","available":true},
+                {"id":"ffprobe","available":true},{"id":"pdftotext","available":true},
+                {"id":"pdftoppm","available":true},{"id":"tesseract","available":true},
+                {"id":"whisper","available":true},{"id":"whisperModel","available":true},
+                {"id":"libreoffice","available":true},{"id":"chrome","available":true}
+            ],
+            "imageEngine":{"configured":true,"available":true},
+            "connections":[{"providerId":"notion","connected":true}]
+        });
         data
     }
 
@@ -4738,6 +4771,80 @@ mod tests {
                 assert!(click(&ctx, &mut console, &data, false, action_name, label).is_empty());
             }
         }
+    }
+
+    #[test]
+    fn crew_start_combines_member_requirements_and_routes_missing_tools() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut blocked_console = console();
+        blocked_console.create.crew.plans.clear();
+        let mut data = fixture();
+        data["projectCrews"]["missions"][0]["tasks"][0]["abilityId"] = json!("V1");
+        data["projectCrews"]["missions"][0]["tasks"][1]["abilityId"] = json!("P1");
+        data["projectStudio"]["tools"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|tool| tool["id"] == "ffprobe")
+            .unwrap()["available"] = json!(false);
+        render(
+            &ctx,
+            &mut blocked_console,
+            &data,
+            egui::vec2(1280.0, 900.0),
+            false,
+            vec![],
+        );
+        assert!(!ctx.data(|state| {
+            state
+                .get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                    "test-action-state",
+                    "project_crew_start",
+                    "Start crew",
+                )))
+                .unwrap()
+                .0
+        }));
+        assert!(click(
+            &ctx,
+            &mut blocked_console,
+            &data,
+            false,
+            "project_crew_start",
+            "Start crew"
+        )
+        .is_empty());
+        assert!(click(
+            &ctx,
+            &mut blocked_console,
+            &data,
+            false,
+            "memory_control",
+            "Review setup"
+        )
+        .is_empty());
+        assert_eq!(blocked_console.create.productive_view(), 2);
+        assert_eq!(blocked_console.create.studio.tab, 2);
+
+        let mut ready_console = console();
+        ready_console.create.crew.plans.clear();
+        data["projectStudio"]["tools"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|tool| tool["id"] == "ffprobe")
+            .unwrap()["available"] = json!(true);
+        let commands = click(
+            &ctx,
+            &mut ready_console,
+            &data,
+            false,
+            "project_crew_start",
+            "Start crew",
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_crew_start");
     }
 
     #[test]

@@ -3947,9 +3947,14 @@ impl Console {
                 }
                 ui.collapsing(t(ui, "Local task details"),|ui| {ui.monospace(text(item,"workingDirectory"));ui.label(text(item,"instruction"));if let Some(run)=run {ui.monospace(localized_format!(ui, "Run {0}. Turn {1}.",text(run,"runId"),text(run,"providerTurnId")));}});
                 ui.add_space(8.0);
+                let start_ready = if text(item,"status") == "queued" {
+                    create::job_start_scope(snapshot,text(item,"workItemId")).is_none_or(|(project,ability)| {
+                        self.start_readiness_preflight(ui,snapshot,commands,project,&[ability])
+                    })
+                } else { true };
                 ui.horizontal_wrapped(|ui| {
                     if text(item,"status")=="queued" {
-                        action(ui,commands,"Start Codex","work_start",ready&&revision(item)>0,||json!({"workItemId":item["workItemId"],"expectedItemRevision":item["revision"]}));
+                        action(ui,commands,"Start Codex","work_start",start_ready&&ready&&revision(item)>0,||json!({"workItemId":item["workItemId"],"expectedItemRevision":item["revision"]}));
                         action(ui,commands,"Remove","work_remove",revision(item)>0,||json!({"workItemId":item["workItemId"],"expectedItemRevision":item["revision"]}));
                     }
                     if matches!(text(item,"status"),"failed"|"interrupted"|"blocked") {
@@ -9090,6 +9095,64 @@ mod tests {
             "Start Codex"
         )
         .is_empty());
+    }
+
+    #[test]
+    fn task_queue_blocks_missing_project_prerequisites_and_opens_the_exact_setup() {
+        let ctx = test_context();
+        let mut data = snapshot();
+        data["projectMemory"] = json!({"projects":[{"projectId":"project:fixture","name":"Media project","revision":2}]});
+        data["projectJobs"] = json!([{"projectId":"project:fixture","workItemId":"work:fixture","abilityId":"V1","runtimeIssue":null}]);
+        data["abilities"] = patchfleet_core::abilities::catalog();
+        data["projectStudio"] = json!({
+            "reasonCode":"PROJECT_STUDIO_READ","projectId":"project:fixture","revision":2,
+            "tools":[{"id":"python","available":true},{"id":"ffmpeg","available":true},{"id":"ffprobe","available":false}],
+            "imageEngine":{"available":false},"connections":[]
+        });
+        let mut blocked = Console {
+            tab: Tab::Work,
+            ..Default::default()
+        };
+        render(&ctx, &mut blocked, &data, false, vec![]);
+        assert!(!ctx.data(|state| {
+            state
+                .get_temp::<(bool, Rect, Rect)>(egui::Id::new((
+                    "test-action-state",
+                    "work_start",
+                    "Start Codex",
+                )))
+                .unwrap()
+                .0
+        }));
+        assert!(click(
+            &ctx,
+            &mut blocked,
+            &data,
+            false,
+            "work_start",
+            "Start Codex"
+        )
+        .is_empty());
+        assert!(click(
+            &ctx,
+            &mut blocked,
+            &data,
+            false,
+            "memory_control",
+            "Review setup"
+        )
+        .is_empty());
+        assert!(blocked.tab == Tab::Teams);
+        assert_eq!(blocked.create.productive_view(), 2);
+
+        data["projectStudio"]["tools"][2]["available"] = json!(true);
+        let mut ready = Console {
+            tab: Tab::Work,
+            ..Default::default()
+        };
+        let commands = click(&ctx, &mut ready, &data, false, "work_start", "Start Codex");
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "work_start");
     }
 
     #[test]

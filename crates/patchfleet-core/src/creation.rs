@@ -246,6 +246,57 @@ fn authorized_job(events: &[Value], project: &str, work: &str) -> bool {
     false
 }
 
+/// Return only the stable catalog identity needed by local start preflight.
+/// Authorization is checked separately before this derived value is exposed.
+fn job_ability<'a>(events: &'a [Value], project: &str, work: &str) -> Option<&'a str> {
+    if let Some(allocation) = events.iter().find(|event| {
+        matches!(
+            event["type"].as_str(),
+            Some("project_crew.task_allocated" | "project_workflow.task_allocated")
+        ) && event["payload"]["projectId"] == project
+            && event["payload"]["workItemId"] == work
+    }) {
+        return allocation["payload"]["enqueue"]["abilityId"]
+            .as_str()
+            .filter(|ability| crate::abilities::find(ability).is_some());
+    }
+
+    let mut current = work.to_owned();
+    let mut visited = std::collections::HashSet::new();
+    while visited.insert(current.clone()) {
+        let part = uuid_part(&current, "work:").ok()?;
+        let command = format!("cmd:{part}");
+        let request = events.iter().find(|event| {
+            event["type"] == "owner.command.requested" && event["payload"]["commandId"] == command
+        })?;
+        let owner = &request["payload"];
+        let receipt = applied_queue_result(events, owner)?;
+        if receipt["projectId"] != project {
+            return None;
+        }
+        match owner["action"].as_str()? {
+            "project_work_enqueue" | "project_chat_send" => {
+                if owner["payload"]["projectId"] != project {
+                    return None;
+                }
+                return owner["payload"]["abilityId"]
+                    .as_str()
+                    .filter(|ability| crate::abilities::find(ability).is_some());
+            }
+            "project_artifact_revise" => {
+                return (owner["payload"]["projectId"] == project
+                    && crate::project_studio::authorized_work(events, project, &current))
+                .then_some("W1");
+            }
+            "work_retry" => {
+                current = owner["payload"]["workItemId"].as_str()?.to_owned();
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
 /// A directory is trusted only through the exact durable owner action and project binding.
 pub(crate) fn managed_work_directory(
     data_dir: &Path,
@@ -323,7 +374,9 @@ pub(crate) fn project_jobs(data_dir: &Path, events: &[Value], projected: &Value)
                 let issue = managed_work_directory_scoped(data_dir, events, memory, work)
                     .err()
                     .map(|e| e.0);
-                jobs.push(json!({"projectId":binding["projectId"],"workItemId":work["workItemId"],"runtimeIssue":issue}));
+                let project = text(binding, "projectId")?;
+                let ability = job_ability(events, project, text(work, "workItemId")?);
+                jobs.push(json!({"projectId":project,"workItemId":work["workItemId"],"abilityId":ability,"runtimeIssue":issue}));
             }
         }
     }
@@ -1467,6 +1520,12 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         host.background_tick(false).await.unwrap();
         let snapshot = host.snapshot().unwrap();
+        let local_job = array(&snapshot, "projectJobs")
+            .iter()
+            .find(|job| job["workItemId"] == work)
+            .unwrap();
+        assert_eq!(local_job["abilityId"], "D1");
+        assert!(local_job.get("instruction").is_none());
         let current = snapshot["work"]["items"]
             .as_array()
             .unwrap()

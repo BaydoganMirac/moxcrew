@@ -18,6 +18,10 @@ It does not narrow or complete the forty-ability release target.
   to those forty entries and combines them with the selected Project's existing
   live Studio readiness. Missing setup routes to Tools, image-engine or Apps;
   recipe selection still performs no work and quality remains unclaimed.
+- [Task0063](start-readiness-preflight.md) retains the originating ability in the
+  local job summary and reuses that readiness at every native task/Crew Start.
+  Unknown or missing required local setup disables Start and opens the same exact
+  setup surfaces; optional tools and access-only checks do not block.
 - Project-scoped queueing without Git, explicit supported Codex start/cancel,
   fresh managed folders for retry and preserved original project identity.
 - Scoped real output listing, bounded UTF-8 Markdown/text/CSV preview and native
@@ -88,7 +92,8 @@ connection diagnostics and saved reduced motion. Its separate evidence records
 the current interface; this file preserves Task0040's original acceptance.
 Live installed-provider inference, tool-dependent ability quality, native Windows/
 Linux behavior and the rest of the 1.0.0 pipeline remain unverified. Task0062
-makes declared prerequisites inspectable but does not close those evidence rows. No push,
+makes declared prerequisites inspectable and Task0063 carries them to native
+Start controls, but neither closes those evidence rows. No push,
 public package/signing, production installation, Cloud deployment or migration
 has occurred.
 

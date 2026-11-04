@@ -42,7 +42,10 @@ commitments.
   gives all forty recipes an exhaustive local-tool/access profile, combines it
   with the existing Project Studio readiness read and routes missing setup to the
   exact existing Tools, image-engine or Apps surface. This is preflight evidence,
-  not completion of the live-model/output-quality matrix.
+  not completion of the live-model/output-quality matrix. [Task0063](state/start-readiness-preflight.md)
+  now carries that evidence into every native Project task/Crew Start action;
+  unknown or missing required local setup blocks the desktop action without
+  turning optional tools or unproven access into a false guarantee.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

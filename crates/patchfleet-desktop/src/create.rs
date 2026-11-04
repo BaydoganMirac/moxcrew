@@ -164,6 +164,9 @@ struct AbilityReadinessView {
     status: &'static str,
     detail: String,
     setup: Option<AbilitySetupRoute>,
+    blocking: bool,
+    live_checks: bool,
+    declared: bool,
 }
 
 fn readiness_tool_name(id: &str) -> &str {
@@ -296,7 +299,66 @@ fn ability_readiness_view(
         status,
         detail: details.join("  ·  "),
         setup,
+        blocking: has_live_checks
+            && (!project_selected
+                || studio_page.is_none()
+                || !missing.is_empty()
+                || image_missing
+                || apps_missing),
+        live_checks: has_live_checks,
+        declared: has_live_checks || separately_checked || !optional.is_empty(),
     }
+}
+
+fn combined_ability_readiness(
+    ui: &Ui,
+    snapshot: &Value,
+    ability_ids: &[&str],
+    studio_page: Option<&Value>,
+    project_selected: bool,
+) -> Option<AbilityReadinessView> {
+    let mut required = std::collections::BTreeSet::new();
+    let mut optional = std::collections::BTreeSet::new();
+    let mut access = std::collections::BTreeSet::new();
+    let mut found = false;
+    for ability_id in ability_ids {
+        let Some(ability) = array(&snapshot["abilities"])
+            .iter()
+            .find(|ability| text(ability, "id") == *ability_id)
+        else {
+            continue;
+        };
+        found = true;
+        required.extend(
+            readiness_ids(&ability["readiness"], "requiredTools")
+                .into_iter()
+                .map(str::to_owned),
+        );
+        optional.extend(
+            readiness_ids(&ability["readiness"], "optionalTools")
+                .into_iter()
+                .map(str::to_owned),
+        );
+        access.extend(
+            readiness_ids(&ability["readiness"], "access")
+                .into_iter()
+                .map(str::to_owned),
+        );
+    }
+    if !found {
+        return None;
+    }
+    let aggregate = json!({"readiness":{
+        "requiredTools":required.into_iter().collect::<Vec<_>>(),
+        "optionalTools":optional.into_iter().collect::<Vec<_>>(),
+        "access":access.into_iter().collect::<Vec<_>>()
+    }});
+    Some(ability_readiness_view(
+        ui,
+        &aggregate,
+        studio_page,
+        project_selected,
+    ))
 }
 
 #[derive(Default)]
@@ -508,6 +570,17 @@ pub(super) fn job_belongs(snapshot: &Value, project: &str, work: &str) -> bool {
             .any(|job| text(job, "projectId") == project && text(job, "workItemId") == work)
 }
 
+pub(super) fn job_start_scope<'a>(snapshot: &'a Value, work: &str) -> Option<(&'a str, &'a str)> {
+    jobs(snapshot)
+        .iter()
+        .find(|job| text(job, "workItemId") == work)
+        .and_then(|job| {
+            let project = text(job, "projectId");
+            let ability = text(job, "abilityId");
+            (!project.is_empty() && !ability.is_empty()).then_some((project, ability))
+        })
+}
+
 fn job_issue<'a>(snapshot: &'a Value, project: &str, work: &str) -> Option<&'a str> {
     jobs(snapshot)
         .iter()
@@ -553,6 +626,90 @@ fn matches_ability(ability: &Value, category: &str, query: &str, language: Langu
 }
 
 impl Console {
+    fn request_project_readiness(
+        &mut self,
+        ui: &Ui,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+        project: &str,
+        needed: bool,
+    ) {
+        if !needed
+            || project.is_empty()
+            || !ui.is_enabled()
+            || self.hold_automatic_reads
+            || output_studio::studio_page(snapshot, project).is_some()
+            || !studio::commands_ready(ui)
+            || !commands.is_empty()
+        {
+            return;
+        }
+        let Some(project_revision) = output_studio::project_revision(snapshot, project) else {
+            return;
+        };
+        let key = (project.to_owned(), project_revision);
+        if self.create.studio.requested.as_ref() == Some(&key) {
+            return;
+        }
+        self.create.studio.requested = Some(key);
+        commands.push(Command::new(
+            "project_studio_read",
+            json!({"projectId":project}),
+        ));
+    }
+
+    fn open_ability_setup(&mut self, project: &str, route: AbilitySetupRoute) {
+        self.create.project = project.into();
+        if !matches!(self.tab, Tab::Create | Tab::Teams) {
+            self.tab = Tab::Teams;
+        }
+        match route {
+            AbilitySetupRoute::Tools => {
+                self.create.select_productive_view(2);
+                self.create.studio.tab = 2;
+            }
+            AbilitySetupRoute::Images => {
+                self.create.select_productive_view(3);
+                self.create.capabilities.tab = 5;
+            }
+            AbilitySetupRoute::Apps => {
+                self.create.select_productive_view(2);
+                self.create.studio.tab = 3;
+            }
+        }
+    }
+
+    pub(super) fn start_readiness_preflight(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &Value,
+        commands: &mut Vec<Command>,
+        project: &str,
+        ability_ids: &[&str],
+    ) -> bool {
+        let page = output_studio::studio_page(snapshot, project);
+        let Some(readiness) = combined_ability_readiness(ui, snapshot, ability_ids, page, true)
+        else {
+            return true;
+        };
+        self.request_project_readiness(ui, snapshot, commands, project, readiness.live_checks);
+        if !readiness.declared {
+            return true;
+        }
+        ui.push_id(("start-readiness", project, ability_ids), |ui| {
+            ui.horizontal_wrapped(|ui| {
+                status(ui, readiness.status);
+                if let Some(route) = readiness.setup {
+                    if view_control(ui, "Review setup", true, false).clicked() {
+                        self.open_ability_setup(project, route);
+                    }
+                }
+            });
+            raw_hint(ui, &readiness.detail);
+        });
+        !readiness.blocking
+    }
+
     #[cfg(feature = "ui-smoke")]
     pub fn chat_smoke(&mut self, snapshot: &Value, show_files: bool, show_connections: bool) {
         self.create_smoke(snapshot, show_files);
@@ -650,24 +807,7 @@ impl Console {
         }
         let ready = ui.is_enabled();
         let project = self.create.project.clone();
-        if ready
-            && !project.is_empty()
-            && !self.hold_automatic_reads
-            && output_studio::studio_page(snapshot, &project).is_none()
-            && studio::commands_ready(ui)
-            && commands.is_empty()
-        {
-            if let Some(revision) = output_studio::project_revision(snapshot, &project) {
-                let key = (project.clone(), revision);
-                if self.create.studio.requested.as_ref() != Some(&key) {
-                    self.create.studio.requested = Some(key);
-                    commands.push(Command::new(
-                        "project_studio_read",
-                        json!({"projectId":project}),
-                    ));
-                }
-            }
-        }
+        self.request_project_readiness(ui, snapshot, commands, &project, ready);
         let id = egui::Id::new("create-ability-catalog");
         let modal = egui::Modal::new(id)
             .area(egui::Modal::default_area(id).fade_in(false))
@@ -825,20 +965,10 @@ impl Console {
                                     status(ui, readiness.status);
                                     if let Some(route) = readiness.setup {
                                         if view_control(ui, "Review setup", true, false).clicked() {
-                                            match route {
-                                                AbilitySetupRoute::Tools => {
-                                                    self.create.select_productive_view(2);
-                                                    self.create.studio.tab = 2;
-                                                }
-                                                AbilitySetupRoute::Images => {
-                                                    self.create.select_productive_view(3);
-                                                    self.create.capabilities.tab = 5;
-                                                }
-                                                AbilitySetupRoute::Apps => {
-                                                    self.create.select_productive_view(2);
-                                                    self.create.studio.tab = 3;
-                                                }
-                                            }
+                                            self.open_ability_setup(
+                                                &self.create.project.clone(),
+                                                route,
+                                            );
                                         }
                                     }
                                 });
@@ -937,9 +1067,18 @@ impl Console {
             }
             #[cfg(target_os = "windows")]
             hint(ui, "PROJECT_RESULTS_UNSUPPORTED_PLATFORM");
+            let start_ready = if text(work, "status") == "queued" {
+                job_start_scope(snapshot, text(work, "workItemId"))
+                    .filter(|(project, _)| *project == self.create.project)
+                    .is_none_or(|(project, ability)| {
+                        self.start_readiness_preflight(ui, snapshot, commands, project, &[ability])
+                    })
+            } else {
+                true
+            };
             ui.horizontal_wrapped(|ui| {
                 if text(work, "status") == "queued" {
-                    action(ui, commands, "Start task", "work_start", runtime_issue.is_none() && connect::can_start(snapshot) && revision(work) > 0,
+                    action(ui, commands, "Start task", "work_start", start_ready && runtime_issue.is_none() && connect::can_start(snapshot) && revision(work) > 0,
                         || json!({"workItemId":work["workItemId"],"expectedItemRevision":work["revision"]}));
                 }
                 if matches!(text(work, "status"), "failed" | "interrupted" | "blocked") {
@@ -956,15 +1095,17 @@ impl Console {
                     || json!({"projectId":self.create.project,"workItemId":work["workItemId"]}));
             });
             if text(work, "status") == "queued" {
-                if connect::can_start(snapshot) {
+                if connect::can_start(snapshot) && start_ready {
                     hint(ui, "Prepared. Start when you're ready.");
                 } else {
-                    ui.horizontal_wrapped(|ui| {
-                        hint(ui, "Codex is not ready.");
-                        if control(ui, "Set up Codex", true).clicked() {
-                            self.create.chat.connections_open = true;
-                        }
-                    });
+                    if !connect::can_start(snapshot) {
+                        ui.horizontal_wrapped(|ui| {
+                            hint(ui, "Codex is not ready.");
+                            if control(ui, "Set up Codex", true).clicked() {
+                                self.create.chat.connections_open = true;
+                            }
+                        });
+                    }
                 }
             }
             if runtime_issue.is_some() || cfg!(target_os = "windows") {
@@ -1350,6 +1491,86 @@ mod tests {
         assert_eq!(
             readiness_view_for(&ctx, find("P1"), None, false).status,
             "Check setup"
+        );
+    }
+
+    #[test]
+    fn queued_project_start_waits_for_local_preflight_but_access_only_stays_startable() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = snapshot();
+        data["abilities"] = patchfleet_core::abilities::catalog();
+        data["projectJobs"][0]["abilityId"] = json!("V1");
+        data["work"]["items"][0]["instruction"] = json!("Edit the selected video.");
+        let mut console = Console {
+            tab: Tab::Create,
+            create: state(),
+            ..Default::default()
+        };
+        console
+            .create
+            .selected_work
+            .insert("project:one".into(), "work:one".into());
+
+        let render_jobs = |console: &mut Console, data: &Value| {
+            let mut commands = Vec::new();
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 560.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| console.create_jobs(ui, data, &mut commands),
+            );
+            output.drop_without_applying_deltas();
+            let enabled = ctx.data(|state| {
+                state
+                    .get_temp::<(bool, egui::Rect, egui::Rect)>(egui::Id::new((
+                        "test-action-state",
+                        "work_start",
+                        "Start task",
+                    )))
+                    .unwrap()
+                    .0
+            });
+            (commands, enabled)
+        };
+
+        let (commands, enabled) = render_jobs(&mut console, &data);
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].action, "project_studio_read");
+        assert!(!enabled);
+
+        data["projectStudio"] = json!({
+            "reasonCode":"PROJECT_STUDIO_READ","projectId":"project:one","revision":2,
+            "tools":[{"id":"python","available":true},{"id":"ffmpeg","available":true},{"id":"ffprobe","available":false}],
+            "imageEngine":{"available":false},"connections":[]
+        });
+        let (commands, enabled) = render_jobs(&mut console, &data);
+        assert!(commands.is_empty());
+        assert!(!enabled);
+
+        data["projectStudio"]["tools"][2]["available"] = json!(true);
+        assert!(render_jobs(&mut console, &data).1);
+
+        data.as_object_mut().unwrap().remove("projectStudio");
+        data["projectJobs"][0]["abilityId"] = json!("R1");
+        let mut access_only = Console {
+            tab: Tab::Create,
+            create: state(),
+            ..Default::default()
+        };
+        access_only
+            .create
+            .selected_work
+            .insert("project:one".into(), "work:one".into());
+        let (commands, enabled) = render_jobs(&mut access_only, &data);
+        assert!(commands.is_empty());
+        assert!(
+            enabled,
+            "source access is checked at start, not guessed locally"
         );
     }
 

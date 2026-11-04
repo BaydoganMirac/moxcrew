@@ -62,7 +62,11 @@ optional-tool and separately checked access profile before selection. It reads
 actual Project Studio readiness and routes missing setup to existing surfaces;
 it never installs, prepares or starts work. “Local checks ready” is intentionally
 narrow and does not prove provider entitlement, live-model quality or a useful
-result. See [ability readiness state](state/ability-readiness-matrix.md).
+result. The same evidence now survives into Chat, Create, Crew and Tasks: missing
+required local setup disables the native Start action and offers the exact setup
+route, while optional tools and separately checked access do not become invented
+blockers. See [ability readiness](state/ability-readiness-matrix.md) and
+[start preflight](state/start-readiness-preflight.md).
 
 The owner accepted the broad plan as the
 [1.0.0 release baseline](decisions/0040-version-one-release-baseline.md): eight

@@ -10,6 +10,25 @@ use tokio::{
 fn raster() -> Vec<u8> {
     base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAHHRFWHRwcm9tcHQAUFJJVkFURV9FTkdJTkVfUFJPTVBUYA6ekwAAAHpJREFUeJztz1EJACAUwMAXxqBGNJIh/DiEwQLcZu3zdcMFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjx2AU8iQVoikf+xAAAAAElFTkSuQmCC").unwrap()
 }
+fn wav(seconds: u32) -> Vec<u8> {
+    let sample_rate = 8_000_u32;
+    let data_size = sample_rate * seconds * 2;
+    let mut bytes = Vec::with_capacity(44 + data_size as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&16_u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_size.to_le_bytes());
+    bytes.resize(44 + data_size as usize, 0);
+    bytes
+}
 struct Peer {
     url: String,
     calls: Arc<Mutex<Vec<(String, Value)>>>,
@@ -375,6 +394,87 @@ target.write_bytes(data)
         input_paths(&too_many).unwrap_err().0,
         "PRODUCTION_INPUT_LIMIT"
     );
+}
+
+#[tokio::test]
+async fn podcast_edit_packages_ordered_chapters_and_checked_audio() {
+    use std::os::unix::fs::PermissionsExt;
+    let data = tempfile::tempdir().unwrap();
+    let actual = std::env::var("MOXCREW_PODCAST_TEST_FFMPEG")
+        .ok()
+        .zip(std::env::var("MOXCREW_PODCAST_TEST_FFPROBE").ok());
+    let (ffmpeg, ffprobe) = if let Some(paths) = actual {
+        paths
+    } else {
+        let script = r#"#!/usr/bin/env python3
+import json,pathlib,sys
+kind=pathlib.Path(sys.argv[0]).name
+args=sys.argv[1:]
+if args==['-version']:
+ print('fixture');sys.exit(0)
+target=pathlib.Path(args[-1])
+if 'ffprobe' in kind:
+ duration='0.9' if target.name=='podcast.m4a' else '2.0'
+ print(json.dumps({'format':{'duration':duration},'streams':[{'codec_type':'audio','sample_rate':'48000','channels':2}]}))
+else:
+ target.write_bytes(b'RIFF fixture' if target.suffix=='.wav' else b'0000ftypM4A fixture')
+"#;
+        let ffmpeg = data.path().join("fixture-ffmpeg");
+        let ffprobe = data.path().join("fixture-ffprobe");
+        for path in [&ffmpeg, &ffprobe] {
+            fs::write(path, script).unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        (
+            ffmpeg.to_string_lossy().into_owned(),
+            ffprobe.to_string_lossy().into_owned(),
+        )
+    };
+    configure(data.path(), "ffmpeg", &ffmpeg).unwrap();
+    configure(data.path(), "ffprobe", &ffprobe).unwrap();
+    let arguments = json!({
+        "title":"A bounded episode",
+        "clips":[
+            {"source":"inputs/raw.wav","start":0.1,"end":0.5,"title":"Opening"},
+            {"source":"inputs/raw.wav","start":0.8,"end":1.3,"title":"Main point"}
+        ]
+    });
+    let output = run(
+        data.path(),
+        "audio.podcast",
+        &arguments,
+        &[("inputs/raw.wav".into(), wav(2))],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.value["kind"], "podcast");
+    assert_eq!(output.value["chapterCount"], 2);
+    assert_eq!(output.value["chapters"][0]["start"], 0.0);
+    assert_eq!(output.value["chapters"][0]["end"], 0.4);
+    assert_eq!(output.value["chapters"][1]["start"], 0.4);
+    assert_eq!(output.value["chapters"][1]["end"], 0.9);
+    assert!(output.files.iter().any(|(name, bytes)| {
+        name == "podcast.m4a" && bytes.windows(4).any(|window| window == b"ftyp")
+    }));
+    let chapters = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "chapters.json")
+        .map(|(_, bytes)| serde_json::from_slice::<Value>(bytes).unwrap())
+        .unwrap();
+    assert_eq!(chapters["chapters"][1]["title"], "Main point");
+    assert!(!chapters.to_string().contains("inputs/"));
+    let invalid = json!({"title":"Invalid","clips":[{"source":"inputs/raw.wav","start":0,"end":3,"title":"Too long"}]});
+    assert!(run(
+        data.path(),
+        "audio.podcast",
+        &invalid,
+        &[("inputs/raw.wav".into(), wav(2))],
+        None,
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]

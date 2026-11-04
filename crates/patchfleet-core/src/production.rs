@@ -28,6 +28,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "images.mask",
     "video.edit",
     "audio.cleanup",
+    "audio.podcast",
     "resources.extract",
     "resources.ocr",
     "audio.transcribe",

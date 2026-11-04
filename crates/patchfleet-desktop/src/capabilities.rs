@@ -123,6 +123,12 @@ fn resources<'a>(snapshot: &'a Value, project: &str) -> &'a [Value] {
         &[]
     }
 }
+fn podcast_source(resource: &Value) -> bool {
+    let name = text(resource, "name").to_ascii_lowercase();
+    [".wav", ".mp3", ".m4a", ".mp4", ".mov", ".mkv", ".webm"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+}
 fn source_refs(draft: &CapabilityDraft, resources: &[Value]) -> Vec<Value> {
     resources
         .iter()
@@ -546,6 +552,7 @@ impl Console {
             | "capabilities-images"
             | "capabilities-video"
             | "capabilities-batch-images"
+            | "capabilities-podcast"
             | "capabilities-interactive" => 5,
             "capabilities-browser" => 6,
             _ => 0,
@@ -554,10 +561,15 @@ impl Console {
             Some((self.create.project.clone(), self.create.capabilities.tab, 0));
         if self.create.capabilities.tab == 5 {
             let project = self.create.project.clone();
-            let selected = resources(snapshot, &project)
+            let available = resources(snapshot, &project);
+            let selected = available
                 .iter()
                 .map(|resource| text(resource, "resourceId").to_owned())
                 .collect::<Vec<_>>();
+            let audio = available
+                .iter()
+                .find(|resource| podcast_source(resource))
+                .map(|resource| text(resource, "resourceId").to_owned());
             let draft = self
                 .create
                 .capabilities
@@ -568,12 +580,28 @@ impl Console {
                 "capabilities-video" => 2,
                 "capabilities-interactive" => 3,
                 "capabilities-batch-images" => 7,
+                "capabilities-podcast" => 8,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
                 draft.sources.extend(selected);
                 *draft.value("width") = "1600".into();
                 *draft.value("height") = "1600".into();
+            } else if scene == "capabilities-podcast" {
+                draft.record = audio.unwrap_or_default();
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "Signal & Craft · Episode 04"
+                } else {
+                    "Sinyal ve Zanaat · Bölüm 04"
+                }
+                .into();
+                *draft.value("segments") = if english {
+                    "0 | 18.5 | Opening\n42 | 96 | The core idea\n128 | 176 | Takeaways"
+                } else {
+                    "0 | 18.5 | Açılış\n42 | 96 | Ana fikir\n128 | 176 | Çıkarımlar"
+                }
+                .into();
             }
         }
     }
@@ -1394,6 +1422,7 @@ impl Console {
             "Transcribe audio",
             "Render document",
             "Batch images",
+            "Edit podcast",
         ];
         form_combo(
             ui,
@@ -1417,16 +1446,25 @@ impl Console {
 
         let all = resources(snapshot, &self.create.project);
         if ![0, 3, 7].contains(&draft.kind) {
+            let kind = draft.kind;
             form_combo(
                 ui,
                 egui::ComboBox::from_id_salt("production-source").selected_text(
                     all.iter()
-                        .find(|r| text(r, "resourceId") == draft.record)
+                        .find(|r| {
+                            text(r, "resourceId") == draft.record
+                                && (kind != 8 || { podcast_source(r) })
+                        })
                         .map(|r| text(r, "name"))
                         .unwrap_or(t(ui, "Choose a resource").as_ref()),
                 ),
                 |ui| {
-                    for r in all {
+                    for r in all.iter().filter(|r| {
+                        if kind != 8 {
+                            return true;
+                        }
+                        text(r, "status") == "available" && podcast_source(r)
+                    }) {
                         ui.selectable_value(
                             &mut draft.record,
                             text(r, "resourceId").into(),
@@ -1762,6 +1800,71 @@ impl Console {
                     operation = Some(
                         json!({"operation":"images.batch","arguments":{"sources":sources,"width":width,"height":height}}),
                     );
+                }
+            }
+            8 => {
+                let audio_source = source.is_some_and(podcast_source);
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Episode title"));
+                    studio::input(ui, draft.value("title"), 160, "", false);
+                });
+                multiline(
+                    ui,
+                    "Segments · start | end | chapter title",
+                    draft.value("segments"),
+                    6000,
+                    2,
+                );
+                hint(
+                    ui,
+                    "Segments are joined in this order. Chapter times are recalculated for the edited episode.",
+                );
+                let clips: Option<Vec<Value>> = draft
+                    .get("segments")
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .map(|line| {
+                        let mut parts = line.splitn(3, '|');
+                        let start = parts.next()?.trim().parse::<f64>().ok()?;
+                        let end = parts.next()?.trim().parse::<f64>().ok()?;
+                        let title = parts.next()?.trim();
+                        (start.is_finite()
+                            && end.is_finite()
+                            && start >= 0.0
+                            && end > start
+                            && end - start <= 1200.0
+                            && valid_input(title, 160))
+                        .then(|| {
+                            json!({
+                                "source":source_id.as_deref().unwrap_or_default(),
+                                "start":start,
+                                "end":end,
+                                "title":title
+                            })
+                        })
+                    })
+                    .collect();
+                let total = clips.as_ref().map(|clips| {
+                    clips
+                        .iter()
+                        .map(|clip| {
+                            clip["end"].as_f64().unwrap_or_default()
+                                - clip["start"].as_f64().unwrap_or_default()
+                        })
+                        .sum::<f64>()
+                });
+                if audio_source
+                    && source_id.is_some()
+                    && clips
+                        .as_ref()
+                        .is_some_and(|clips| (1..=12).contains(&clips.len()))
+                    && total.is_some_and(|seconds| seconds <= 1200.0)
+                    && valid_input(draft.get("title"), 160)
+                {
+                    operation = Some(json!({
+                        "operation":"audio.podcast",
+                        "arguments":{"title":draft.get("title"),"clips":clips}
+                    }));
                 }
             }
             _ => {
@@ -2317,6 +2420,52 @@ mod tests {
         assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
         assert!(request.contains("\"width\": 1280"));
         assert!(request.contains("\"height\": 720"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn podcast_request_freezes_ordered_segments_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"raw-episode.wav","kind":"audio","sha256":"a".repeat(64),"bytes":64,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"cover.png","kind":"image","sha256":"b".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 8;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("title") = "Signal & Craft".into();
+        *draft.value("segments") = "0 | 12.5 | Opening\n40 | 82 | Main point".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"audio.podcast\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"start\": 0.0"));
+        assert!(request.contains("\"end\": 12.5"));
+        assert!(request.contains("\"title\": \"Opening\""));
+        assert!(request.contains("\"title\": \"Main point\""));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

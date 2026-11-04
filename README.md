@@ -45,8 +45,8 @@ a home.
   local production tools, the image engine and Project apps without running a
   model or changing an account.
 - **Process real files locally.** Typed production can convert a selected image
-  batch with an explicit result for every source; one malformed file does not
-  erase successful siblings.
+  batch with an explicit result for every source, or turn an ordered podcast edit
+  plan into playable audio plus chapter data.
 - **Know what was checked.** Output previews identify the exact hash-matched
   version, the format evidence Moxcrew could inspect and the human review that
   still remains. Mark that exact version reviewed or needing changes without

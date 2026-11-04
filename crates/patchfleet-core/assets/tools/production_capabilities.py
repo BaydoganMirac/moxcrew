@@ -103,6 +103,38 @@ def stamp(value):
     return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02},{ms%1000:03}'
 
 
+def podcast(args,tools):
+    exact(args,('title','clips'))
+    title=text(args['title'],160).strip();require(title)
+    clips=args['clips'];require(isinstance(clips,list) and 1<=len(clips)<=12)
+    common=['-nostdin','-hide_banner','-loglevel','error','-n','-protocol_whitelist','file,pipe']
+    chapters=[];pieces=[];position=0.0
+    for index,clip in enumerate(clips,1):
+        exact(clip,('source','start','end','title'))
+        chapter=text(clip['title'],160).strip();require(chapter)
+        start=number(clip['start'],0,86400);end=number(clip['end'],start+0.02,start+1200)
+        path=source(clip['source']);info=media_info(tools,path)
+        require(any(stream.get('codec_type')=='audio' for stream in info.get('streams',[])),'PRODUCTION_AUDIO_REQUIRED')
+        require(end<=float(info.get('format',{}).get('duration',0))+0.02,'PRODUCTION_CLIP_RANGE_INVALID')
+        duration=end-start;require(position+duration<=1200,'PRODUCTION_DURATION_LIMIT')
+        name=f'podcast-part-{index:02}.wav';pieces.append(name)
+        run_tool(tools,'ffmpeg',common+input_format(path)+['-ss',str(start),'-i',str(path),'-t',str(duration),'-map','0:a:0','-vn','-ar','48000','-ac','2','-c:a','pcm_s16le',str(ROOT/name)])
+        chapters.append({'index':index,'title':chapter,'start':round(position,3),'end':round(position+duration,3)})
+        position+=duration
+    (ROOT/'podcast-concat.txt').write_text(''.join(f"file '{name}'\n" for name in pieces),encoding='utf-8')
+    output=OUT/'podcast.m4a'
+    run_tool(tools,'ffmpeg',common+['-f','concat','-safe','1','-i',str(ROOT/'podcast-concat.txt'),'-map','0:a:0','-vn','-c:a','aac','-b:a','192k','-map_metadata','-1',str(output)])
+    validation=media_info(tools,output);streams=validation.get('streams',[])
+    require(any(stream.get('codec_type')=='audio' for stream in streams) and not any(stream.get('codec_type')=='video' for stream in streams),'PRODUCTION_OUTPUT_INVALID')
+    actual=float(validation.get('format',{}).get('duration',0))
+    require(abs(actual-position)<max(0.2,position*0.005),'PRODUCTION_DURATION_MISMATCH')
+    package={'kind':'podcast','title':title,'file':output.name,'durationSeconds':actual,
+             'chapterCount':len(chapters),'chapters':chapters}
+    (OUT/'chapters.json').write_text(json.dumps({'title':title,'durationSeconds':actual,'chapters':chapters},ensure_ascii=False),encoding='utf-8')
+    (OUT/'validation.json').write_text(json.dumps(validation,ensure_ascii=False),encoding='utf-8')
+    return package
+
+
 def captions_file(captions,duration,path):
     require(isinstance(captions,list) and len(captions)<=1000)
     last=0;lines=[]
@@ -336,6 +368,7 @@ def execute(operation,args,tools):
     if operation=='images.mask': return make_mask(args,tools)
     if operation=='resources.ocr': return ocr(args,tools)
     if operation=='audio.transcribe': return transcribe(args,tools)
+    if operation=='audio.podcast': return podcast(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)
     if operation=='video.package': return package(args,tools)

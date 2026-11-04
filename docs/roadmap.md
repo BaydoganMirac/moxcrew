@@ -46,6 +46,9 @@ commitments.
   now carries that evidence into every native Project task/Crew Start action;
   unknown or missing required local setup blocks the desktop action without
   turning optional tools or unproven access into a false guarantee.
+  [Task0064](state/owner-system-check.md) also composes the existing bounded
+  connection and selected-Project Studio reads into one owner-visible System
+  check, with direct setup routes and no model turn or account mutation.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

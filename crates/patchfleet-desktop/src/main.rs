@@ -76,6 +76,9 @@ impl Patchfleet {
                         }
                     }
                     if scene.starts_with("studio-") {
+                        if scene == "studio-system-check" {
+                            bridge.system_check_smoke();
+                        }
                         console.studio_smoke(&scene, bridge.snapshot.as_ref().unwrap());
                     }
                     if scene.starts_with("capabilities-") {

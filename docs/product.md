@@ -68,6 +68,13 @@ route, while optional tools and separately checked access do not become invented
 blockers. See [ability readiness](state/ability-readiness-matrix.md) and
 [start preflight](state/start-readiness-preflight.md).
 
+The desktop's **System check** gives the owner one read-only view of the active
+local engine, supported agent connections, production tools, image engine and
+configured Project apps. It refreshes the existing bounded diagnostics in order
+and links gaps to the existing setup surfaces. A completed check still does not
+claim live model access, quota, tool permission or output quality. See
+[owner-visible system check](state/owner-system-check.md).
+
 The owner accepted the broad plan as the
 [1.0.0 release baseline](decisions/0040-version-one-release-baseline.md): eight
 capability areas, forty abilities and ten composed workflows. The

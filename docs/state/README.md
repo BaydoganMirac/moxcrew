@@ -66,6 +66,7 @@
 | Checked CSV charts | Complete; exact columns to static SVG, plotted data and concise report; 547-test gate | 2026-11-04 | [checked-csv-charts.md](checked-csv-charts.md) |
 | Editable scenario workbooks | Complete; exact formulas, LibreOffice recalculation proof and 549-test gate | 2026-11-04 | [editable-scenario-workbooks.md](editable-scenario-workbooks.md) |
 | Traceable structured extraction | Complete; literal evidence, explicit uncertainty and missing cells; 551-test gate | 2026-11-04 | [traceable-structured-data-extraction.md](traceable-structured-data-extraction.md) |
+| Attributed brief and action plan | Complete; literal-evidence findings/actions, explicit questions and missing assignments; 553-test gate | 2026-11-04 | [attributed-brief-action-plan.md](attributed-brief-action-plan.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

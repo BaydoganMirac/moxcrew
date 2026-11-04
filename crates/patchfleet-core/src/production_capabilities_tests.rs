@@ -743,6 +743,118 @@ else: sys.exit(2)
 }
 
 #[tokio::test]
+async fn attributed_brief_keeps_literal_sources_open_questions_and_unassigned_actions() {
+    use sha2::{Digest, Sha256};
+    let data = tempfile::tempdir().unwrap();
+    let atlas = b"Decision: Launch pilot in May\nOwner: Ece\nBudget approval is pending\n";
+    let northwind = b"Risk: Security review has not started\nNext step: Schedule review\n";
+    let sources = vec![
+        ("inputs/atlas.md".into(), atlas.to_vec()),
+        ("inputs/northwind.txt".into(), northwind.to_vec()),
+    ];
+    let args = json!({
+        "title":"Pilot brief <review>",
+        "sources":[
+            {"source":"inputs/atlas.md","label":"Atlas <notes>"},
+            {"source":"inputs/northwind.txt","label":"Northwind notes"}
+        ],
+        "findings":[
+            {"source":"inputs/atlas.md","summary":"The pilot is intended for May.","evidence":"Decision: Launch pilot in May"},
+            {"source":"inputs/northwind.txt","summary":"Security review remains outstanding.","evidence":"Risk: Security review has not started"}
+        ],
+        "questions":[
+            {"question":"Who approves the budget?","reason":"The notes say approval is pending but name no approver."}
+        ],
+        "actions":[
+            {"source":"inputs/northwind.txt","task":"Schedule the security review","evidence":"Next step: Schedule review","owner":null,"due":null},
+            {"source":"inputs/atlas.md","task":"Confirm the pilot owner","evidence":"Owner: Ece","owner":"Ece","due":"2027-05-01"}
+        ]
+    });
+    let output = run(data.path(), "documents.brief", &args, &sources, None)
+        .await
+        .unwrap();
+    assert_eq!(output.value["kind"], "attributed_brief");
+    assert_eq!(
+        output.value["counts"],
+        json!({"sources":2,"findings":2,"questions":1,"actions":2})
+    );
+    assert_eq!(output.value["findings"][0]["line"], 1);
+    assert_eq!(output.value["actions"][0]["owner"], Value::Null);
+    assert_eq!(output.value["actions"][0]["due"], Value::Null);
+    assert_eq!(
+        output.value["sources"][0]["sourceSha256"],
+        format!("{:x}", Sha256::digest(atlas))
+    );
+    assert!(!output.value.to_string().contains("inputs/"));
+    assert!(!output
+        .value
+        .to_string()
+        .contains(data.path().to_string_lossy().as_ref()));
+    let brief: Value = serde_json::from_slice(
+        &output
+            .files
+            .iter()
+            .find(|(name, _)| name == "brief.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(brief["kind"], output.value["kind"]);
+    assert_eq!(brief["sources"], output.value["sources"]);
+    assert_eq!(brief["findings"], output.value["findings"]);
+    assert_eq!(brief["questions"], output.value["questions"]);
+    assert_eq!(brief["actions"], output.value["actions"]);
+    assert!(brief.get("files").is_none());
+    let document = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "document.docx")
+        .unwrap();
+    assert!(document.1.starts_with(b"PK"));
+    let reopened = run(
+        data.path(),
+        "inspect",
+        &json!({"source":"inputs/brief.docx"}),
+        &[("inputs/brief.docx".into(), document.1.clone())],
+        None,
+    )
+    .await
+    .unwrap();
+    let reopened = reopened.value["pages"].to_string();
+    assert!(reopened.contains("Atlas <notes>"));
+    assert!(reopened.contains("Who approves the budget?"));
+    assert!(reopened.contains("Owner · Unassigned"));
+    assert!(reopened.contains("Due · Not set"));
+    let mut fabricated = args.clone();
+    fabricated["findings"][0]["evidence"] = json!("Decision: Fabricated");
+    assert!(
+        run(data.path(), "documents.brief", &fabricated, &sources, None)
+            .await
+            .is_err()
+    );
+    let mut too_large = args.clone();
+    too_large["findings"] = json!(vec![args["findings"][0].clone(); 100]);
+    too_large["questions"] = json!(vec![args["questions"][0].clone(); 50]);
+    too_large["actions"] = json!(vec![args["actions"][0].clone(); 100]);
+    assert!(
+        run(data.path(), "documents.brief", &too_large, &sources, None)
+            .await
+            .is_err()
+    );
+    let mut invalid_date = args;
+    invalid_date["actions"][1]["due"] = json!("2027-02-29");
+    assert!(run(
+        data.path(),
+        "documents.brief",
+        &invalid_date,
+        &sources,
+        None
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
 async fn caption_renderer_is_required_and_fallback_rejects_unbounded_work_before_encoding() {
     use std::os::unix::fs::PermissionsExt;
     let data = tempfile::tempdir().unwrap();

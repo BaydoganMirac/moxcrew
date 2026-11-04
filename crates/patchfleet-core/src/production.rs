@@ -20,6 +20,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "presentations.revise",
     "documents.create",
     "documents.revise",
+    "documents.brief",
     "data.clean",
     "data.analyze",
     "data.xlsx",

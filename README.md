@@ -50,7 +50,9 @@ a home.
   chart, plotted-data JSON and concise report from one traceable aggregate, or an
   editable Base/Upside/Downside workbook with checked formulas and totals. Text,
   PDF and image facts can become a traceable table where every populated value
-  keeps literal evidence and uncertain or missing cells stay visible.
+  keeps literal evidence and uncertain or missing cells stay visible. Project
+  notes can also become an editable brief with attributed findings, explicit
+  open questions and actions whose missing owners or dates are never guessed.
 - **Know what was checked.** Output previews identify the exact hash-matched
   version, the format evidence Moxcrew could inspect and the human review that
   still remains. Mark that exact version reviewed or needing changes without

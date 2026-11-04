@@ -16,7 +16,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 
 | Area | IDs | Current status |
 |---|---|---|
-| Research | R1–R5 | Frozen sources, bounded text extraction, attributed multi-source synthesis with preserved disagreements, literal-evidence claim reports with derived supported/disputed/unresolved states, and dated source-hashed line change reports with explicit no-change handling implemented; full research quality proof pending |
+| Research | R1–R5 | Bounded public-page retrieval with UTC access/hash evidence, frozen sources, owner-criteria comparisons, attributed multi-source synthesis with preserved disagreements, literal-evidence claim reports, and dated source-hashed change reports implemented; live source/provider quality proof pending |
 | Documents | D1–D5 | DOCX creation/paragraph revision, attributed briefs, source-pinned translation/style rewrite with protected facts, and exact template filling; real LibreOffice open proof; PDF merge and broader semantic/layout quality pending |
 | Presentations | P1–P5 | Editable PPTX creation/slide revision; real LibreOffice open proof; full area pending |
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
@@ -145,6 +145,11 @@ option. Confirmed/uncertain cells retain literal evidence; missing cells stay
 explicit, while recommendation and uncertainty remain separate reviewable
 fields. It does not rank options automatically or prove the recommendation is
 objectively correct.
+[Task0082](../plans/0082-source-backed-public-web-research.md) adds a bounded R1
+path that re-fetches one to four public pages in the isolated no-script browser,
+pins UTC access times and response/text hashes, and rejects non-literal claim
+evidence. It emits Markdown, CSV and JSON while keeping inference notes and
+unknowns explicit; it does not access private pages or prove source quality.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

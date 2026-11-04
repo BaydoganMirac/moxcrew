@@ -308,6 +308,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-research-synthesis");
         let research_comparison = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-research-comparison");
+        let web_research = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-web-research");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
@@ -326,6 +328,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Launch synthesis" } else { "Lansman sentezi" }
         } else if research_comparison {
             if english { "Vendor decision" } else { "Tedarikçi kararı" }
+        } else if web_research {
+            if english { "Launch research" } else { "Lansman araştırması" }
         } else if english {
             "Product launch"
         } else {
@@ -474,6 +478,7 @@ fn seed_create_scene(directory: &std::path::Path) {
         let claim_check=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-claim-check");
         let research_synthesis=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-synthesis");
         let research_comparison=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-comparison");
+        let web_research=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-web-research");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
@@ -498,6 +503,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             ("R3",if english{"Launch source synthesis"}else{"Lansman kaynak sentezi"},if english{"Combine frozen launch sources into attributed findings while preserving source disagreements."}else{"Dondurulmuş lansman kaynaklarını, kaynak çelişkilerini koruyan atıflı bulgularda birleştir."})
         } else if research_comparison {
             ("R2",if english{"Vendor decision comparison"}else{"Tedarikçi karar karşılaştırması"},if english{"Apply the owner's criteria evenly across vendor options while keeping the recommendation and uncertainty separate."}else{"Sahibin kriterlerini tedarikçi seçeneklerine eşit uygula; öneri ile belirsizliği ayrı tut."})
+        } else if web_research {
+            ("R1",if english{"Source-backed launch research"}else{"Kaynaklı lansman araştırması"},if english{"Retrieve public launch sources and keep access times, response hashes and literal evidence for every material claim."}else{"Herkese açık lansman kaynaklarını getir; her önemli iddia için erişim zamanını, yanıt özetini ve birebir kanıtı koru."})
         } else {
             ("P1",if english{"Launch presentation · UI fixture"}else{"Lansman sunumu · arayüz sahnesi"},if english{"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."}else{"Bir lansman sunumu hazırla. Bu tek kullanımlık arayüz sahnesinde sağlayıcı çalıştırılmadı."})
         };

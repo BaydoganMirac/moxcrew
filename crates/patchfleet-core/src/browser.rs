@@ -23,7 +23,10 @@ pub(crate) async fn run(
     inputs: &[(String, Vec<u8>)],
     active: Option<Arc<AtomicBool>>,
 ) -> Result<production::Output> {
-    if !matches!(operation, "browser.inspect" | "browser.draft") {
+    if !matches!(
+        operation,
+        "browser.inspect" | "browser.draft" | "browser.research"
+    ) {
         return Err(Error("BROWSER_OPERATION_UNSUPPORTED".into()));
     }
     if inputs.len() > 12 || inputs.iter().map(|(_, b)| b.len()).sum::<usize>() > LIMIT {
@@ -137,7 +140,7 @@ mod tests {
             .as_str()
             .expect("Python is required by production fixture tests");
         store::atomic_write(&tmp.path().join("browser.py"), SCRIPT.as_bytes()).unwrap();
-        let code = r#"import os,runpy
+        let code = r#"import os,runpy,time
 b=runpy.run_path('browser.py',run_name='policy_test')
 for ip in ('127.0.0.1','10.0.0.1','100.64.0.1','192.168.1.1','192.0.0.8','192.88.99.1','::1','::ffff:127.0.0.1','2001:db8::1','2002:7f00:1::','3fff::1'):
  assert not b['public_address'](ip),ip
@@ -152,20 +155,57 @@ except ValueError:pass
 else:raise AssertionError('POST accepted')
 # A browser-level paused attachment must be resumed through its original session.
 class Peer:
- def __init__(self,*args):self.attached={};self.session=None;self.sources=[{'url':'https://example.com/'}]
+ def __init__(self,*args):self.attached={};self.session=None;self.sources=[];self.url='https://example.com/';self.deadline=time.monotonic()+35
  def call(self,method,args=None,session=True):
   if method=='Target.createTarget':self.attached['page']='original';return {'targetId':'page'}
   assert method!='Target.attachToTarget','duplicate debugger leaves navigation paused'
   if method=='Runtime.runIfWaitingForDebugger':assert self.session=='original'
+  if method=='Page.navigate':self.url=args['url'];self.sources.append({'url':self.url,'sha256':'a'*64,'bytes':128})
   if method=='Page.captureScreenshot':return {'data':'iVBORw0KGgo='}
   return {}
  def evaluate(self,expression):
   if expression=='document.readyState':return 'complete'
-  return {'title':'Source','url':'https://example.com/','text':'Actual source','fields':[]}
+  return {'title':'Source','url':self.url,'text':'Actual source','links':[],'fields':[]}
  def close(self):pass
 b['run'].__globals__['Browser']=Peer
 result=b['run']({'operation':'browser.inspect','arguments':{'url':'https://example.com/'},'tools':{'chrome':os.environ['MOXCREW_TEST_CHROME']}})
 assert result['requests']==1 and not result['submitted']
+research=b['run']({'operation':'browser.research','arguments':{
+ 'title':'Public research','question':'What does the page establish?',
+ 'sources':[{'url':'https://example.com/','label':'Public source'}],
+ 'claims':[
+  {'claim':'The page contains source text.','classification':'fact','evidence':[{'source':'https://example.com/','quote':'Actual source'}],'note':None},
+  {'claim':'This may indicate availability.','classification':'inference','evidence':[{'source':'https://example.com/','quote':'Actual source'}],'note':'The page does not state availability directly.'},
+  {'claim':'Publication date is known.','classification':'unknown','evidence':[],'note':'The page does not provide a publication date.'}
+ ]},'tools':{'chrome':os.environ['MOXCREW_TEST_CHROME']}})
+assert research['kind']=='web_research' and research['summary']=={'sources':1,'claims':3,'facts':1,'inferences':1,'unknowns':1}
+report=(b['ROOT']/'outputs'/'research-report.md').read_text()
+assert '## Claim 1 · Fact' in report and 'accessed ' in report and 'response `'+('a'*64)+'`' in report
+rows=(b['ROOT']/'outputs'/'sources.csv').read_text()
+assert rows.startswith('claim,source_url,accessed_at,evidence_location') and 'https://example.com/' in rows
+evidence=__import__('json').loads((b['ROOT']/'outputs'/'research-evidence.json').read_text())
+assert evidence['claims'][0]['evidence'][0]['line']==1 and evidence['sources'][0]['responseSha256']=='a'*64
+try:
+ b['run']({'operation':'browser.research','arguments':{'title':'Bad','question':'Bad evidence?',
+  'sources':[{'url':'https://example.com/','label':'Public source'}],
+  'claims':[{'claim':'Invented','classification':'fact','evidence':[{'source':'https://example.com/','quote':'Fabricated quote'}],'note':None}]},
+  'tools':{'chrome':os.environ['MOXCREW_TEST_CHROME']}})
+except ValueError as error:assert str(error)=='BROWSER_RESEARCH_EVIDENCE_MISMATCH'
+else:raise AssertionError('fabricated browser evidence accepted')
+try:
+ b['run']({'operation':'browser.research','arguments':{'title':'Bad','question':'Bad class?',
+  'sources':[{'url':'https://example.com/','label':'Public source'}],
+  'claims':[{'claim':'Invalid class','classification':'verified','evidence':[{'source':'https://example.com/','quote':'Actual source'}],'note':None}]},
+  'tools':{'chrome':os.environ['MOXCREW_TEST_CHROME']}})
+except ValueError as error:assert str(error)=='BROWSER_RESEARCH_CLASSIFICATION_INVALID'
+else:raise AssertionError('invalid browser classification accepted')
+try:
+ b['run']({'operation':'browser.research','arguments':{'title':'Bad','question':'Unused source?',
+  'sources':[{'url':'https://example.com/','label':'First'},{'url':'https://example.org/','label':'Second'}],
+  'claims':[{'claim':'Only first used','classification':'fact','evidence':[{'source':'https://example.com/','quote':'Actual source'}],'note':None}]},
+  'tools':{'chrome':os.environ['MOXCREW_TEST_CHROME']}})
+except ValueError as error:assert str(error)=='BROWSER_RESEARCH_UNUSED_SOURCE'
+else:raise AssertionError('unused browser source accepted')
 "#;
         let result = std::process::Command::new(python)
             .args(["-I", "-B", "-c", code])
@@ -178,6 +218,16 @@ assert result['requests']==1 and not result['submitted']
             "{}",
             String::from_utf8_lossy(&result.stderr)
         );
+        assert!(production::OPERATIONS.contains(&"browser.research"));
+        let schema = crate::project_studio::tool_schema();
+        let production_tool = schema
+            .iter()
+            .find(|tool| tool["name"] == "production_run")
+            .unwrap();
+        assert!(production_tool["description"]
+            .as_str()
+            .unwrap()
+            .contains("browser.research"));
     }
     #[tokio::test]
     async fn unknown_browser_operations_never_start_a_process() {

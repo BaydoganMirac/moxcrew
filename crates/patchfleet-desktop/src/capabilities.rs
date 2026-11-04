@@ -592,6 +592,7 @@ impl Console {
             | "capabilities-documents-brief"
             | "capabilities-claim-check"
             | "capabilities-research-synthesis"
+            | "capabilities-research-comparison"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -642,6 +643,7 @@ impl Console {
                 "capabilities-source-changes" => 15,
                 "capabilities-claim-check" => 16,
                 "capabilities-research-synthesis" => 17,
+                "capabilities-research-comparison" => 18,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -797,6 +799,33 @@ impl Console {
                     "Müşteri ihtiyaçları ve fiyat kanıtları nerede uyuşuyor veya çelişiyor?"
                 }
                 .into();
+            } else if scene == "capabilities-research-comparison" {
+                draft.sources.extend(
+                    available
+                        .iter()
+                        .filter(|resource| extraction_source(resource))
+                        .map(|resource| text(resource, "resourceId").to_owned()),
+                );
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "Vendor comparison"
+                } else {
+                    "Tedarikçi karşılaştırması"
+                }
+                .into();
+                *draft.value("comparisonQuestion") = if english {
+                    "Which vendor best fits the owner's launch criteria?"
+                } else {
+                    "Hangi tedarikçi sahibin lansman kriterlerine en uygun?"
+                }
+                .into();
+                *draft.value("comparisonCriteria") = if english {
+                    "cost: Monthly cost | setup: Setup speed | offline: Offline export"
+                } else {
+                    "cost: Aylık maliyet | setup: Kurulum hızı | offline: Çevrimdışı dışa aktarma"
+                }
+                .into();
+                *draft.value("comparisonOptions") = "Atlas | Boreal".into();
             }
         }
     }
@@ -1627,6 +1656,7 @@ impl Console {
             "Track source changes",
             "Check claims",
             "Synthesize sources",
+            "Compare options",
         ];
         form_combo(
             ui,
@@ -1638,13 +1668,13 @@ impl Console {
                 }
             },
         );
-        if ![10, 11, 12, 13, 14, 15, 16, 17].contains(&draft.kind) {
+        if ![10, 11, 12, 13, 14, 15, 16, 17, 18].contains(&draft.kind) {
             hint(
                 ui,
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
             );
         }
-        if ![15, 16, 17].contains(&draft.kind)
+        if ![15, 16, 17, 18].contains(&draft.kind)
             && studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked()
         {
             self.create.select_productive_view(2);
@@ -1653,7 +1683,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15, 16, 17].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15, 16, 17, 18].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -2692,6 +2722,158 @@ impl Console {
                     }));
                 }
             }
+            18 => {
+                hint(
+                    ui,
+                    "Select 1–8 sources. The same owner criteria are applied to every option; recommendation and uncertainty stay separate.",
+                );
+                let candidates = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && extraction_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                ui.horizontal_wrapped(|ui| {
+                    for resource in &candidates {
+                        let id = text(resource, "resourceId");
+                        let mut selected = draft.sources.contains(id);
+                        let enabled = selected || draft.sources.len() < 8;
+                        if ui
+                            .add_enabled(
+                                enabled,
+                                egui::Checkbox::new(&mut selected, text(resource, "name")),
+                            )
+                            .changed()
+                        {
+                            if selected {
+                                draft.sources.insert(id.into());
+                            } else {
+                                draft.sources.remove(id);
+                            }
+                        }
+                    }
+                });
+                ui.columns(2, |columns| {
+                    field(
+                        &mut columns[0],
+                        "Comparison report title",
+                        draft.value("title"),
+                        160,
+                        false,
+                    );
+                    field(
+                        &mut columns[1],
+                        "Decision question",
+                        draft.value("comparisonQuestion"),
+                        2000,
+                        false,
+                    );
+                });
+                ui.columns(2, |columns| {
+                    field(
+                        &mut columns[0],
+                        "Criteria · key: label | key: label",
+                        draft.value("comparisonCriteria"),
+                        2400,
+                        false,
+                    );
+                    field(
+                        &mut columns[1],
+                        "Options · separated by |",
+                        draft.value("comparisonOptions"),
+                        2880,
+                        false,
+                    );
+                });
+                hint(
+                    ui,
+                    "Chat fills every option × criterion cell with literal evidence or an explicit missing status. The local tool rejects uneven tables and invented quotes.",
+                );
+                let mut seen_keys = HashSet::new();
+                let mut seen_labels = HashSet::new();
+                let criteria: Option<Vec<(&str, &str)>> = draft
+                    .get("comparisonCriteria")
+                    .split('|')
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(|line| {
+                        let (key, label) = line.split_once(':')?;
+                        let key = key.trim();
+                        let label = label.trim();
+                        (extraction_key(key)
+                            && valid_input(label, 160)
+                            && seen_keys.insert(key)
+                            && seen_labels.insert(label))
+                        .then_some((key, label))
+                    })
+                    .collect();
+                let mut seen_options = HashSet::new();
+                let options: Option<Vec<&str>> = draft
+                    .get("comparisonOptions")
+                    .split('|')
+                    .map(str::trim)
+                    .filter(|option| !option.is_empty())
+                    .map(|option| {
+                        (valid_input(option, 240) && seen_options.insert(option)).then_some(option)
+                    })
+                    .collect();
+                let sources = candidates
+                    .iter()
+                    .filter(|resource| draft.sources.contains(text(resource, "resourceId")))
+                    .take(8)
+                    .map(|resource| {
+                        json!({"source":resource["resourceId"],"label":resource["name"]})
+                    })
+                    .collect::<Vec<_>>();
+                if (1..=8).contains(&sources.len())
+                    && valid_input(draft.get("title"), 160)
+                    && valid_input(draft.get("comparisonQuestion"), 2000)
+                    && criteria
+                        .as_ref()
+                        .is_some_and(|criteria| (1..=12).contains(&criteria.len()))
+                    && options
+                        .as_ref()
+                        .is_some_and(|options| (2..=12).contains(&options.len()))
+                {
+                    let criteria = criteria.unwrap();
+                    let criteria_json = criteria
+                        .iter()
+                        .map(|(key, label)| json!({"key":key,"label":label}))
+                        .collect::<Vec<_>>();
+                    let options_json = options
+                        .unwrap()
+                        .iter()
+                        .map(|option| {
+                            let cells = criteria
+                                .iter()
+                                .map(|(key, _)| {
+                                    (
+                                        (*key).to_owned(),
+                                        json!({"status":"missing","assessment":null,"evidence":[]}),
+                                    )
+                                })
+                                .collect::<serde_json::Map<_, _>>();
+                            json!({"option":option,"cells":cells})
+                        })
+                        .collect::<Vec<_>>();
+                    operation = Some(json!({
+                        "operation":"research.compare",
+                        "arguments":{
+                            "title":draft.get("title"),
+                            "question":draft.get("comparisonQuestion"),
+                            "sources":sources,
+                            "criteria":criteria_json,
+                            "options":options_json,
+                            "recommendation":{
+                                "option":null,
+                                "reason":"",
+                                "basedOnCriteria":[],
+                                "uncertainty":""
+                            }
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -2727,6 +2909,7 @@ impl Console {
                         15 => "Compare only these two exact frozen snapshots with the typed local tool. Keep the supplied capture dates and source hashes in the report; do not substitute a live page, infer a capture date or hide an explicit no-change result.",
                         16 => "Read every selected frozen source before calling the typed local tool. For each claim, list every source actually checked as {source}, add only literal quotes with source and supports, disputes or context stance, and give an explicit unresolvedReason when no support or dispute exists. Do not invent evidence, copy a requested status or present the derived status as an automatic truth score.",
                         17 => "Read every selected frozen source before calling the typed local tool. Cite every selected source, populate at least one finding with literal evidence from two or more distinct sources, and preserve each disagreement as two or more source-distinct positions with literal quotes. Keep disagreements unresolved; use an empty list only when none was found, and never turn absence of a supplied disagreement into a consensus claim.",
+                        18 => "Read every selected frozen source before calling the typed local tool. Apply every owner criterion to every option using the exact criterion keys. For each cell, use confirmed or uncertain with an assessment and literal source evidence, or missing with null assessment and no evidence. Cite every selected source. Keep recommendation.option, reason and basedOnCriteria separate from uncertainty; use a null option and empty basedOnCriteria when the evidence cannot support a recommendation. Never invent quotes, silently score criteria or present the recommendation as automatic truth.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -3860,6 +4043,89 @@ mod tests {
         assert!(request.contains("Cite every selected source"));
         assert!(request.contains("two or more distinct sources"));
         assert!(request.contains("never turn absence"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn comparison_request_stages_even_owner_criteria_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"atlas.md","kind":"text","sha256":"a".repeat(64),"bytes":512,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"boreal.txt","kind":"text","sha256":"b".repeat(64),"bytes":640,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"archive.bin","kind":"file","sha256":"c".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 18;
+        draft.sources.extend([
+            "resource:11111111-1111-4111-8111-111111111111".into(),
+            "resource:22222222-2222-4222-8222-222222222222".into(),
+            "resource:33333333-3333-4333-8333-333333333333".into(),
+        ]);
+        *draft.value("title") = "Vendor comparison".into();
+        *draft.value("comparisonQuestion") =
+            "Which vendor best fits the owner's launch criteria?".into();
+        *draft.value("comparisonCriteria") =
+            "cost: Monthly cost | setup: Setup speed | offline: Offline export".into();
+        *draft.value("comparisonOptions") = "Atlas | Boreal".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let visibility = ctx.data(|data| {
+            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                "test-action-visibility",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        let action = ctx.data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new((
+                "test-action",
+                "memory_control",
+                "Add request to Chat",
+            )))
+            .unwrap()
+        });
+        assert!(visibility.1, "button visibility: {visibility:?}");
+        assert!(
+            visibility.0.contains(action.center()),
+            "comparison button center must fit the 800×560 clip: clip={:?}, action={action:?}",
+            visibility.0
+        );
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"research.compare\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(request.contains("Which vendor best fits"));
+        assert!(request.contains("\"option\": \"Atlas\""));
+        assert!(request.contains("\"option\": \"Boreal\""));
+        assert!(request.contains("\"offline\": {"));
+        assert!(request.contains("\"status\": \"missing\""));
+        assert!(request.contains("\"recommendation\": {"));
+        assert!(request.contains("\"basedOnCriteria\": []"));
+        assert!(request.contains("Apply every owner criterion to every option"));
+        assert!(request.contains("Never invent quotes"));
+        assert!(request.contains("automatic truth"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

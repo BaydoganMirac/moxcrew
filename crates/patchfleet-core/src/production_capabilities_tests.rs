@@ -1299,6 +1299,154 @@ async fn claim_report_verifies_literal_evidence_and_keeps_unresolved_work_visibl
 }
 
 #[tokio::test]
+async fn research_comparison_applies_owner_criteria_and_separates_uncertainty() {
+    use sha2::{Digest, Sha256};
+    let data = tempfile::tempdir().unwrap();
+    let atlas =
+        "Atlas plan\nMonthly price: 120 TRY.\nSetup time: 2 days.\nOffline export is supported.\n"
+            .as_bytes()
+            .to_vec();
+    let boreal = "Boreal plan\nMonthly price: 90 TRY.\nSetup time: 5 days.\nOffline export is not available.\n"
+        .as_bytes()
+        .to_vec();
+    let args = json!({
+        "title":"Vendor comparison",
+        "question":"Which vendor best fits the owner's launch criteria?",
+        "sources":[
+            {"source":"inputs/atlas.md","label":"Atlas proposal"},
+            {"source":"inputs/boreal.txt","label":"Boreal proposal"}
+        ],
+        "criteria":[
+            {"key":"cost","label":"Monthly cost"},
+            {"key":"setup","label":"Setup speed"},
+            {"key":"offline","label":"Offline export"}
+        ],
+        "options":[
+            {"option":"Atlas","cells":{
+                "cost":{"status":"confirmed","assessment":"120 TRY per month","evidence":[{"source":"inputs/atlas.md","quote":"Monthly price: 120 TRY."}]},
+                "setup":{"status":"confirmed","assessment":"2 day setup","evidence":[{"source":"inputs/atlas.md","quote":"Setup time: 2 days."}]},
+                "offline":{"status":"confirmed","assessment":"Supported","evidence":[{"source":"inputs/atlas.md","quote":"Offline export is supported."}]}
+            }},
+            {"option":"Boreal","cells":{
+                "cost":{"status":"confirmed","assessment":"90 TRY per month","evidence":[{"source":"inputs/boreal.txt","quote":"Monthly price: 90 TRY."}]},
+                "setup":{"status":"confirmed","assessment":"5 day setup","evidence":[{"source":"inputs/boreal.txt","quote":"Setup time: 5 days."}]},
+                "offline":{"status":"uncertain","assessment":"Proposal says unavailable; roadmap was not inspected","evidence":[{"source":"inputs/boreal.txt","quote":"Offline export is not available."}]}
+            }}
+        ],
+        "recommendation":{
+            "option":"Atlas",
+            "reason":"Atlas best fits the owner's setup-speed and offline-export criteria.",
+            "basedOnCriteria":["setup","offline"],
+            "uncertainty":"Atlas costs 30 TRY more per month, and neither frozen proposal contains reliability results."
+        }
+    });
+    let inputs = [
+        ("inputs/atlas.md".into(), atlas.clone()),
+        ("inputs/boreal.txt".into(), boreal.clone()),
+    ];
+    let output = run(data.path(), "research.compare", &args, &inputs, None)
+        .await
+        .unwrap();
+    assert_eq!(output.value["kind"], "research_comparison");
+    assert_eq!(
+        output.value["summary"],
+        json!({"sources":2,"criteria":3,"options":2,"confirmed":5,"uncertain":1,"missing":0})
+    );
+    assert_eq!(
+        output.value["options"][0]["cells"]["setup"]["evidence"][0]["line"],
+        3
+    );
+    assert_eq!(output.value["recommendation"]["option"], "Atlas");
+    assert_eq!(
+        output.value["recommendation"]["basedOnCriteria"],
+        json!(["setup", "offline"])
+    );
+    assert_eq!(
+        output.value["sources"][0]["sourceSha256"],
+        format!("{:x}", Sha256::digest(&atlas))
+    );
+    assert!(!output.value.to_string().contains("inputs/"));
+    assert!(!output
+        .value
+        .to_string()
+        .contains(data.path().to_string_lossy().as_ref()));
+    let report = String::from_utf8(
+        output
+            .files
+            .iter()
+            .find(|(name, _)| name == "comparison-report.md")
+            .unwrap()
+            .1
+            .clone(),
+    )
+    .unwrap();
+    assert!(report.contains("| Owner criterion | Atlas | Boreal |"));
+    assert!(report.contains("## Recommendation\n\nAtlas"));
+    assert!(report.contains("## Uncertainty"));
+    assert!(report.contains("Atlas proposal · line 3"));
+    let evidence: Value = serde_json::from_slice(
+        &output
+            .files
+            .iter()
+            .find(|(name, _)| name == "comparison-evidence.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(evidence["criteria"], output.value["criteria"]);
+    assert_eq!(evidence["recommendation"], output.value["recommendation"]);
+    let tools = crate::project_studio::tool_schema();
+    let production = tools
+        .iter()
+        .find(|tool| tool["name"] == "production_run")
+        .unwrap();
+    assert!(production["description"]
+        .as_str()
+        .unwrap()
+        .contains("research.compare"));
+    assert!(production["inputSchema"]["properties"]["operation"]["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|operation| operation == "research.compare"));
+
+    let mut fabricated = args.clone();
+    fabricated["options"][0]["cells"]["cost"]["evidence"][0]["quote"] = json!("Invented price");
+    assert_eq!(
+        run(data.path(), "research.compare", &fabricated, &inputs, None)
+            .await
+            .err()
+            .unwrap()
+            .0,
+        "PRODUCTION_COMPARISON_EVIDENCE_MISMATCH"
+    );
+    let mut incomplete = args.clone();
+    incomplete["options"][1]["cells"]
+        .as_object_mut()
+        .unwrap()
+        .remove("offline");
+    assert_eq!(
+        run(data.path(), "research.compare", &incomplete, &inputs, None)
+            .await
+            .err()
+            .unwrap()
+            .0,
+        "PRODUCTION_COMPARISON_CELL_SET_MISMATCH"
+    );
+    let mut unsupported = args.clone();
+    unsupported["options"][0]["cells"]["offline"] =
+        json!({"status":"missing","assessment":null,"evidence":[]});
+    assert_eq!(
+        run(data.path(), "research.compare", &unsupported, &inputs, None)
+            .await
+            .err()
+            .unwrap()
+            .0,
+        "PRODUCTION_COMPARISON_RECOMMENDATION_UNSUPPORTED"
+    );
+}
+
+#[tokio::test]
 async fn multi_source_synthesis_attributes_cross_source_findings_and_disagreements() {
     use sha2::{Digest, Sha256};
     let data = tempfile::tempdir().unwrap();

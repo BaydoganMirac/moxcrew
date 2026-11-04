@@ -438,6 +438,126 @@ def claim_check(args,tools):
     return result
 
 
+def research_compare(args,tools):
+    exact(args,('title','question','sources','criteria','options','recommendation'))
+    title=text(args['title'],160).strip();question=text(args['question'],2000).strip()
+    require(title,'PRODUCTION_TITLE_REQUIRED');require(question,'PRODUCTION_COMPARISON_QUESTION_REQUIRED')
+    prepared=extracted_sources(args['sources'],tools)
+    by_input={item['source']:record for item,record in zip(args['sources'],prepared)}
+
+    criteria=args['criteria'];require(isinstance(criteria,list) and 1<=len(criteria)<=12,'PRODUCTION_COMPARISON_CRITERIA_LIMIT')
+    checked_criteria=[];criterion_keys=[];seen_labels=set()
+    for index,item in enumerate(criteria,1):
+        exact(item,('key','label'));key=text(item['key'],32);label=text(item['label'],160).strip()
+        require(re.fullmatch(r'[a-z][a-z0-9_]{0,31}',key) is not None and key not in criterion_keys,
+                'PRODUCTION_COMPARISON_CRITERIA_INVALID')
+        require(label and label not in seen_labels,'PRODUCTION_COMPARISON_CRITERIA_INVALID')
+        criterion_keys.append(key);seen_labels.add(label)
+        checked_criteria.append({'index':index,'key':key,'label':label})
+
+    used_sources=set();total_evidence=0
+    def verified(entry):
+        nonlocal total_evidence
+        exact(entry,('source','quote'));source_input=entry['source']
+        require(source_input in by_input,'PRODUCTION_COMPARISON_SOURCE_INVALID')
+        quote=text(entry['quote'],4000);require(quote.strip(),'PRODUCTION_COMPARISON_EVIDENCE_REQUIRED')
+        record=by_input[source_input];start=record['content'].find(quote)
+        require(start>=0,'PRODUCTION_COMPARISON_EVIDENCE_MISMATCH')
+        total_evidence+=1;require(total_evidence<=500,'PRODUCTION_COMPARISON_LIMIT')
+        used_sources.add(source_input);byte_start=len(record['content'][:start].encode('utf-8'))
+        return {'sourceId':record['id'],'sourceLabel':record['label'],'quote':quote,
+                'line':record['content'].count('\n',0,start)+1,'startByte':byte_start,
+                'endByte':byte_start+len(quote.encode('utf-8'))}
+
+    options=args['options'];require(isinstance(options,list) and 2<=len(options)<=12,'PRODUCTION_COMPARISON_OPTION_LIMIT')
+    checked_options=[];option_names=set();expected_keys=set(criterion_keys)
+    for option_index,item in enumerate(options,1):
+        exact(item,('option','cells'));name=text(item['option'],240).strip()
+        require(name and name not in option_names,'PRODUCTION_COMPARISON_OPTION_INVALID');option_names.add(name)
+        cells=item['cells'];require(isinstance(cells,dict) and set(cells)==expected_keys,
+                                    'PRODUCTION_COMPARISON_CELL_SET_MISMATCH')
+        checked_cells={}
+        for key in criterion_keys:
+            cell=cells[key];exact(cell,('status','assessment','evidence'));status=cell['status']
+            require(status in ('confirmed','uncertain','missing'),'PRODUCTION_COMPARISON_STATUS_INVALID')
+            evidence=cell['evidence'];require(isinstance(evidence,list) and len(evidence)<=8,
+                                               'PRODUCTION_COMPARISON_EVIDENCE_REQUIRED')
+            if status=='missing':
+                require(cell['assessment'] is None and not evidence,'PRODUCTION_COMPARISON_MISSING_CONFLICT')
+                assessment=None;checked_evidence=[]
+            else:
+                assessment=text(cell['assessment'],2000).strip() if isinstance(cell['assessment'],str) else ''
+                require(assessment and evidence,'PRODUCTION_COMPARISON_EVIDENCE_REQUIRED')
+                checked_evidence=[];pairs=set()
+                for entry in evidence:
+                    value=verified(entry);pair=(value['sourceId'],value['quote'])
+                    require(pair not in pairs,'PRODUCTION_COMPARISON_EVIDENCE_DUPLICATE');pairs.add(pair)
+                    checked_evidence.append(value)
+            checked_cells[key]={'status':status,'assessment':assessment,'evidence':checked_evidence}
+        checked_options.append({'index':option_index,'option':name,'cells':checked_cells})
+    require(used_sources==set(by_input),'PRODUCTION_COMPARISON_UNUSED_SOURCE')
+
+    recommendation=args['recommendation'];exact(recommendation,('option','reason','basedOnCriteria','uncertainty'))
+    selected=recommendation['option'];reason=text(recommendation['reason'],2000).strip()
+    uncertainty=text(recommendation['uncertainty'],2000).strip();basis=recommendation['basedOnCriteria']
+    require(reason and uncertainty and reason!=uncertainty,'PRODUCTION_COMPARISON_RECOMMENDATION_INVALID')
+    require(isinstance(basis,list) and all(isinstance(key,str) for key in basis)
+            and len(basis)==len(set(basis)) and all(key in expected_keys for key in basis),
+            'PRODUCTION_COMPARISON_RECOMMENDATION_INVALID')
+    if selected is None:
+        require(not basis,'PRODUCTION_COMPARISON_RECOMMENDATION_INVALID')
+    else:
+        selected=text(selected,240).strip();require(selected in option_names and basis,
+                                                   'PRODUCTION_COMPARISON_RECOMMENDATION_INVALID')
+        selected_cells=next(item['cells'] for item in checked_options if item['option']==selected)
+        require(all(selected_cells[key]['status']!='missing' for key in basis),
+                'PRODUCTION_COMPARISON_RECOMMENDATION_UNSUPPORTED')
+    checked_recommendation={'option':selected,'reason':reason,'basedOnCriteria':basis,'uncertainty':uncertainty}
+
+    public_sources=[{key:item[key] for key in ('id','label','sourceSha256','textSha256')} for item in prepared]
+    status_counts={status:sum(cell['status']==status for option in checked_options for cell in option['cells'].values())
+                   for status in ('confirmed','uncertain','missing')}
+    result={'kind':'research_comparison','title':title,'question':question,'sources':public_sources,
+            'summary':{'sources':len(prepared),'criteria':len(checked_criteria),'options':len(checked_options),
+                       **status_counts},'criteria':checked_criteria,'options':checked_options,
+            'recommendation':checked_recommendation,'file':'comparison-report.md'}
+    markdown=lambda value:''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character
+                                  for character in html.escape(str(value),quote=True).replace('\r',' ').replace('\n',' '))
+    report=['# '+markdown(title),'','**Decision question:** '+markdown(question),'',
+            '> This table applies the same owner criteria to every option. Evidence integrity is checked; the recommendation remains a reviewable judgment, not an automatic truth score.','',
+            '## Inspected sources','']
+    report.extend(f'- **{markdown(record["id"])} · {markdown(record["label"])}** · source `{record["sourceSha256"]}` · text `{record["textSha256"]}`'
+                  for record in public_sources)
+    report.extend(('', '## Comparison','',
+                   '| Owner criterion | '+' | '.join(markdown(item['option']) for item in checked_options)+' |',
+                   '|---|'+'|'.join('---' for _ in checked_options)+'|'))
+    for criterion in checked_criteria:
+        values=[]
+        for option in checked_options:
+            cell=option['cells'][criterion['key']]
+            values.append(markdown(cell['status'].title()+(' · '+cell['assessment'] if cell['assessment'] else '')))
+        report.append('| '+markdown(criterion['label'])+' | '+' | '.join(values)+' |')
+    for option in checked_options:
+        report.extend(('',f'### Evidence · {markdown(option["option"])}'))
+        for criterion in checked_criteria:
+            cell=option['cells'][criterion['key']]
+            report.extend(('',f'**{markdown(criterion["label"])} · {markdown(cell["status"].title())}**'))
+            if cell['assessment'] is not None: report.extend(('',markdown(cell['assessment'])))
+            if not cell['evidence']: report.extend(('', 'No source evidence supplied; this cell remains missing.'))
+            for evidence in cell['evidence']:
+                report.extend(('',f'{markdown(evidence["sourceId"])} · {markdown(evidence["sourceLabel"])} · line {evidence["line"]} · bytes {evidence["startByte"]}–{evidence["endByte"]}',
+                               '',f'> {markdown(evidence["quote"])}'))
+    criterion_labels={item['key']:item['label'] for item in checked_criteria}
+    report.extend(('', '## Recommendation','',
+                   markdown(selected) if selected is not None else 'No option recommended.',
+                   '',markdown(reason),'',
+                   '**Based on owner criteria:** '+(', '.join(markdown(criterion_labels[key]) for key in basis) if basis else 'None'),'',
+                   '## Uncertainty','',markdown(uncertainty)))
+    (OUT/'comparison-report.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+    (OUT/'comparison-evidence.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+    return result
+
+
 def research_synthesis(args,tools):
     exact(args,('title','focus','sources','findings','disagreements'))
     title=text(args['title'],160).strip();focus=text(args['focus'],2000).strip()
@@ -992,6 +1112,7 @@ def execute(operation,args,tools):
     if operation=='documents.rewrite': return documents_rewrite(args,tools)
     if operation=='documents.template': return documents_template(args,tools)
     if operation=='research.claims': return claim_check(args,tools)
+    if operation=='research.compare': return research_compare(args,tools)
     if operation=='research.synthesis': return research_synthesis(args,tools)
     if operation=='research.changes': return source_changes(args,tools)
     if operation=='documents.render': return render(args,tools)

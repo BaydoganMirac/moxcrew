@@ -48,6 +48,12 @@ Limits are 32 files, 25 MiB per file and 64 MiB total. Search does not discard
 hidden selections, and stale versions require review rather than silent removal.
 See [delivery packages](delivery-packages.md) for the native flow and verification.
 
+Task0068 carries Task0067's exact owner decision into that delivery flow. File
+rows, the selected-files menu and footer show review coverage; unreviewed and
+needs-changes selections produce visible non-blocking warnings. The ZIP schema2
+manifest records the status for the exact exported hash without changing the
+delivery receipt. See [review-aware delivery](review-aware-delivery.md).
+
 Owner-imported resources are frozen in private per-Project storage. Active agents
 can list/read only their bound Project's resources. Binary material is consumed
 through typed production inputs; resources.extract handles Office/PDF text.

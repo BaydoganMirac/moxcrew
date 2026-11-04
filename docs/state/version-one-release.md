@@ -99,6 +99,10 @@ output acceptance, rendered-layout proof or new ability evidence.
 needs-changes decision for one exact Project/work/path/hash tuple. The Host
 rechecks current bytes, restart replay is durable and a new hash remains
 unreviewed. This is human evidence, not automatic content-quality proof.
+[Task0068](review-aware-delivery.md) keeps that exact decision visible while
+assembling a delivery package and records reviewed, needs-changes or unreviewed
+beside each checked hash in the schema2 ZIP manifest. Warnings remain advisory;
+the owner retains explicit export control.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

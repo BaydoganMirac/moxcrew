@@ -61,6 +61,9 @@ commitments.
   for one exact output version: reviewed, needs changes or cleared. The Host
   rechecks the file hash, later versions never inherit the decision and the UI
   does not turn owner review into an automatic quality claim.
+  [Task0068](state/review-aware-delivery.md) carries that decision into package
+  selection and the checked ZIP manifest, with visible non-blocking warnings for
+  needs-changes or unreviewed files.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

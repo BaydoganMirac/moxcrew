@@ -60,6 +60,10 @@ The owner can also record **reviewed** or **needs changes** for the exact
 Project/work/path/hash tuple. That durable human decision never becomes an
 automatic quality claim and a new version starts unreviewed. See
 [artifact owner review](state/exact-artifact-owner-review.md).
+Package selection carries the same exact-version decision forward: review
+coverage and risks remain visible, and the exported schema2 manifest records the
+status beside each checked hash without blocking a deliberate delivery. See
+[review-aware delivery](state/review-aware-delivery.md).
 Ordinary coding tasks, teams and their
 Quick start guide keep Git worktrees. Recipes do not establish installed tools
 or verified output quality. The owner selected one broad general-purpose ability

@@ -56,8 +56,10 @@ pub(super) fn export(host: &Host, p: &Value) -> Result<Value> {
     }
     #[cfg(unix)]
     {
+        let studio = super::project(&host.store.read_events()?)?;
         let mut entries = Vec::new();
         let mut files = Vec::new();
+        let mut manifest_files = Vec::new();
         let mut total = 0u64;
         for (index, selection) in p["files"].as_array().unwrap().iter().enumerate() {
             let (root, _) = host.creation_scope(
@@ -93,10 +95,25 @@ pub(super) fn export(host: &Host, p: &Value) -> Result<Value> {
                 })
                 .collect();
             let alias = format!("files/{:02}/{name}", index + 1);
-            files.push(json!({"workItemId":selection["workItemId"],"path":selection["path"],"archivePath":alias,"sha256":sha,"bytes":bytes.len()}));
+            let file = json!({"workItemId":selection["workItemId"],"path":selection["path"],"archivePath":alias,"sha256":sha,"bytes":bytes.len()});
+            let status = studio["reviews"]
+                .as_array()
+                .and_then(|reviews| {
+                    reviews.iter().find(|review| {
+                        review["projectId"] == p["projectId"]
+                            && review["workItemId"] == selection["workItemId"]
+                            && review["path"] == selection["path"]
+                            && review["sha256"] == file["sha256"]
+                    })
+                })
+                .map_or_else(|| json!("unreviewed"), |review| review["status"].clone());
+            let mut manifest_file = file.clone();
+            manifest_file["ownerReview"] = json!({"status":status});
+            manifest_files.push(manifest_file);
+            files.push(file);
             entries.push((alias, bytes));
         }
-        let manifest = json!({"schemaVersion":1,"projectId":p["projectId"],"files":files});
+        let manifest = json!({"schemaVersion":2,"projectId":p["projectId"],"files":manifest_files});
         entries.push((
             "manifest.json".into(),
             serde_json::to_vec_pretty(&manifest)?,
@@ -354,6 +371,18 @@ mod tests {
             selected(&work, "outputs/charts/Özet_猫.md", b"Different chart bytes"),
             selected(&second_work, "outputs/Özet_猫.md", b"Another mission")
         ]);
+        host.action(
+            "project_artifact_review_set",
+            command(json!({"projectId":project,"workItemId":work,"path":"outputs/Özet_猫.md","expectedSha256":digest(b"Original document"),"status":"reviewed"})),
+        )
+        .await
+        .unwrap();
+        host.action(
+            "project_artifact_review_set",
+            command(json!({"projectId":project,"workItemId":work,"path":"outputs/charts/Özet_猫.md","expectedSha256":digest(b"Different chart bytes"),"status":"needs_changes"})),
+        )
+        .await
+        .unwrap();
         let target = tmp.path().join("delivery.zip");
         let request = command(json!({"projectId":project,"files":files,"targetPath":target}));
         let result = host
@@ -368,8 +397,22 @@ mod tests {
         let entries = read_store_zip(&bytes);
         assert_eq!(entries.len(), 4);
         let manifest: Value = serde_json::from_slice(&entries[3].1).unwrap();
-        assert_eq!(manifest["schemaVersion"], 1);
+        assert_eq!(manifest["schemaVersion"], 2);
         assert_eq!(manifest["projectId"], project);
+        assert_eq!(
+            manifest["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|file| file["ownerReview"]["status"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["reviewed", "needs_changes", "unreviewed"]
+        );
+        assert!(result["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|file| file.get("ownerReview").is_none()));
         let aliases: HashSet<_> = manifest["files"]
             .as_array()
             .unwrap()

@@ -189,6 +189,67 @@ def data_chart(args,tools):
     return result
 
 
+def data_scenario(args,tools):
+    exact(args,('source','title','itemColumn','baseColumn','upsideColumn','downsideColumn','currency'))
+    title=text(args['title'],160).strip();item=text(args['itemColumn'],160).strip()
+    base=text(args['baseColumn'],160).strip();upside=text(args['upsideColumn'],160).strip()
+    downside=text(args['downsideColumn'],160).strip();currency=text(args['currency'],3).strip()
+    columns=(item,base,upside,downside)
+    require(title and all(columns) and len(set(columns))==4 and re.fullmatch('[A-Z]{3}',currency) is not None)
+    path=source(args['source']);require(path.suffix.lower()=='.csv','PRODUCTION_DATA_FORMAT_UNSUPPORTED')
+    rows=list(itertools.islice(csv.reader(io.StringIO(path.read_text(encoding='utf-8-sig'))),5002))
+    require(2<=len(rows)<=5001 and 1<=len(rows[0])<=100,'PRODUCTION_DATA_LIMIT')
+    require(sum(len(row) for row in rows)<=200000,'PRODUCTION_DATA_LIMIT')
+    require(all(len(row)==len(rows[0]) for row in rows),'PRODUCTION_CSV_SHAPE_INVALID')
+    cleaned=[[text(cell,20000).strip() for cell in row] for row in rows]
+    header=cleaned[0];require(all(header) and len(set(header))==len(header) and all(name in header for name in columns))
+    indexes=[header.index(name) for name in columns];items=[];labels=set()
+    for row in cleaned[1:]:
+        label=row[indexes[0]];require(label and label not in labels,'PRODUCTION_SCENARIO_ITEM_INVALID');labels.add(label)
+        values=[]
+        for index in indexes[1:]:
+            try: value=float(row[index])
+            except ValueError: raise ValueError('PRODUCTION_NON_NUMERIC_VALUE')
+            require(math.isfinite(value) and -1e12<=value<=1e12,'PRODUCTION_NON_NUMERIC_VALUE');values.append(value)
+        items.append({'label':label,'base':values[0],'upside':values[1],'downside':values[2]})
+    require(items)
+    totals={name:math.fsum(entry[name] for entry in items) for name in ('base','upside','downside')}
+    inline=lambda reference,value,style='':f'<c r="{reference}" t="inlineStr"{style}><is><t xml:space="preserve">{escape(value)}</t></is></c>'
+    numeric=lambda reference,value,style='':f'<c r="{reference}"{style}><v>{format(value,".17g")}</v></c>'
+    input_rows=['<row r="1">'+inline('A1','Item',' s="1"')+inline('B1',f'Base ({currency})',' s="1"')+inline('C1',f'Upside ({currency})',' s="1"')+inline('D1',f'Downside ({currency})',' s="1"')+'</row>']
+    for row_number,entry in enumerate(items,2):
+        input_rows.append(f'<row r="{row_number}">'+inline(f'A{row_number}',entry['label'])+numeric(f'B{row_number}',entry['base'],' s="2"')+numeric(f'C{row_number}',entry['upside'],' s="2"')+numeric(f'D{row_number}',entry['downside'],' s="2"')+'</row>')
+    last_input=len(items)+1
+    inputs=f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:D{last_input}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="32" customWidth="1"/><col min="2" max="4" width="18" customWidth="1"/></cols><sheetData>{"".join(input_rows)}</sheetData><autoFilter ref="A1:D{last_input}"/></worksheet>'
+    model_rows=['<row r="1" ht="28" customHeight="1">'+inline('A1',title,' s="1"')+'</row>',
+                '<row r="2">'+inline('A2','Scenario',' s="1"')+inline('B2','Base')+'</row>',
+                '<row r="4">'+inline('A4','Item',' s="1"')+inline('B4',f'Value ({currency})',' s="1"')+'</row>']
+    for index,entry in enumerate(items):
+        row_number=index+5;input_row=index+2
+        formula=f'IF($B$2="Base",Inputs!B{input_row},IF($B$2="Upside",Inputs!C{input_row},Inputs!D{input_row}))'
+        model_rows.append(f'<row r="{row_number}">'+inline(f'A{row_number}',entry['label'])+f'<c r="B{row_number}" s="2"><f ca="1">{formula}</f><v>{format(entry["base"],".17g")}</v></c></row>')
+    total_row=len(items)+5;first_value=5;last_value=total_row-1
+    model_rows.append(f'<row r="{total_row}">'+inline(f'A{total_row}','Total',' s="1"')+f'<c r="B{total_row}" s="3"><f ca="1">SUM(B{first_value}:B{last_value})</f><v>{format(totals["base"],".17g")}</v></c></row>')
+    model=f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:B{total_row}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="32" customWidth="1"/><col min="2" max="2" width="20" customWidth="1"/></cols><sheetData>{"".join(model_rows)}</sheetData><mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells><dataValidations count="1"><dataValidation type="list" allowBlank="0" showErrorMessage="1" errorTitle="Choose a scenario" error="Use Base, Upside or Downside." sqref="B2"><formula1>"Base,Upside,Downside"</formula1></dataValidation></dataValidations></worksheet>'
+    styles='''<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,#0.00"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2854F4"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles><dxfs count="0"/><tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/></styleSheet>'''
+    workbook=f'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="{OFFICE}"><bookViews><workbookView activeTab="0"/></bookViews><sheets><sheet name="Scenario Model" sheetId="1" r:id="rId2"/><sheet name="Inputs" sheetId="2" r:id="rId1"/></sheets><calcPr calcId="191029" calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/></workbook>'
+    package={'[Content_Types].xml':content_types([('xl/workbook.xml','spreadsheetml.sheet.main'),('xl/worksheets/sheet1.xml','spreadsheetml.worksheet'),('xl/worksheets/sheet2.xml','spreadsheetml.worksheet'),('xl/styles.xml','spreadsheetml.styles')]),'_rels/.rels':rels([(1,'officeDocument','xl/workbook.xml')]),'xl/workbook.xml':workbook,'xl/_rels/workbook.xml.rels':rels([(1,'worksheet','worksheets/sheet1.xml'),(2,'worksheet','worksheets/sheet2.xml'),(3,'styles','styles.xml')]),'xl/worksheets/sheet1.xml':inputs,'xl/worksheets/sheet2.xml':model,'xl/styles.xml':styles}
+    workbook_path=write_zip('scenario.xlsx',package);checked=read_zip(workbook_path)
+    sheet=xml(checked['xl/worksheets/sheet2.xml']);ns={'s':'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+    formulas=[node.text or '' for node in sheet.findall('.//s:f',ns)]
+    expected=[f'IF($B$2="Base",Inputs!B{index},IF($B$2="Upside",Inputs!C{index},Inputs!D{index}))' for index in range(2,len(items)+2)]
+    validation=sheet.find('.//s:dataValidation/s:formula1',ns)
+    workbook_node=xml(checked['xl/workbook.xml']);calculation=workbook_node.find('.//s:calcPr',ns)
+    require(formulas[:-1]==expected and formulas[-1]==f'SUM(B{first_value}:B{last_value})' and validation is not None and validation.text=='"Base,Upside,Downside"' and calculation is not None and calculation.attrib.get('calcMode')=='auto' and calculation.attrib.get('fullCalcOnLoad')=='1' and calculation.attrib.get('forceFullCalc')=='1','PRODUCTION_OUTPUT_INVALID')
+    result={'kind':'data_scenario','title':title,'itemColumn':item,'scenarioColumns':{'base':base,'upside':upside,'downside':downside},'currency':currency,'rowCount':len(items),'formulaCells':len(formulas),'recalculation':'automatic','scenarios':[{'name':name.title(),'total':totals[name]} for name in ('base','upside','downside')],'items':items,'file':'scenario.xlsx'}
+    (OUT/'scenario-data.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+    markdown=lambda value:''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character for character in html.escape(str(value),quote=True).replace('\r',' ').replace('\n',' '))
+    report=['# '+markdown(title),'',f'- Rows checked: {len(items)}',f'- Currency: {currency}',f'- Item column: {markdown(item)}','- Workbook selector: Base / Upside / Downside','',f'| Scenario | Total ({currency}) |','|---|---:|']
+    report.extend(f'| {name.title()} | {format(totals[name],".8g")} |' for name in ('base','upside','downside'))
+    (OUT/'report.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+    return result
+
+
 def captions_file(captions,duration,path):
     require(isinstance(captions,list) and len(captions)<=1000)
     last=0;lines=[]
@@ -424,6 +485,7 @@ def execute(operation,args,tools):
     if operation=='audio.transcribe': return transcribe(args,tools)
     if operation=='audio.podcast': return podcast(args,tools)
     if operation=='data.chart': return data_chart(args,tools)
+    if operation=='data.scenario': return data_scenario(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)
     if operation=='video.package': return package(args,tools)

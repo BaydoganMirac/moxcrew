@@ -76,6 +76,9 @@ commitments.
   [Task0072](state/checked-csv-charts.md) closes the deterministic T3 chart gap:
   exact CSV columns and an explicit aggregation produce one static SVG, plotted
   data JSON and concise report with no model call.
+  [Task0073](state/editable-scenario-workbooks.md) closes the deterministic T4
+  gap: exact Base/Upside/Downside columns produce a formula-backed XLSX whose
+  selector recalculates against independently checked totals, with no model call.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

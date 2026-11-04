@@ -120,7 +120,9 @@ mod tests {
         let (gemini_dir, gemini_programs) = peer(gemini);
         programs.claude = claude_programs.codex;
         programs.gemini = gemini_programs.codex;
-        programs.timeout = Duration::from_secs(2);
+        // These local peers answer immediately, but process scheduling on a loaded CI host
+        // can exceed two seconds before the child gets CPU time.
+        programs.timeout = Duration::from_secs(4);
         (vec![codex_dir, claude_dir, gemini_dir], programs)
     }
 

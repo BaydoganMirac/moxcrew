@@ -64,6 +64,7 @@
 | Batch image conversion | Complete; 2–12 exact Project images with per-source results and real FFmpeg proof | 2026-11-04 | [batch-image-conversion.md](batch-image-conversion.md) |
 | Podcast editing package | Complete; ordered frozen segments, playable M4A, chapter data and real FFmpeg proof | 2026-11-04 | [podcast-editing.md](podcast-editing.md) |
 | Checked CSV charts | Complete; exact columns to static SVG, plotted data and concise report; 547-test gate | 2026-11-04 | [checked-csv-charts.md](checked-csv-charts.md) |
+| Editable scenario workbooks | Complete; exact formulas, LibreOffice recalculation proof and 549-test gate | 2026-11-04 | [editable-scenario-workbooks.md](editable-scenario-workbooks.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

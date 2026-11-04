@@ -137,7 +137,7 @@ async fn nvm_shim_runs_with_gui_path_without_a_shell_profile() {
     assert_eq!(selected, program);
 
     let without_runtime = timeout(
-        Duration::from_secs(2),
+        Duration::from_secs(4),
         Command::new(&program)
             .arg("--version")
             .env_clear()
@@ -152,7 +152,7 @@ async fn nvm_shim_runs_with_gui_path_without_a_shell_profile() {
         let path = sibling_node_path(&selected, empty_path.as_os_str()).unwrap();
         let mut cmd = command(&selected, args).unwrap();
         cmd.env_clear().env("PATH", path);
-        let result = timeout(Duration::from_secs(2), cmd.output())
+        let result = timeout(Duration::from_secs(4), cmd.output())
             .await
             .unwrap()
             .unwrap();

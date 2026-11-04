@@ -540,6 +540,80 @@ async fn csv_chart_aggregates_checked_values_and_escapes_static_outputs() {
 }
 
 #[tokio::test]
+async fn scenario_workbook_has_checked_totals_fixed_formulas_and_bounded_inputs() {
+    let data = tempfile::tempdir().unwrap();
+    let source = b"line_item,base_plan,growth_case,lean_case\nHosting,100,125,80\nSales <script>,200,260,150\n".to_vec();
+    let args = json!({
+        "source":"inputs/budget.csv",
+        "title":"2027 <Plan>\n# draft",
+        "itemColumn":"line_item",
+        "baseColumn":"base_plan",
+        "upsideColumn":"growth_case",
+        "downsideColumn":"lean_case",
+        "currency":"USD"
+    });
+    let output = run(
+        data.path(),
+        "data.scenario",
+        &args,
+        &[("inputs/budget.csv".into(), source)],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.value["kind"], "data_scenario");
+    assert_eq!(output.value["rowCount"], 2);
+    assert_eq!(output.value["formulaCells"], 3);
+    assert_eq!(output.value["recalculation"], "automatic");
+    assert_eq!(output.value["scenarios"][0]["total"], 300.0);
+    assert_eq!(output.value["scenarios"][1]["total"], 385.0);
+    assert_eq!(output.value["scenarios"][2]["total"], 230.0);
+    assert_eq!(output.value["items"][1]["label"], "Sales <script>");
+    assert!(!output.value.to_string().contains("inputs/"));
+    let workbook = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "scenario.xlsx")
+        .map(|(_, bytes)| bytes)
+        .unwrap();
+    assert!(workbook.starts_with(b"PK\x03\x04"));
+    let report = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "report.md")
+        .map(|(_, bytes)| String::from_utf8(bytes.clone()).unwrap())
+        .unwrap();
+    assert!(report.contains("| Base | 300 |"));
+    assert!(report.contains("2027 &lt;Plan&gt; \\# draft"));
+    assert!(!report.contains("\n# draft"));
+    assert!(run(
+        data.path(),
+        "data.scenario",
+        &args,
+        &[(
+            "inputs/budget.csv".into(),
+            b"line_item,base_plan,growth_case,lean_case\nHosting,nope,125,80\n".to_vec()
+        )],
+        None,
+    )
+    .await
+    .is_err());
+    let mut too_many = b"line_item,base_plan,growth_case,lean_case\n".to_vec();
+    for index in 0..=5000 {
+        too_many.extend_from_slice(format!("Item {index},1,2,3\n").as_bytes());
+    }
+    assert!(run(
+        data.path(),
+        "data.scenario",
+        &args,
+        &[("inputs/budget.csv".into(), too_many)],
+        None,
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
 async fn caption_renderer_is_required_and_fallback_rejects_unbounded_work_before_encoding() {
     use std::os::unix::fs::PermissionsExt;
     let data = tempfile::tempdir().unwrap();

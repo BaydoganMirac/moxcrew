@@ -290,7 +290,16 @@ fn seed_create_scene(directory: &std::path::Path) {
             return;
         }
         let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
-        let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":if english {"Product launch"} else {"Ürün lansmanı"}})).payload).await.unwrap();
+        let scenario = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-data-scenario");
+        let project_name = if scenario {
+            if english { "Operating plan" } else { "Faaliyet planı" }
+        } else if english {
+            "Product launch"
+        } else {
+            "Ürün lansmanı"
+        };
+        let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":project_name})).payload).await.unwrap();
         if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| scene.starts_with("conversation-")) {
             host.shutdown().await;
             return;
@@ -335,17 +344,26 @@ fn seed_create_scene(directory: &std::path::Path) {
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
         }
+        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-scenario") {
+            let source=directory.join("operating-plan.csv");std::fs::write(&source,b"line_item,base_plan,growth_case,lean_case\nPlatform,950000,1200000,780000\nGrowth,620000,860000,410000\nOperations,440000,510000,390000\nPeople,1350000,1580000,1180000\n").unwrap();
+            let snapshot=host.snapshot().unwrap();
+            let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+            host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+        }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
         let batch_images=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images");
         let podcast=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-podcast");
         let data_chart=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-chart");
+        let data_scenario=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-scenario");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
             ("A4",if english{"Podcast edit package"}else{"Podcast kurgu paketi"},if english{"Edit the selected recording into ordered chapters and produce a playable package."}else{"Seçili kaydı sıralı bölümlere kurgula ve oynatılabilir bir paket üret."})
         } else if data_chart {
             ("T3",if english{"Regional revenue chart"}else{"Bölgesel gelir grafiği"},if english{"Aggregate the checked CSV columns and produce a static chart with a concise report."}else{"Kontrol edilen CSV sütunlarını grupla ve kısa raporla birlikte statik grafik üret."})
+        } else if data_scenario {
+            ("T4",if english{"Operating plan scenarios"}else{"Faaliyet planı senaryoları"},if english{"Create an editable workbook whose checked formulas recalculate across base, upside and downside scenarios."}else{"Temel, iyimser ve temkinli senaryolarda yeniden hesaplanan doğrulanmış formüllü düzenlenebilir bir çalışma kitabı oluştur."})
         } else {
             ("P1",if english{"Launch presentation · UI fixture"}else{"Lansman sunumu · arayüz sahnesi"},if english{"Prepare a launch presentation. Disposable rendering fixture; no provider execution was requested."}else{"Bir lansman sunumu hazırla. Bu tek kullanımlık arayüz sahnesinde sağlayıcı çalıştırılmadı."})
         };

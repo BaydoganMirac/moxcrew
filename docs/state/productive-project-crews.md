@@ -12,7 +12,7 @@ Status: Complete; independently reviewed, integrated tests and macOS development
 | Output Studio | Project-scoped hashes, provenance, native image/text/Office-outline/media previews, selected-section revision, frozen retry inputs and hash-pinned export. Originals remain intact. |
 | Live direction | Owner feedback cancels/replaces affected work with revision checks, retained outputs and bounded follow-up attempts. |
 | Mixed providers | Per-agent Codex/Claude/Gemini execution uses the same prepare/start/cancel lifecycle. Native protocol peers prove actual output, failed revision retry and recovery. |
-| Production tools | Actual editable PPTX/DOCX, CSV/statistics/XLSX, image resizing/batches, video cuts/SRT, audio cleanup and podcast chapter packaging. Standard-library Python and typed FFmpeg/FFprobe operations produce checked files. |
+| Production tools | Actual editable PPTX/DOCX, CSV/statistics/XLSX, checked charts and formula-backed scenario workbooks, image resizing/batches, video cuts/SRT, audio cleanup and podcast chapter packaging. Standard-library Python and typed FFmpeg/FFprobe operations produce checked files. |
 | Cross-crew delegation | Same-Project offers, acceptance and terminal hash-checked delivery; scoped agents can consume delivered files through production inputs. |
 | Review/correction | Required checks and reviewer acceptance gate completion. Return feedback requests bounded correction work. |
 | Project resources | Explicitly imported files are frozen with hashes, scoped to the Project and readable only by authorized agents; typed extraction handles Office/PDF text. |

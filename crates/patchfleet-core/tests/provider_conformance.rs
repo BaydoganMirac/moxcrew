@@ -54,7 +54,7 @@ fn programs(mode: &str) -> Programs {
         codex: fixture(mode),
         claude: fixture("claude"),
         gemini: fixture("gemini"),
-        timeout: Duration::from_secs(2),
+        timeout: Duration::from_secs(4),
     }
 }
 fn work() -> (tempfile::TempDir, serde_json::Value, serde_json::Value) {
@@ -167,6 +167,7 @@ async fn unavailable_malformed_timeout_are_safe() {
     );
     assert!(!all[0].to_string().contains("SECRET"));
     p.codex = fixture("codex-timeout");
+    p.timeout = Duration::from_secs(2);
     let at = std::time::Instant::now();
     let all = providers::observe_with(&p).await.unwrap();
     assert_eq!(all[0]["provider"]["error"]["code"], "CODEX_PROBE_TIMEOUT");

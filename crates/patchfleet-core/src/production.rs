@@ -24,6 +24,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "data.analyze",
     "data.xlsx",
     "data.chart",
+    "data.scenario",
     "images.resize",
     "images.batch",
     "images.mask",

@@ -56,6 +56,10 @@ and compare bounded text or Office structure beside the selected current
 version. The comparison restores the current exact preview and does not merge,
 accept, revise or claim semantic/layout quality. See
 [revision comparison](state/exact-revision-comparison.md).
+The owner can also record **reviewed** or **needs changes** for the exact
+Project/work/path/hash tuple. That durable human decision never becomes an
+automatic quality claim and a new version starts unreviewed. See
+[artifact owner review](state/exact-artifact-owner-review.md).
 Ordinary coding tasks, teams and their
 Quick start guide keep Git worktrees. Recipes do not establish installed tools
 or verified output quality. The owner selected one broad general-purpose ability

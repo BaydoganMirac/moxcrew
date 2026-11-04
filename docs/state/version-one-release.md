@@ -95,6 +95,10 @@ live-model proof or complete any ability's content-quality acceptance row.
 preserved parent and compare its bounded text or Office structure with the
 selected exact current version. It is a local review aid, not semantic diff,
 output acceptance, rendered-layout proof or new ability evidence.
+[Task0067](exact-artifact-owner-review.md) records the owner's reviewed or
+needs-changes decision for one exact Project/work/path/hash tuple. The Host
+rechecks current bytes, restart replay is durable and a new hash remains
+unreviewed. This is human evidence, not automatic content-quality proof.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

@@ -34,6 +34,13 @@ comparison excerpts and clears on Project or Host-epoch changes. The view does
 not compare image pixels, play media, infer meaning, merge versions or accept an
 output. See [revision comparison](exact-revision-comparison.md).
 
+Task0067 adds a durable owner review decision for one exact Project/work/path/
+SHA-256 tuple. The Host rereads current bytes before recording `reviewed`,
+`needs_changes` or a clearing `unreviewed` transition. Output Studio displays
+only the matching version's active decision; a later hash never inherits it.
+This is human workflow evidence, not semantic, factual, visual or playback
+verification. See [artifact owner review](exact-artifact-owner-review.md).
+
 Task0047 adds name/path search, file-type filtering and inspectable multi-file
 selection. **Create package** opens a dedicated selection view; **Export package**
 saves one standard ZIP and provenance manifest using checked original bytes.
@@ -77,6 +84,8 @@ app-action dispatch. Secrets never enter them. V13 usage records contain only
 provider-reported token/cost values; missing measurements remain null. Existing
 Cloud allowlists remain unchanged: V13 Claude/Gemini work is omitted from the
 legacy Codex remote-control projection, and all content remains local by default.
+V15 local review events add only the exact artifact scope and owner decision;
+they do not add file content or widen Cloud allowlists.
 
 Resources, preview/export and production publication use checked Unix file
 descriptors. Windows remains explicitly unsupported for these file operations

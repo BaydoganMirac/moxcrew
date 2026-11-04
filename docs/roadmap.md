@@ -57,6 +57,10 @@ commitments.
   reviewable in place: one explicit read loads the exact parent, bounded text or
   Office structure appears beside the current version and the selected current
   preview is restored without starting work.
+  [Task0067](state/exact-artifact-owner-review.md) adds a durable human decision
+  for one exact output version: reviewed, needs changes or cleared. The Host
+  rechecks the file hash, later versions never inherit the decision and the UI
+  does not turn owner review into an automatic quality claim.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

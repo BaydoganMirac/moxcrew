@@ -333,6 +333,12 @@ Project-scoped reads supply full plans and resources. Existing Cloud content and
 remote-control allowlists are unchanged. See
 [ADR0045](decisions/0045-productive-crews-and-explicit-tools.md).
 
+V15 adds exact artifact owner-review transitions. Each decision binds one
+Project, work item, relative output path and SHA-256; changed bytes fail before
+append. `reviewed`, `needs_changes` and clearing `unreviewed` remain owner-authored
+workflow evidence and do not certify semantic, factual, layout or playback
+quality. V15 content is local and does not widen Cloud projections.
+
 Typed production uses bounded, cancellable child processes: a bundled standard
 library Python script and explicitly detected owner-installed media tools.
 Provider adapters share the owned-process runner. App credentials live in private

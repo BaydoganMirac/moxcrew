@@ -71,6 +71,11 @@ fn fact(kind: &str, p: Value) -> Value {
     e["schemaVersion"] = json!(12);
     e
 }
+fn review_fact(kind: &str, p: Value) -> Value {
+    let mut e = event(kind, p);
+    e["schemaVersion"] = json!(15);
+    e
+}
 pub(crate) fn action_fields(action: &str) -> Option<&'static [&'static str]> {
     if let Some(fields) = capabilities::action_fields(action) {
         return Some(fields);
@@ -79,6 +84,13 @@ pub(crate) fn action_fields(action: &str) -> Option<&'static [&'static str]> {
         "project_studio_read" => &["projectId"],
         "project_delivery_export" => &["projectId", "files", "targetPath"],
         "project_artifact_read" => &["projectId", "workItemId", "path", "expectedSha256"],
+        "project_artifact_review_set" => &[
+            "projectId",
+            "workItemId",
+            "path",
+            "expectedSha256",
+            "status",
+        ],
         "project_artifact_revise" => &[
             "projectId",
             "expectedProjectRevision",
@@ -124,6 +136,9 @@ struct Active {
 }
 
 pub(crate) fn validate_event(e: &Value) -> Result<()> {
+    if e["schemaVersion"] == 15 {
+        return validate_review_event(e);
+    }
     if capabilities::validate_event(e)? {
         return Ok(());
     }
@@ -134,7 +149,10 @@ pub(crate) fn validate_event(e: &Value) -> Result<()> {
             id(&p["commandId"], "cmd:")?;
             let a = bounded(&p["action"], 80)?;
             require(
-                (action_fields(a).is_some() && !is_read(a) && !sensitive(a))
+                (a != "project_artifact_review_set"
+                    && action_fields(a).is_some()
+                    && !is_read(a)
+                    && !sensitive(a))
                     || a == "project_result_export",
             )?;
             let fields = if a == "project_result_export" {
@@ -315,6 +333,70 @@ pub(crate) fn validate_event(e: &Value) -> Result<()> {
     }
     require(serde_json::to_vec(p)?.len() <= 512 * 1024)
 }
+fn validate_review_event(e: &Value) -> Result<()> {
+    let p = &e["payload"];
+    match e["type"].as_str().unwrap_or("") {
+        "owner.command.requested" => {
+            exact(p, &["commandId", "action", "payload"], &[])?;
+            id(&p["commandId"], "cmd:")?;
+            require(p["action"] == "project_artifact_review_set")?;
+            exact(
+                &p["payload"],
+                &[
+                    "projectId",
+                    "workItemId",
+                    "path",
+                    "expectedSha256",
+                    "status",
+                    "commandId",
+                    "createdAt",
+                    "expiresAt",
+                ],
+                &[],
+            )?;
+            require(p["payload"]["commandId"] == p["commandId"])?;
+            review_scope(&p["payload"])?;
+        }
+        "owner.command.receipted" => {
+            exact(p, &["commandId", "result"], &[])?;
+            id(&p["commandId"], "cmd:")?;
+            require(p["result"].is_object())?;
+        }
+        "project_studio.artifact_reviewed" => {
+            exact(
+                p,
+                &[
+                    "projectId",
+                    "commandId",
+                    "workItemId",
+                    "path",
+                    "sha256",
+                    "status",
+                ],
+                &[],
+            )?;
+            id(&p["commandId"], "cmd:")?;
+            review_scope(&json!({
+                "projectId":p["projectId"],
+                "workItemId":p["workItemId"],
+                "path":p["path"],
+                "expectedSha256":p["sha256"],
+                "status":p["status"]
+            }))?;
+        }
+        _ => return Err(fail("PROJECT_ARTIFACT_REVIEW_EVENT_UNSUPPORTED")),
+    }
+    require(serde_json::to_vec(p)?.len() <= 32 * 1024)
+}
+fn review_scope(p: &Value) -> Result<()> {
+    id(&p["projectId"], "project:")?;
+    id(&p["workItemId"], "work:")?;
+    creation::relative_result(bounded(&p["path"], 1024)?)?;
+    hash(&p["expectedSha256"])?;
+    require(
+        p["status"] == "reviewed" || p["status"] == "needs_changes" || p["status"] == "unreviewed",
+    )
+}
 fn resource(r: &Value) -> Result<()> {
     exact(
         r,
@@ -389,14 +471,31 @@ fn owner_proof(events: &[Value], p: &Value, action: &str) -> Result<Value> {
     Ok(command["payload"]["payload"].clone())
 }
 
+fn owner_review_proof(events: &[Value], p: &Value) -> Result<Value> {
+    let command = events
+        .iter()
+        .find(|e| {
+            e["schemaVersion"] == 15
+                && e["type"] == "owner.command.requested"
+                && e["payload"]["commandId"] == p["commandId"]
+        })
+        .ok_or_else(|| fail("PROJECT_STUDIO_MISSING_AUTHORITY"))?;
+    require(
+        command["payload"]["action"] == "project_artifact_review_set"
+            && command["payload"]["payload"]["projectId"] == p["projectId"],
+    )?;
+    Ok(command["payload"]["payload"].clone())
+}
+
 pub(crate) fn project(events: &[Value]) -> Result<Value> {
     let mut resources: BTreeMap<String, Value> = BTreeMap::new();
     let mut jobs: BTreeMap<String, Value> = BTreeMap::new();
     let mut connections: BTreeMap<String, Value> = BTreeMap::new();
+    let mut reviews: BTreeMap<(String, String, String, String), Value> = BTreeMap::new();
     let mut revisions = Vec::new();
     let mut revision = 0;
     for (i, e) in events.iter().enumerate().filter(|(_, e)| {
-        e["schemaVersion"] == 12
+        (e["schemaVersion"] == 12 || e["schemaVersion"] == 15)
             && e["type"]
                 .as_str()
                 .is_some_and(|s| s.starts_with("project_studio."))
@@ -409,6 +508,29 @@ pub(crate) fn project(events: &[Value]) -> Result<Value> {
             continue;
         }
         match e["type"].as_str().unwrap() {
+            "project_studio.artifact_reviewed" => {
+                project_exists(prior, &p["projectId"])?;
+                let c = owner_review_proof(prior, p)?;
+                require(
+                    c["workItemId"] == p["workItemId"]
+                        && c["path"] == p["path"]
+                        && c["expectedSha256"] == p["sha256"]
+                        && c["status"] == p["status"],
+                )?;
+                let key = (
+                    text(p, "projectId")?.into(),
+                    text(p, "workItemId")?.into(),
+                    text(p, "path")?.into(),
+                    text(p, "sha256")?.into(),
+                );
+                if p["status"] == "unreviewed" {
+                    reviews.remove(&key);
+                } else {
+                    let mut review = p.clone();
+                    review["reviewedAt"] = e["recordedAt"].clone();
+                    reviews.insert(key, review);
+                }
+            }
             "project_studio.resource_imported" => {
                 project_exists(prior, &p["projectId"])?;
                 let c = owner_proof(
@@ -563,7 +685,7 @@ pub(crate) fn project(events: &[Value]) -> Result<Value> {
         }
     }
     Ok(
-        json!({"revision":revision,"resources":resources.into_values().collect::<Vec<_>>(),"jobs":jobs.into_values().collect::<Vec<_>>(),"revisions":revisions,"connections":connections.into_values().collect::<Vec<_>>()}),
+        json!({"revision":revision,"resources":resources.into_values().collect::<Vec<_>>(),"jobs":jobs.into_values().collect::<Vec<_>>(),"revisions":revisions,"connections":connections.into_values().collect::<Vec<_>>(),"reviews":reviews.into_values().collect::<Vec<_>>()}),
     )
 }
 pub(crate) fn authorized_work(events: &[Value], project: &str, work: &str) -> bool {
@@ -653,6 +775,24 @@ pub(crate) fn recovered_owner_result(events: &[Value], request: &Value) -> Optio
         result["reasonCode"] = json!("PROJECT_ARTIFACT_REVISION_QUEUED");
         result["parentVersionId"] = request["payload"]["expectedSha256"].clone();
         return Some(result);
+    }
+    if action == "project_artifact_review_set" {
+        let e = events.iter().find(|e| {
+            e["schemaVersion"] == 15
+                && e["type"] == "project_studio.artifact_reviewed"
+                && e["payload"]["commandId"] == *command
+                && e["payload"]["projectId"] == request["payload"]["projectId"]
+        })?;
+        let p = &e["payload"];
+        return Some(json!({
+            "outcome":"applied",
+            "reasonCode":"PROJECT_ARTIFACT_REVIEW_SET",
+            "projectId":p["projectId"],
+            "workItemId":p["workItemId"],
+            "path":p["path"],
+            "sha256":p["sha256"],
+            "status":p["status"]
+        }));
     }
     let expected = match action {
         "project_resource_import" => "project_studio.resource_imported",
@@ -922,7 +1062,7 @@ impl Host {
                     }
                 }
                 Ok(
-                    json!({"reasonCode":"PROJECT_STUDIO_READ","projectId":p["projectId"],"revision":state["revision"],"resources":array(&state,"resources").iter().filter(|r|r["projectId"]==p["projectId"]).collect::<Vec<_>>(),"tools":production::readiness(self.creation_data_dir()).await?,"imageEngine":production::image_readiness(self.creation_data_dir(),text(p,"projectId")?).await?,"connections":crate::app_connections::metadata(self.creation_data_dir(),text(p,"projectId")?)?,"artifacts":artifacts}),
+                    json!({"reasonCode":"PROJECT_STUDIO_READ","projectId":p["projectId"],"revision":state["revision"],"resources":array(&state,"resources").iter().filter(|r|r["projectId"]==p["projectId"]).collect::<Vec<_>>(),"tools":production::readiness(self.creation_data_dir()).await?,"imageEngine":production::image_readiness(self.creation_data_dir(),text(p,"projectId")?).await?,"connections":crate::app_connections::metadata(self.creation_data_dir(),text(p,"projectId")?)?,"reviews":array(&state,"reviews").iter().filter(|r|r["projectId"]==p["projectId"]).collect::<Vec<_>>(),"artifacts":artifacts}),
                 )
             }
             "project_artifact_read" => {
@@ -945,6 +1085,39 @@ impl Host {
                 Ok(
                     json!({"reasonCode":"PROJECT_ARTIFACT_READ","projectId":p["projectId"],"workItemId":p["workItemId"],"path":path,"sha256":sha,"preview":preview,"sections":sections}),
                 )
+            }
+            "project_artifact_review_set" => {
+                let (root, _) = self.creation_scope(p)?;
+                let path = text(p, "path")?;
+                let bytes = conversation::copied_bytes(
+                    &root,
+                    &creation::relative_result(path)?,
+                    FILE_LIMIT,
+                )?;
+                if digest(&bytes) != hash(&p["expectedSha256"])? {
+                    return Err(fail("PROJECT_ARTIFACT_CHANGED"));
+                }
+                review_scope(p)?;
+                self.store.append(vec![review_fact(
+                    "project_studio.artifact_reviewed",
+                    json!({
+                        "projectId":p["projectId"],
+                        "commandId":p["commandId"],
+                        "workItemId":p["workItemId"],
+                        "path":p["path"],
+                        "sha256":p["expectedSha256"],
+                        "status":p["status"]
+                    }),
+                )])?;
+                Ok(json!({
+                    "outcome":"applied",
+                    "reasonCode":"PROJECT_ARTIFACT_REVIEW_SET",
+                    "projectId":p["projectId"],
+                    "workItemId":p["workItemId"],
+                    "path":p["path"],
+                    "sha256":p["expectedSha256"],
+                    "status":p["status"]
+                }))
             }
             "project_artifact_revise" => {
                 let (root, old_work) = self.creation_scope(p)?;
@@ -1602,6 +1775,126 @@ mod tests {
         assert!(host.action("project_result_export",command(json!({"projectId":project,"workItemId":work,"path":"outputs/summary.md","expectedSha256":sha,"targetPath":no_copy}))).await.is_err());
         assert!(!no_copy.exists());
         host.shutdown().await;
+    }
+    #[tokio::test]
+    async fn artifact_review_is_durable_exact_version_scoped_and_never_inherited() {
+        let (_tmp, host, project) = fixture().await;
+        let queued=host.action("project_work_enqueue",command(json!({"projectId":project,"expectedProjectRevision":1,"abilityId":"D1","title":"Review","instruction":"Create document"}))).await.unwrap();
+        let work = queued["workItemId"].clone();
+        let (root, _) = host
+            .creation_scope(&json!({"projectId":project,"workItemId":work}))
+            .unwrap();
+        let path = "outputs/summary.md";
+        let first = b"First exact version";
+        std::fs::write(root.join(path), first).unwrap();
+        let first_hash = digest(first);
+        let request = command(json!({
+            "projectId":project,"workItemId":work,"path":path,
+            "expectedSha256":first_hash,"status":"reviewed"
+        }));
+        let receipt = host
+            .action("project_artifact_review_set", request.clone())
+            .await
+            .unwrap();
+        assert_eq!(receipt["status"], "reviewed");
+        assert_eq!(
+            host.action("project_artifact_review_set", request.clone())
+                .await
+                .unwrap(),
+            receipt
+        );
+
+        let events = host.store.read_events().unwrap();
+        let owner = events
+            .iter()
+            .find(|e| {
+                e["schemaVersion"] == 15
+                    && e["type"] == "owner.command.requested"
+                    && e["payload"]["commandId"] == request["commandId"]
+            })
+            .unwrap();
+        let mut wrong_version = owner.clone();
+        wrong_version["schemaVersion"] = json!(12);
+        assert!(domain::validate_event(&wrong_version).is_err());
+        let without_receipt = events
+            .iter()
+            .filter(|e| {
+                !(e["schemaVersion"] == 15
+                    && e["type"] == "owner.command.receipted"
+                    && e["payload"]["commandId"] == request["commandId"])
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            recovered_owner_result(&without_receipt, &owner["payload"]).unwrap(),
+            receipt
+        );
+        let page = host
+            .action("project_studio_read", json!({"projectId":project}))
+            .await
+            .unwrap();
+        assert_eq!(page["reviews"][0]["sha256"], first_hash);
+        assert_eq!(page["reviews"][0]["status"], "reviewed");
+
+        let other = host
+            .action("project_create", command(json!({"name":"Other"})))
+            .await
+            .unwrap()["projectId"]
+            .clone();
+        let foreign = host
+            .action(
+                "project_artifact_review_set",
+                command(json!({"projectId":other,"workItemId":work,"path":path,"expectedSha256":first_hash,"status":"reviewed"})),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(foreign.0, "PROJECT_JOB_NOT_FOUND");
+
+        let second = b"Second exact version";
+        std::fs::write(root.join(path), second).unwrap();
+        let stale = host
+            .action(
+                "project_artifact_review_set",
+                command(json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":first_hash,"status":"needs_changes"})),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(stale.0, "PROJECT_ARTIFACT_CHANGED");
+        let second_hash = digest(second);
+        host.action(
+            "project_artifact_review_set",
+            command(json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":second_hash,"status":"needs_changes"})),
+        )
+        .await
+        .unwrap();
+        let state = super::project(&host.store.read_events().unwrap()).unwrap();
+        assert_eq!(array(&state, "reviews").len(), 2);
+        assert!(array(&state, "reviews")
+            .iter()
+            .any(|review| { review["sha256"] == first_hash && review["status"] == "reviewed" }));
+        assert!(array(&state, "reviews").iter().any(|review| {
+            review["sha256"] == second_hash && review["status"] == "needs_changes"
+        }));
+        host.action(
+            "project_artifact_review_set",
+            command(json!({"projectId":project,"workItemId":work,"path":path,"expectedSha256":second_hash,"status":"unreviewed"})),
+        )
+        .await
+        .unwrap();
+        let state = super::project(&host.store.read_events().unwrap()).unwrap();
+        assert_eq!(array(&state, "reviews").len(), 1);
+        assert_eq!(state["reviews"][0]["sha256"], first_hash);
+        let data = host.creation_data_dir().to_owned();
+        host.shutdown().await;
+        drop(host);
+        let reopened = Host::open(data).unwrap();
+        let page = reopened
+            .action("project_studio_read", json!({"projectId":project}))
+            .await
+            .unwrap();
+        assert_eq!(array(&page, "reviews").len(), 1);
+        assert_eq!(page["reviews"][0]["sha256"], first_hash);
+        reopened.shutdown().await;
     }
     #[tokio::test]
     async fn connection_secrets_never_enter_events_and_changed_credentials_invalidate_preview() {

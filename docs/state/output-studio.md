@@ -73,6 +73,7 @@ PPTX creation/selected-slide revision, DOCX creation/selected-paragraph revision
 CSV trimming/deduplication/numeric statistics, literal-cell XLSX, checked CSV
 sum/average charts with static SVG/data/report outputs, formula-backed three-case
 scenario workbooks with checked totals, image resizing,
+literal-evidence structured tables with visible uncertain/missing cells,
 2–12 image batch conversion with per-source results, video clip concatenation
 with an optional SRT sidecar, audio cleanup, and 1–12 segment podcast packaging
 to checked M4A plus output-relative chapter JSON. Python
@@ -86,6 +87,8 @@ See [checked CSV charts](checked-csv-charts.md) for its aggregation, escaping an
 static-output contract.
 See [editable scenario workbooks](editable-scenario-workbooks.md) for its exact
 column, fixed-formula and independent recalculation contract.
+See [traceable structured extraction](traceable-structured-data-extraction.md)
+for its source, literal-evidence and missing/uncertain-cell contract.
 
 Limits: 25 MiB total input/output per production job, 12 sources, 16 produced
 files, 120 seconds per job, 20 minutes maximum media input/edit duration, bounded

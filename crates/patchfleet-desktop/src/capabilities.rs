@@ -134,6 +134,23 @@ fn chart_source(resource: &Value) -> bool {
         .to_ascii_lowercase()
         .ends_with(".csv")
 }
+fn extraction_source(resource: &Value) -> bool {
+    let name = text(resource, "name").to_ascii_lowercase();
+    [
+        ".txt", ".md", ".csv", ".json", ".html", ".htm", ".srt", ".pdf", ".png", ".jpg", ".jpeg",
+        ".webp",
+    ]
+    .iter()
+    .any(|extension| name.ends_with(extension))
+}
+fn extraction_key(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    (1..=32).contains(&bytes.len())
+        && bytes[0].is_ascii_lowercase()
+        && bytes[1..]
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_')
+}
 fn source_refs(draft: &CapabilityDraft, resources: &[Value]) -> Vec<Value> {
     resources
         .iter()
@@ -560,6 +577,7 @@ impl Console {
             | "capabilities-podcast"
             | "capabilities-data-chart"
             | "capabilities-data-scenario"
+            | "capabilities-data-extract"
             | "capabilities-interactive" => 5,
             "capabilities-browser" => 6,
             _ => 0,
@@ -594,6 +612,7 @@ impl Console {
                 "capabilities-podcast" => 8,
                 "capabilities-data-chart" => 9,
                 "capabilities-data-scenario" => 10,
+                "capabilities-data-extract" => 11,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -639,6 +658,26 @@ impl Console {
                 *draft.value("scenarioColumns") =
                     "line_item | base_plan | growth_case | lean_case".into();
                 *draft.value("currency") = "TRY".into();
+            } else if scene == "capabilities-data-extract" {
+                draft.sources.extend(
+                    available
+                        .iter()
+                        .filter(|resource| extraction_source(resource))
+                        .map(|resource| text(resource, "resourceId").to_owned()),
+                );
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("title") = if english {
+                    "Vendor renewal review"
+                } else {
+                    "Tedarikçi yenileme incelemesi"
+                }
+                .into();
+                *draft.value("extractionColumns") = if english {
+                    "vendor: Vendor | renewal: Renewal | seats: Seats"
+                } else {
+                    "vendor: Tedarikçi | renewal: Yenileme | seats: Kullanıcı"
+                }
+                .into();
             }
         }
     }
@@ -1462,6 +1501,7 @@ impl Console {
             "Edit podcast",
             "Chart from CSV",
             "Scenario workbook",
+            "Extract table",
         ];
         form_combo(
             ui,
@@ -1473,7 +1513,7 @@ impl Console {
                 }
             },
         );
-        if draft.kind != 10 {
+        if ![10, 11].contains(&draft.kind) {
             hint(
                 ui,
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
@@ -1486,7 +1526,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7].contains(&draft.kind) {
+        if ![0, 3, 7, 11].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -2009,6 +2049,88 @@ impl Console {
                     }));
                 }
             }
+            11 => {
+                hint(
+                    ui,
+                    "Select 1–8 sources. Every value needs a literal quote; uncertain and missing cells stay visible.",
+                );
+                let candidates = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && extraction_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                ui.horizontal_wrapped(|ui| {
+                    for resource in &candidates {
+                        let id = text(resource, "resourceId");
+                        let mut selected = draft.sources.contains(id);
+                        let enabled = selected || draft.sources.len() < 8;
+                        if ui
+                            .add_enabled(
+                                enabled,
+                                egui::Checkbox::new(&mut selected, text(resource, "name")),
+                            )
+                            .changed()
+                        {
+                            if selected {
+                                draft.sources.insert(id.into());
+                            } else {
+                                draft.sources.remove(id);
+                            }
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Extraction title"));
+                    studio::input(ui, draft.value("title"), 160, "", false);
+                });
+                ui.label(t(ui, "Columns · key: label | key: label"));
+                studio::input(ui, draft.value("extractionColumns"), 1200, "", false);
+                hint(
+                    ui,
+                    "Chat fills candidate rows. The local tool rejects values without exact source evidence.",
+                );
+                let mut seen = HashSet::new();
+                let columns: Option<Vec<Value>> = draft
+                    .get("extractionColumns")
+                    .split('|')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| {
+                        let (key, label) = value.split_once(':')?;
+                        let key = key.trim();
+                        let label = label.trim();
+                        (extraction_key(key)
+                            && valid_input(label, 80)
+                            && seen.insert(key.to_owned()))
+                        .then(|| json!({"key":key,"label":label}))
+                    })
+                    .collect();
+                let sources = candidates
+                    .iter()
+                    .filter(|resource| draft.sources.contains(text(resource, "resourceId")))
+                    .take(8)
+                    .map(|resource| {
+                        json!({"source":resource["resourceId"],"label":resource["name"]})
+                    })
+                    .collect::<Vec<_>>();
+                if (1..=8).contains(&sources.len())
+                    && columns
+                        .as_ref()
+                        .is_some_and(|columns| (1..=12).contains(&columns.len()))
+                    && valid_input(draft.get("title"), 160)
+                {
+                    operation = Some(json!({
+                        "operation":"data.extract",
+                        "arguments":{
+                            "title":draft.get("title"),
+                            "sources":sources,
+                            "columns":columns,
+                            "rows":[]
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -2036,7 +2158,11 @@ impl Console {
             if let Some(operation) = operation {
                 self.stage_operation(
                     snapshot,
-                    "Produce these deliverables using the exact Project sources.",
+                    if draft.kind == 11 {
+                        "Read the exact Project sources and populate rows before calling the typed tool. Every confirmed or uncertain value must appear inside its literal evidence quote. Mark absent fields missing with null value and evidence; never infer or hide uncertainty."
+                    } else {
+                        "Produce these deliverables using the exact Project sources."
+                    },
                     operation,
                     commands,
                 );
@@ -2703,6 +2829,60 @@ mod tests {
         assert!(request.contains("\"upsideColumn\": \"growth_case\""));
         assert!(request.contains("\"downsideColumn\": \"lean_case\""));
         assert!(request.contains("\"currency\": \"TRY\""));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn structured_extraction_request_freezes_sources_and_schema_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"atlas.txt","kind":"text","sha256":"a".repeat(64),"bytes":128,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"northwind.pdf","kind":"document","sha256":"b".repeat(64),"bytes":256,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"private.bin","kind":"file","sha256":"c".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 11;
+        draft.sources.extend([
+            "resource:11111111-1111-4111-8111-111111111111".into(),
+            "resource:22222222-2222-4222-8222-222222222222".into(),
+            "resource:33333333-3333-4333-8333-333333333333".into(),
+        ]);
+        *draft.value("title") = "Vendor renewal review".into();
+        *draft.value("extractionColumns") =
+            "vendor: Vendor | renewal: Renewal | seats: Seats".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"data.extract\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(request.contains("\"key\": \"vendor\""));
+        assert!(request.contains("\"label\": \"Renewal\""));
+        assert!(request.contains("\"rows\": []"));
+        assert!(request.contains("literal evidence quote"));
+        assert!(request.contains("Mark absent fields missing"));
         assert_eq!(c.create.productive_view(), 0);
     }
     #[test]

@@ -79,6 +79,9 @@ commitments.
   [Task0073](state/editable-scenario-workbooks.md) closes the deterministic T4
   gap: exact Base/Upside/Downside columns produce a formula-backed XLSX whose
   selector recalculates against independently checked totals, with no model call.
+  [Task0074](state/traceable-structured-data-extraction.md) closes the bounded T5
+  publication gap: every populated table cell needs literal evidence from its
+  exact frozen source while uncertainty and missing values remain explicit.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

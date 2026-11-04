@@ -250,6 +250,84 @@ def data_scenario(args,tools):
     return result
 
 
+def data_extract(args,tools):
+    exact(args,('title','sources','columns','rows'))
+    title=text(args['title'],160).strip();require(title)
+    sources=args['sources'];require(isinstance(sources,list) and 1<=len(sources)<=8)
+    prepared=[];seen_paths=set()
+    for index,item in enumerate(sources,1):
+        exact(item,('source','label'));path=source(item['source']);label=text(item['label'],200).strip()
+        require(label and '/' not in label and '\\' not in label and str(path) not in seen_paths);seen_paths.add(str(path));suffix=path.suffix.lower()
+        raw=path.read_bytes();source_hash=hashlib.sha256(raw).hexdigest()
+        if suffix in ('.txt','.md','.csv','.json','.html','.htm','.srt'):
+            require(len(raw)<=1024*1024,'PRODUCTION_DATA_LIMIT')
+            try: content=raw.decode('utf-8-sig')
+            except UnicodeDecodeError: raise ValueError('PRODUCTION_DATA_FORMAT_UNSUPPORTED')
+        elif suffix=='.pdf':
+            raw_text=run_tool(tools,'pdftotext',['-layout',str(path),'-'])
+            try: content=raw_text.decode('utf-8')
+            except UnicodeDecodeError: raise ValueError('PRODUCTION_DATA_FORMAT_UNSUPPORTED')
+        elif suffix in ('.png','.jpg','.jpeg','.webp'):
+            raw_text=run_tool(tools,'tesseract',[str(path),'stdout','--psm','3'])
+            try: content=raw_text.decode('utf-8')
+            except UnicodeDecodeError: raise ValueError('PRODUCTION_DATA_FORMAT_UNSUPPORTED')
+        else: raise ValueError('PRODUCTION_DATA_FORMAT_UNSUPPORTED')
+        content=content.replace('\r\n','\n').replace('\r','\n');text(content,1024*1024)
+        require(content.strip(),'PRODUCTION_EXTRACTION_EMPTY_SOURCE')
+        prepared.append({'path':str(path),'id':f'source-{index:02}','label':label,'sourceSha256':source_hash,
+                         'textSha256':hashlib.sha256(content.encode()).hexdigest(),'content':content})
+    columns=args['columns'];require(isinstance(columns,list) and 1<=len(columns)<=12)
+    checked_columns=[];keys=set()
+    for column in columns:
+        exact(column,('key','label'));key=text(column['key'],32).strip();label=text(column['label'],80).strip()
+        require(re.fullmatch('[a-z][a-z0-9_]{0,31}',key) is not None and label and key not in keys)
+        keys.add(key);checked_columns.append({'key':key,'label':label})
+    rows=args['rows'];require(isinstance(rows,list) and 1<=len(rows)<=500 and len(rows)*len(columns)<=6000)
+    checked_rows=[];counts={'confirmed':0,'uncertain':0,'missing':0}
+    for row_index,row in enumerate(rows,1):
+        exact(row,('source','cells'));path=source(row['source'])
+        record=next((item for item in prepared if item['path']==str(path)),None);require(record is not None)
+        cells=row['cells'];require(isinstance(cells,dict) and set(cells)==keys)
+        checked={}
+        for column in checked_columns:
+            key=column['key'];cell=cells[key];exact(cell,('status','value','evidence'))
+            status=cell['status'];require(isinstance(status,str) and status in counts)
+            if status=='missing':
+                require(cell['value'] is None and cell['evidence'] is None);value=None;evidence=None;line=None
+            else:
+                value=text(cell['value'],2000).strip();evidence=text(cell['evidence'],4000).strip()
+                require(value and evidence and value in evidence,'PRODUCTION_EXTRACTION_EVIDENCE_INVALID')
+                offset=record['content'].find(evidence);require(offset>=0,'PRODUCTION_EXTRACTION_EVIDENCE_INVALID')
+                line=record['content'].count('\n',0,offset)+1
+            counts[status]+=1;checked[key]={'value':value,'status':status,'evidence':evidence,'line':line}
+        checked_rows.append({'row':row_index,'sourceId':record['id'],'sourceLabel':record['label'],'cells':checked})
+    public_sources=[{key:item[key] for key in ('id','label','sourceSha256','textSha256')} for item in prepared]
+    result={'kind':'data_extraction','title':title,'columns':checked_columns,'sources':public_sources,
+            'rowCount':len(checked_rows),'cellCount':sum(counts.values()),'statusCounts':counts,'rows':checked_rows,
+            'file':'extracted-table.csv'}
+    csv_cell=lambda value:("'"+str(value)) if str(value).startswith(('=','+','-','@')) else value
+    with (OUT/'extracted-table.csv').open('x',newline='',encoding='utf-8') as output:
+        writer=csv.writer(output);header=['Source']
+        for column in checked_columns: header.extend((csv_cell(column['label']),csv_cell(column['label']+' status'),csv_cell(column['label']+' evidence line')))
+        writer.writerow(header)
+        for row in checked_rows:
+            values=[csv_cell(row['sourceLabel'])]
+            for column in checked_columns:
+                cell=row['cells'][column['key']];values.extend((csv_cell(cell['value']) if cell['value'] else '',cell['status'],cell['line'] or ''))
+            writer.writerow(values)
+    (OUT/'extraction.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+    markdown=lambda value:''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character for character in html.escape(str(value),quote=True).replace('\r',' ').replace('\n',' '))
+    report=['# '+markdown(title),'',f'- Sources checked: {len(prepared)}',f'- Rows extracted: {len(checked_rows)}',
+            f'- Confirmed cells: {counts["confirmed"]}',f'- Uncertain cells: {counts["uncertain"]}',f'- Missing cells: {counts["missing"]}',
+            '','| Source | Confirmed | Uncertain | Missing |','|---|---:|---:|---:|']
+    for item in prepared:
+        source_rows=[row for row in checked_rows if row['sourceId']==item['id']]
+        source_counts={status:sum(cell['status']==status for row in source_rows for cell in row['cells'].values()) for status in counts}
+        report.append(f'| {markdown(item["label"])} | {source_counts["confirmed"]} | {source_counts["uncertain"]} | {source_counts["missing"]} |')
+    (OUT/'report.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+    return result
+
+
 def captions_file(captions,duration,path):
     require(isinstance(captions,list) and len(captions)<=1000)
     last=0;lines=[]
@@ -486,6 +564,7 @@ def execute(operation,args,tools):
     if operation=='audio.podcast': return podcast(args,tools)
     if operation=='data.chart': return data_chart(args,tools)
     if operation=='data.scenario': return data_scenario(args,tools)
+    if operation=='data.extract': return data_extract(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)
     if operation=='video.package': return package(args,tools)

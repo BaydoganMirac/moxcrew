@@ -50,7 +50,7 @@ pub(super) struct StudioState {
     delivery_request: Option<DeliveryExportRequest>,
 }
 
-fn studio_page<'a>(snapshot: &'a Value, project: &str) -> Option<&'a Value> {
+pub(super) fn studio_page<'a>(snapshot: &'a Value, project: &str) -> Option<&'a Value> {
     let page = &snapshot["projectStudio"];
     (text(page, "projectId") == project && text(page, "reasonCode") == "PROJECT_STUDIO_READ")
         .then_some(page)

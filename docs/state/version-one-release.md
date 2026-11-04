@@ -2,7 +2,7 @@
 
 Status: Scope approved; productive crews and bounded production implemented, complete ability/release evidence pending
 
-Updated: 2026-10-20
+Updated: 2026-11-04
 
 ## Approved baseline
 
@@ -72,6 +72,11 @@ and [Output Studio](output-studio.md) for actual operation limits and evidence.
 Task0047 adds [delivery packages](delivery-packages.md): searchable Project outputs,
 explicit multi-file selection and a checked ZIP with provenance. It makes existing
 outputs usable together; it does not complete an additional generation ability.
+[Task0062](ability-readiness-matrix.md) maps every one of the forty recipe IDs to
+declared required/optional tools and separately checked access, displays actual
+selected-Project readiness before selection and links missing prerequisites to
+existing setup. This closes the catalog-preflight visibility gap only; it adds no
+live model or output-quality evidence to the area rows above.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

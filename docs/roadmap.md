@@ -38,6 +38,12 @@ commitments.
   optional. [State and evidence](state/eleven-product-capabilities.md) distinguish
   real media/browser proof from protocol peers and unverified live models.
 
+- Keep ability selection honest before work starts. [Task0062](state/ability-readiness-matrix.md)
+  gives all forty recipes an exhaustive local-tool/access profile, combines it
+  with the existing Project Studio readiness read and routes missing setup to the
+  exact existing Tools, image-engine or Apps surface. This is preflight evidence,
+  not completion of the live-model/output-quality matrix.
+
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live
   direction, cross-crew delivery/review, resources, recurring recipes, explicit

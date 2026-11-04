@@ -855,6 +855,176 @@ async fn attributed_brief_keeps_literal_sources_open_questions_and_unassigned_ac
 }
 
 #[tokio::test]
+async fn docx_template_fill_replaces_exact_fields_and_keeps_missing_values_visible() {
+    use sha2::{Digest, Sha256};
+    let data = tempfile::tempdir().unwrap();
+    let created = run(
+        data.path(),
+        "documents.create",
+        &json!({"title":"Partner onboarding","paragraphs":[
+            "Client: {{client_name}}",
+            "Approval date: {{approval_date}}",
+            "Contact: {{contact_email}}"
+        ]}),
+        &[],
+        None,
+    )
+    .await
+    .unwrap();
+    let template = created
+        .files
+        .iter()
+        .find(|(name, _)| name == "document.docx")
+        .unwrap()
+        .1
+        .clone();
+    let fields = json!([
+        {"key":"client_name","status":"provided","value":"Atlas <Cloud>"},
+        {"key":"approval_date","status":"missing","value":null},
+        {"key":"contact_email","status":"provided","value":"ops@atlas.example"}
+    ]);
+    let output = run(
+        data.path(),
+        "documents.template",
+        &json!({"source":"inputs/onboarding.docx","fields":fields}),
+        &[("inputs/onboarding.docx".into(), template.clone())],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.value["kind"], "filled_template");
+    assert_eq!(output.value["fieldCount"], 3);
+    assert_eq!(output.value["providedCount"], 2);
+    assert_eq!(output.value["missingCount"], 1);
+    assert_eq!(
+        output.value["templateSha256"],
+        format!("{:x}", Sha256::digest(&template))
+    );
+    assert!(!output.value.to_string().contains("inputs/"));
+    assert!(!output
+        .value
+        .to_string()
+        .contains(data.path().to_string_lossy().as_ref()));
+    let filled = output
+        .files
+        .iter()
+        .find(|(name, _)| name == "filled-template.docx")
+        .unwrap();
+    let reopened = run(
+        data.path(),
+        "inspect",
+        &json!({"source":"inputs/filled.docx"}),
+        &[("inputs/filled.docx".into(), filled.1.clone())],
+        None,
+    )
+    .await
+    .unwrap();
+    let reopened = reopened.value["pages"].to_string();
+    assert!(reopened.contains("Atlas <Cloud>"));
+    assert!(reopened.contains("[MISSING: approval_date]"));
+    assert!(reopened.contains("ops@atlas.example"));
+    assert!(!reopened.contains("{{"));
+    let audit: Value = serde_json::from_slice(
+        &output
+            .files
+            .iter()
+            .find(|(name, _)| name == "template-fill.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(audit["fields"], output.value["fields"]);
+    assert!(audit.get("files").is_none());
+    let split_template = base64::engine::general_purpose::STANDARD.decode("UEsDBBQAAAAIAHazZF33S4B1wgAAAHYBAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbH2QuQ7CMAyGX6XKiqgRAwOiLMAKDLyAlbptRC7FLsfbk3INCBjt//gsLw7XSFxcnPVcqU4kzgFYd+SQyxDJZ6UJyaHkMbUQUR+xJZhOJjPQwQt5GcvQoZaLNTXYWyk2l7xmE3ylEllWxephHFiVwhit0ShZh5OvPyjjJ6HMybuHOxN5lA0KvhIG5TfgmdudKCVTU7HHJFt02QXnkGqog+5dTpb/a77cGZrGaHrnh7aYgiZm41tny7fi0PjX/XB/9/IGUEsDBBQAAAAIAHazZF1hey9DiQAAAPIAAAALAAAAX3JlbHMvLnJlbHONzzsOAiEQBuCrEA6ws1pYGKCy2dZ4AQLDIy6PDBj19lJYrMbCcuaffH9GnHHVPZbcQqyNPdKam+Sh93oEaCZg0m0qFfNIXKGk+xjJQ9Xmqj3Cfp4PQFuDK7E12WIlp8XuOLs8K/5jF+eiwVMxt4S5/6j4uhiyJo9d8nshC/a9ngbLQQn4eFG9AFBLAwQUAAAACAB2s2Rd7wgntZMAAADfAAAAEQAAAHdvcmQvZG9jdW1lbnQueG1sVU9BDoMwDPsK4gEL2mGHivWyD/CDqbQdIDVtlWbqJsTfB2Vi2sWO5cRW2ixM0E+0nqsXOp9EvtYjcxQASY8WVTqFaP3qPQKh4lXSADmQiRS0TWnyAzo4N80FUE2+lm0WfTDvjeMGVKAr1INs4VAsb25am0U1z7pM983lfee4ZekV2mX58+CbnqzmjvbYvRZ+L8kPUEsBAhQDFAAAAAgAdrNkXfdLgHXCAAAAdgEAABMAAAAAAAAAAAAAAIABAAAAAFtDb250ZW50X1R5cGVzXS54bWxQSwECFAMUAAAACAB2s2RdYXsvQ4kAAADyAAAACwAAAAAAAAAAAAAAgAHzAAAAX3JlbHMvLnJlbHNQSwECFAMUAAAACAB2s2Rd7wgntZMAAADfAAAAEQAAAAAAAAAAAAAAgAGlAQAAd29yZC9kb2N1bWVudC54bWxQSwUGAAAAAAMAAwC5AAAAZwIAAAAA").unwrap();
+    let split = run(
+        data.path(),
+        "documents.template",
+        &json!({"source":"inputs/split.docx","fields":[{"key":"client_name","status":"provided","value":"Split Run Ltd"}]}),
+        &[("inputs/split.docx".into(), split_template)],
+        None,
+    )
+    .await
+    .unwrap();
+    let split_document = split
+        .files
+        .iter()
+        .find(|(name, _)| name == "filled-template.docx")
+        .unwrap();
+    let split_reopened = run(
+        data.path(),
+        "inspect",
+        &json!({"source":"inputs/split-filled.docx"}),
+        &[("inputs/split-filled.docx".into(), split_document.1.clone())],
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(split_reopened.value["pages"]
+        .to_string()
+        .contains("Client: Split Run Ltd"));
+    let mut incomplete = fields.clone();
+    incomplete.as_array_mut().unwrap().pop();
+    assert!(run(
+        data.path(),
+        "documents.template",
+        &json!({"source":"inputs/onboarding.docx","fields":incomplete}),
+        &[("inputs/onboarding.docx".into(), template.clone())],
+        None,
+    )
+    .await
+    .is_err());
+    let mut extra = fields.clone();
+    extra.as_array_mut().unwrap().push(json!({
+        "key":"unknown_field","status":"provided","value":"not in template"
+    }));
+    assert!(run(
+        data.path(),
+        "documents.template",
+        &json!({"source":"inputs/onboarding.docx","fields":extra}),
+        &[("inputs/onboarding.docx".into(), template.clone())],
+        None,
+    )
+    .await
+    .is_err());
+    let malformed = run(
+        data.path(),
+        "documents.create",
+        &json!({"paragraphs":["Client: {{Client Name}}"]}),
+        &[],
+        None,
+    )
+    .await
+    .unwrap();
+    let malformed = malformed
+        .files
+        .iter()
+        .find(|(name, _)| name == "document.docx")
+        .unwrap();
+    assert!(run(
+        data.path(),
+        "documents.template",
+        &json!({"source":"inputs/malformed.docx","fields":[
+            {"key":"client_name","status":"provided","value":"Atlas Cloud"}
+        ]}),
+        &[("inputs/malformed.docx".into(), malformed.1.clone())],
+        None,
+    )
+    .await
+    .is_err());
+    let mut hidden_missing = fields;
+    hidden_missing[1]["value"] = json!("unknown");
+    assert!(run(
+        data.path(),
+        "documents.template",
+        &json!({"source":"inputs/onboarding.docx","fields":hidden_missing}),
+        &[("inputs/onboarding.docx".into(), template)],
+        None,
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
 async fn caption_renderer_is_required_and_fallback_rejects_unbounded_work_before_encoding() {
     use std::os::unix::fs::PermissionsExt;
     let data = tempfile::tempdir().unwrap();

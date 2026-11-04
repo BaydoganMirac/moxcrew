@@ -392,6 +392,62 @@ def documents_brief(args,tools):
     return result
 
 
+def documents_template(args,tools):
+    exact(args,('source','fields'))
+    path=source(args['source']);require(path.suffix.lower()=='.docx','PRODUCTION_TEMPLATE_FORMAT_UNSUPPORTED')
+    parts=read_zip(path);names=[name for name in parts if name=='word/document.xml' or re.fullmatch(r'word/(header|footer)[0-9]+\.xml',name)]
+    require('word/document.xml' in names)
+    pattern=re.compile(r'\{\{([a-z][a-z0-9_]{0,31})\}\}')
+    documents={};placeholders=set()
+    for name in names:
+        node=xml(parts[name]);documents[name]=node
+        for paragraph in node.findall('.//w:p',NS):
+            visible=''.join(item.text or '' for item in paragraph.findall('.//w:t',NS))
+            found=list(pattern.finditer(visible));placeholders.update(match[1] for match in found)
+            remainder=pattern.sub('',visible)
+            require('{{' not in remainder and '}}' not in remainder,'PRODUCTION_TEMPLATE_PLACEHOLDER_INVALID')
+    require(1<=len(placeholders)<=100,'PRODUCTION_TEMPLATE_PLACEHOLDER_INVALID')
+    fields=args['fields'];require(isinstance(fields,list) and 1<=len(fields)<=100)
+    replacements={};checked=[]
+    for field in fields:
+        exact(field,('key','status','value'));key=text(field['key'],32);status=field['status']
+        require(re.fullmatch(r'[a-z][a-z0-9_]{0,31}',key) is not None and key not in replacements)
+        require(isinstance(status,str) and status in ('provided','missing'))
+        if status=='missing':
+            require(field['value'] is None);value=None;replacement=f'[MISSING: {key}]'
+        else:
+            value=text(field['value'],4000);require(value.strip() and '\n' not in value and '\r' not in value and '{{' not in value and '}}' not in value)
+            replacement=value
+        replacements[key]=replacement;checked.append({'key':key,'status':status,'value':value})
+    require(set(replacements)==placeholders,'PRODUCTION_TEMPLATE_FIELDS_MISMATCH')
+    for name,node in documents.items():
+        for paragraph in node.findall('.//w:p',NS):
+            items=paragraph.findall('.//w:t',NS);original=[item.text or '' for item in items];visible=''.join(original)
+            matches=list(pattern.finditer(visible))
+            if not matches: continue
+            spans=[];offset=0
+            for index,value in enumerate(original): spans.append((offset,offset+len(value),index));offset+=len(value)
+            rendered=['' for _ in items]
+            def copy(start,end):
+                for left,right,index in spans:
+                    if right<=start or left>=end: continue
+                    rendered[index]+=visible[max(start,left):min(end,right)]
+            cursor=0
+            for match in matches:
+                copy(cursor,match.start());index=next(index for left,right,index in spans if left<=match.start()<right)
+                rendered[index]+=replacements[match[1]];cursor=match.end()
+            copy(cursor,len(visible))
+            for item,value in zip(items,rendered):
+                item.text=value;item.set('{http://www.w3.org/XML/1998/namespace}space','preserve')
+        parts[name]=ET.tostring(node,encoding='utf-8',xml_declaration=True)
+    write_zip('filled-template.docx',parts)
+    result={'kind':'filled_template','templateSha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+            'fieldCount':len(checked),'providedCount':sum(item['status']=='provided' for item in checked),
+            'missingCount':sum(item['status']=='missing' for item in checked),'fields':checked,'file':'filled-template.docx'}
+    (OUT/'template-fill.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+    return result
+
+
 def captions_file(captions,duration,path):
     require(isinstance(captions,list) and len(captions)<=1000)
     last=0;lines=[]
@@ -630,6 +686,7 @@ def execute(operation,args,tools):
     if operation=='data.scenario': return data_scenario(args,tools)
     if operation=='data.extract': return data_extract(args,tools)
     if operation=='documents.brief': return documents_brief(args,tools)
+    if operation=='documents.template': return documents_template(args,tools)
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)
     if operation=='video.package': return package(args,tools)

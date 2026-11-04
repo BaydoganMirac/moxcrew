@@ -12,31 +12,39 @@ permissions:
 jobs:
   native:
     timeout-minutes: 90
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-15
+            experimental: false
             target: aarch64-apple-darwin
             formats: app,dmg
             executable: patchfleet-desktop
             archive_paths: Moxcrew.app *.dmg
           - os: macos-15-intel
+            experimental: false
             target: x86_64-apple-darwin
             formats: app,dmg
             executable: patchfleet-desktop
             archive_paths: Moxcrew.app *.dmg
           - os: windows-2025
+            # Keep Windows evidence visible, but do not publish an installer
+            # until its private-storage and native behavior suites pass.
+            experimental: true
             target: x86_64-pc-windows-msvc
             formats: nsis,wix
             executable: patchfleet-desktop.exe
             archive_paths: '*-setup.exe *.msi'
           - os: ubuntu-24.04
+            experimental: false
             target: x86_64-unknown-linux-gnu
             formats: deb,appimage
             executable: patchfleet-desktop
             archive_paths: '*.deb *.AppImage'
           - os: ubuntu-24.04-arm
+            experimental: false
             target: aarch64-unknown-linux-gnu
             formats: deb,appimage
             executable: patchfleet-desktop

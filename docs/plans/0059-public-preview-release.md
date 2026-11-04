@@ -19,8 +19,9 @@ recovery instructions available.
 
 - Tag and title: `v0.12.0`, “Moxcrew 0.12.0 — Public Preview”.
 - GitHub classification: pre-release, not a signed production release.
-- Assets: macOS Apple Silicon/Intel DMGs, Windows x64 setup EXE/MSI, Linux
-  x64/ARM64 AppImage/DEB, plus SHA-256 checksums.
+- Assets: macOS Apple Silicon/Intel DMGs, Linux x64/ARM64 AppImage/DEB, plus
+  SHA-256 checksums. Windows is excluded until its native private-storage and
+  behavior gates pass.
 - Source: successful native CI artifacts for the exact reviewed `main` commit.
 - Copy: direct platform choices, compatibility/data-backup warning and explicit
   disclosure that macOS notarization and Windows publisher signing are absent.
@@ -31,8 +32,10 @@ Do not invent signing, notarization, antivirus reputation, live-provider quality
 or native runtime evidence that has not been established. Do not publish npm,
 Cloud or website changes. Preserve package/bundle/data compatibility identifiers.
 
-Before publication, the native matrix and general CI for the selected commit
-must pass. Inspect every downloaded archive, verify expected installer types and
+Before publication, general CI and every advertised macOS/Linux native job for
+the selected commit must pass. The Windows experimental job must still run and
+remain visible, but it is not a release asset gate until its known failures are
+resolved. Inspect every downloaded archive, verify expected installer types and
 hash all public assets. After publication, update README/install/release/state
 documentation, GitHub About homepage and verify that the tag, assets and links
 are publicly readable.
@@ -45,3 +48,8 @@ package was published: Windows optional-tool discovery did not account for
 could contend for the single local writer or fixture deadlines. The release
 candidate fixes those boundaries and runs native behavior tests serially before
 building installers.
+
+A later no-fail-fast Windows run exposed broader private-storage ACL/lock and
+platform-dependent desktop test failures. The release scope therefore narrows to
+the four passing macOS/Linux targets instead of presenting an unverified Windows
+installer as usable.

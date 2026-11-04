@@ -2,7 +2,7 @@
 
 Status: active
 
-Updated: 2026-10-25
+Updated: 2026-11-04
 
 This roadmap describes public technical direction, not dates or commercial
 commitments.
@@ -15,7 +15,20 @@ commitments.
   tests and native fixture captures establish the bounded rendering/flow evidence.
   [Task0054](state/desktop-composition-and-cleanup.md) subsequently recomposes
   the shell, conversation and inspectors after owner visual rejection; owner
-  evaluation of the revised direction remains distinct from technical checks.
+  evaluation of that revised direction remained distinct from technical checks.
+  [Task0056](state/distinctive-desktop-workbench.md) now replaces the cautious
+  empty state with a bold Mox launch pad, tightens the shell and unifies semantic
+  workstream surfaces. [Task0057](state/distinctive-desktop-flows.md) carries that
+  language through Projects, Memory, Decisions, Tasks, Teams, Agents, Providers
+  and Cloud with ledgers, state markers and restrained owner-input surfaces.
+  Native captures and 231 tests are implementation evidence; owner visual
+  judgment remains the acceptance gate.
+
+- Present Moxcrew clearly to prospective early users. [Task0058](state/github-product-surface.md)
+  replaces the architecture-first GitHub landing page with a product promise,
+  current native screenshots, local-first differentiation and a truthful
+  source-build/watch/feedback path. Signed public downloads and a real product
+  website remain separate release work.
 
 - Continue live-model and platform release evidence for the delivered
   [eleven local product capabilities](plans/0052-eleven-product-capabilities.md):

@@ -6,8 +6,8 @@ Updated: 2026-10-20
 
 ## One-line promise
 
-Moxcrew helps people turn goals into outcomes with AI agents, keeping the work,
-context and decisions together in projects.
+Moxcrew turns one goal into an inspectable AI crew, keeping the work, context,
+outputs and accepted decisions together in a local-first Project.
 
 ## Audience and project model
 

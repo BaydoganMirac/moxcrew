@@ -12,6 +12,7 @@ pub struct Palette {
     pub control_border: Color32,
     pub primary: Color32,
     pub on_primary: Color32,
+    pub accent: Color32,
     pub focus: Color32,
     pub success: Color32,
     pub success_surface: Color32,
@@ -34,6 +35,8 @@ pub mod metrics {
     pub const SECTION_GAP: f32 = 24.0;
     pub const PADDING: i8 = 16;
     pub const PAGE_PADDING: i8 = 24;
+    pub const NAV_WIDTH: f32 = 184.0;
+    pub const NAV_RAIL_WIDTH: f32 = 56.0;
     pub const CONTROL_RADIUS: u8 = 8;
     pub const CARD_RADIUS: u8 = 12;
     pub const INPUT_MARGIN: egui::Margin = egui::Margin::symmetric(12, 8);
@@ -48,7 +51,7 @@ pub enum ButtonKind {
 }
 
 pub fn button(ui: &mut egui::Ui, label: &str, kind: ButtonKind, enabled: bool) -> egui::Response {
-    kit_button(ui, label, kind, metrics::CONTROL_HEIGHT, enabled)
+    kit_button(ui, label, kind, metrics::CONTROL_HEIGHT, 0.0, enabled)
 }
 
 pub fn compact_button(
@@ -57,7 +60,55 @@ pub fn compact_button(
     kind: ButtonKind,
     enabled: bool,
 ) -> egui::Response {
-    kit_button(ui, label, kind, metrics::COMPACT_HEIGHT, enabled)
+    kit_button(ui, label, kind, metrics::COMPACT_HEIGHT, 0.0, enabled)
+}
+
+pub fn shortcut_button(ui: &mut egui::Ui, label: &str, width: f32) -> egui::Response {
+    let response = kit_button(ui, label, ButtonKind::Secondary, 44.0, width, true);
+    let stripe = egui::Rect::from_min_max(
+        response.rect.left_top() + egui::vec2(0.0, 9.0),
+        response.rect.left_bottom() + egui::vec2(3.0, -9.0),
+    );
+    ui.painter()
+        .rect_filled(stripe, 2, palette(ui.ctx()).accent);
+    response
+}
+
+/// A collection entry with one reading axis and a semantic source/state marker.
+pub fn ledger_row<R>(
+    ui: &mut egui::Ui,
+    accent: Color32,
+    selected: bool,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let p = palette(ui.ctx());
+    let response = egui::Frame::new()
+        .fill(if selected {
+            p.raised
+        } else {
+            Color32::TRANSPARENT
+        })
+        .corner_radius(if selected { metrics::CONTROL_RADIUS } else { 0 })
+        .inner_margin(egui::Margin {
+            left: 20,
+            right: 16,
+            top: 14,
+            bottom: 14,
+        })
+        .show(ui, contents);
+    let rect = response.response.rect;
+    ui.painter().line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        egui::Stroke::new(1.0, p.border),
+    );
+    ui.painter().line_segment(
+        [
+            rect.left_top() + egui::vec2(0.0, 12.0),
+            rect.left_bottom() - egui::vec2(0.0, 12.0),
+        ],
+        egui::Stroke::new(3.0, accent),
+    );
+    response
 }
 
 fn kit_button(
@@ -65,6 +116,7 @@ fn kit_button(
     label: &str,
     kind: ButtonKind,
     height: f32,
+    width: f32,
     enabled: bool,
 ) -> egui::Response {
     let p = palette(ui.ctx());
@@ -127,7 +179,7 @@ fn kit_button(
                 },
             ))
             .wrap_mode(egui::TextWrapMode::Extend)
-            .min_size(egui::vec2(0.0, height)),
+            .min_size(egui::vec2(width, height)),
         );
     ui.set_style(previous);
     if response.has_focus() {
@@ -166,6 +218,31 @@ pub fn card(ui: &egui::Ui) -> egui::Frame {
         .stroke(egui::Stroke::NONE)
         .corner_radius(metrics::CARD_RADIUS)
         .inner_margin(metrics::PADDING)
+}
+
+/// A timeline/work surface whose stripe identifies its source or state.
+/// The stripe carries meaning; it is not a second decorative card border.
+pub fn accent_surface<R>(
+    ui: &mut egui::Ui,
+    accent: Color32,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let response = egui::Frame::new()
+        .fill(palette(ui.ctx()).surface)
+        .corner_radius(metrics::CONTROL_RADIUS)
+        .inner_margin(egui::Margin {
+            left: 20,
+            right: 16,
+            top: 16,
+            bottom: 16,
+        })
+        .show(ui, contents);
+    let stripe = egui::Rect::from_min_max(
+        response.response.rect.left_top() + egui::vec2(0.0, 10.0),
+        response.response.rect.left_bottom() + egui::vec2(3.0, -10.0),
+    );
+    ui.painter().rect_filled(stripe, 2, accent);
+    response
 }
 
 pub fn palette(ctx: &egui::Context) -> Palette {
@@ -353,15 +430,19 @@ fn chip_focus(ui: &egui::Ui, response: &egui::Response) {
 pub fn view_switch(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
     let p = palette(ui.ctx());
     let response = ui.add(
-        egui::Button::new(RichText::new(label).size(12.0).color(if selected {
+        egui::Button::new(RichText::new(label).size(13.0).color(if selected {
             p.text
         } else {
             p.muted
         }))
-        .fill(Color32::TRANSPARENT)
+        .fill(if selected {
+            p.raised
+        } else {
+            Color32::TRANSPARENT
+        })
         .stroke(egui::Stroke::NONE)
-        .corner_radius(7)
-        .min_size(egui::vec2(66.0, metrics::COMPACT_HEIGHT)),
+        .corner_radius(metrics::CONTROL_RADIUS)
+        .min_size(egui::vec2(72.0, metrics::COMPACT_HEIGHT)),
     );
     response.widget_info(|| {
         egui::WidgetInfo::selected(
@@ -374,10 +455,10 @@ pub fn view_switch(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Resp
     if selected {
         ui.painter().line_segment(
             [
-                response.rect.left_bottom() + egui::vec2(10.0, 0.0),
-                response.rect.right_bottom() - egui::vec2(10.0, 0.0),
+                response.rect.left_bottom() + egui::vec2(12.0, 0.0),
+                response.rect.right_bottom() - egui::vec2(12.0, 0.0),
             ],
-            egui::Stroke::new(2.0, p.primary),
+            egui::Stroke::new(2.0, p.accent),
         );
     }
     if response.has_focus() {
@@ -692,6 +773,28 @@ pub fn mascot(ui: &mut egui::Ui, width: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accent_surface_paints_one_semantic_source_stripe() {
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let ctx = egui::Context::default();
+            install(&ctx);
+            ctx.set_theme(theme);
+            let accent = palette(&ctx).accent;
+            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                accent_surface(ui, accent, |ui| ui.label("Work item"));
+            });
+            assert!(
+                output.shapes.iter().any(|shape| matches!(
+                    &shape.shape,
+                    egui::Shape::Rect(rect)
+                        if rect.fill == accent && (rect.rect.width() - 3.0).abs() < 0.1
+                )),
+                "{theme:?}: the work surface must keep its semantic stripe"
+            );
+            output.drop_without_applying_deltas();
+        }
+    }
 
     #[test]
     fn selected_filter_keeps_a_plain_font_label_and_supports_keyboard() {

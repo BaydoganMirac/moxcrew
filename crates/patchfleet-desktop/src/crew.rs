@@ -607,7 +607,8 @@ impl Console {
     }
 
     fn crew_plan_chat_summary(&mut self, ui: &mut Ui, snapshot: &Value) {
-        studio::card(ui).show(ui, |ui| self.crew_plan_summary(ui, snapshot));
+        let accent = colors(ui).primary;
+        studio::accent_surface(ui, accent, |ui| self.crew_plan_summary(ui, snapshot));
     }
 
     fn crew_plan_summary(&mut self, ui: &mut Ui, snapshot: &Value) {
@@ -714,7 +715,7 @@ impl Console {
         };
         ui.label(
             RichText::new(format!(
-                "{} · {}",
+                "{}. {}",
                 tf(ui, "{0} agents", &[&plan.members.len().to_string()]),
                 t(ui, source)
             ))
@@ -828,7 +829,8 @@ impl Console {
     }
     fn crew_plan_card(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         ui.add_space(studio::metrics::GAP);
-        let proposal = studio::card(ui).show(ui, |ui| {
+        let accent = colors(ui).primary;
+        let proposal = studio::accent_surface(ui, accent, |ui| {
             if self.create.has_conversation() {
                 self.crew_plan_summary(ui, snapshot);
                 if let Some(plan) = self.create.crew.plans.get(&self.create.crew_key()) {
@@ -836,7 +838,7 @@ impl Console {
                     ui.horizontal_wrapped(|ui| {
                         for (index, member) in plan.members.iter().enumerate() {
                             if index > 0 {
-                                ui.label(RichText::new("·").color(colors(ui).muted));
+                                ui.label(RichText::new(",").color(colors(ui).muted));
                             }
                             ui.label(RichText::new(text(member, "name")).size(13.0));
                         }
@@ -1161,7 +1163,14 @@ impl Console {
         show_goal: bool,
     ) {
         ui.add_space(studio::metrics::CONTROL_GAP);
-        studio::card(ui).show(ui, |ui| {
+        let palette = colors(ui);
+        let accent = match text(mission, "status") {
+            "completed" => palette.success,
+            "failed" | "cancelled" | "timed_out" => palette.danger,
+            "active" | "cancelling" => palette.accent,
+            _ => palette.primary,
+        };
+        studio::accent_surface(ui, accent, |ui| {
             ui.horizontal_wrapped(|ui| {
                 crate::motion::mox(
                     ui,

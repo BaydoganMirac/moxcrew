@@ -1,7 +1,7 @@
 {
   "name": "patchfleet",
   "version": "0.12.0",
-  "description": "Native Rust desktop command center for local coding-agent teams.",
+  "description": "Local-first native desktop for inspectable AI crews, projects and decisions.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/BaydoganMirac/moxcrew#readme",
   "bugs": "https://github.com/BaydoganMirac/moxcrew/issues",

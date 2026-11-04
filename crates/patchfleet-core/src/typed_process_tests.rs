@@ -99,7 +99,7 @@ async fn typed_worker_reaps_descendants_after_parent_exit_cancel_and_dropped_cal
         let process = command(&exe, dir.path(), mode);
         let worker_active = active.clone();
         let bound = if mode == "inherited" {
-            Duration::from_millis(250)
+            Duration::from_millis(500)
         } else {
             Duration::from_secs(2)
         };

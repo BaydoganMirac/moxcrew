@@ -97,7 +97,7 @@ with hover text within the width remaining after the measured action. A short
 viewport scrolls content without shrinking controls. Native evidence and acceptance results are recorded
 in [screen migration state](../../docs/state/ui-kit-screen-migration.md).
 
-The unframed chat editor retains its measured 8/6 pt inset inside the 12 pt
+The unframed chat editor retains its measured 8/6 pt inset inside the 14 pt
 composer frame. Read-only folder wells and feedback use the compact 12 pt inset
 and control radius. Mascot/icon painter coordinates, status dots/badges and the
 brand wordmark retain their intentional geometry; they are not spacing tokens.
@@ -139,3 +139,38 @@ The 36/32-point desktop control density preserves 14-point body text, 32-point
 chip removal and visible keyboard focus. Touch guidance stays separate. Shared
 cards and inspector surfaces avoid nested outlines, canvas bloom and idle
 ornament. Task0054 records visual evidence; this is not user acceptance.
+
+## Distinctive desktop workbench (Task0056)
+
+Task0056 supersedes the Task0054 shell measurements: normal navigation is 184
+points and the narrow rail is 56 points. Navigation groups and metadata are
+sentence case. The active destination uses a quiet raised surface plus one
+3-point orange location signal; the same orange signal marks owner input while
+cobalt marks Mox/crew work.
+
+The empty Chat state is the one expressive brand moment: a fixed cobalt launch
+pad, orange Mox stage, 36/28-point editorial headline and three direct 44-point
+intent shortcuts. It uses no gradient, glow or decorative motion. At 800×560 the
+hero contracts and keeps the composer footer and all three shortcuts visible.
+Populated Chat, Crew and Output states deliberately return to the calm workbench
+system: one reading column, semantic source/state stripes and an optional bordered
+inspector. This contrast is part of the hierarchy, not a second component theme.
+
+## Distinctive desktop flows (Task0057)
+
+The workbench language applies to every top-level desktop route. Pages begin
+with a 28/24-point title, one plain-language summary and a short orange direction
+marker. Do not repeat the navigation group as a breadcrumb. Status and relevant
+actions share the far edge of that header.
+
+Collections are one-column ledgers separated by quiet rules. Each record has one
+3-point semantic marker: cobalt for neutral work, orange for owner input, green
+for accepted/available state, pink for rejection/failure and muted ink for
+history. Selected detail may use a raised surface; unselected records do not
+become a grid of rounded cards. Aggregate counts belong in one flat band.
+
+Bounded surfaces are reserved for forms, selected inspectors and explicit guide
+steps. Quick Start keeps numbers because it is a real sequence; shortcuts and
+metadata do not. Metadata uses sentences rather than middle dots. Empty states
+pair the Mox mark with a direct next action. The same rules apply in Turkish and
+English, light and dark themes, and the 800×560 minimum viewport.

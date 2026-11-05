@@ -72,6 +72,7 @@
 | Branded visual presentations | Complete; editable theme-aware decks, exact revisions and all-slide render evidence | 2026-11-05 | [branded-visual-presentations.md](branded-visual-presentations.md) |
 | Narrated presentation video | Complete; exact notes/audio timing, playable MP4 and retained slide/frame evidence | 2026-11-05 | [narrated-presentation-video.md](narrated-presentation-video.md) |
 | Composed video studio | Complete; exact title/image/audio placement, mix/replace policy and fully decoded MP4 evidence | 2026-11-05 | [composed-video-studio.md](composed-video-studio.md) |
+| Signal-based video highlights | Complete; scored motion/audio selection, fully decoded MP4 and native form evidence | 2026-11-05 | [signal-based-video-highlights.md](signal-based-video-highlights.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

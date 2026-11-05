@@ -19,7 +19,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Research | R1–R5 | Bounded public-page retrieval with UTC access/hash evidence, frozen sources, owner-criteria comparisons, attributed multi-source synthesis with preserved disagreements, literal-evidence claim reports, and dated source-hashed change reports implemented; live source/provider quality proof pending |
 | Documents | D1–D5 | DOCX creation/paragraph revision, attributed briefs, source-pinned translation/style rewrite, exact template filling, and bounded PDF text/OCR extraction plus source-hashed order-verified merge implemented; broader semantic/layout and live OCR quality proof pending |
 | Presentations | P1–P5 | Theme-aware editable native layouts and bars, exact slide revision, exact-part theme application, notes, all-slide LibreOffice/Poppler renders and exact-audio narrated MP4 packaging implemented; live provider content quality, spoken-word review, Microsoft PowerPoint and Windows release proof pending |
-| Video | V1–V5 | V1/V3/V4 deterministic paths implemented: exact cuts/order, three-aspect packages, burned captions/covers and checked title/image/audio composition with mix/replace policy; V2 content-based selection, V5 generative motion and live content-quality proof pending |
+| Video | V1–V5 | V1–V4 deterministic paths implemented: exact cuts/order, scored full-source motion/audio highlight selection, three-aspect packages, burned captions/covers and checked title/image/audio composition; V5 generative motion, semantic/aesthetic review and live content-quality proof pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |
 | Audio | A1–A5 | Real bounded cleanup to WAV; timed whisper.cpp transcription adapter; checked ordered podcast segments to playable M4A plus chapter JSON; voice/translation/full area pending |
 | Data | T1–T5 | CSV cleanup/statistics, XLSX output/open proof, exact-column charts, formula-backed scenario workbooks, and literal-evidence structured extraction with explicit uncertain/missing cells; broader quality proof pending |
@@ -165,8 +165,12 @@ release proof.
 [Task0086](composed-video-studio.md) implements deterministic V4 composition:
 one exact source video, image and approved audio resource plus bounded title,
 timing, corner and mix/replace policy become a fully decoded 1280×720 MP4 with
-retained frame and hash evidence. It does not perform V2 content selection or V5
-generative motion and does not claim automatic visual-quality acceptance.
+retained frame and hash evidence. [Task0087](signal-based-video-highlights.md)
+implements deterministic V2 selection: bounded full-source motion and audio
+measurements rank non-overlapping ranges and produce a fully decoded highlight
+reel with exact scores, hashes and review frames. Neither path performs V5
+generative motion or claims semantic importance or automatic visual-quality
+acceptance.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

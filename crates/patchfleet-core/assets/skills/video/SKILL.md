@@ -19,6 +19,8 @@ Keep outputs/edit-plan.json describing source references, exact cut ranges, orde
 
 For a composed title/image/audio request, use `video.compose` with exact Project resources, bounded times, an enumerated corner and explicit mix or replace behavior. Do not substitute a text sidecar for visible placement in the rendered video.
 
+For a highlight request without owner-supplied ranges, use `video.highlights` with one exact Project video and an explicit target, fixed clip length and signal emphasis. Preserve the measured motion/audio scores and selected ranges. Treat them as repeatable ranking signals, never as proof of semantic importance or aesthetic quality.
+
 ## Verify and revise
 
 Probe output duration, dimensions and streams, decode the full output when practical and inspect representative frames plus audio joins. Check caption timing and content order. A storyboard or command proposal is not a rendered video.

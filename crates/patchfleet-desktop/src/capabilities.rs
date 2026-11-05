@@ -673,8 +673,16 @@ impl CreateState {
 impl Console {
     #[cfg(feature = "ui-smoke")]
     pub fn capabilities_smoke(&mut self, snapshot: &Value, scene: &str) {
-        if scene == "capabilities-video-compose" {
-            self.create.ability = "V4".into();
+        if matches!(
+            scene,
+            "capabilities-video-compose" | "capabilities-video-highlights"
+        ) {
+            self.create.ability = if scene == "capabilities-video-highlights" {
+                "V2"
+            } else {
+                "V4"
+            }
+            .into();
         }
         self.chat_smoke(snapshot, false, false);
         self.hold_automatic_reads = true;
@@ -744,6 +752,7 @@ impl Console {
             | "capabilities-presentation-brand"
             | "capabilities-presentation-narration"
             | "capabilities-video-compose"
+            | "capabilities-video-highlights"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -801,6 +810,7 @@ impl Console {
                 "capabilities-presentation-brand" => 23,
                 "capabilities-presentation-narration" => 24,
                 "capabilities-video-compose" => 25,
+                "capabilities-video-highlights" => 26,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -903,6 +913,15 @@ impl Console {
                 *draft.value("compositionPosition") = "bottom-right".into();
                 *draft.value("compositionAudioMode") = "replace".into();
                 *draft.value("compositionAudioLevel") = "0.8".into();
+            } else if scene == "capabilities-video-highlights" {
+                draft.record = available
+                    .iter()
+                    .find(|resource| video_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                *draft.value("highlightTargetSeconds") = "8".into();
+                *draft.value("highlightClipSeconds") = "4".into();
+                *draft.value("highlightEmphasis") = "balanced".into();
             } else if scene == "capabilities-data-scenario" {
                 draft.record = csv.unwrap_or_default();
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
@@ -1928,6 +1947,7 @@ impl Console {
             "Apply presentation brand",
             "Narrate presentation",
             "Compose video",
+            "Find video highlights",
         ];
         form_combo(
             ui,
@@ -1968,7 +1988,7 @@ impl Console {
                                     13 => template_source(r),
                                     14 => rewrite_source(r),
                                     20 => pdf_source(r),
-                                    25 => video_source(r),
+                                    25 | 26 => video_source(r),
                                     _ => true,
                                 }
                         })
@@ -1977,7 +1997,7 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![8, 9, 10, 13, 14, 20, 25].contains(&kind) {
+                        if ![8, 9, 10, 13, 14, 20, 25, 26].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
@@ -1987,7 +2007,7 @@ impl Console {
                                 13 => template_source(r),
                                 14 => rewrite_source(r),
                                 20 => pdf_source(r),
-                                25 => video_source(r),
+                                25 | 26 => video_source(r),
                                 _ => false,
                             }
                     }) {
@@ -3778,6 +3798,63 @@ impl Console {
                     }
                 }
             }
+            26 => {
+                hint(
+                    ui,
+                    "Rank real source ranges by measured motion and audio energy; meaning and taste still need human review.",
+                );
+                let mut target = draft
+                    .get("highlightTargetSeconds")
+                    .parse::<f64>()
+                    .unwrap_or(8.0);
+                let mut clip = draft
+                    .get("highlightClipSeconds")
+                    .parse::<f64>()
+                    .unwrap_or(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Highlight duration (seconds)"));
+                    ui.add(
+                        egui::DragValue::new(&mut target)
+                            .range(2.0..=180.0)
+                            .speed(1.0),
+                    );
+                    ui.label(t(ui, "Fixed clip length (seconds)"));
+                    ui.add(egui::DragValue::new(&mut clip).range(2.0..=30.0).speed(1.0));
+                });
+                *draft.value("highlightTargetSeconds") = target.to_string();
+                *draft.value("highlightClipSeconds") = clip.to_string();
+                let mut emphasis = match draft.get("highlightEmphasis") {
+                    "visual" => "visual",
+                    "audio" => "audio",
+                    _ => "balanced",
+                };
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Selection signal"));
+                    for value in ["balanced", "visual", "audio"] {
+                        ui.selectable_value(&mut emphasis, value, t(ui, value));
+                    }
+                });
+                *draft.value("highlightEmphasis") = emphasis.into();
+                let count = if clip > 0.0 { target / clip } else { 0.0 };
+                if let Some(source) = source.filter(|resource| video_source(resource)) {
+                    if target.is_finite()
+                        && clip.is_finite()
+                        && (2.0..=180.0).contains(&target)
+                        && (2.0..=30.0).contains(&clip)
+                        && target >= clip
+                        && count <= 12.0
+                        && (count - count.round()).abs() < 0.001
+                    {
+                        operation = Some(json!({
+                            "operation":"video.highlights",
+                            "arguments":{
+                                "source":format!("resource:{}",text(source,"resourceId").trim_start_matches("resource:")),
+                                "targetSeconds":target,"clipSeconds":clip,"emphasis":emphasis
+                            }
+                        }));
+                    }
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -3821,6 +3898,7 @@ impl Console {
                         23 => "Use presentations.brand on this exact PPTX and theme. Preserve every slide, note, image and relationship part; report explicit colours that cannot follow the theme and do not claim full visual adaptation until the renders are reviewed.",
                         24 => "Use presentations.narrate on this exact PPTX and filename-ordered audio set. Require one speaker-note part and one approved clip per slide, preserve the deck, verify the rendered video and state that spoken-word matching still needs human review.",
                         25 => "Use video.compose with these exact video, image and audio resources. Preserve every source, keep the visible title/timing/position/audio policy unchanged, decode the full output and require human review of the retained placement frames before delivery.",
+                        26 => "Use video.highlights with this exact video and bounded selection policy. Preserve every measured score and selected range, decode the full output and require human review because motion and loudness do not prove meaning or aesthetic quality.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -5840,6 +5918,91 @@ mod tests {
                     .unwrap()
                 });
                 assert!(visibility.1, "{language}/{theme:?}: composition action");
+            }
+        }
+    }
+    #[test]
+    fn video_highlight_request_freezes_exact_source_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"source.mp4","kind":"video","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"unused.mp4","kind":"video","sha256":"b".repeat(64),"bytes":4096,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 26;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("highlightTargetSeconds") = "12".into();
+        *draft.value("highlightClipSeconds") = "4".into();
+        *draft.value("highlightEmphasis") = "visual".into();
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, egui::vec2(800.0, 560.0), false, vec![]);
+        }
+        assert!(click(
+            &ctx,
+            &mut c,
+            &data,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"video.highlights\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"targetSeconds\": 12.0"));
+        assert!(request.contains("\"clipSeconds\": 4.0"));
+        assert!(request.contains("\"emphasis\": \"visual\""));
+        assert!(request.contains("motion and loudness do not prove meaning"));
+    }
+    #[test]
+    fn video_highlight_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                data["projectStudio"]["resources"] = json!([
+                    {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"source.mp4","kind":"video","sha256":"a".repeat(64),"bytes":4096,"status":"available"}
+                ]);
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 26;
+                draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+                *draft.value("highlightTargetSeconds") = "8".into();
+                *draft.value("highlightClipSeconds") = "4".into();
+                *draft.value("highlightEmphasis") = "balanced".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: highlight action");
             }
         }
     }

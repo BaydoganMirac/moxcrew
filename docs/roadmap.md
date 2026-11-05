@@ -104,6 +104,10 @@ commitments.
   an exact title, image and approved audio resource are placed in one checked
   1280×720 video with explicit timing, position, audio policy and retained frame
   evidence. Content selection and generative motion remain separate abilities.
+  [Task0087](state/signal-based-video-highlights.md) closes the deterministic V2
+  selection gap: bounded full-source motion/audio measurements produce a scored,
+  non-overlapping and fully decoded highlight reel with retained review frames.
+  The signals remain explicitly separate from semantic or aesthetic judgment.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

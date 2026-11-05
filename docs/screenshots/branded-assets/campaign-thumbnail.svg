@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="campaign-title campaign-description">
+<title id="campaign-title">Make ambitious work impossible to hide</title><desc id="campaign-description">Plan, produce and review in one local workspace with every handoff visible.</desc>
+<defs><linearGradient id="wash" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2854F4" stop-opacity=".16"/><stop offset="1" stop-color="#FF7A2F" stop-opacity=".05"/></linearGradient><clipPath id="hero-clip"><circle cx="975.5" cy="304.5" r="217.5"/></clipPath></defs>
+<rect width="1280" height="720" fill="#F8F7F3"/><path d="M0 0H1280L1050 720H0Z" fill="url(#wash)"/>
+<circle cx="1152" cy="590" r="216" fill="none" stroke="#2854F4" stroke-width="2" opacity=".16"/>
+<path d="M87 83h128" stroke="#FF7A2F" stroke-width="10" stroke-linecap="round"/>
+<circle cx="975.5" cy="304.5" r="217.5" fill="#2854F4"/><text x="975.5" y="378.45000000000005" text-anchor="middle" font-family="Arial, sans-serif" font-size="209" font-weight="900" fill="#F8F7F3" opacity=".94">M</text><text data-check="eyebrow" x="87" y="122" font-family="Arial, sans-serif" font-size="24" font-weight="800" letter-spacing="2" fill="#2854F4"><tspan x="87" dy="0">YOUR CREW. YOUR CONTROL.</tspan></text>
+<text data-check="title" x="87" y="209" font-family="Arial, sans-serif" font-size="60" font-weight="900" letter-spacing="-1.5" fill="#15223D"><tspan x="87" dy="0">Make ambitious work</tspan><tspan x="87" dy="64">impossible to hide</tspan></text>
+<text data-check="subtitle" x="87" y="326" font-family="Arial, sans-serif" font-size="26" font-weight="500" fill="#56627A"><tspan x="87" dy="0">Plan, produce and review in one local workspace</tspan><tspan x="87" dy="35">with every handoff visible.</tspan></text><rect x="87" y="570" width="246" height="63" rx="32" fill="#2854F4"/><text data-check="cta" x="210" y="612" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="#F8F7F3">Start local</text>
+<text data-check="brand" x="1193" y="672" text-anchor="end" font-family="Arial, sans-serif" font-size="23" font-weight="800" letter-spacing="1" fill="#15223D">Moxcrew</text>
+<text x="87" y="678" font-family="Arial, sans-serif" font-size="17" font-weight="700" letter-spacing="1.5" fill="#56627A">THUMBNAIL</text>
+</svg>

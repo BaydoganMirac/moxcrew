@@ -79,6 +79,7 @@
 | Verified local transcription | Complete bounded path; exact source/language, checked SRT/VTT, hashes and native form evidence; real-model quality pending | 2026-11-05 | [verified-local-transcription.md](verified-local-transcription.md) |
 | Verified data cleaning and profile | Complete; exact CSV policy, checked CSV/XLSX reopen, hashes, missing counts and native form evidence | 2026-11-05 | [verified-data-cleaning-profile.md](verified-data-cleaning-profile.md) |
 | Verified static landing site | Complete bounded path; exact content, script-free local files, hash manifest and real wide/narrow/native renders; deployment pending | 2026-11-05 | [verified-static-landing-site.md](verified-static-landing-site.md) |
+| Verified branded campaign assets | Complete bounded I4/I5 path; exact copy/colours to checked editable SVG and exact-size PNG pack; generative quality pending | 2026-11-05 | [verified-branded-campaign-assets.md](verified-branded-campaign-assets.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

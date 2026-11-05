@@ -134,6 +134,12 @@ commitments.
   page, canonical content, hash manifest and summary with exact reopen plus real
   wide/narrow browser renders. Deployment, conversion and assistive-technology
   review remain separate gates.
+  [Task0096](state/verified-branded-campaign-assets.md) closes a bounded
+  deterministic I4 and multi-format I5 gap: exact approved copy, Project colours
+  and optional frozen visuals produce editable SVG plus exact-size PNG campaign
+  assets with contrast, dimension and hash evidence in isolated offline Chrome.
+  Generative image quality, arbitrary brand-manual compliance, copy/aesthetic
+  judgment and publication remain separate gates.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

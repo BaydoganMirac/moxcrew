@@ -56,6 +56,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "web.site",
     "images.generate",
     "images.edit",
+    "images.campaign",
     "browser.inspect",
     "browser.draft",
     "browser.research",
@@ -432,7 +433,7 @@ pub(crate) async fn run(
 ) -> Result<Output> {
     if matches!(
         operation,
-        "browser.inspect" | "browser.draft" | "browser.research"
+        "browser.inspect" | "browser.draft" | "browser.research" | "images.campaign"
     ) {
         return crate::browser::run(data, operation, arguments, inputs, active).await;
     }

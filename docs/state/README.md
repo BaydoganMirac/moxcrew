@@ -75,6 +75,7 @@
 | Signal-based video highlights | Complete; scored motion/audio selection, fully decoded MP4 and native form evidence | 2026-11-05 | [signal-based-video-highlights.md](signal-based-video-highlights.md) |
 | Motion explainer video | Complete; editable storyboard, real pan/zoom motion, full-decode and native form evidence | 2026-11-05 | [motion-explainer-video.md](motion-explainer-video.md) |
 | Verified audio cleanup | Complete; exact preset/LUFS request, before/after measurement, full-decode and native form evidence | 2026-11-05 | [verified-audio-cleanup.md](verified-audio-cleanup.md) |
+| Verified data cleaning and profile | Complete; exact CSV policy, checked CSV/XLSX reopen, hashes, missing counts and native form evidence | 2026-11-05 | [verified-data-cleaning-profile.md](verified-data-cleaning-profile.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

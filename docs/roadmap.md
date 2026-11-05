@@ -116,6 +116,11 @@ commitments.
   one exact mono/stereo recording, fixed cleanup preset and LUFS target produce
   a source/output-hashed 48 kHz WAV with before/after measurement and full-decode
   proof. Signal checks remain separate from subjective listening quality.
+  [Task0090](state/verified-data-cleaning-profile.md) closes the owner-visible
+  deterministic T1/T2 gap: one exact CSV, explicit exact-row deduplication and
+  selected numeric columns produce source/output-hashed cleaned CSV or editable
+  XLSX plus missing counts, descriptive checks and exact reopen proof. No
+  business interpretation, imputation or fuzzy matching is implied.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

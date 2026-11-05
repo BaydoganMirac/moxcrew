@@ -22,7 +22,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Video | V1–V5 | V1–V5 deterministic paths implemented: exact cuts/order, scored full-source motion/audio highlight selection, three-aspect packages, burned captions/covers, checked title/image/audio composition, and approved scenes to editable storyboard plus real pan/zoom MP4; semantic/aesthetic review, live content-quality proof and model-generated footage remain pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |
 | Audio | A1–A5 | Owner-visible A3 cleanup now freezes one exact source, fixed treatment and LUFS target and emits a source/output-hashed 48 kHz WAV with before/after level and full-decode proof; timed whisper.cpp transcription adapter and checked ordered podcast M4A/chapter packaging are implemented; speech generation, translated narration, subjective listening and live quality proof remain pending |
-| Data | T1–T5 | CSV cleanup/statistics, XLSX output/open proof, exact-column charts, formula-backed scenario workbooks, and literal-evidence structured extraction with explicit uncertain/missing cells; broader quality proof pending |
+| Data | T1–T5 | Owner-visible exact CSV cleanup now freezes deduplication/output/statistic choices and emits source/output-hashed CSV or editable XLSX with missing counts and exact reopen proof; exact-column charts, formula-backed scenario workbooks, and literal-evidence structured extraction are also implemented; semantic business interpretation and broader quality proof pending |
 | Web/actions | W1–W5 | Explicit app actions, isolated static public-page/form-draft browser and offline interactive tools; live accounts/full area pending |
 | Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery, local schedules and checked multi-file delivery packages implemented; full ten-workflow release proof pending |
 
@@ -180,6 +180,12 @@ opaque WAV transform to an owner-visible exact source/treatment/LUFS request. It
 preserves source duration and channels, emits a new 48 kHz PCM WAV and records
 source/output hashes, before/after loudness and full-decode proof. Fixed signal
 measurements do not prove subjective speech/noise quality.
+[Task0090](verified-data-cleaning-profile.md) upgrades deterministic T1/T2 from
+an opaque CSV transform to an owner-visible exact source/deduplication/numeric
+column/output request. It emits source/output-hashed cleaned CSV or editable
+XLSX, reopens the result and records exact transforms, missing counts and
+selected descriptive statistics. It does not infer types, repair business data
+or claim semantic trends.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

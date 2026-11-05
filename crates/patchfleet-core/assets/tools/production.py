@@ -1,5 +1,6 @@
 """Moxcrew's bounded, typed local production worker. Python standard library only."""
 import csv
+import hashlib
 import io
 import itertools
 import json
@@ -8,8 +9,10 @@ from pathlib import Path
 import re
 import runpy
 import statistics
+import struct
 import subprocess
 import tempfile
+import textwrap
 import sys
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
@@ -102,45 +105,654 @@ def content_types(entries):
         for name, kind in entries) + '</Types>'
 
 
-def slide_xml(title, bullets):
-    def shape(ident, y, h, lines, size):
-        paras = ''.join(f'<a:p><a:pPr/><a:r><a:rPr lang="en-US" sz="{size}"/><a:t>{escape(line)}</a:t></a:r></a:p>' for line in lines)
-        return f'<p:sp><p:nvSpPr><p:cNvPr id="{ident}" name="Text {ident}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="700000" y="{y}"/><a:ext cx="10800000" cy="{h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square"/><a:lstStyle/>{paras}</p:txBody></p:sp>'
-    group = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
-    return f'<p:sld xmlns:a="{NS["a"]}" xmlns:p="{NS["p"]}"><p:cSld><p:spTree>{group}{shape(2,500000,1000000,[title],3200)}{shape(3,1700000,4500000,bullets,2200)}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>'
+SLIDE_W, SLIDE_H = 12192000, 6858000
+PRESENTATION_LAYOUTS = ("cover", "statement", "content", "split", "bar-chart")
+DEFAULT_PRESENTATION_BRAND = {
+    "name": "Moxcrew",
+    "primary": "2854F4",
+    "accent": "FF7A2F",
+    "background": "F8F7F3",
+    "text": "15223D",
+    "muted": "56627A",
+    "font": "Arial",
+}
 
 
-def presentations(args, revise):
-    if revise:
-        exact(args, ("source", "sectionId", "title", "bullets"))
-        parts = read_zip(source(args["source"]))
-        match = re.fullmatch(r"slide:([1-9][0-9]?)", text(args["sectionId"], 20))
-        require(match is not None)
-        name = f'ppt/slides/slide{int(match[1])}.xml'
-        require(name in parts, "PRODUCTION_SECTION_NOT_FOUND")
-        slides = [args]
+def presentation_color(value):
+    value = text(value, 7).removeprefix("#").upper()
+    require(re.fullmatch(r"[0-9A-F]{6}", value) is not None)
+    return value
+
+
+def presentation_contrast(first, second):
+    def luminance(value):
+        channels = [int(value[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        channels = [v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in channels]
+        return .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2]
+    light, dark = sorted((luminance(first), luminance(second)), reverse=True)
+    return (light + .05) / (dark + .05)
+
+
+def presentation_brand(value=None):
+    value = value or {}
+    exact(value, (), tuple(DEFAULT_PRESENTATION_BRAND) + ("logo",))
+    result = dict(DEFAULT_PRESENTATION_BRAND)
+    for key in ("primary", "accent", "background", "text", "muted"):
+        if key in value:
+            result[key] = presentation_color(value[key])
+    for key, limit in (("name", 80), ("font", 80)):
+        if key in value:
+            result[key] = text(value[key], limit).strip()
+            require(result[key])
+    require(presentation_contrast(result["text"], result["background"]) >= 4.5,
+            "PRODUCTION_PRESENTATION_CONTRAST")
+    require(presentation_contrast(result["muted"], result["background"]) >= 4.5,
+            "PRODUCTION_PRESENTATION_CONTRAST")
+    require(presentation_contrast(result["primary"], result["background"]) >= 3,
+            "PRODUCTION_PRESENTATION_CONTRAST")
+    if "logo" in value:
+        exact(value["logo"], ("source",), ("alt",))
+        result["logo"] = {
+            "source": text(value["logo"]["source"], 1024),
+            "alt": text(value["logo"].get("alt", result["name"]), 160),
+        }
+    return result
+
+
+def presentation_theme(brand):
+    return f'''<a:theme xmlns:a="{NS["a"]}" name="{escape(brand["name"])}"><a:themeElements><a:clrScheme name="{escape(brand["name"])}"><a:dk1><a:srgbClr val="{brand["text"]}"/></a:dk1><a:lt1><a:srgbClr val="{brand["background"]}"/></a:lt1><a:dk2><a:srgbClr val="{brand["muted"]}"/></a:dk2><a:lt2><a:srgbClr val="FFFFFF"/></a:lt2><a:accent1><a:srgbClr val="{brand["primary"]}"/></a:accent1><a:accent2><a:srgbClr val="{brand["accent"]}"/></a:accent2><a:accent3><a:srgbClr val="{brand["muted"]}"/></a:accent3><a:accent4><a:srgbClr val="7D8CB5"/></a:accent4><a:accent5><a:srgbClr val="42A889"/></a:accent5><a:accent6><a:srgbClr val="D9577B"/></a:accent6><a:hlink><a:srgbClr val="{brand["primary"]}"/></a:hlink><a:folHlink><a:srgbClr val="{brand["accent"]}"/></a:folHlink></a:clrScheme><a:fontScheme name="{escape(brand["name"])}"><a:majorFont><a:latin typeface="{escape(brand["font"])}"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="{escape(brand["font"])}"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme><a:fmtScheme name="{escape(brand["name"])}"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="accent1"/></a:solidFill><a:solidFill><a:schemeClr val="accent2"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="12700"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="25400"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="38100"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="lt1"/></a:solidFill><a:solidFill><a:schemeClr val="dk1"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>'''
+
+
+def scheme_fill(name, alpha=None):
+    transparency = f'<a:alpha val="{alpha}"/>' if alpha is not None else ''
+    return f'<a:solidFill><a:schemeClr val="{name}">{transparency}</a:schemeClr></a:solidFill>'
+
+
+def presentation_paragraph(value, size, color="tx1", bold=False, align="l", bullet=False):
+    properties = f' algn="{align}"' + (' marL="320000" indent="-220000"' if bullet else '')
+    marker = '<a:buChar char="•"/>' if bullet else '<a:buNone/>'
+    font = "+mj-lt" if bold or size >= 3000 else "+mn-lt"
+    return f'<a:p><a:pPr{properties}>{marker}</a:pPr><a:r><a:rPr lang="en-US" sz="{size}" b="{1 if bold else 0}" dirty="0">{scheme_fill(color)}<a:latin typeface="{font}"/></a:rPr><a:t>{escape(value)}</a:t></a:r><a:endParaRPr lang="en-US" sz="{size}"/></a:p>'
+
+
+def presentation_shape(ident, name, x, y, width, height, paragraphs=(), fill=None,
+                       line=None, geometry="rect", anchor="t", margins=(0, 0, 0, 0)):
+    l, top, r, bottom = margins
+    text_box = ' txBox="1"' if paragraphs else ''
+    non_visual = f'<p:nvSpPr><p:cNvPr id="{ident}" name="{escape(name)}"/><p:cNvSpPr{text_box}/><p:nvPr/></p:nvSpPr>'
+    body = '' if not paragraphs else f'<p:txBody><a:bodyPr wrap="square" anchor="{anchor}" lIns="{l}" tIns="{top}" rIns="{r}" bIns="{bottom}"><a:normAutofit fontScale="90000" lnSpcReduction="10000"/></a:bodyPr><a:lstStyle/>{"".join(paragraphs)}</p:txBody>'
+    fill_xml = '<a:noFill/>' if fill is None else scheme_fill(fill[0], fill[1] if len(fill) > 1 else None)
+    line_xml = '<a:ln><a:noFill/></a:ln>' if line is None else f'<a:ln w="{line[1]}">{scheme_fill(line[0])}</a:ln>'
+    return f'<p:sp>{non_visual}<p:spPr><a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{width}" cy="{height}"/></a:xfrm><a:prstGeom prst="{geometry}"><a:avLst/></a:prstGeom>{fill_xml}{line_xml}</p:spPr>{body}</p:sp>'
+
+
+def raster_dimensions(data, extension):
+    if extension == "png":
+        require(data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24,
+                "PRODUCTION_IMAGE_FORMAT_UNSUPPORTED")
+        width, height = struct.unpack(">II", data[16:24])
     else:
-        exact(args, ("slides",))
+        require(data.startswith(b"\xff\xd8"), "PRODUCTION_IMAGE_FORMAT_UNSUPPORTED")
+        index = 2
+        width = height = 0
+        while index + 9 < len(data):
+            if data[index] != 0xff:
+                index += 1
+                continue
+            marker = data[index + 1]
+            if marker in (0xd8, 0xd9):
+                index += 2
+                continue
+            length = int.from_bytes(data[index + 2:index + 4], "big")
+            require(length >= 2 and index + 2 + length <= len(data),
+                    "PRODUCTION_IMAGE_FORMAT_UNSUPPORTED")
+            if marker in range(0xc0, 0xc4):
+                height = int.from_bytes(data[index + 5:index + 7], "big")
+                width = int.from_bytes(data[index + 7:index + 9], "big")
+                break
+            index += 2 + length
+    require(16 <= width <= 8192 and 16 <= height <= 8192,
+            "PRODUCTION_IMAGE_DIMENSIONS_INVALID")
+    return width, height
+
+
+def register_raster(value, media, existing=()):
+    exact(value, ("source",), ("alt", "fit"))
+    path = source(value["source"])
+    extension = path.suffix.lower().removeprefix(".")
+    extension = "jpeg" if extension in ("jpg", "jpeg") else extension
+    require(extension in ("png", "jpeg"), "PRODUCTION_IMAGE_FORMAT_UNSUPPORTED")
+    data = path.read_bytes()
+    width, height = raster_dimensions(data, extension)
+    digest = hashlib.sha256(data).hexdigest()
+    if digest not in media:
+        used = {int(match[1]) for name in existing
+                if (match := re.fullmatch(r"ppt/media/image([0-9]+)\.(png|jpe?g)", name))}
+        used.update(entry["index"] for entry in media.values())
+        index = next(i for i in range(1, 1000) if i not in used)
+        media[digest] = {"index": index, "path": f"ppt/media/image{index}.{extension}",
+                         "bytes": data, "width": width, "height": height,
+                         "extension": extension}
+    result = dict(media[digest])
+    result.update(alt=text(value.get("alt", path.stem), 160), fit=value.get("fit", "cover"),
+                  sha256=digest)
+    require(result["fit"] in ("cover", "contain"))
+    return result
+
+
+def presentation_picture(ident, name, relationship, image, x, y, width, height):
+    source_ratio = image["width"] / image["height"]
+    box_ratio = width / height
+    crop = ""
+    if image["fit"] == "contain":
+        if source_ratio > box_ratio:
+            actual_height = int(width / source_ratio)
+            y += (height - actual_height) // 2
+            height = actual_height
+        else:
+            actual_width = int(height * source_ratio)
+            x += (width - actual_width) // 2
+            width = actual_width
+    elif source_ratio > box_ratio:
+        cut = int((1 - box_ratio / source_ratio) * 50000)
+        crop = f'<a:srcRect l="{cut}" r="{cut}"/>'
+    else:
+        cut = int((1 - source_ratio / box_ratio) * 50000)
+        crop = f'<a:srcRect t="{cut}" b="{cut}"/>'
+    return f'<p:pic><p:nvPicPr><p:cNvPr id="{ident}" name="{escape(name)}" descr="{escape(image["alt"])}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="{relationship}"/>{crop}<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{width}" cy="{height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:ln><a:noFill/></a:ln></p:spPr></p:pic>'
+
+
+def presentation_slide(value):
+    optional = ("layout", "eyebrow", "subtitle", "body", "bullets", "notes",
+                "footer", "image", "chart")
+    exact(value, ("title",), optional)
+    slide = {"title": text(value["title"], 160).strip(),
+             "layout": value.get("layout", "content")}
+    require(slide["title"] and slide["layout"] in PRESENTATION_LAYOUTS)
+    for key, limit in (("eyebrow", 80), ("subtitle", 240), ("body", 1600),
+                       ("notes", 6000), ("footer", 240)):
+        slide[key] = text(value.get(key, ""), limit).strip()
+    bullets = value.get("bullets", [])
+    require(isinstance(bullets, list) and len(bullets) <= 6)
+    slide["bullets"] = [text(item, 220).strip() for item in bullets]
+    require(all(slide["bullets"]))
+    if "image" in value:
+        exact(value["image"], ("source",), ("alt", "fit"))
+        slide["image"] = value["image"]
+    if "chart" in value:
+        chart = value["chart"]
+        exact(chart, ("series",), ("unit", "sourceLabel"))
+        series = chart["series"]
+        require(isinstance(series, list) and 1 <= len(series) <= 6)
+        checked = []
+        for item in series:
+            exact(item, ("label", "value"))
+            checked.append({"label": text(item["label"], 60).strip(),
+                            "value": number(item["value"], 0, 1e12)})
+        require(all(item["label"] for item in checked))
+        slide["chart"] = {"series": checked, "unit": text(chart.get("unit", ""), 16),
+                          "sourceLabel": text(chart.get("sourceLabel", ""), 240)}
+    has_text = bool(slide["body"] or slide["bullets"])
+    if slide["layout"] == "cover":
+        require(not has_text and "chart" not in slide)
+    elif slide["layout"] == "statement":
+        require(not slide["bullets"] and "chart" not in slide and "image" not in slide)
+    elif slide["layout"] == "content":
+        require(has_text and "chart" not in slide and "image" not in slide)
+    elif slide["layout"] == "split":
+        require(has_text and (("chart" in slide) != ("image" in slide)))
+    else:
+        require("chart" in slide and not has_text and "image" not in slide)
+    width = 36 if slide["layout"] == "split" else 68
+    estimated = sum(max(1, len(textwrap.wrap(item, width=width, break_long_words=False)))
+                    for item in ([slide["body"]] if slide["body"] else []) + slide["bullets"])
+    require(estimated <= (10 if slide["layout"] == "split" else 13),
+            "PRODUCTION_PRESENTATION_TEXT_OVERFLOW")
+    require(len(textwrap.wrap(slide["title"], width=34, break_long_words=False)) <= 3,
+            "PRODUCTION_PRESENTATION_TEXT_OVERFLOW")
+    return slide
+
+
+def number_label(value):
+    return f"{value:,.2f}".rstrip("0").rstrip(".")
+
+
+def presentation_slide_xml(slide, index, count, brand, media, existing_media=(),
+                           layout_target="../slideLayouts/slideLayout1.xml", notes_target=None):
+    shapes = []
+    relationships = [(1, "slideLayout", layout_target)]
+    next_id = 2
+    next_relationship = 2
+    group = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+    shapes.append(presentation_shape(next_id, "Background", 0, 0, SLIDE_W, SLIDE_H,
+                                     fill=("bg1",), line=None))
+    next_id += 1
+    image = register_raster(slide["image"], media, existing_media) if "image" in slide else None
+    logo = register_raster(brand["logo"], media, existing_media) if "logo" in brand else None
+
+    def add_text(name, x, y, width, height, paragraphs, **kwargs):
+        nonlocal next_id
+        shapes.append(presentation_shape(next_id, name, x, y, width, height, paragraphs,
+                                         **kwargs))
+        next_id += 1
+
+    def add_picture(name, image_value, x, y, width, height):
+        nonlocal next_id, next_relationship
+        relationship = f"rId{next_relationship}"
+        relationships.append((next_relationship, "image", "../media/" + Path(image_value["path"]).name))
+        shapes.append(presentation_picture(next_id, name, relationship, image_value,
+                                           x, y, width, height))
+        next_id += 1
+        next_relationship += 1
+
+    if slide["layout"] == "cover":
+        shapes.append(presentation_shape(next_id, "Primary band", 0, 0, 360000, SLIDE_H,
+                                         fill=("accent1",)))
+        next_id += 1
+        if image:
+            add_picture("Cover image", image, 7900000, 0, SLIDE_W - 7900000, SLIDE_H)
+            title_width = 6500000
+        else:
+            shapes.append(presentation_shape(next_id, "Accent field", 8750000, 0,
+                                             SLIDE_W - 8750000, SLIDE_H, fill=("accent1", 12000)))
+            next_id += 1
+            title_width = 8000000
+        if logo:
+            logo["fit"] = "contain"
+            add_picture("Brand logo", logo, 720000, 460000, 2200000, 520000)
+        elif brand["name"]:
+            add_text("Brand", 720000, 450000, 3000000, 420000,
+                     [presentation_paragraph(brand["name"].upper(), 1300, "accent1", True)])
+        if slide["eyebrow"]:
+            add_text("Eyebrow", 720000, 1420000, title_width, 420000,
+                     [presentation_paragraph(slide["eyebrow"].upper(), 1400, "accent2", True)])
+        add_text("Title", 720000, 1980000, title_width, 2300000,
+                 [presentation_paragraph(slide["title"], 4400, "tx1", True)], anchor="ctr")
+        if slide["subtitle"]:
+            add_text("Subtitle", 720000, 4450000, title_width, 1000000,
+                     [presentation_paragraph(slide["subtitle"], 2100, "tx1")])
+    elif slide["layout"] == "statement":
+        shapes.append(presentation_shape(next_id, "Accent rule", 740000, 950000, 150000, 4900000,
+                                         fill=("accent2",)))
+        next_id += 1
+        if slide["eyebrow"]:
+            add_text("Eyebrow", 1120000, 900000, 9000000, 420000,
+                     [presentation_paragraph(slide["eyebrow"].upper(), 1400, "accent1", True)])
+        add_text("Statement", 1120000, 1500000, 9400000, 3000000,
+                 [presentation_paragraph(slide["title"], 4200, "tx1", True)], anchor="ctr")
+        supporting = slide["subtitle"] or slide["body"]
+        if supporting:
+            add_text("Support", 1120000, 4700000, 8500000, 850000,
+                     [presentation_paragraph(supporting, 2000, "accent3")])
+    else:
+        if slide["eyebrow"]:
+            add_text("Eyebrow", 720000, 360000, 9000000, 380000,
+                     [presentation_paragraph(slide["eyebrow"].upper(), 1300, "accent2", True)])
+        add_text("Title", 720000, 760000, 10400000, 900000,
+                 [presentation_paragraph(slide["title"], 3200, "tx1", True)])
+        shapes.append(presentation_shape(next_id, "Title rule", 720000, 1640000, 10400000, 26000,
+                                         fill=("accent1",)))
+        next_id += 1
+        if slide["layout"] in ("content", "split"):
+            paragraphs = []
+            if slide["body"]:
+                paragraphs.append(presentation_paragraph(slide["body"], 2100, "tx1"))
+            paragraphs.extend(presentation_paragraph(item, 2000, "tx1", bullet=True)
+                              for item in slide["bullets"])
+            width = 5200000 if slide["layout"] == "split" else 10400000
+            add_text("Body", 720000, 1950000, width, 3950000, paragraphs,
+                     margins=(0, 80000, 160000, 0))
+            if slide["layout"] == "split":
+                if image:
+                    add_picture("Slide image", image, 6300000, 1950000, 5100000, 3650000)
+                else:
+                    chart = slide["chart"]
+                    maximum = max(item["value"] for item in chart["series"]) or 1
+                    row_height = min(570000, 3300000 // len(chart["series"]))
+                    for row, item in enumerate(chart["series"]):
+                        y = 2050000 + row * row_height
+                        add_text(f"Chart label {row + 1}", 6300000, y, 1600000, row_height - 50000,
+                                 [presentation_paragraph(item["label"], 1400, "tx1")], anchor="ctr")
+                        bar_width = max(20000, int(2600000 * item["value"] / maximum))
+                        shapes.append(presentation_shape(next_id, f"Chart bar {row + 1}", 7950000, y + 90000,
+                                                         bar_width, max(120000, row_height - 180000),
+                                                         fill=(("accent2" if row == 0 else "accent1"),),
+                                                         geometry="roundRect"))
+                        next_id += 1
+                        add_text(f"Chart value {row + 1}", 10600000, y, 650000, row_height - 50000,
+                                 [presentation_paragraph(number_label(item["value"]) + chart["unit"],
+                                                         1300, "accent3", True, "r")], anchor="ctr")
+        else:
+            chart = slide["chart"]
+            maximum = max(item["value"] for item in chart["series"]) or 1
+            row_height = min(650000, 3800000 // len(chart["series"]))
+            for row, item in enumerate(chart["series"]):
+                y = 2050000 + row * row_height
+                add_text(f"Chart label {row + 1}", 720000, y, 2300000, row_height - 40000,
+                         [presentation_paragraph(item["label"], 1600, "tx1")], anchor="ctr")
+                shapes.append(presentation_shape(next_id, f"Track {row + 1}", 3200000, y + 110000,
+                                                 6600000, max(120000, row_height - 220000),
+                                                 fill=("accent3", 14000), geometry="roundRect"))
+                next_id += 1
+                bar_width = max(20000, int(6600000 * item["value"] / maximum))
+                shapes.append(presentation_shape(next_id, f"Bar {row + 1}", 3200000, y + 110000,
+                                                 bar_width, max(120000, row_height - 220000),
+                                                 fill=(("accent2" if row == 0 else "accent1"),),
+                                                 geometry="roundRect"))
+                next_id += 1
+                add_text(f"Chart value {row + 1}", 10000000, y, 1200000, row_height - 40000,
+                         [presentation_paragraph(number_label(item["value"]) + chart["unit"],
+                                                 1500, "accent3", True, "r")], anchor="ctr")
+            if chart["sourceLabel"]:
+                add_text("Chart source", 720000, 5850000, 10400000, 350000,
+                         [presentation_paragraph(chart["sourceLabel"], 1100, "accent3")])
+    footer = slide["footer"]
+    if footer:
+        add_text("Footer", 720000, 6320000, 9500000, 260000,
+                 [presentation_paragraph(footer, 1000, "accent3")])
+    add_text("Slide number", 10800000, 6320000, 600000, 260000,
+             [presentation_paragraph(f"{index:02}", 1000, "accent3", True, "r")])
+    if notes_target:
+        relationships.append((next_relationship, "notesSlide", notes_target))
+    document = f'<p:sld xmlns:a="{NS["a"]}" xmlns:p="{NS["p"]}" xmlns:r="{OFFICE}"><p:cSld><p:spTree>{group}{"".join(shapes)}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>'
+    return document, rels(relationships), {
+        "slide": index, "layout": slide["layout"], "title": slide["title"],
+        "notes": bool(slide["notes"]),
+        "imageSha256": image["sha256"] if image else None,
+        "chart": slide.get("chart"),
+    }
+
+
+def notes_slide_xml(value):
+    group = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+    body = presentation_shape(2, "Notes", 600000, 600000, 5600000, 7200000,
+                              [presentation_paragraph(value, 1800, "tx1")],
+                              margins=(100000, 100000, 100000, 100000))
+    return f'<p:notes xmlns:a="{NS["a"]}" xmlns:p="{NS["p"]}" xmlns:r="{OFFICE}"><p:cSld><p:spTree>{group}{body}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>'
+
+
+def presentation_content_types(parts):
+    overrides = []
+    mapping = [
+        (r"ppt/presentation.xml", "presentationml.presentation.main"),
+        (r"ppt/slides/slide[0-9]+.xml", "presentationml.slide"),
+        (r"ppt/slideMasters/slideMaster[0-9]+.xml", "presentationml.slideMaster"),
+        (r"ppt/slideLayouts/slideLayout[0-9]+.xml", "presentationml.slideLayout"),
+        (r"ppt/theme/theme[0-9]+.xml", "theme+xml"),
+        (r"ppt/notesMasters/notesMaster[0-9]+.xml", "presentationml.notesMaster"),
+        (r"ppt/notesSlides/notesSlide[0-9]+.xml", "presentationml.notesSlide"),
+    ]
+    for name in parts:
+        for pattern, kind in mapping:
+            if re.fullmatch(pattern, name):
+                mime = ("application/vnd.openxmlformats-officedocument." + kind + "+xml"
+                        if kind != "theme+xml" else
+                        "application/vnd.openxmlformats-officedocument.theme+xml")
+                overrides.append(f'<Override PartName="/{name}" ContentType="{mime}"/>')
+                break
+    overrides.extend([
+        '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
+        '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>',
+    ])
+    return f'<Types xmlns="{CONTENT}"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="jpg" ContentType="image/jpeg"/>{"".join(sorted(set(overrides)))}</Types>'
+
+
+def update_presentation_content_types(parts):
+    node = xml(parts["[Content_Types].xml"])
+    defaults = {item.attrib.get("Extension", "").lower() for item in node
+                if item.tag.rsplit("}", 1)[-1] == "Default"}
+    for extension, mime in (("png", "image/png"), ("jpeg", "image/jpeg"),
+                            ("jpg", "image/jpeg")):
+        if extension not in defaults and any(name.lower().endswith("." + extension) for name in parts):
+            ET.SubElement(node, f"{{{CONTENT}}}Default",
+                          {"Extension": extension, "ContentType": mime})
+    overrides = {item.attrib.get("PartName") for item in node
+                 if item.tag.rsplit("}", 1)[-1] == "Override"}
+    for name, mime in [
+        *[(name, "application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml")
+          for name in parts if re.fullmatch(r"ppt/notesMasters/notesMaster[0-9]+\.xml", name)],
+        *[(name, "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml")
+          for name in parts if re.fullmatch(r"ppt/notesSlides/notesSlide[0-9]+\.xml", name)],
+        *[(name, "application/vnd.openxmlformats-officedocument.theme+xml")
+          for name in parts if re.fullmatch(r"ppt/theme/theme[0-9]+\.xml", name)],
+    ]:
+        if "/" + name not in overrides:
+            ET.SubElement(node, f"{{{CONTENT}}}Override",
+                          {"PartName": "/" + name, "ContentType": mime})
+    parts["[Content_Types].xml"] = ET.tostring(node, encoding="utf-8", xml_declaration=True)
+
+
+def presentation_skeleton(brand, slide_count, has_notes):
+    group = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+    ids = ''.join(f'<p:sldId id="{255 + i}" r:id="rId{1 + i}"/>' for i in range(1, slide_count + 1))
+    notes_id = f'<p:notesMasterIdLst><p:notesMasterId r:id="rId{slide_count + 2}"/></p:notesMasterIdLst>' if has_notes else ''
+    presentation = f'<p:presentation xmlns:p="{NS["p"]}" xmlns:r="{OFFICE}"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>{notes_id}<p:sldIdLst>{ids}</p:sldIdLst><p:sldSz cx="{SLIDE_W}" cy="{SLIDE_H}" type="screen16x9"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>'
+    relationships = [(1, "slideMaster", "slideMasters/slideMaster1.xml")]
+    relationships.extend((1 + i, "slide", f"slides/slide{i}.xml") for i in range(1, slide_count + 1))
+    if has_notes:
+        relationships.append((slide_count + 2, "notesMaster", "notesMasters/notesMaster1.xml"))
+    master = f'<p:sldMaster xmlns:a="{NS["a"]}" xmlns:p="{NS["p"]}" xmlns:r="{OFFICE}"><p:cSld name="Moxcrew"><p:spTree>{group}</p:spTree></p:cSld><p:clrMap accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt2" tx1="dk1" tx2="dk2" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>'
+    layout = f'<p:sldLayout xmlns:a="{NS["a"]}" xmlns:p="{NS["p"]}" xmlns:r="{OFFICE}" type="blank" preserve="1"><p:cSld name="Moxcrew blank"><p:spTree>{group}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>'
+    parts = {
+        "_rels/.rels": f'<Relationships xmlns="{REL}"><Relationship Id="rId1" Type="{OFFICE}/officeDocument" Target="ppt/presentation.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="{OFFICE}/extended-properties" Target="docProps/app.xml"/></Relationships>',
+        "docProps/core.xml": f'<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>{escape(brand["name"])}</dc:title><dc:creator>Moxcrew</dc:creator></cp:coreProperties>',
+        "docProps/app.xml": f'<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Moxcrew</Application><Slides>{slide_count}</Slides></Properties>',
+        "ppt/presentation.xml": presentation,
+        "ppt/_rels/presentation.xml.rels": rels(relationships),
+        "ppt/slideMasters/slideMaster1.xml": master,
+        "ppt/slideMasters/_rels/slideMaster1.xml.rels": rels([(1, "slideLayout", "../slideLayouts/slideLayout1.xml"), (2, "theme", "../theme/theme1.xml")]),
+        "ppt/slideLayouts/slideLayout1.xml": layout,
+        "ppt/slideLayouts/_rels/slideLayout1.xml.rels": rels([(1, "slideMaster", "../slideMasters/slideMaster1.xml")]),
+        "ppt/theme/theme1.xml": presentation_theme(brand),
+    }
+    if has_notes:
+        parts["ppt/notesMasters/notesMaster1.xml"] = f'<p:notesMaster xmlns:a="{NS["a"]}" xmlns:p="{NS["p"]}"><p:cSld><p:spTree>{group}</p:spTree></p:cSld><p:clrMap accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt2" tx1="dk1" tx2="dk2" hlink="hlink" folHlink="folHlink"/><p:hf hdr="0" ftr="0" dt="0" sldNum="0"/><p:notesStyle/></p:notesMaster>'
+        parts["ppt/notesMasters/_rels/notesMaster1.xml.rels"] = rels([(1, "theme", "../theme/theme1.xml")])
+    return parts
+
+
+def presentation_previews(path, slide_count, tools):
+    require(1 <= slide_count <= 12, "PRODUCTION_PRESENTATION_RENDER_LIMIT")
+    require(tools.get("libreoffice"), "PRODUCTION_OFFICE_RENDERER_REQUIRED")
+    require(tools.get("pdftoppm"), "PRODUCTION_PAGE_RENDERER_REQUIRED")
+    profile = ROOT / "presentation-profile"
+    (profile / "user").mkdir(parents=True)
+    (profile / "user" / "registrymodifications.xcu").write_text('<?xml version="1.0"?><oor:items xmlns:oor="http://openoffice.org/2001/registry"><item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item><item oor:path="/org.openoffice.Office.Common/Load"><prop oor:name="UpdateMode" oor:op="fuse"><value>0</value></prop></item></oor:items>')
+    rendered = ROOT / "presentation-rendered"
+    rendered.mkdir()
+    run_tool(tools, "libreoffice", ["-env:UserInstallation=" + profile.as_uri(), "--headless",
+             "--nologo", "--nodefault", "--norestore", "--convert-to", "pdf",
+             "--outdir", str(rendered), str(path)])
+    pdf = rendered / (path.stem + ".pdf")
+    require(pdf.is_file() and pdf.read_bytes().startswith(b"%PDF-"), "PRODUCTION_RENDER_FAILED")
+    (OUT / "slides.pdf").write_bytes(pdf.read_bytes())
+    previews = []
+    for page in range(1, slide_count + 1):
+        prefix = OUT / f"slide-{page:02}"
+        run_tool(tools, "pdftoppm", ["-f", str(page), "-l", str(page), "-singlefile",
+                 "-scale-to", "1280", "-png", str(pdf), str(prefix)])
+        image = prefix.with_suffix(".png")
+        require(image.is_file(), "PRODUCTION_PAGE_NOT_FOUND")
+        width, height = raster_dimensions(image.read_bytes(), "png")
+        previews.append({"slide": page, "file": image.name, "width": width, "height": height})
+    return previews
+
+
+def presentation_active_content(parts):
+    bad_names = ("vbaproject", "activex/", "embeddings/")
+    return any(any(bad in name.lower() for bad in bad_names) or
+               name.lower().endswith((".bin", ".js", ".html", ".htm")) for name in parts)
+
+
+def presentation_slide_names(parts):
+    return sorted((name for name in parts if re.fullmatch(r"ppt/slides/slide[0-9]+\.xml", name)),
+                  key=lambda name: int(re.search(r"slide([0-9]+)", name)[1]))
+
+
+def apply_presentation_brand(theme, brand):
+    node = xml(theme)
+    scheme = node.find(".//a:clrScheme", NS)
+    font_scheme = node.find(".//a:fontScheme", NS)
+    require(scheme is not None and font_scheme is not None,
+            "PRODUCTION_PRESENTATION_THEME_UNSUPPORTED")
+    colors = {"dk1": brand["text"], "lt1": brand["background"], "dk2": brand["muted"],
+              "lt2": "FFFFFF", "accent1": brand["primary"], "accent2": brand["accent"],
+              "accent3": brand["muted"], "hlink": brand["primary"], "folHlink": brand["accent"]}
+    for key, value in colors.items():
+        target = scheme.find(f"a:{key}", NS)
+        if target is not None:
+            for child in list(target):
+                target.remove(child)
+            ET.SubElement(target, f'{{{NS["a"]}}}srgbClr', {"val": value})
+    for target in font_scheme.findall(".//a:latin", NS):
+        target.set("typeface", brand["font"])
+    scheme.set("name", brand["name"])
+    font_scheme.set("name", brand["name"])
+    return ET.tostring(node, encoding="utf-8", xml_declaration=True)
+
+
+def presentations(args, operation, tools):
+    render = args.get("render", False)
+    require(type(render) is bool)
+    if operation == "presentations.create":
+        exact(args, ("slides",), ("brand", "render"))
         slides = args["slides"]
         require(isinstance(slides, list) and 1 <= len(slides) <= 60)
-        parts = {"_rels/.rels": rels([(1, "officeDocument", "ppt/presentation.xml")])}
-    for slide in slides:
-        exact(slide, ("title", "bullets"), ("source", "sectionId"))
-        title = text(slide["title"], 160)
-        bullets = slide["bullets"]
-        require(isinstance(bullets, list) and len(bullets) <= 8)
-        for bullet in bullets:
-            text(bullet, 300)
-        target = name if revise else f'ppt/slides/slide{len([n for n in parts if re.fullmatch(r"ppt/slides/slide[0-9]+.xml", n)]) + 1}.xml'
-        parts[target] = slide_xml(title, bullets)
-    if not revise:
-        entries = [("ppt/presentation.xml", "presentationml.presentation.main")]
-        entries += [(f'ppt/slides/slide{i}.xml', 'presentationml.slide') for i in range(1, len(slides)+1)]
-        parts["[Content_Types].xml"] = content_types(entries)
-        ids = ''.join(f'<p:sldId id="{255+i}" r:id="rId{i}"/>' for i in range(1,len(slides)+1))
-        parts["ppt/presentation.xml"] = f'<p:presentation xmlns:p="{NS["p"]}" xmlns:r="{OFFICE}"><p:sldIdLst>{ids}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000" type="screen16x9"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>'
-        parts["ppt/_rels/presentation.xml.rels"] = rels([(i,"slide",f'slides/slide{i}.xml') for i in range(1,len(slides)+1)])
-    write_zip("presentation.pptx", parts)
+        slides = [presentation_slide(slide) for slide in slides]
+        if render:
+            require(len(slides) <= 12, "PRODUCTION_PRESENTATION_RENDER_LIMIT")
+        brand = presentation_brand(args.get("brand"))
+        parts = presentation_skeleton(brand, len(slides), any(slide["notes"] for slide in slides))
+        media = {}
+        manifest_slides = []
+        for index, slide in enumerate(slides, 1):
+            notes_target = f"../notesSlides/notesSlide{index}.xml" if slide["notes"] else None
+            document, relationships, manifest = presentation_slide_xml(
+                slide, index, len(slides), brand, media, notes_target=notes_target)
+            parts[f"ppt/slides/slide{index}.xml"] = document
+            parts[f"ppt/slides/_rels/slide{index}.xml.rels"] = relationships
+            if slide["notes"]:
+                parts[f"ppt/notesSlides/notesSlide{index}.xml"] = notes_slide_xml(slide["notes"])
+                parts[f"ppt/notesSlides/_rels/notesSlide{index}.xml.rels"] = rels([
+                    (1, "notesMaster", "../notesMasters/notesMaster1.xml"),
+                    (2, "slide", f"../slides/slide{index}.xml"),
+                ])
+            manifest_slides.append(manifest)
+        for entry in media.values():
+            parts[entry["path"]] = entry["bytes"]
+        parts["[Content_Types].xml"] = presentation_content_types(parts)
+        deck = write_zip("presentation.pptx", parts)
+        checked = read_zip(deck)
+        names = presentation_slide_names(checked)
+        require(len(names) == len(slides) and all(slides[i]["title"] in
+                [node.text or "" for node in xml(checked[name]).findall(".//a:t", NS)]
+                for i, name in enumerate(names)), "PRODUCTION_PRESENTATION_INVALID")
+        manifest = {"kind": "presentation", "operation": "create", "slides": manifest_slides,
+                    "theme": {key: brand[key] for key in DEFAULT_PRESENTATION_BRAND},
+                    "slideCount": len(slides), "editable": True,
+                    "verification": {"packageReopened": True, "titlesMatched": True}}
+    elif operation == "presentations.revise":
+        exact(args, ("source", "sectionId", "title"),
+              ("layout", "eyebrow", "subtitle", "body", "bullets", "notes",
+               "footer", "image", "chart", "render"))
+        source_path = source(args["source"])
+        require(source_path.suffix.lower() == ".pptx", "PRODUCTION_PRESENTATION_FORMAT_UNSUPPORTED")
+        parts = read_zip(source_path)
+        require(not presentation_active_content(parts), "PRODUCTION_UNSAFE_DOCUMENT")
+        names = presentation_slide_names(parts)
+        require(1 <= len(names) <= 60)
+        match = re.fullmatch(r"slide:([1-9][0-9]?)", text(args["sectionId"], 20))
+        require(match is not None and int(match[1]) <= len(names), "PRODUCTION_SECTION_NOT_FOUND")
+        target_index = int(match[1])
+        target = f"ppt/slides/slide{target_index}.xml"
+        before = {name: hashlib.sha256(parts[name]).hexdigest() for name in names}
+        spec = {key: value for key, value in args.items()
+                if key not in ("source", "sectionId", "render")}
+        if not any(key in spec for key in ("body", "bullets", "chart", "image")) and "layout" not in spec:
+            spec["layout"] = "statement"
+        slide = presentation_slide(spec)
+        rel_name = f"ppt/slides/_rels/slide{target_index}.xml.rels"
+        layout_target = "../slideLayouts/slideLayout1.xml"
+        notes_target = None
+        if rel_name in parts:
+            rel_node = xml(parts[rel_name])
+            for relationship in rel_node:
+                if relationship.attrib.get("Type", "").endswith("/slideLayout"):
+                    layout_target = relationship.attrib["Target"]
+                elif relationship.attrib.get("Type", "").endswith("/notesSlide"):
+                    notes_target = relationship.attrib["Target"]
+        if slide["notes"] and notes_target is None:
+            require("ppt/notesMasters/notesMaster1.xml" in parts,
+                    "PRODUCTION_PRESENTATION_NOTES_UNSUPPORTED")
+            notes_target = f"../notesSlides/notesSlide{target_index}.xml"
+        media = {}
+        brand = presentation_brand()
+        brand["name"] = ""
+        document, relationships, slide_manifest = presentation_slide_xml(
+            slide, target_index, len(names), brand, media, parts, layout_target, notes_target)
+        parts[target] = document
+        parts[rel_name] = relationships
+        for entry in media.values():
+            parts[entry["path"]] = entry["bytes"]
+        if slide["notes"]:
+            note_name = "ppt/notesSlides/" + Path(notes_target).name
+            parts[note_name] = notes_slide_xml(slide["notes"])
+            parts["ppt/notesSlides/_rels/" + Path(note_name).name + ".rels"] = rels([
+                (1, "notesMaster", "../notesMasters/notesMaster1.xml"),
+                (2, "slide", f"../slides/slide{target_index}.xml"),
+            ])
+        update_presentation_content_types(parts)
+        deck = write_zip("presentation.pptx", parts)
+        checked = read_zip(deck)
+        after = {name: hashlib.sha256(checked[name]).hexdigest() for name in names}
+        require(all(before[name] == after[name] for name in names if name != target),
+                "PRODUCTION_PRESENTATION_PRESERVATION_FAILED")
+        manifest = {"kind": "presentation", "operation": "revise",
+                    "sourceSha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
+                    "targetSlide": target_index, "slide": slide_manifest,
+                    "slideCount": len(names), "editable": True,
+                    "verification": {"packageReopened": True,
+                                     "nonTargetSlidesPreserved": len(names) - 1}}
+    else:
+        exact(args, ("source", "brand"), ("render",))
+        source_path = source(args["source"])
+        require(source_path.suffix.lower() == ".pptx", "PRODUCTION_PRESENTATION_FORMAT_UNSUPPORTED")
+        parts = read_zip(source_path)
+        require(not presentation_active_content(parts), "PRODUCTION_UNSAFE_DOCUMENT")
+        names = presentation_slide_names(parts)
+        require(1 <= len(names) <= 60)
+        brand = presentation_brand(args["brand"])
+        preserved = {name: hashlib.sha256(parts[name]).hexdigest() for name in parts
+                     if name.startswith(("ppt/slides/", "ppt/notesSlides/", "ppt/media/"))}
+        theme_names = [name for name in parts if re.fullmatch(r"ppt/theme/theme[0-9]+\.xml", name)]
+        require(theme_names, "PRODUCTION_PRESENTATION_THEME_UNSUPPORTED")
+        for name in theme_names:
+            parts[name] = apply_presentation_brand(parts[name], brand)
+        scheme_aware = explicit = 0
+        for name in names:
+            node = xml(parts[name])
+            scheme_aware += len(node.findall(".//a:schemeClr", NS))
+            explicit += len(node.findall(".//a:srgbClr", NS))
+        deck = write_zip("presentation.pptx", parts)
+        checked = read_zip(deck)
+        require(all(hashlib.sha256(checked[name]).hexdigest() == digest
+                    for name, digest in preserved.items()),
+                "PRODUCTION_PRESENTATION_PRESERVATION_FAILED")
+        manifest = {"kind": "presentation", "operation": "brand",
+                    "sourceSha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
+                    "theme": {key: brand[key] for key in DEFAULT_PRESENTATION_BRAND},
+                    "slideCount": len(names), "editable": True,
+                    "coverage": {"schemeAwareElements": scheme_aware,
+                                 "explicitColorElements": explicit,
+                                 "partialForExplicitColors": explicit > 0},
+                    "verification": {"packageReopened": True,
+                                     "slideNotesAndMediaPartsPreserved": len(preserved)}}
+    if render:
+        manifest["renders"] = presentation_previews(deck, manifest["slideCount"], tools)
+        manifest["verification"]["allSlidesRendered"] = True
+    (OUT / "presentation-manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    return manifest
 
 
 def documents(args, revise):
@@ -300,8 +912,17 @@ def inspect(args,tools):
             names=sorted((n for n in parts if re.fullmatch(r'ppt/slides/slide[0-9]+.xml',n)),key=lambda n:int(re.search(r'slide([0-9]+)',n)[1]))
             require(1<=len(names)<=60)
             for name in names:
-                lines=[n.text or '' for n in xml(parts[name]).findall('.//a:t',NS)]
-                pages.append({'id':f'slide:{re.search(r"slide([0-9]+)",name)[1]}','title':lines[0] if lines else '', 'text':'\n'.join(lines[1:])[:20000]})
+                node=xml(parts[name]);title='';body=[]
+                for shape in node.findall('.//p:sp',NS):
+                    identity=shape.find('./p:nvSpPr/p:cNvPr',NS)
+                    lines=[item.text or '' for item in shape.findall('.//a:t',NS)]
+                    if identity is not None and identity.attrib.get('name') in ('Title','Statement') and lines:
+                        title=lines[0];body.extend(lines[1:])
+                    else: body.extend(lines)
+                if not title:
+                    lines=[n.text or '' for n in node.findall('.//a:t',NS)]
+                    title=lines[0] if lines else '';body=lines[1:]
+                pages.append({'id':f'slide:{re.search(r"slide([0-9]+)",name)[1]}','title':title, 'text':'\n'.join(body)[:20000]})
         else:
             paragraphs=xml(parts['word/document.xml']).findall('.//w:body/w:p',NS)
             for i,node in enumerate(paragraphs[:500],1):
@@ -337,7 +958,8 @@ def main(request):
         (OUT/'outline.json').write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
         (OUT/'extracted.txt').write_text(result.get('text','\n\n'.join(p['title']+'\n'+p['text'] for p in result.get('pages',[]))),encoding='utf-8')
         return {'files':[{'name':p.name,'bytes':p.stat().st_size} for p in OUT.iterdir()],'verified':True}
-    if operation in ('presentations.create','presentations.revise'): presentations(args,operation=='presentations.revise')
+    if operation in ('presentations.create','presentations.revise','presentations.brand'):
+        presentations(args,operation,tools)
     elif operation in ('documents.create','documents.revise'): documents(args,operation=='documents.revise')
     elif operation in ('data.clean','data.analyze','data.xlsx'): data_operation(args,operation)
     elif operation in ('images.resize','video.edit','audio.cleanup'): media(args,operation,tools)

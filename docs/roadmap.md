@@ -2,7 +2,7 @@
 
 Status: active
 
-Updated: 2026-11-04
+Updated: 2026-11-05
 
 This roadmap describes public technical direction, not dates or commercial
 commitments.
@@ -92,6 +92,10 @@ commitments.
   publication gap: every text/DOCX source segment stays paired and ordered,
   stable facts remain literal and the exact source hash follows the editable
   result into human meaning review.
+  [Task0084](state/branded-visual-presentations.md) closes the deterministic
+  P2–P4 presentation gap: theme-aware native layouts, editable bars, exact
+  selected-slide revision, honest third-party theme coverage and all-slide
+  LibreOffice/Poppler renders now share one bounded local production path.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

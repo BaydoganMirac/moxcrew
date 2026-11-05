@@ -84,11 +84,17 @@ def read_zip(path):
         return result
 
 
-def write_zip(name, parts):
+def write_zip(name, parts, deterministic=False):
     path = OUT / name
     with zipfile.ZipFile(path, "x", compression=zipfile.ZIP_DEFLATED) as archive:
         for key, data in parts.items():
-            archive.writestr(key, data)
+            if deterministic:
+                info = zipfile.ZipInfo(key, (1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o600 << 16
+                archive.writestr(info, data)
+            else:
+                archive.writestr(key, data)
     read_zip(path)
     return path
 
@@ -1012,16 +1018,125 @@ def documents(args, revise):
         run = ET.SubElement(paragraph, f'{{{NS["w"]}}}r')
         ET.SubElement(run, f'{{{NS["w"]}}}t').text = text(args["text"])
         parts["word/document.xml"] = ET.tostring(node,encoding="utf-8",xml_declaration=True)
+        write_zip("document.docx", parts, deterministic=True)
+        return None
     else:
-        exact(args, ("paragraphs",), ("title",))
-        paragraphs = args["paragraphs"]
-        require(isinstance(paragraphs,list) and 1 <= len(paragraphs) <= 500)
-        lines = ([text(args["title"],160)] if args.get("title") else []) + [text(p) for p in paragraphs]
-        body = ''.join(f'<w:p><w:r><w:t xml:space="preserve">{escape(p)}</w:t></w:r></w:p>' for p in lines)
-        parts = {"[Content_Types].xml":content_types([("word/document.xml","wordprocessingml.document.main")]),
-                 "_rels/.rels":rels([(1,"officeDocument","word/document.xml")]),
-                 "word/document.xml":f'<w:document xmlns:w="{NS["w"]}"><w:body>{body}<w:sectPr><w:pgSz w="11906" h="16838"/><w:pgMar top="1440" right="1440" bottom="1440" left="1440"/></w:sectPr></w:body></w:document>'}
-    write_zip("document.docx", parts)
+        require(isinstance(args, dict))
+        structured = "sections" in args
+        if structured:
+            exact(args, ("title", "sections"), ("subtitle", "language"))
+            language = text(args.get("language", "en"), 2)
+            require(language in ("tr", "en"))
+            title = text(args["title"], 160)
+            require(title.strip() == title and title)
+            subtitle = text(args.get("subtitle", ""), 240)
+            require(subtitle.strip() == subtitle)
+            raw_sections = args["sections"]
+            require(isinstance(raw_sections, list) and 1 <= len(raw_sections) <= 20)
+            sections = []
+            total = 0
+            for section in raw_sections:
+                exact(section, ("heading", "paragraphs"))
+                heading = text(section["heading"], 120)
+                require(heading.strip() == heading and heading)
+                paragraphs = section["paragraphs"]
+                require(isinstance(paragraphs, list) and 1 <= len(paragraphs) <= 12)
+                paragraphs = [text(paragraph, 4000) for paragraph in paragraphs]
+                require(all(paragraph.strip() == paragraph and paragraph for paragraph in paragraphs))
+                total += len(paragraphs)
+                sections.append({"heading": heading, "paragraphs": paragraphs})
+            require(total <= 120)
+            content = {"language": language, "title": title,
+                       "subtitle": subtitle or None, "sections": sections}
+        else:
+            exact(args, ("paragraphs",), ("title",))
+            paragraphs = args["paragraphs"]
+            require(isinstance(paragraphs, list) and 1 <= len(paragraphs) <= 500)
+            title = text(args.get("title", ""), 160)
+            paragraphs = [text(paragraph) for paragraph in paragraphs]
+            content = {"language": None, "title": title or None, "subtitle": None,
+                       "sections": [{"heading": None, "paragraphs": paragraphs}]}
+
+        def paragraph(value, style):
+            return (f'<w:p><w:pPr><w:pStyle w:val="{style}"/></w:pPr>'
+                    f'<w:r><w:t xml:space="preserve">{escape(value)}</w:t></w:r></w:p>')
+
+        body = paragraph(title, "Title") if title else ""
+        if content["subtitle"]:
+            body += paragraph(content["subtitle"], "Subtitle")
+        for section in content["sections"]:
+            if section["heading"]:
+                body += paragraph(section["heading"], "Heading1")
+            body += "".join(paragraph(value, "BodyText") for value in section["paragraphs"])
+        styles = f'''<w:styles xmlns:w="{NS["w"]}">
+<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:color w:val="15223D"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="180" w:line="320" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>
+<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Subtitle"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="0" w:after="240"/><w:shd w:val="clear" w:fill="15223D"/><w:pBdr><w:top w:val="single" w:sz="48" w:space="0" w:color="FF7A2F"/></w:pBdr><w:ind w:left="360" w:right="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:color w:val="FFFFFF"/><w:sz w:val="48"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:after="480"/></w:pPr><w:rPr><w:i/><w:color w:val="56627A"/><w:sz w:val="24"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="360" w:after="160"/><w:pBdr><w:bottom w:val="single" w:sz="14" w:space="6" w:color="FF7A2F"/></w:pBdr><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="2854F4"/><w:sz w:val="30"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="BodyText"><w:name w:val="Body Text"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:after="220" w:line="340" w:lineRule="auto"/></w:pPr><w:rPr><w:color w:val="263650"/><w:sz w:val="22"/></w:rPr></w:style>
+</w:styles>'''
+        document = (f'<w:document xmlns:w="{NS["w"]}"><w:body>{body}'
+                    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
+                    '<w:pgMar w:top="1134" w:right="1276" w:bottom="1134" w:left="1276"/>'
+                    '</w:sectPr></w:body></w:document>')
+        parts = {
+            "[Content_Types].xml": content_types([
+                ("word/document.xml", "wordprocessingml.document.main"),
+                ("word/styles.xml", "wordprocessingml.styles"),
+            ]),
+            "_rels/.rels": rels([(1, "officeDocument", "word/document.xml")]),
+            "word/document.xml": document,
+            "word/styles.xml": styles,
+            "word/_rels/document.xml.rels": rels([(1, "styles", "styles.xml")]),
+        }
+        document_path = write_zip("document.docx", parts, deterministic=True)
+        reopened = read_zip(document_path)
+        node = xml(reopened["word/document.xml"])
+        reopened_paragraphs = [{"style": (item.find("./w:pPr/w:pStyle", NS).attrib.get(
+            f'{{{NS["w"]}}}val') if item.find("./w:pPr/w:pStyle", NS) is not None else None),
+            "text": "".join(value.text or "" for value in item.findall(".//w:t", NS))}
+            for item in node.findall(".//w:body/w:p", NS)]
+        expected = []
+        if title:
+            expected.append({"style": "Title", "text": title})
+        if content["subtitle"]:
+            expected.append({"style": "Subtitle", "text": content["subtitle"]})
+        for section in content["sections"]:
+            if section["heading"]:
+                expected.append({"style": "Heading1", "text": section["heading"]})
+            expected.extend({"style": "BodyText", "text": value}
+                            for value in section["paragraphs"])
+        require(reopened_paragraphs == expected, "PRODUCTION_DOCUMENT_REOPEN_FAILED")
+        if not structured:
+            return None
+        canonical = (json.dumps(content, ensure_ascii=False, indent=2,
+                                allow_nan=False) + "\n").encode("utf-8")
+        (OUT / "content.json").write_bytes(canonical)
+        summary = ("# Verified editable document\n\n" +
+                   f"- Editable DOCX: yes\n- Language: {content['language'] or 'unspecified'}\n"
+                   f"- Sections: {len(content['sections'])}\n"
+                   f"- Body paragraphs: {sum(len(section['paragraphs']) for section in content['sections'])}\n"
+                   "- Reopened text and styles: exact\n- External references: none\n"
+                   "- Macros or active content: none\n- Published: no\n"
+                   "- Human review required: content meaning, visual quality and Microsoft Word compatibility\n")
+        (OUT / "summary.md").write_text(summary, encoding="utf-8")
+        files = {}
+        for name in ("document.docx", "content.json", "summary.md"):
+            path = OUT / name
+            data = path.read_bytes()
+            files[name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        manifest = {"kind": "editable_document", "operation": "create",
+                    "structured": structured, "editable": True, "published": False,
+                    "language": content["language"], "sectionCount": len(content["sections"]),
+                    "paragraphCount": len(reopened_paragraphs), "files": files,
+                    "verification": {"packageReopened": True, "textAndStylesExact": True,
+                                     "externalReferences": False, "activeContent": False,
+                                     "humanReviewRequired": True}}
+        (OUT / "document-manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+            encoding="utf-8")
+        return manifest
 
 
 def data_operation(args, operation):
@@ -1314,19 +1429,24 @@ def main(request):
         (OUT/'outline.json').write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
         (OUT/'extracted.txt').write_text(result.get('text','\n\n'.join(p['title']+'\n'+p['text'] for p in result.get('pages',[]))),encoding='utf-8')
         return {'files':[{'name':p.name,'bytes':p.stat().st_size} for p in OUT.iterdir()],'verified':True}
+    result = None
     if operation == 'video.motion':
         motion_video(args,tools)
     elif operation == 'presentations.narrate':
         narrated_presentation(args,tools)
     elif operation in ('presentations.create','presentations.revise','presentations.brand'):
         presentations(args,operation,tools)
-    elif operation in ('documents.create','documents.revise'): documents(args,operation=='documents.revise')
+    elif operation in ('documents.create','documents.revise'):
+        result = documents(args,operation=='documents.revise')
     elif operation in ('data.clean','data.analyze','data.xlsx'): data_operation(args,operation)
     elif operation in ('images.resize','video.edit','audio.cleanup'): media(args,operation,tools)
     else: raise ValueError('PRODUCTION_OPERATION_UNSUPPORTED')
     files=[{'name':p.name,'bytes':p.stat().st_size} for p in sorted(OUT.iterdir()) if p.is_file()]
     require(files and len(files)<=16 and sum(f['bytes'] for f in files)<=MAX_FILE,'PRODUCTION_OUTPUT_LIMIT')
-    return {'files':files,'verified':True}
+    response = {'files':files,'verified':True}
+    if isinstance(result, dict):
+        response.update(result)
+    return response
 
 
 if __name__=='__main__':

@@ -402,6 +402,148 @@ async fn static_site_is_script_free_hash_pinned_and_rejects_unsafe_links() {
 }
 
 #[tokio::test]
+async fn editable_document_is_styled_hash_pinned_and_deterministic() {
+    use sha2::{Digest, Sha256};
+    assert!(OPERATIONS.contains(&"documents.create"));
+    let data = tempfile::tempdir().unwrap();
+    let request = json!({
+        "language":"tr",
+        "title":"Moxcrew 2027 Çalışma Planı",
+        "subtitle":"Kararlar görünür, teslimatlar doğrulanabilir.",
+        "sections":[
+            {"heading":"Yön","paragraphs":[
+                "Moxcrew iddialı işleri tek yerel çalışma alanında toplar.",
+                "Son karar ve yayın kontrolü her zaman sahibinde kalır."
+            ]},
+            {"heading":"Sonraki adımlar","paragraphs":[
+                "Pilot akışı doğrulanmış çıktılarla tamamla.",
+                "Her teslimatın kaynağını ve özetini birlikte incele."
+            ]}
+        ]
+    });
+    let result = run(data.path(), "documents.create", &request, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(result.value["kind"], "editable_document");
+    assert_eq!(result.value["editable"], true);
+    assert_eq!(result.value["published"], false);
+    assert_eq!(result.value["sectionCount"], 2);
+    assert_eq!(result.value["paragraphCount"], 8);
+    let file = |name: &str| {
+        result
+            .files
+            .iter()
+            .find(|file| file.0 == name)
+            .unwrap()
+            .1
+            .clone()
+    };
+    let mut names = result
+        .files
+        .iter()
+        .map(|file| file.0.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "content.json",
+            "document-manifest.json",
+            "document.docx",
+            "summary.md"
+        ]
+    );
+    let content: Value = serde_json::from_slice(&file("content.json")).unwrap();
+    assert_eq!(content, request);
+    let manifest: Value = serde_json::from_slice(&file("document-manifest.json")).unwrap();
+    assert_eq!(manifest["verification"]["packageReopened"], true);
+    assert_eq!(manifest["verification"]["textAndStylesExact"], true);
+    assert_eq!(manifest["verification"]["externalReferences"], false);
+    for (name, entry) in manifest["files"].as_object().unwrap() {
+        let bytes = file(name);
+        assert_eq!(entry["bytes"], bytes.len());
+        assert_eq!(entry["sha256"], format!("{:x}", Sha256::digest(&bytes)));
+    }
+    let inspected = run(
+        data.path(),
+        "inspect",
+        &json!({"source":"inputs/document.docx"}),
+        &[("inputs/document.docx".into(), file("document.docx"))],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(inspected.value["pages"][0]["text"], request["title"]);
+    assert_eq!(
+        inspected.value["pages"][2]["text"],
+        request["sections"][0]["heading"]
+    );
+    assert_eq!(
+        inspected.value["pages"][7]["text"],
+        request["sections"][1]["paragraphs"][1]
+    );
+    let repeated = run(data.path(), "documents.create", &request, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(result.files, repeated.files);
+
+    let empty_section = json!({
+        "language":"en","title":"Invalid",
+        "sections":[{"heading":"Empty","paragraphs":[]}]
+    });
+    assert!(
+        run(data.path(), "documents.create", &empty_section, &[], None)
+            .await
+            .is_err()
+    );
+    let mut unexpected = request;
+    unexpected["publish"] = json!(true);
+    assert!(run(data.path(), "documents.create", &unexpected, &[], None)
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+#[ignore = "writes retained editable-document evidence to an explicitly selected directory"]
+async fn retain_editable_document_evidence() {
+    let target = std::path::PathBuf::from(
+        std::env::var("MOXCREW_DOCUMENT_EVIDENCE_DIR").expect("set MOXCREW_DOCUMENT_EVIDENCE_DIR"),
+    );
+    let data = tempfile::tempdir().unwrap();
+    let output = run(
+        data.path(),
+        "documents.create",
+        &json!({
+            "language":"tr",
+            "title":"Moxcrew · 2027 Çalışma Planı",
+            "subtitle":"Cesur işler için görünür kararlar, doğrulanabilir teslimatlar.",
+            "sections":[
+                {"heading":"Neden şimdi?","paragraphs":[
+                    "Ekipler araç eksikliğinden değil, görünmeyen devirlerden ve belirsiz sorumluluktan yavaşlıyor.",
+                    "Moxcrew planı, üretimi ve incelemeyi tek yerel çalışma alanında birleştirir."
+                ]},
+                {"heading":"Çalışma ilkeleri","paragraphs":[
+                    "Senden habersiz hiçbir iş başlamaz; kaynaklar ve sınırlar başlamadan önce görünür.",
+                    "Her teslimat düzenlenebilir dosya, doğrulama özeti ve açık insan inceleme sınırıyla gelir."
+                ]},
+                {"heading":"Önümüzdeki 30 gün","paragraphs":[
+                    "Pilot akışlarını gerçek proje girdileriyle tamamla ve kanıt paketlerini birlikte incele.",
+                    "Yayınlamadan önce içerik anlamını, görsel kaliteyi ve Microsoft Word uyumluluğunu insan gözüyle doğrula."
+                ]}
+            ]
+        }),
+        &[],
+        None,
+    )
+    .await
+    .unwrap();
+    std::fs::create_dir_all(&target).unwrap();
+    for (name, bytes) in output.files {
+        std::fs::write(target.join(name), bytes).unwrap();
+    }
+}
+
+#[tokio::test]
 #[ignore = "writes retained static-site evidence to an explicitly selected directory"]
 async fn retain_static_site_evidence() {
     let target = std::path::PathBuf::from(

@@ -24,7 +24,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Audio | A1–A5 | Owner-visible A1 transcription freezes one exact source/language and emits source/output-hashed text/JSON plus reopened SRT/VTT after checked 16 kHz mono normalization; bounded A2 local speech freezes exact text/locale and an owner-selected Piper ONNX voice into a script/model/config/output-hashed 48 kHz mono WAV; A3 cleanup and ordered A4 podcast packaging are checked; bounded A5 time-fits an owner-reviewed exact translation to one source recording with source/text/model/config/output hashes; real-model recognition/pronunciation quality, voice licensing, automatic translation, sentence alignment and subjective listening remain pending |
 | Data | T1–T5 | Owner-visible exact CSV cleanup now freezes deduplication/output/statistic choices and emits source/output-hashed CSV or editable XLSX with missing counts and exact reopen proof; exact-column charts, formula-backed scenario workbooks, and literal-evidence structured extraction are also implemented; semantic business interpretation and broader quality proof pending |
 | Web/actions | W1–W5 | Explicit app actions, isolated static public-page/form-draft browser and offline interactive tools; live accounts/full area pending |
-| Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery, local schedules and checked multi-file delivery packages implemented; full ten-workflow release proof pending |
+| Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery, local schedules and checked multi-file delivery packages implemented; J5 now has an exact frozen clean → analysis → charts/report → presentation → audio-brief graph with checked upstream handoffs, save/schedule parity and replay validation; J1–J4 and J6–J10 full composition proofs plus live output quality remain pending |
 
 The first [Create studio slice](project-create-studio.md) reuses Project/decision,
 durable tasks, native UI and supported Codex control for managed non-Git jobs.
@@ -202,6 +202,12 @@ the target-locale Piper voice to produce a duration-matched 48 kHz mono WAV with
 source/text/model/config/output hashes and explicit pace evidence. The protocol
 peer does not prove source-transcript accuracy, translation quality,
 pronunciation, naturalness, accessibility or voice-model licence suitability.
+[Task0099](workflow-controls.md) adds explicit frozen earlier-member
+dependencies to reusable recipes and verifies the J5 data-briefing graph with a
+real native protocol peer. It proves scheduling, checked file handoff, saved
+graph reuse and replay validation; it does not prove live-model analysis,
+presentation or audio quality and does not complete the other nine composition
+proofs.
 [Task0092](verified-static-landing-site.md) upgrades W1 from a catalog promise to
 an owner-visible exact-content request and deterministic local `web.site`
 operation. It emits editable script-free HTML, canonical content, a hash

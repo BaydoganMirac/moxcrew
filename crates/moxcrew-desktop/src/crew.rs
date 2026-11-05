@@ -3450,7 +3450,14 @@ mod tests {
                 for _ in 0..3 {
                     let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
                     assert!(commands.is_empty());
-                    for label in ["Builder", "Reviewer", "Prepare crew", "Edit roster"] {
+                    for label in ["Builder", "Reviewer"] {
+                        assert_eq!(
+                            copy.iter().filter(|line| line.as_str() == label).count(),
+                            1,
+                            "{language}/{theme:?}: duplicated {label}: {copy:?}"
+                        );
+                    }
+                    for label in ["Prepare crew", "Edit roster"] {
                         let localized = i18n::tr(Language::from_code(language), label);
                         assert_eq!(
                             copy.iter()
@@ -3494,13 +3501,14 @@ mod tests {
                 assert_eq!(console.create.productive_view(), 0);
                 let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
                 assert!(commands.is_empty());
-                for label in [
-                    "Builder",
-                    "Reviewer",
-                    "Prepare crew",
-                    "Edit roster",
-                    "Your crew is ready",
-                ] {
+                for label in ["Builder", "Reviewer"] {
+                    assert_eq!(
+                        copy.iter().filter(|line| line.as_str() == label).count(),
+                        1,
+                        "{language}/{theme:?}: restored chat card missing {label}"
+                    );
+                }
+                for label in ["Prepare crew", "Edit roster", "Your crew is ready"] {
                     let localized = i18n::tr(Language::from_code(language), label);
                     assert_eq!(
                         copy.iter()

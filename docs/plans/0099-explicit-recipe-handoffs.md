@@ -1,6 +1,6 @@
 # Task0099: Explicit recipe handoffs
 
-Status: In progress
+Status: Complete; locally verified
 
 Updated: 2026-11-05
 
@@ -60,3 +60,20 @@ automatic data interpretation, does not install an engine, and does not perform
 an external app action. Individual production operations keep their existing
 automatic and human-review boundaries. Windows-native and real-provider quality
 verification remain deferred.
+
+## Verification
+
+The focused J5 native-peer test passes after the crate-directory rename. It
+proves the exact owner and scheduled graphs, sequential completion, checked
+upstream file manifests, saved-recipe reuse and replay rejection of a tampered
+graph. Recipe validation and the Turkish/English light/dark minimum-window tests
+also pass. The retained Turkish dark capture is 2560×1760 with SHA-256
+`d2bb07921f152dda54b389057dde2f231c0780a914c85d9db4d6c3e98e1761cd`.
+
+The final locked all-feature workspace gate passes all 134 core library tests,
+every core integration binary and all 291 desktop tests after the native-fixture
+deadline and process-tree tests were made scheduler-safe. Strict workspace
+Clippy passes for all targets/features with warnings denied, formatting passes,
+and the 153-test legacy parity suite passes on Node 24.22.1. The owner explicitly
+approved deletion of the regenerable Cargo dev cache after the development
+volume reached 100%; release artifacts and project data were preserved.

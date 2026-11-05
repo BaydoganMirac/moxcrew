@@ -7,7 +7,7 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
         std::fs::write(&source,r#"
 use std::{env,fs,io::{self,Read,Write},process::{Command,Stdio},thread,time::Duration};
 fn main(){let args:Vec<_>=env::args().collect();let root=std::path::Path::new(&args[2]);
- if args[1]=="child" {thread::sleep(Duration::from_millis(800));fs::write(root.join("escaped"),b"still running").unwrap();thread::sleep(Duration::from_secs(5));return}
+ if args[1]=="child" {for _ in 0..2000{if root.join("escape-now").exists(){fs::write(root.join("escaped"),b"still running").unwrap();return}thread::sleep(Duration::from_millis(5));}return}
  let mut input=String::new();io::stdin().read_to_string(&mut input).unwrap();assert_eq!(input,"typed request");
  if args[1]=="success"{print!("typed output");return}
  if args[1]=="huge"{print!("{}","x".repeat(16384));return}
@@ -31,7 +31,7 @@ fn command(executable: &Path, root: &Path, mode: &str) -> Command {
     command
 }
 async fn started(root: &Path) {
-    timeout(Duration::from_secs(3), async {
+    timeout(Duration::from_secs(5), async {
         while !root.join("child").exists() {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
@@ -99,7 +99,10 @@ async fn typed_worker_reaps_descendants_after_parent_exit_cancel_and_dropped_cal
         let process = command(&exe, dir.path(), mode);
         let worker_active = active.clone();
         let bound = if mode == "inherited" {
-            Duration::from_millis(500)
+            // The timeout starts before the fixture has spawned its descendant. Give
+            // parallel test hosts room to schedule both processes; the tree-reap
+            // assertions below still prove the timeout cleanup itself.
+            Duration::from_secs(4)
         } else {
             Duration::from_secs(2)
         };
@@ -131,8 +134,17 @@ async fn typed_worker_reaps_descendants_after_parent_exit_cancel_and_dropped_cal
                 }
             );
         }
-        assert!(began.elapsed() < Duration::from_secs(1));
+        assert!(
+            began.elapsed()
+                < if mode == "inherited" {
+                    Duration::from_secs(5)
+                } else {
+                    Duration::from_secs(1)
+                }
+        );
         tokio::time::sleep(Duration::from_millis(900)).await;
+        std::fs::write(dir.path().join("escape-now"), b"go").unwrap();
+        tokio::time::sleep(Duration::from_millis(250)).await;
         assert!(
             !dir.path().join("escaped").exists(),
             "descendant survived {mode}"

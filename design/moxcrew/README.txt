@@ -9,7 +9,7 @@ The owner selected concept 4: cobalt rectangular helper, asymmetric cream eyes,
 orange eye ring and top tab. The original tactile PNG is reused unchanged.
 Use it for welcome/first-use/marketing; use the flat SVG symbol in dense chrome.
 SVG wordmarks contain Manrope 650 outlines and require no installed font.
-Fonts and SIL OFL are in crates/patchfleet-desktop/assets/fonts.
+Fonts and SIL OFL are in crates/moxcrew-desktop/assets/fonts.
 The original ImageGen prompts are preserved verbatim in source/; reusedBy records
 this new identity. The master is not claimed to have been generated again.
 

@@ -51,7 +51,7 @@ attempt retries the frozen operation to recover a lost acknowledgement even if
 local state later changed. Acknowledged local-vs-current divergence is visible;
 it never silently republishes new text. No source bodies or origin events leave.
 
-- Local core builder: new `crates/patchfleet-core/src/shared_memory.rs`, necessary
+- Local core builder: new `crates/moxcrew-core/src/shared_memory.rs`, necessary
   `lib.rs`/`domain.rs`/`store.rs`/`host.rs`/`cloud.rs`, focused new shared-memory
   tests and narrow persistence legacy projection helper. No desktop/docs/private
   edits. Reuse reqwest/Tokio/SHA and private storage; no desktop DB/service.

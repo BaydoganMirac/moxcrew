@@ -54,3 +54,5 @@ supersedes the old one.
 | [0048](0048-conversation-first-orchestration.md) | Accepted; Task0050 | One conversation composer, visible provider choice and exact first-request Project creation |
 | [0049](0049-automatic-planning-connection.md) | Accepted; Task0051 | Automatic usable planning connection with optional manual override; freeze actual provider before sending |
 | [0050](0050-local-product-capabilities.md) | Accepted; Task0052 | Eleven local capabilities through the existing Project/Chat authority, optional engines and V14 facts; remote intake excluded |
+| [0051](0051-atomic-owner-export-publication.md) | Accepted; Task0060 | Publish owner exports atomically without replacing an existing destination |
+| [0052](0052-explicit-recipe-handoffs.md) | Accepted; Task0099 | Preserve bounded, frozen task dependencies in reusable local workflow recipes |

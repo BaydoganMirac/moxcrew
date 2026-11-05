@@ -60,11 +60,11 @@ or retry just because the UI rerenders, opens a step or receives an error.
 
 One coordinator owns this bounded native UI slice and handoff:
 
-- `crates/patchfleet-desktop/src/ui.rs`: guide, navigation, progress and inline
+- `crates/moxcrew-desktop/src/ui.rs`: guide, navigation, progress and inline
   behavior tests; reuse existing forms and commands rather than copying them.
-- `crates/patchfleet-desktop/src/i18n.rs`: TR/EN interface text; owner content
+- `crates/moxcrew-desktop/src/i18n.rs`: TR/EN interface text; owner content
   stays unchanged.
-- `crates/patchfleet-desktop/src/main.rs`: only disposable `ui-smoke` scene
+- `crates/moxcrew-desktop/src/main.rs`: only disposable `ui-smoke` scene
   setup if needed for visual checks; production startup stays unchanged.
 - This card, `docs/state/first-task-quick-start.md`, `docs/state/README.md`, and
   the activation guidance in `docs/install.md` at implementation handoff.

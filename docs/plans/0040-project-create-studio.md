@@ -55,10 +55,10 @@ secondary tools remain reachable without competing with the first task.
 
 ## Ownership
 
-- Core builder: `crates/patchfleet-core/src/creation.rs`, managed-path prepare/
-  start variants in `providers.rs`, `crates/patchfleet-core/tests/creation.rs`
+- Core builder: `crates/moxcrew-core/src/creation.rs`, managed-path prepare/
+  start variants in `providers.rs`, `crates/moxcrew-core/tests/creation.rs`
   and necessary provider fixtures only.
-- UI builder: `crates/patchfleet-desktop/src/ui.rs`, `i18n.rs`, new `create.rs`
+- UI builder: `crates/moxcrew-desktop/src/ui.rs`, `i18n.rs`, new `create.rs`
   child module; preserve other drafts and existing navigation behavior.
 - Coordinator: catalog assets/module, `host.rs`, `work.rs`, `lib.rs`, native
   `main.rs`/`bridge.rs` integration, shared contracts, plan/ADR/state, integration.

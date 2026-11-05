@@ -135,7 +135,7 @@ installed CLI is probed. These images establish native rendering and containment
 not a model result, provider sign-in or verified ability output.
 
 Windows installer templates are pinned to cargo-packager0.11.8 under
-`crates/patchfleet-desktop/assets/windows/`. Moxcrew display labels deliberately
+`crates/moxcrew-desktop/assets/windows/`. Moxcrew display labels deliberately
 retain Patchfleet registry/install/shortcut directory identities so existing
 NSIS/WiX installations are discovered. Reconcile the documented delta when
 upgrading the packager. Before a Windows release, exercise actual fresh install,

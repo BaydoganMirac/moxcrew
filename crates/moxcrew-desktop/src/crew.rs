@@ -24,6 +24,14 @@ struct CrewSubmission {
     plan: CrewDraft,
 }
 
+fn recipe_copy<'a>(ui: &Ui, recipe: &Value, value: &'a str) -> std::borrow::Cow<'a, str> {
+    if recipe["projectId"].is_null() {
+        t(ui, value)
+    } else {
+        std::borrow::Cow::Borrowed(value)
+    }
+}
+
 #[derive(Default)]
 pub(super) struct CrewState {
     pub(super) single: bool,
@@ -465,11 +473,18 @@ impl Console {
             self.create.crew.workflow.open = true;
             self.create.crew.workflow.tab = match scene {
                 "productive-direction" => 1,
-                "productive-recipes" => 2,
+                "productive-recipes" | "productive-data-briefing" => 2,
                 "productive-schedules" => 3,
                 "productive-activity" => 4,
                 _ => 0,
             };
+            if scene == "productive-data-briefing" {
+                self.create
+                    .crew
+                    .workflow
+                    .recipe
+                    .insert(project.clone(), "builtin:data-briefing".into());
+            }
             self.create.crew.workflow.provider = "codex".into();
             self.create.crew.workflow.read =
                 Some((project, revision(&snapshot["projectWorkflows"])));
@@ -2582,7 +2597,7 @@ impl Console {
                     recipes
                         .iter()
                         .find(|recipe| text(recipe, "recipeId") == selected)
-                        .map(|recipe| std::borrow::Cow::Borrowed(text(recipe, "name")))
+                        .map(|recipe| recipe_copy(ui, recipe, text(recipe, "name")))
                         .unwrap_or_else(|| t(ui, "Choose recipe")),
                 ),
             |ui| {
@@ -2590,7 +2605,7 @@ impl Console {
                     ui.selectable_value(
                         selected,
                         text(recipe, "recipeId").into(),
-                        text(recipe, "name"),
+                        recipe_copy(ui, recipe, text(recipe, "name")),
                     );
                 }
             },
@@ -2602,8 +2617,11 @@ impl Console {
             let compact = ui.ctx().viewport_rect().height() < 700.0;
             ui.add_space(if compact { 8.0 } else { 16.0 });
             if !compact {
-                ui.label(studio::title(text(recipe, "name"), 20.0));
-                ui.label(text(recipe, "description"));
+                ui.label(studio::title(
+                    recipe_copy(ui, recipe, text(recipe, "name")).into_owned(),
+                    20.0,
+                ));
+                ui.label(recipe_copy(ui, recipe, text(recipe, "description")));
                 ui.add_space(studio::metrics::CONTROL_GAP);
             }
             let input = ui.scope(|ui| {
@@ -2632,36 +2650,70 @@ impl Console {
             if compact {
                 ui.add(
                     egui::Label::new(
-                        RichText::new(text(recipe, "description"))
+                        RichText::new(recipe_copy(ui, recipe, text(recipe, "description")))
                             .size(12.0)
                             .color(colors(ui).muted),
                     )
                     .wrap(),
                 );
             }
-            ui.collapsing(t(ui, "Roster"), |ui| {
-                for member in array(&recipe["members"]) {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(text(member, "name"));
-                        hint(ui, role_label(text(member, "role")));
-                    });
-                }
-                for (key, label) in [
-                    ("deliverables", "Deliverables"),
-                    ("toolRequirements", "Required tools"),
-                ] {
-                    if !array(&recipe[key]).is_empty() {
-                        ui.label(RichText::new(t(ui, label)).strong());
-                        for value in array(&recipe[key]) {
-                            if let Some(value) = value.as_str() {
-                                ui.label(value);
-                            } else {
-                                ui.label(value.to_string());
+            let members = array(&recipe["members"]);
+            let dependencies = array(&recipe["memberDependencies"]);
+            let explicit_handoffs = dependencies.len() == members.len();
+            let roster_label = if explicit_handoffs {
+                t(ui, "{0}-step handoff").replace("{0}", &members.len().to_string())
+            } else {
+                t(ui, "Roster").into_owned()
+            };
+            egui::CollapsingHeader::new(roster_label)
+                .default_open(explicit_handoffs)
+                .show(ui, |ui| {
+                    if explicit_handoffs {
+                        ui.label(RichText::new(t(ui, "Handoffs")).strong());
+                    }
+                    for (index, member) in members.iter().enumerate() {
+                        ui.horizontal_wrapped(|ui| {
+                            if explicit_handoffs {
+                                ui.label(RichText::new(format!("{}.", index + 1)).strong());
+                            }
+                            ui.label(recipe_copy(ui, recipe, text(member, "name")));
+                            hint(ui, role_label(text(member, "role")));
+                            if explicit_handoffs {
+                                let dependency_names = array(&dependencies[index])
+                                    .iter()
+                                    .filter_map(|dependency| dependency.as_u64())
+                                    .filter_map(|dependency| members.get(dependency as usize))
+                                    .map(|dependency| {
+                                        recipe_copy(ui, recipe, text(dependency, "name"))
+                                            .into_owned()
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                let handoff = if dependency_names.is_empty() {
+                                    t(ui, "Starts with owner inputs").into_owned()
+                                } else {
+                                    t(ui, "After {0}").replace("{0}", &dependency_names)
+                                };
+                                hint(ui, &handoff);
+                            }
+                        });
+                    }
+                    for (key, label) in [
+                        ("deliverables", "Deliverables"),
+                        ("toolRequirements", "Required tools"),
+                    ] {
+                        if !array(&recipe[key]).is_empty() {
+                            ui.label(RichText::new(t(ui, label)).strong());
+                            for value in array(&recipe[key]) {
+                                if let Some(value) = value.as_str() {
+                                    ui.label(recipe_copy(ui, recipe, value));
+                                } else {
+                                    ui.label(value.to_string());
+                                }
                             }
                         }
                     }
-                }
-            });
+                });
         }
         ui.add_space(studio::metrics::CONTROL_GAP);
         self.workflow_page_controls(ui, snapshot, commands, "recipes");
@@ -3539,7 +3591,7 @@ mod tests {
                     let mut data = fixture();
                     data["desktopPreferences"]["language"] = json!(language);
                     data["projectCrews"]["missions"][0]["status"] = json!("active");
-                    data["projectWorkflows"] = json!({"revision":7,"recipes":[{"recipeId":"recipe:one","projectId":null,"revision":3,"name":"Brief recipe","description":"Prepare reviewed files","members":plan().members,"settings":plan().settings}]});
+                    data["projectWorkflows"] = json!({"revision":7,"recipes":[{"recipeId":"recipe:one","projectId":null,"revision":3,"name":"Brief recipe","description":"Prepare reviewed files","members":plan().members,"memberDependencies":[[],[0]],"settings":plan().settings}]});
                     let mut console = console();
                     console.create.crew.workflow.read = Some(("project:one".into(), 7));
                     console.create.select_productive_view(1);
@@ -3574,6 +3626,14 @@ mod tests {
                                 .count(),
                             1
                         );
+                        if tab == 2 {
+                            let handoff =
+                                i18n::tr(Language::from_code(language), "{0}-step handoff")
+                                    .replace("{0}", "2");
+                            assert!(copy.iter().any(|line| line == &handoff));
+                            let handoffs = i18n::tr(Language::from_code(language), "Handoffs");
+                            assert!(copy.iter().any(|line| line == handoffs.as_ref()));
+                        }
                     }
                     let input_id = if tab == 1 {
                         "workflow-direction-input"
@@ -3684,6 +3744,20 @@ mod tests {
                     } else {
                         assert_eq!(commands[0].payload["expectedRecipeRevision"], 3);
                         assert_eq!(commands[0].payload["instruction"], "Owner recipe goal");
+                        let (_, copy) = render(
+                            &ctx,
+                            &mut console,
+                            &data,
+                            egui::vec2(1280.0, 880.0),
+                            false,
+                            vec![],
+                        );
+                        let after = i18n::tr(Language::from_code(language), "After {0}")
+                            .replace("{0}", "Builder");
+                        assert!(
+                            copy.iter().any(|line| line == &after),
+                            "{language}: expected {after:?} in {copy:?}"
+                        );
                     }
                 }
             }

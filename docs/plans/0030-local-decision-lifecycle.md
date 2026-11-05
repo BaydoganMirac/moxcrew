@@ -70,7 +70,7 @@ selection and is invalidated by V3 revision. Reads/queries produce no events.
 
 ## Ownership and acceptance
 
-- Core builder: new `crates/patchfleet-core/src/decisions.rs`, `lib.rs`, necessary
+- Core builder: new `crates/moxcrew-core/src/decisions.rs`, `lib.rs`, necessary
   V4 validation/projection integration in `domain.rs`/`store.rs`, focused
   `tests/decisions.rs`, plus the narrowly granted `tests/persistence.rs` legacy
   projection helper. Do not edit Host, desktop, other shared contracts or

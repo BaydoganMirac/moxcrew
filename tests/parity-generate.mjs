@@ -135,6 +135,6 @@ try {
     }
     await capture(`team-${scenario}`,s.dataDir);
   }
-  await writeFile(fileURLToPath(new URL("../crates/patchfleet-core/tests/fixtures/parity-v1.json",import.meta.url)),JSON.stringify({schemaVersion:1,generator:"tests/parity-generate.mjs",cases:fixture},null,2)+"\n");
+  await writeFile(fileURLToPath(new URL("../crates/moxcrew-core/tests/fixtures/parity-v1.json",import.meta.url)),JSON.stringify({schemaVersion:1,generator:"tests/parity-generate.mjs",cases:fixture},null,2)+"\n");
   console.log(`Generated ${fixture.length} cases, ${fixture.reduce((n,c)=>n+c.events.length,0)} events and replay checkpoints.`);
 } finally { await rm(root,{recursive:true,force:true}); }

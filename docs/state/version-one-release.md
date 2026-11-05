@@ -191,6 +191,12 @@ owner-visible exact source/language request. It hashes and probes the source,
 fully decodes checked 16 kHz mono PCM and emits transcript text/JSON plus SRT,
 VTT and a verification manifest. The retained protocol peer does not substitute
 for real-model recognition accuracy or human review of uncertain passages.
+[Task0092](verified-static-landing-site.md) upgrades W1 from a catalog promise to
+an owner-visible exact-content request and deterministic local `web.site`
+operation. It emits editable script-free HTML, canonical content, a hash
+manifest and delivery summary, then proves representative wide/narrow Chrome
+renders without publishing. Deployment, conversion, SEO and manual assistive-
+technology review remain separate gates.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

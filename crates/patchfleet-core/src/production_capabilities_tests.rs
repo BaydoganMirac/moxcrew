@@ -324,6 +324,114 @@ async fn html_escapes_untrusted_cells_and_masks_are_actual_png_files() {
 }
 
 #[tokio::test]
+async fn static_site_is_script_free_hash_pinned_and_rejects_unsafe_links() {
+    use sha2::{Digest, Sha256};
+    assert!(OPERATIONS.contains(&"web.site"));
+    let data = tempfile::tempdir().unwrap();
+    let request = json!({
+        "language":"tr",
+        "title":"Mox & Crew",
+        "eyebrow":"Yerel üretim",
+        "headline":"İşi görünür kıl </h1><script>alert(1)</script>",
+        "subhead":"Planı, üretimi ve incelemeyi tek yerde tut.",
+        "features":[
+            {"title":"Kontrol sende","body":"Hiçbir iş senden habersiz başlamaz."},
+            {"title":"Gerçek çıktılar","body":"Dosyaları ve kontrolleri birlikte teslim al."}
+        ],
+        "cta":{"label":"Özellikleri gör","href":"#features"}
+    });
+    let result = run(data.path(), "web.site", &request, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(result.value["kind"], "static_site");
+    assert_eq!(result.value["published"], false);
+    let mut names = result
+        .files
+        .iter()
+        .map(|file| file.0.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "content.json",
+            "index.html",
+            "site-manifest.json",
+            "summary.md"
+        ]
+    );
+    let file = |name: &str| {
+        result
+            .files
+            .iter()
+            .find(|file| file.0 == name)
+            .unwrap()
+            .1
+            .clone()
+    };
+    let html = String::from_utf8(file("index.html")).unwrap();
+    assert!(html.contains("<html lang=\"tr\">"));
+    assert!(html.contains("İşi görünür kıl &lt;/h1&gt;&lt;script&gt;alert(1)&lt;/script&gt;"));
+    assert!(!html.to_ascii_lowercase().contains("<script"));
+    assert!(!html.contains("http://"));
+    assert!(!html.contains("https://"));
+    assert!(html.contains("default-src &#x27;none&#x27;"));
+    assert!(html.contains("@media(max-width:780px)"));
+    assert!(html.contains("a:focus-visible"));
+    let manifest: serde_json::Value = serde_json::from_slice(&file("site-manifest.json")).unwrap();
+    assert_eq!(manifest["checks"]["reopenedExact"], true);
+    assert_eq!(manifest["checks"]["remoteAssetsAbsent"], true);
+    for entry in manifest["files"].as_array().unwrap() {
+        let name = entry["path"].as_str().unwrap();
+        let bytes = file(name);
+        assert_eq!(entry["bytes"], bytes.len());
+        assert_eq!(entry["sha256"], format!("{:x}", Sha256::digest(&bytes)));
+    }
+    let repeated = run(data.path(), "web.site", &request, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(result.files, repeated.files);
+    let unsafe_request = json!({
+        "language":"en","title":"Unsafe","eyebrow":"Test","headline":"Test",
+        "subhead":"Test","features":[{"title":"One","body":"Body"},{"title":"Two","body":"Body"}],
+        "cta":{"label":"Run","href":"javascript:alert(1)"}
+    });
+    assert!(run(data.path(), "web.site", &unsafe_request, &[], None)
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+#[ignore = "writes retained static-site evidence to an explicitly selected directory"]
+async fn retain_static_site_evidence() {
+    let target = std::path::PathBuf::from(
+        std::env::var("MOXCREW_SITE_EVIDENCE_DIR").expect("set MOXCREW_SITE_EVIDENCE_DIR"),
+    );
+    let data = tempfile::tempdir().unwrap();
+    let request = json!({
+        "language":"tr",
+        "title":"Moxcrew",
+        "eyebrow":"YEREL AI ÇALIŞMA ALANI",
+        "headline":"İşi görünmez olmaktan çıkar.",
+        "subhead":"Gerçekten görebildiğin bir ekiple planla, üret ve incele. Her devir yerel, açık ve senin kontrolünde kalsın.",
+        "features":[
+            {"title":"Kontrol sende","body":"Sen söylemeden hiçbir şey başlamaz."},
+            {"title":"Görünür devirler","body":"Her teslimatın planını, araçlarını ve kanıtını gör."},
+            {"title":"Gerçek çıktılar","body":"Gizemli ilerlemeyi değil dosyaları, kontrolleri ve sürümleri tut."},
+            {"title":"Yerel tasarım","body":"Sen aksini seçene kadar çalışma alanın kendi cihazında kalır."}
+        ],
+        "cta":{"label":"Nasıl çalıştığını gör","href":"#features"}
+    });
+    let output = run(data.path(), "web.site", &request, &[], None)
+        .await
+        .unwrap();
+    std::fs::create_dir_all(&target).unwrap();
+    for (name, bytes) in output.files {
+        std::fs::write(target.join(name), bytes).unwrap();
+    }
+}
+
+#[tokio::test]
 async fn batch_image_conversion_reports_each_source_and_strips_metadata() {
     use std::os::unix::fs::PermissionsExt;
     let data = tempfile::tempdir().unwrap();

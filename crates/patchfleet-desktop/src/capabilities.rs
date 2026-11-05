@@ -683,6 +683,8 @@ impl Console {
             self.create.ability = "W1".into();
         } else if scene == "capabilities-document-create" {
             self.create.ability = "D1".into();
+        } else if scene == "capabilities-presentation-revise" {
+            self.create.ability = "P2".into();
         } else if matches!(
             scene,
             "capabilities-video-compose"
@@ -771,6 +773,7 @@ impl Console {
             | "capabilities-data-profile"
             | "capabilities-site"
             | "capabilities-document-create"
+            | "capabilities-presentation-revise"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -835,9 +838,44 @@ impl Console {
                 "capabilities-data-profile" => 29,
                 "capabilities-site" => 30,
                 "capabilities-document-create" => 31,
+                "capabilities-presentation-revise" => 32,
                 _ => 0,
             };
-            if scene == "capabilities-document-create" {
+            if scene == "capabilities-presentation-revise" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                draft.record = available
+                    .iter()
+                    .find(|resource| presentation_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                *draft.value("presentationEditSlide") = "2".into();
+                *draft.value("presentationEditLayout") = "statement".into();
+                *draft.value("presentationEditEyebrow") = if english {
+                    "OWNER CONTROL"
+                } else {
+                    "KONTROL SENDE"
+                }
+                .into();
+                *draft.value("presentationEditTitle") = if english {
+                    "The plan stays visible before work starts"
+                } else {
+                    "İş başlamadan önce plan görünür kalır"
+                }
+                .into();
+                *draft.value("presentationEditSupport") = if english {
+                    "A deliberate handoff replaces hidden execution."
+                } else {
+                    "Gizli yürütmenin yerini açık ve bilinçli bir devir alır."
+                }
+                .into();
+                *draft.value("presentationEditNotes") = if english {
+                    "Pause here and confirm the owner has reviewed the plan."
+                } else {
+                    "Burada dur ve sahibin planı incelediğini doğrula."
+                }
+                .into();
+                *draft.value("presentationEditRender") = "true".into();
+            } else if scene == "capabilities-document-create" {
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("documentLanguage") = if english { "en" } else { "tr" }.into();
                 *draft.value("documentTitle") = if english {
@@ -2069,6 +2107,7 @@ impl Console {
             "Clean and analyze data",
             "Website / landing page",
             "Create editable document",
+            "Edit presentation slide",
         ];
         form_combo(
             ui,
@@ -2086,7 +2125,7 @@ impl Console {
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
             );
         }
-        if ![15, 16, 17, 18, 19, 30, 31].contains(&draft.kind)
+        if ![15, 16, 17, 18, 19, 30, 31, 32].contains(&draft.kind)
             && studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked()
         {
             self.create.select_productive_view(2);
@@ -2114,6 +2153,7 @@ impl Console {
                                     14 => rewrite_source(r),
                                     20 => pdf_source(r),
                                     25 | 26 => video_source(r),
+                                    32 => presentation_source(r),
                                     _ => true,
                                 }
                         })
@@ -2122,7 +2162,7 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![5, 8, 9, 10, 13, 14, 20, 25, 26, 28, 29].contains(&kind) {
+                        if ![5, 8, 9, 10, 13, 14, 20, 25, 26, 28, 29, 32].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
@@ -2133,6 +2173,7 @@ impl Console {
                                 14 => rewrite_source(r),
                                 20 => pdf_source(r),
                                 25 | 26 => video_source(r),
+                                32 => presentation_source(r),
                                 _ => false,
                             }
                     }) {
@@ -4365,6 +4406,143 @@ impl Console {
                     }));
                 }
             }
+            32 => {
+                hint(
+                    ui,
+                    "Replace one exact slide while preserving every non-target slide. The request stays staged until you review and start it.",
+                );
+                let mut slide = draft
+                    .get("presentationEditSlide")
+                    .parse::<u64>()
+                    .unwrap_or(1)
+                    .clamp(1, 60);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Slide number"));
+                    ui.add(egui::DragValue::new(&mut slide).range(1..=60));
+                    ui.separator();
+                    ui.label(t(ui, "Slide layout"));
+                    for (value, label) in [
+                        ("statement", "Statement"),
+                        ("content", "Content"),
+                        ("cover", "Cover"),
+                    ] {
+                        ui.selectable_value(
+                            draft.value("presentationEditLayout"),
+                            value.into(),
+                            t(ui, label),
+                        );
+                    }
+                });
+                *draft.value("presentationEditSlide") = slide.to_string();
+                field(
+                    ui,
+                    "Eyebrow (optional)",
+                    draft.value("presentationEditEyebrow"),
+                    80,
+                    false,
+                );
+                field(
+                    ui,
+                    "New slide title",
+                    draft.value("presentationEditTitle"),
+                    160,
+                    false,
+                );
+                let content_layout = draft.get("presentationEditLayout") == "content";
+                if content_layout {
+                    multiline(
+                        ui,
+                        "Body text",
+                        draft.value("presentationEditSupport"),
+                        1600,
+                        2,
+                    );
+                } else {
+                    field(
+                        ui,
+                        "Supporting text",
+                        draft.value("presentationEditSupport"),
+                        240,
+                        false,
+                    );
+                }
+                if content_layout {
+                    field(
+                        ui,
+                        "Bullets · separated by semicolons (optional)",
+                        draft.value("presentationEditBullets"),
+                        1320,
+                        false,
+                    );
+                }
+                field(
+                    ui,
+                    "Speaker notes (optional)",
+                    draft.value("presentationEditNotes"),
+                    6000,
+                    false,
+                );
+                let mut render = draft.get("presentationEditRender") != "false";
+                if ui
+                    .checkbox(&mut render, t(ui, "Render the revised deck for review"))
+                    .changed()
+                {
+                    *draft.value("presentationEditRender") = render.to_string();
+                }
+                let layout = draft.get("presentationEditLayout");
+                let bullets = draft
+                    .get("presentationEditBullets")
+                    .split(';')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .collect::<Vec<_>>();
+                let content_valid = layout != "content"
+                    || ((!draft.get("presentationEditSupport").trim().is_empty()
+                        || !bullets.is_empty())
+                        && bullets.len() <= 6
+                        && bullets.iter().all(|value| valid_input(value, 220)));
+                if let Some(source) = source_id.filter(|_| source.is_some_and(presentation_source))
+                {
+                    if matches!(layout, "statement" | "content" | "cover")
+                        && valid_input(draft.get("presentationEditTitle"), 160)
+                        && draft.get("presentationEditEyebrow").encode_utf16().count() <= 80
+                        && valid_input(
+                            draft.get("presentationEditSupport"),
+                            if layout == "content" { 1600 } else { 240 },
+                        )
+                        && draft.get("presentationEditNotes").encode_utf16().count() <= 6000
+                        && content_valid
+                    {
+                        let mut arguments = json!({
+                            "source":source,
+                            "sectionId":format!("slide:{slide}"),
+                            "layout":layout,
+                            "title":draft.get("presentationEditTitle"),
+                            "render":render
+                        });
+                        for (key, value) in [
+                            ("eyebrow", draft.get("presentationEditEyebrow")),
+                            ("notes", draft.get("presentationEditNotes")),
+                        ] {
+                            if !value.trim().is_empty() {
+                                arguments[key] = json!(value);
+                            }
+                        }
+                        if layout == "content" {
+                            arguments["body"] = json!(draft.get("presentationEditSupport"));
+                            if !bullets.is_empty() {
+                                arguments["bullets"] = json!(bullets);
+                            }
+                        } else {
+                            arguments["subtitle"] = json!(draft.get("presentationEditSupport"));
+                        }
+                        operation = Some(json!({
+                            "operation":"presentations.revise",
+                            "arguments":arguments
+                        }));
+                    }
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -4415,6 +4593,7 @@ impl Console {
                         29 => "Use the requested typed data operation with this exact CSV, deduplication choice and numeric column list. Preserve the source, deliver the cleaned CSV or editable XLSX plus analysis.json, and report hashes, trimmed cells, removed duplicates, missing counts and checked statistics without inventing a trend narrative.",
                         30 => "Use web.site with this exact approved content. Deliver editable index.html, canonical content.json, site-manifest.json and summary.md; reopen every file and report the security, accessibility and responsive checks. Do not add scripts, remote assets, trackers, invented copy, deployment or publication.",
                         31 => "Use documents.create with this exact approved title, subtitle, language and section text. Preserve every string literally, deliver the editable DOCX with canonical content.json, document-manifest.json and summary.md, and report exact reopen and hash checks. Do not invent copy, add facts, publish, upload or claim semantic or Microsoft Word quality without human review.",
+                        32 => "Use presentations.revise on this exact PPTX and one-based slide only. Preserve the supplied layout, title, supporting text, bullets, notes and render choice literally. Deliver the editable revised deck and manifest only after reopening it and proving every non-target slide XML part stayed byte-identical. Do not reorder, delete, rewrite or publish anything else.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -6150,6 +6329,145 @@ mod tests {
                     .create
                     .conversation_input()
                     .contains("\"operation\": \"presentations.create\""));
+            }
+        }
+    }
+    #[test]
+    fn presentation_revision_request_freezes_one_slide_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"launch-deck.pptx","kind":"document","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"unused-deck.pptx","kind":"document","sha256":"b".repeat(64),"bytes":4096,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 32;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("presentationEditSlide") = "2".into();
+        *draft.value("presentationEditLayout") = "content".into();
+        *draft.value("presentationEditEyebrow") = "OWNER CONTROL".into();
+        *draft.value("presentationEditTitle") = "The plan stays visible".into();
+        *draft.value("presentationEditSupport") =
+            "A deliberate handoff replaces hidden execution.".into();
+        *draft.value("presentationEditBullets") =
+            "Exact source; Visible preparation; Reviewable output".into();
+        *draft.value("presentationEditNotes") = "Pause for owner review.".into();
+        *draft.value("presentationEditRender") = "true".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        for _ in 0..8 {
+            render(
+                &ctx,
+                &mut c,
+                &data,
+                size,
+                false,
+                vec![
+                    egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Page,
+                        delta: egui::vec2(0.0, -1.0),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        }
+        assert!(click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"presentations.revise\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"sectionId\": \"slide:2\""));
+        assert!(request.contains("\"layout\": \"content\""));
+        assert!(request.contains("\"Exact source\""));
+        assert!(request.contains("Pause for owner review."));
+        assert!(request.contains("\"render\": true"));
+        assert!(request.contains("every non-target slide XML part stayed byte-identical"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn presentation_revision_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                data["projectStudio"]["resources"] = json!([
+                    {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"launch-deck.pptx","kind":"document","sha256":"a".repeat(64),"bytes":4096,"status":"available"}
+                ]);
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 32;
+                draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+                *draft.value("presentationEditSlide") = "2".into();
+                *draft.value("presentationEditLayout") = "statement".into();
+                *draft.value("presentationEditEyebrow") = "OWNER CONTROL".into();
+                *draft.value("presentationEditTitle") = "The plan stays visible".into();
+                *draft.value("presentationEditSupport") =
+                    "A deliberate handoff replaces hidden execution.".into();
+                *draft.value("presentationEditNotes") = "Pause for owner review.".into();
+                *draft.value("presentationEditRender") = "true".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..8 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: revision action");
             }
         }
     }

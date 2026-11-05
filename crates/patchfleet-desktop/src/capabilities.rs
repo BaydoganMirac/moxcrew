@@ -381,6 +381,15 @@ fn extraction_key(value: &str) -> bool {
             .iter()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_')
 }
+fn speech_language(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 5
+        && bytes[0].is_ascii_lowercase()
+        && bytes[1].is_ascii_lowercase()
+        && bytes[2] == b'_'
+        && bytes[3].is_ascii_uppercase()
+        && bytes[4].is_ascii_uppercase()
+}
 fn source_refs(draft: &CapabilityDraft, resources: &[Value]) -> Vec<Value> {
     resources
         .iter()
@@ -752,6 +761,8 @@ impl Console {
     pub fn capabilities_smoke(&mut self, snapshot: &Value, scene: &str) {
         if scene == "capabilities-transcription" {
             self.create.ability = "A1".into();
+        } else if scene == "capabilities-local-speech" {
+            self.create.ability = "A2".into();
         } else if scene == "capabilities-audio-cleanup" {
             self.create.ability = "A3".into();
         } else if scene == "capabilities-data-profile" {
@@ -848,6 +859,7 @@ impl Console {
             | "capabilities-video-highlights"
             | "capabilities-video-motion"
             | "capabilities-transcription"
+            | "capabilities-local-speech"
             | "capabilities-audio-cleanup"
             | "capabilities-data-profile"
             | "capabilities-site"
@@ -914,6 +926,7 @@ impl Console {
                 "capabilities-video-highlights" => 26,
                 "capabilities-video-motion" => 27,
                 "capabilities-transcription" => 5,
+                "capabilities-local-speech" => 34,
                 "capabilities-audio-cleanup" => 28,
                 "capabilities-data-profile" => 29,
                 "capabilities-site" => 30,
@@ -1192,6 +1205,21 @@ impl Console {
                     .map(|resource| text(resource, "resourceId").to_owned())
                     .unwrap_or_default();
                 *draft.value("language") = "tr".into();
+            } else if scene == "capabilities-local-speech" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("speechTitle") = if english {
+                    "Owner control, spoken locally"
+                } else {
+                    "Kontrol sende, ses yerelde"
+                }
+                .into();
+                *draft.value("speechText") = if english {
+                    "Meet Moxcrew. Plan the work, approve the handoff, and keep every output visible in one local workspace."
+                } else {
+                    "Moxcrew ile tanış. İşi planla, devri onayla ve her çıktıyı tek bir yerel çalışma alanında görünür tut."
+                }
+                .into();
+                *draft.value("speechLanguage") = if english { "en_US" } else { "tr_TR" }.into();
             } else if scene == "capabilities-audio-cleanup" {
                 draft.record = available
                     .iter()
@@ -2238,6 +2266,7 @@ impl Console {
             "Create editable document",
             "Edit presentation slide",
             "Create branded asset pack",
+            "Create local voiceover",
         ];
         form_combo(
             ui,
@@ -2265,7 +2294,7 @@ impl Console {
 
         let all = resources(snapshot, &self.create.project);
         if ![
-            0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 27, 30, 31, 33,
+            0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 27, 30, 31, 33, 34,
         ]
         .contains(&draft.kind)
         {
@@ -4881,6 +4910,47 @@ impl Console {
                     operation = Some(json!({"operation":"images.campaign","arguments":arguments}));
                 }
             }
+            34 => {
+                hint(
+                    ui,
+                    "Turn exact approved text into a checked local voiceover. Mox uses your configured Piper voice, downloads nothing and never clones or publishes a voice.",
+                );
+                field(
+                    ui,
+                    "Voiceover title",
+                    draft.value("speechTitle"),
+                    160,
+                    false,
+                );
+                multiline(
+                    ui,
+                    "Exact voiceover script",
+                    draft.value("speechText"),
+                    2000,
+                    7,
+                );
+                field(
+                    ui,
+                    "Voice locale · for example tr_TR or en_US",
+                    draft.value("speechLanguage"),
+                    5,
+                    false,
+                );
+                hint(
+                    ui,
+                    "The locale must match the configured Piper voice. The checked WAV still needs human review for pronunciation, meaning, voice suitability and model licence.",
+                );
+                let title = draft.get("speechTitle").trim();
+                let script = draft.get("speechText");
+                let language = draft.get("speechLanguage");
+                if valid_input(title, 160) && valid_input(script, 2000) && speech_language(language)
+                {
+                    operation = Some(json!({
+                        "operation":"audio.speech",
+                        "arguments":{"title":title,"text":script,"language":language}
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -4933,6 +5003,7 @@ impl Console {
                         31 => "Use documents.create with this exact approved title, subtitle, language and section text. Preserve every string literally, deliver the editable DOCX with canonical content.json, document-manifest.json and summary.md, and report exact reopen and hash checks. Do not invent copy, add facts, publish, upload or claim semantic or Microsoft Word quality without human review.",
                         32 => "Use presentations.revise on this exact PPTX and one-based slide only. Preserve the supplied layout, title, supporting text, bullets, notes and render choice literally. Deliver the editable revised deck and manifest only after reopening it and proving every non-target slide XML part stayed byte-identical. Do not reorder, delete, rewrite or publish anything else.",
                         33 => "Use images.campaign with this exact approved copy, selected formats, brand colours and optional frozen visuals. Preserve every string and source hash, deliver editable SVG plus exact-size PNG files with canonical content and the verification manifest, and keep visual, copy, trademark and campaign-performance review explicit. Do not call a model, fetch remote assets, publish or upload anything.",
+                        34 => "Use audio.speech with this exact approved title, script and locale. Preserve the script literally, use only the configured local Piper voice, and deliver the checked 48 kHz mono WAV, canonical content, hashes and manifest. Keep pronunciation, meaning, voice suitability, listening quality and model-licence review explicit. Do not translate, clone a voice, download a model, call a remote service or publish anything.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -6815,6 +6886,138 @@ mod tests {
                     .create
                     .conversation_input()
                     .contains("\"operation\": \"images.campaign\""));
+            }
+        }
+    }
+    #[test]
+    fn local_speech_request_stages_exact_text_locale_and_review_limits_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let data = fixture();
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 34;
+        *draft.value("speechTitle") = "Kontrol sende, ses yerelde".into();
+        *draft.value("speechText") =
+            "Merhaba Mox.\nİşi planla, devri onayla ve her çıktıyı görünür tut.".into();
+        *draft.value("speechLanguage") = "tr_TR".into();
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, egui::vec2(800.0, 560.0), false, vec![]);
+        }
+        for _ in 0..6 {
+            render(
+                &ctx,
+                &mut c,
+                &data,
+                egui::vec2(800.0, 560.0),
+                false,
+                vec![
+                    egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Page,
+                        delta: egui::vec2(0.0, -1.0),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        }
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            egui::vec2(800.0, 560.0),
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"audio.speech\""));
+        assert!(request.contains("Kontrol sende, ses yerelde"));
+        assert!(request.contains("Merhaba Mox.\\nİşi planla"));
+        assert!(request.contains("\"language\": \"tr_TR\""));
+        assert!(request.contains("use only the configured local Piper voice"));
+        assert!(request.contains("Do not translate, clone a voice"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn local_speech_form_is_scroll_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 34;
+                *draft.value("speechTitle") = "Local voiceover".into();
+                *draft.value("speechText") = "Exact approved owner script.".into();
+                *draft.value("speechLanguage") = "en_US".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..8 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    visibility.1,
+                    "{language}/{theme:?}: local speech action must be scroll-reachable"
+                );
+                assert!(click_at_size(
+                    &ctx,
+                    &mut c,
+                    &data,
+                    size,
+                    false,
+                    "memory_control",
+                    "Add request to Chat"
+                )
+                .is_empty());
+                assert!(c
+                    .create
+                    .conversation_input()
+                    .contains("\"operation\": \"audio.speech\""));
             }
         }
     }

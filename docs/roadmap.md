@@ -129,6 +129,11 @@ commitments.
   source/output-hashed transcript text/JSON plus reopened SRT/VTT after checked
   16 kHz mono normalization and full decode. Real-model recognition accuracy,
   speaker identity and uncertain-passage review remain explicit quality gates.
+  [Task0097](state/verified-local-speech.md) closes the owner-visible bounded A2
+  adapter gap: exact approved text and an owner-selected local Piper ONNX voice
+  produce a script/model/config/output-hashed 48 kHz mono WAV after locale, loudness and
+  full-decode checks. Real pronunciation, naturalness, meaning and individual
+  voice-model licensing remain explicit human gates.
   [Task0092](state/verified-static-landing-site.md) closes the deterministic W1
   local-output gap: exact approved copy produces a script-free editable landing
   page, canonical content, hash manifest and summary with exact reopen plus real

@@ -40,6 +40,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "images.mask",
     "video.edit",
     "audio.cleanup",
+    "audio.speech",
     "audio.podcast",
     "resources.extract",
     "resources.ocr",
@@ -92,6 +93,47 @@ fn discover(name: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
         .and_then(|p| fs::canonicalize(p).ok())
 }
+
+fn piper_config_path(model: &Path) -> PathBuf {
+    let mut path = model.as_os_str().to_os_string();
+    path.push(".json");
+    PathBuf::from(path)
+}
+
+fn piper_language_code(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 5
+        && bytes[0].is_ascii_lowercase()
+        && bytes[1].is_ascii_lowercase()
+        && bytes[2] == b'_'
+        && bytes[3].is_ascii_uppercase()
+        && bytes[4].is_ascii_uppercase()
+}
+
+fn valid_piper_model(path: &Path) -> bool {
+    let model_ok = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("onnx"))
+        && fs::metadata(path)
+            .is_ok_and(|metadata| (4..=2 * 1024 * 1024 * 1024).contains(&metadata.len()));
+    if !model_ok {
+        return false;
+    }
+    let config = piper_config_path(path);
+    let Ok(metadata) = fs::metadata(&config) else {
+        return false;
+    };
+    if !metadata.is_file() || !(2..=1024 * 1024).contains(&metadata.len()) {
+        return false;
+    }
+    fs::read(config)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|value| value["language"]["code"].as_str().map(str::to_owned))
+        .is_some_and(|language| piper_language_code(&language))
+}
+
 pub(crate) fn paths(data: &Path) -> Result<Value> {
     let configured = configured(data)?;
     let mut paths = json!({});
@@ -106,6 +148,8 @@ pub(crate) fn paths(data: &Path) -> Result<Value> {
         ("tesseract", "tesseract"),
         ("whisper", "whisper-cli"),
         ("whisperModel", "moxcrew-no-default-whisper-model"),
+        ("piper", "piper"),
+        ("piperModel", "moxcrew-no-default-piper-model"),
         ("libreoffice", "soffice"),
         ("chrome", "google-chrome"),
     ] {
@@ -140,6 +184,8 @@ pub(crate) fn configure(data: &Path, id: &str, selected: &str) -> Result<()> {
         "tesseract",
         "whisper",
         "whisperModel",
+        "piper",
+        "piperModel",
         "libreoffice",
         "chrome",
     ]
@@ -156,13 +202,18 @@ pub(crate) fn configure(data: &Path, id: &str, selected: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if id != "whisperModel" && fs::metadata(&path)?.permissions().mode() & 0o111 == 0 {
+        if !matches!(id, "whisperModel" | "piperModel")
+            && fs::metadata(&path)?.permissions().mode() & 0o111 == 0
+        {
             return Err(error("PRODUCTION_TOOL_NOT_EXECUTABLE"));
         }
     }
     if id == "whisperModel"
         && (fs::metadata(&path)?.len() < 4 || fs::metadata(&path)?.len() > 8 * 1024 * 1024 * 1024)
     {
+        return Err(error("PRODUCTION_MODEL_INVALID"));
+    }
+    if id == "piperModel" && !valid_piper_model(&path) {
         return Err(error("PRODUCTION_MODEL_INVALID"));
     }
     let mut value = configured(data)?;
@@ -227,6 +278,16 @@ pub(crate) async fn readiness(data: &Path) -> Result<Value> {
             "https://github.com/ggml-org/whisper.cpp/tree/master/models",
         ),
         (
+            "piper",
+            "Piper · local speech synthesis",
+            "https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/CLI.md",
+        ),
+        (
+            "piperModel",
+            "Piper · ONNX voice and config",
+            "https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md",
+        ),
+        (
             "libreoffice",
             "LibreOffice · document rendering",
             "https://www.libreoffice.org/download/",
@@ -245,12 +306,14 @@ pub(crate) async fn readiness(data: &Path) -> Result<Value> {
             let available = if let Some(path) = path {
                 if id == "whisperModel" {
                     fs::metadata(path).is_ok_and(|m| m.len() >= 4 && m.len() <= 8 * 1024 * 1024 * 1024)
+                } else if id == "piperModel" {
+                    valid_piper_model(Path::new(&path))
                 } else {
                     let mut command = tokio::process::Command::new(path);
                     match id {
                         "python" => { command.args(["-I", "-B", "-c", "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)"]); }
                         "pdftotext" | "pdftoppm" | "pdfinfo" | "pdfunite" => { command.arg("-v"); }
-                        "whisper" => { command.arg("--help"); }
+                        "whisper" | "piper" => { command.arg("--help"); }
                         "libreoffice" | "tesseract" | "chrome" => { command.arg("--version"); }
                         _ => { command.arg("-version"); }
                     }
@@ -311,6 +374,9 @@ pub(crate) async fn readiness(data: &Path) -> Result<Value> {
         }
         if entry["id"] == "whisperModel" {
             entry["modelValidation"] = json!("file_presence_only");
+        }
+        if entry["id"] == "piperModel" {
+            entry["modelValidation"] = json!("onnx_companion_config_and_language");
         }
     }
     Ok(json!(result))

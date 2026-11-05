@@ -2,7 +2,7 @@
 
 The 0.12 source builds a standalone Rust/egui desktop. Installers use
 cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or desktop
-build requirements. npm publication is retired. Pushing, publishing installers,
+build requirements. npm publication is retired. Pushing a reviewed version tag,
 public signing and Cloud deployment remain explicit owner release actions.
 
 The owner authorized the unsigned
@@ -42,7 +42,11 @@ cargo packager --config Packager.toml --formats app,dmg
 Local output is `dist/native`. Windows formats are `nsis,wix`; Linux uses
 `deb,appimage`. CI stages one target executable for the pinned packager's
 configured binaries directory, archives only installer outputs, and preserves
-executable permissions. It does not publish a release or use signing secrets.
+executable permissions. Ordinary main/pull-request runs publish no release. An
+explicit exact `v0.MINOR.PATCH` preview tag must match both workspace and packager
+versions; after every required macOS/Linux native job passes, CI publishes a
+GitHub pre-release with two DMGs, four Linux installers and a verified checksum
+manifest. Windows remains excluded and no signing secret is used.
 
 The native folder picker is pinned to RFD 0.17.2: AppKit on macOS, Shell on
 Windows, and XDG portal/Zenity fallback on Linux. Verify the macOS bundle's

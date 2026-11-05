@@ -27,8 +27,11 @@ commitments.
 - Present Moxcrew clearly to prospective early users. [Task0058](state/github-product-surface.md)
   replaces the architecture-first GitHub landing page with a product promise,
   current native screenshots, local-first differentiation and a truthful
-  source-build/watch/feedback path. Signed public downloads and a real product
-  website remain separate release work.
+  direct-download/watch/feedback path. [Task0095](state/repeatable-public-preview-release.md)
+  now makes the next explicitly tagged `v0.x.y` preview reproduce the six
+  advertised macOS/Linux assets and checksum manifest after required native
+  checks; the current `v0.12.0` release is unchanged. Signed public downloads
+  and a real product website remain separate release work.
 
 - Continue live-model and platform release evidence for the delivered
   [eleven local product capabilities](plans/0052-eleven-product-capabilities.md):

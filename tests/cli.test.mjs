@@ -9,7 +9,7 @@ import test from "node:test";
 const exec = promisify(execFile);
 const cli = join(process.cwd(), "bin", "patchfleet.mjs");
 
-test("desktop package retires the Node CLI release surface", async () => {
+test("desktop package retires Node publication and keeps native release authority tag-scoped", async () => {
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
   assert.equal(packageJson.private, true);
   assert.equal(packageJson.bin, undefined);
@@ -31,7 +31,13 @@ test("desktop package retires the Node CLI release surface", async () => {
   for (const target of ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]) {
     assert(desktopWorkflow.includes(target));
   }
-  assert.doesNotMatch(desktopWorkflow, /id-token: write|npm publish|gh release/);
+  assert.doesNotMatch(desktopWorkflow, /id-token: write|npm publish/);
+  assert.match(desktopWorkflow, /tags: \['v0\.\[0-9\]\*\.\[0-9\]\*'\]/);
+  assert.equal(desktopWorkflow.match(/contents: write/g)?.length, 1);
+  assert.match(desktopWorkflow, /release:\n    if: startsWith\(github\.ref, 'refs\/tags\/'\)/);
+  assert.match(desktopWorkflow, /runner\.os != 'Windows'/);
+  assert.match(desktopWorkflow, /test "\$\{#installers\[@\]\}" -eq 6/);
+  assert.match(desktopWorkflow, /gh release create[\s\S]*--verify-tag[\s\S]*--fail-on-no-commits[\s\S]*--prerelease/);
 });
 
 test("CLI help, diagnostics, stopped status, stale metadata cleanup, and empty recovery are safe", async () => {

@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v0.[0-9]*.[0-9]*']
   workflow_dispatch:
 
 permissions:
@@ -62,6 +63,15 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
+      - name: Verify release tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v0\.[0-9]+\.[0-9]+$ ]]
+          version="${GITHUB_REF_NAME#v}"
+          workspace_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          packager_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Packager.toml | head -n 1)"
+          test "$version" = "$workspace_version"
+          test "$version" = "$packager_version"
       - name: Linux native window and packaging dependencies
         if: runner.os == 'Linux'
         run: |
@@ -101,10 +111,11 @@ jobs:
           output="dist/${{ matrix.target }}"
           case "$RUNNER_OS" in
             macOS)
+              expected_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Packager.toml | head -n 1)"
               test -x "$output/Moxcrew.app/Contents/MacOS/patchfleet-desktop"
               test -f "$output"/*.dmg
               test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$output/Moxcrew.app/Contents/Info.plist")" = com.patchfleet.desktop
-              test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$output/Moxcrew.app/Contents/Info.plist")" = 0.12.0
+              test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$output/Moxcrew.app/Contents/Info.plist")" = "$expected_version"
               /usr/libexec/PlistBuddy -c 'Print NSDocumentsFolderUsageDescription' "$output/Moxcrew.app/Contents/Info.plist"
               codesign --verify --deep --strict "$output/Moxcrew.app"
               ;;
@@ -118,6 +129,48 @@ jobs:
               dpkg-deb --info "$output"/*.deb
               ;;
           esac
+      - name: Stage public release assets
+        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          version="${GITHUB_REF_NAME#v}"
+          output="dist/${{ matrix.target }}"
+          mkdir -p release-assets
+          copy_one() {
+            local extension="$1"
+            local destination="$2"
+            local matches=("$output"/*."$extension")
+            test "${#matches[@]}" -eq 1
+            cp "${matches[0]}" "release-assets/$destination"
+          }
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin)
+              copy_one dmg "Moxcrew_${version}_macOS_Apple-Silicon.dmg"
+              ;;
+            x86_64-apple-darwin)
+              copy_one dmg "Moxcrew_${version}_macOS_Intel.dmg"
+              ;;
+            x86_64-unknown-linux-gnu)
+              copy_one AppImage "Moxcrew_${version}_linux_x86_64.AppImage"
+              copy_one deb "Moxcrew_${version}_linux_x86_64.deb"
+              ;;
+            aarch64-unknown-linux-gnu)
+              copy_one AppImage "Moxcrew_${version}_linux_aarch64.AppImage"
+              copy_one deb "Moxcrew_${version}_linux_aarch64.deb"
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+      - name: Preserve public release assets
+        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-assets-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
       - name: Archive installers with executable permissions preserved
         run: |
           cd dist/${{ matrix.target }}
@@ -129,3 +182,41 @@ jobs:
           path: patchfleet-${{ matrix.target }}.tar.gz
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/') && needs.native.result == 'success'
+    needs: native
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Download public release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-assets-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify installers and write checksums
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          test "$(find release-assets -maxdepth 1 -type f | wc -l)" -eq 6
+          cd release-assets
+          installers=(Moxcrew_*)
+          test "${#installers[@]}" -eq 6
+          LC_ALL=C sha256sum "${installers[@]}" > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+      - name: Publish GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --verify-tag \
+            --fail-on-no-commits \
+            --prerelease \
+            --title "Moxcrew $version — Public Preview" \
+            --notes-file docs/release-notes/public-preview.md

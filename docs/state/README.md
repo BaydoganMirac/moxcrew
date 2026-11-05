@@ -52,6 +52,7 @@
 | Distinctive desktop flows | Implemented; 231 tests, strict Clippy and 12 native route captures; owner visual judgment pending | 2026-11-04 | [distinctive-desktop-flows.md](distinctive-desktop-flows.md) |
 | GitHub product surface | Implemented; marketing README, current native screenshots, aligned package/About metadata and full workspace verification | 2026-11-04 | [github-product-surface.md](github-product-surface.md) |
 | Moxcrew 0.12.0 Public Preview | Published for macOS/Linux with verified installers and checksums; Windows withheld pending native gates | 2026-11-04 | [public-preview-release.md](public-preview-release.md) |
+| Repeatable Public Preview release | Exact version-tagged macOS/Linux installer publication and checksum workflow locally verified; next tag not published | 2026-11-05 | [repeatable-public-preview-release.md](repeatable-public-preview-release.md) |
 | Atomic owner exports | Complete; staged no-replace publication, 524 tests and strict quality gates | 2026-11-04 | [atomic-owner-exports.md](atomic-owner-exports.md) |
 | Scheduled provider choice | Complete; recurring Codex/Claude/Gemini ownership, legacy fallback and 524-test gate | 2026-11-04 | [scheduled-provider-choice.md](scheduled-provider-choice.md) |
 | Ability readiness and Start preflight | Complete; forty profiles and all native Project start surfaces locally verified | 2026-11-04 | [start-readiness-preflight.md](start-readiness-preflight.md) |

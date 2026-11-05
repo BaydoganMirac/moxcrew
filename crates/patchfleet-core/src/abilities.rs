@@ -16,9 +16,9 @@ fn readiness_profile(id: &str) -> Option<Value> {
         "D5" => (&["python"], &["libreoffice", "pdftoppm"], &[]),
         "P1" | "P2" | "P3" | "P4" => (&["python"], &["libreoffice", "pdftoppm"], &[]),
         "P5" => (
-            &["python", "ffmpeg", "ffprobe"],
-            &["libreoffice", "pdftoppm"],
-            &["voiceModelAccess"],
+            &["python", "ffmpeg", "ffprobe", "libreoffice", "pdftoppm"],
+            &[],
+            &[],
         ),
         "V1" | "V4" | "V5" => (&["python", "ffmpeg", "ffprobe"], &[], &[]),
         "V2" | "V3" => (

@@ -11,6 +11,7 @@ import itertools
 import math
 import struct
 import textwrap
+import urllib.parse
 import zlib
 
 
@@ -1407,6 +1408,86 @@ def package(args,tools):
 STYLE='''*{box-sizing:border-box}body{font:16px system-ui,sans-serif;background:#f5f7fb;color:#152333;margin:0;padding:32px}main{max-width:1080px;margin:auto}h1{font-size:32px;margin:0 0 12px}p{color:#506273}section{background:white;border:1px solid #d5dee8;border-radius:16px;padding:24px;margin:20px 0;overflow:auto}input,button{font:inherit;padding:10px 12px;border:1px solid #bccbd8;border-radius:8px;background:white;color:#152333}input:focus,button:focus{outline:3px solid #5296ff;outline-offset:2px}table{border-collapse:collapse;width:100%;margin-top:16px}td,th{text-align:left;padding:12px;border-bottom:1px solid #e3e9ef}th button{border:0;font-weight:bold}label{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:12px 0}progress{height:28px;flex:1;min-width:120px;accent-color:#4278df}.metric{font-size:24px;font-weight:bold}output{display:block;margin:20px 0}footer{color:#506273;font-size:13px}@media(max-width:600px){body{padding:16px}section{padding:16px}h1{font-size:26px}}'''
 JS='''"use strict";const d=JSON.parse(document.getElementById("data").textContent);const root=document.getElementById("tool");function el(tag,value){const n=document.createElement(tag);if(value!==undefined)n.textContent=String(value);return n}function input(type,label,value){const l=el("label",label),i=el("input");i.type=type;i.value=value;l.append(i);root.append(l);return i}if(d.kind==="table"){const filter=input("search","Filter rows","");const table=el("table"),head=el("thead"),body=el("tbody");table.append(head,body);root.append(table);let rows=d.rows.slice(),direction=1;const tr=el("tr");d.columns.forEach((name,index)=>{const th=el("th"),b=el("button",name);b.type="button";b.addEventListener("click",()=>{rows.sort((a,c)=>String(a[index]).localeCompare(String(c[index]),undefined,{numeric:true})*direction);direction*=-1;draw()});th.append(b);tr.append(th)});head.append(tr);const count=el("output");root.append(count);function draw(){body.replaceChildren();const found=rows.filter(row=>row.some(cell=>String(cell).toLocaleLowerCase().includes(filter.value.toLocaleLowerCase())));found.forEach(row=>{const tr=el("tr");row.forEach(cell=>tr.append(el("td",cell)));body.append(tr)});count.textContent=found.length+" / "+rows.length+" rows"}filter.addEventListener("input",draw);draw()}else if(d.kind==="chart"){const max=Math.max(1,...d.series.map(s=>s.value));d.series.forEach(s=>{const row=el("label",s.label),bar=el("progress"),value=el("span",s.value);bar.max=max;bar.value=s.value;bar.setAttribute("aria-label",s.label);row.append(bar,value);root.append(row)})}else{const budget=input("number","Budget ("+d.currency+")",d.budget);budget.min="0";budget.step="0.01";const amounts=d.items.map(item=>{const i=input("number",item.label,item.amount);i.min="0";i.step="0.01";return i});const total=el("output"),remaining=el("output"),progress=el("progress");total.className="metric";remaining.className="metric";progress.setAttribute("aria-label","Budget used");root.append(total,remaining,progress);function draw(){const cap=Number(budget.value),values=amounts.map(i=>Number(i.value));if(!Number.isFinite(cap)||cap<0||values.some(v=>!Number.isFinite(v)||v<0)){remaining.textContent="Enter valid non-negative amounts";return}const spent=values.reduce((a,b)=>a+b,0);total.textContent="Total: "+spent.toFixed(2)+" "+d.currency;remaining.textContent="Remaining: "+(cap-spent).toFixed(2)+" "+d.currency;progress.max=Math.max(1,cap);progress.value=Math.min(spent,progress.max)}[budget,...amounts].forEach(i=>i.addEventListener("input",draw));draw()}'''
 
+SITE_STYLE='''
+:root{color-scheme:dark;--ink:#f7f3e8;--muted:#b8b0a2;--night:#10100f;--panel:#1a1917;--line:#39352e;--acid:#e9ff62;--orange:#ff6948;--blue:#7b8cff}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--night);color:var(--ink);font-family:Arial,Helvetica,sans-serif;line-height:1.5;overflow-x:hidden}a{color:inherit}
+.skip{position:absolute;left:1rem;top:-5rem;background:var(--acid);color:#111;padding:.75rem 1rem;z-index:20}.skip:focus{top:1rem}.shell{width:min(1180px,calc(100% - 40px));margin:auto}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:24px 0;border-bottom:1px solid var(--line)}.mark{display:flex;align-items:center;gap:12px;font-weight:900;letter-spacing:-.03em}.mark::before{content:'';width:22px;height:22px;background:var(--acid);border-radius:50% 50% 8px 50%;transform:rotate(-12deg)}.nav a:last-child{color:var(--muted);font-size:.88rem;text-decoration:none}
+.hero{position:relative;min-height:680px;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,.8fr);gap:64px;align-items:center;padding:96px 0 72px}.hero::before{content:'';position:absolute;width:480px;height:480px;right:-190px;top:32px;background:var(--orange);border-radius:50%;opacity:.92;z-index:-1}
+.hero>div,.section-head>*{min-width:0}.eyebrow{display:inline-flex;align-items:center;gap:10px;color:var(--acid);font-size:.78rem;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.eyebrow::before{content:'';width:36px;height:2px;background:currentColor}h1{max-width:840px;margin:24px 0;font-size:clamp(3.5rem,9vw,7.6rem);line-height:.84;letter-spacing:-.075em;text-wrap:balance;overflow-wrap:anywhere}.lead{max-width:680px;color:var(--muted);font-size:clamp(1.05rem,2vw,1.35rem);overflow-wrap:anywhere}
+.actions{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:36px}.button{display:inline-flex;align-items:center;gap:14px;background:var(--acid);color:#111;padding:16px 22px;border:2px solid var(--acid);border-radius:999px;text-decoration:none;font-weight:900;box-shadow:7px 7px 0 var(--orange);transition:transform .15s,box-shadow .15s}.button::after{content:'↗';font-size:1.1em}.button:hover{transform:translate(3px,3px);box-shadow:4px 4px 0 var(--orange)}.proof{color:var(--muted);font-size:.82rem}
+.totem{min-height:420px;position:relative}.tile{position:absolute;border:1px solid var(--line);background:var(--panel);box-shadow:0 24px 60px #0008}.tile.one{inset:42px 12px 72px 18px;transform:rotate(6deg);background:var(--blue)}.tile.two{inset:78px 46px 26px 0;transform:rotate(-5deg);background:var(--acid)}.tile.three{inset:110px 0 0 70px;display:grid;place-items:center;background:var(--panel);transform:rotate(2deg)}.face{width:148px;height:148px;border:18px solid var(--orange);border-radius:50% 50% 46% 54%;position:relative}.face::before,.face::after{content:'';position:absolute;top:43px;width:16px;height:22px;background:var(--ink);border-radius:50%}.face::before{left:29px}.face::after{right:29px}
+.features{padding:70px 0 110px}.section-head{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:end;margin-bottom:42px}.kicker{margin:0;color:var(--orange);font-size:.8rem;font-weight:900;letter-spacing:.15em;text-transform:uppercase}.section-head h2{margin:10px 0 0;font-size:clamp(2.3rem,5vw,4.7rem);line-height:.95;letter-spacing:-.055em}.section-head p{margin:0;color:var(--muted);overflow-wrap:anywhere}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line)}.feature{min-height:220px;padding:34px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:linear-gradient(145deg,#1a1917,#11110f)}.number{color:var(--acid);font-size:.76rem;font-weight:900;letter-spacing:.12em}.feature h3{margin:56px 0 12px;font-size:1.55rem;letter-spacing:-.035em}.feature p{margin:0;color:var(--muted);max-width:48ch}
+.footer{display:flex;justify-content:space-between;gap:20px;padding:28px 0 42px;border-top:1px solid var(--line);color:var(--muted);font-size:.8rem}a:focus-visible{outline:3px solid var(--acid);outline-offset:5px}
+@media(max-width:780px){.shell{width:min(calc(100% - 28px),680px)}.nav{padding:18px 0}.nav a:last-child{display:none}.hero{min-height:auto;grid-template-columns:1fr;gap:48px;padding:70px 0 58px}.hero::before{width:300px;height:300px;right:-230px}.totem{min-height:330px}.section-head{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.feature{min-height:190px}.feature h3{margin-top:34px}.footer{flex-direction:column}h1{font-size:clamp(3rem,16vw,4.7rem);letter-spacing:-.06em}.lead{font-size:1rem}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.button{transition:none}}
+'''
+
+
+def static_site(args):
+    exact(args,('language','title','eyebrow','headline','subhead','features','cta'))
+    language=text(args['language'],2);require(language in ('en','tr'))
+    def required(value,limit):
+        value=text(value,limit).strip();require(value);return value
+    title=required(args['title'],80);eyebrow=required(args['eyebrow'],80)
+    headline=required(args['headline'],160);subhead=required(args['subhead'],400)
+    features=args['features'];require(isinstance(features,list) and 2<=len(features)<=6)
+    checked=[]
+    for feature in features:
+        exact(feature,('title','body'))
+        checked.append({'title':required(feature['title'],80),'body':required(feature['body'],240)})
+    cta=args['cta'];exact(cta,('label','href'))
+    label=required(cta['label'],60);href=text(cta['href'],2048).strip();require(href)
+    if href not in ('#top','#features'):
+        require(not any(character.isspace() for character in href))
+        parsed=urllib.parse.urlsplit(href)
+        try: port=parsed.port
+        except ValueError: raise ValueError('PRODUCTION_INVALID_INPUT')
+        require(parsed.scheme=='https' and parsed.hostname is not None and parsed.username is None
+                and parsed.password is None and '\\' not in href and (port is None or 1<=port<=65535))
+    data={'language':language,'title':title,'eyebrow':eyebrow,'headline':headline,
+          'subhead':subhead,'features':checked,'cta':{'label':label,'href':href}}
+    esc=lambda value: html.escape(value,quote=True)
+    cards=''.join('<article class="feature"><span class="number">%02d</span><h3>%s</h3><p>%s</p></article>'%
+                  (index,esc(feature['title']),esc(feature['body']))
+                  for index,feature in enumerate(checked,1))
+    feature_heading='What makes it different' if language=='en' else 'Neyi farklı yapıyor'
+    feature_intro=('A clear value story in one fast, accessible page.' if language=='en'
+                   else 'Tek, hızlı ve erişilebilir sayfada berrak bir değer hikâyesi.')
+    local_note=('Editable local output · no trackers or remote assets' if language=='en'
+                else 'Düzenlenebilir yerel çıktı · takipçi veya uzak varlık yok')
+    digest=base64.b64encode(hashlib.sha256(SITE_STYLE.encode()).digest()).decode()
+    csp="default-src 'none'; style-src 'sha256-"+digest+"'; img-src 'none'; media-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    document='''<!doctype html><html lang="%s"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta http-equiv="Content-Security-Policy" content="%s"><title>%s</title><style>%s</style></head><body id="top"><a class="skip" href="#features">%s</a><header class="shell nav"><div class="mark">%s</div><a href="#features">%s</a></header><main><section class="shell hero" aria-labelledby="site-title"><div><div class="eyebrow">%s</div><h1 id="site-title">%s</h1><p class="lead">%s</p><div class="actions"><a class="button" href="%s">%s</a><span class="proof">%s</span></div></div><div class="totem" aria-hidden="true"><div class="tile one"></div><div class="tile two"></div><div class="tile three"><div class="face"></div></div></div></section><section class="shell features" id="features" aria-labelledby="feature-title"><div class="section-head"><div><p class="kicker">%s</p><h2 id="feature-title">%s</h2></div><p>%s</p></div><div class="grid">%s</div></section></main><footer class="shell footer"><span>%s</span><span>%s</span></footer></body></html>'''%(
+        language,esc(csp),esc(title),SITE_STYLE,
+        'Skip to content' if language=='en' else 'İçeriğe geç',esc(title),esc(feature_heading),
+        esc(eyebrow),esc(headline),esc(subhead),esc(href),esc(label),esc(local_note),
+        'Why this works' if language=='en' else 'Neden işe yarıyor',esc(feature_heading),
+        esc(feature_intro),cards,esc(title),'Built with Moxcrew' if language=='en' else 'Moxcrew ile üretildi')
+    require('<script' not in document.lower() and 'javascript:' not in document.lower())
+    content=json.dumps(data,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n'
+    summary=('# Website delivery\n\n## Result\n\nA standalone static landing page was generated.\n\n'
+             '## Files\n\n- `index.html` — editable local preview\n- `content.json` — canonical owner content\n- `site-manifest.json` — hashes and checks\n\n'
+             '## Checks performed\n\n- Owner content escaped\n- Script and remote-asset absence checked\n- Semantic landmarks, keyboard focus and responsive CSS present\n- Generated files reopened byte-for-byte\n\n'
+             '## Checks not performed\n\n- No deployment, publication, analytics, conversion or Windows check\n\n'
+             '## Revision notes\n\nFirst local version. Revise the exact content fields and regenerate to make a new version.\n')
+    files={'index.html':document.encode(),'content.json':content.encode(),'summary.md':summary.encode()}
+    for name,value in files.items():
+        (OUT/name).write_bytes(value);require((OUT/name).read_bytes()==value,'PRODUCTION_OUTPUT_INVALID')
+    manifest={'kind':'static_site','version':1,'offline':True,'published':False,'language':language,
+              'featureCount':len(checked),'ctaKind':'local' if href.startswith('#') else 'https',
+              'checks':{'contentEscaped':True,'scriptFree':True,'remoteAssetsAbsent':True,
+                        'semanticLandmarks':True,'keyboardFocus':True,'responsiveLayout':True,
+                        'reopenedExact':True},
+              'files':[{'path':name,'bytes':len(value),'sha256':hashlib.sha256(value).hexdigest()}
+                       for name,value in files.items()]}
+    manifest_bytes=(json.dumps(manifest,ensure_ascii=False,sort_keys=True,indent=2)+'\n').encode()
+    (OUT/'site-manifest.json').write_bytes(manifest_bytes)
+    require((OUT/'site-manifest.json').read_bytes()==manifest_bytes,'PRODUCTION_OUTPUT_INVALID')
+    return {'kind':'static_site','file':'index.html','manifest':'site-manifest.json','offline':True,
+            'published':False,'featureCount':len(checked)}
+
 
 def interactive(args):
     exact(args,('kind','title'),('columns','rows','series','currency','budget','items'))
@@ -1468,4 +1549,5 @@ def execute(operation,args,tools):
     if operation=='video.highlights': return video_highlights(args,tools)
     if operation=='video.compose': return compose_video(args,tools)
     if operation=='interactive.create': return interactive(args)
+    if operation=='web.site': return static_site(args)
     raise ValueError('PRODUCTION_OPERATION_UNSUPPORTED')

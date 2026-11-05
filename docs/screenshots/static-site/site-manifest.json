@@ -1,0 +1,35 @@
+{
+  "checks": {
+    "contentEscaped": true,
+    "keyboardFocus": true,
+    "remoteAssetsAbsent": true,
+    "reopenedExact": true,
+    "responsiveLayout": true,
+    "scriptFree": true,
+    "semanticLandmarks": true
+  },
+  "ctaKind": "local",
+  "featureCount": 4,
+  "files": [
+    {
+      "bytes": 7211,
+      "path": "index.html",
+      "sha256": "183a7fe37c69790a0093bbf13220a61c9ce26b9dfbcb9a7e92ad5d76db854004"
+    },
+    {
+      "bytes": 725,
+      "path": "content.json",
+      "sha256": "d15ccf6d91efab36e6cc7ff90a7120fa03fab4e3f3dee92f91c545698a8bcd6d"
+    },
+    {
+      "bytes": 621,
+      "path": "summary.md",
+      "sha256": "4b8d93073784f2e5510a74744405ba2b6dc2a33b28d9845efa29df84ffc5483b"
+    }
+  ],
+  "kind": "static_site",
+  "language": "tr",
+  "offline": true,
+  "published": false,
+  "version": 1
+}

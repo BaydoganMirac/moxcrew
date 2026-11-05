@@ -53,6 +53,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "video.compose",
     "video.motion",
     "interactive.create",
+    "web.site",
     "images.generate",
     "images.edit",
     "browser.inspect",

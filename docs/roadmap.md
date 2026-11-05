@@ -126,6 +126,11 @@ commitments.
   source/output-hashed transcript text/JSON plus reopened SRT/VTT after checked
   16 kHz mono normalization and full decode. Real-model recognition accuracy,
   speaker identity and uncertain-passage review remain explicit quality gates.
+  [Task0092](state/verified-static-landing-site.md) closes the deterministic W1
+  local-output gap: exact approved copy produces a script-free editable landing
+  page, canonical content, hash manifest and summary with exact reopen plus real
+  wide/narrow browser renders. Deployment, conversion and assistive-technology
+  review remain separate gates.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

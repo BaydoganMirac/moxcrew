@@ -679,6 +679,8 @@ impl Console {
             self.create.ability = "A3".into();
         } else if scene == "capabilities-data-profile" {
             self.create.ability = "T1".into();
+        } else if scene == "capabilities-site" {
+            self.create.ability = "W1".into();
         } else if matches!(
             scene,
             "capabilities-video-compose"
@@ -765,6 +767,7 @@ impl Console {
             | "capabilities-transcription"
             | "capabilities-audio-cleanup"
             | "capabilities-data-profile"
+            | "capabilities-site"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -827,9 +830,45 @@ impl Console {
                 "capabilities-transcription" => 5,
                 "capabilities-audio-cleanup" => 28,
                 "capabilities-data-profile" => 29,
+                "capabilities-site" => 30,
                 _ => 0,
             };
-            if scene == "capabilities-batch-images" {
+            if scene == "capabilities-site" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("siteLanguage") = if english { "en" } else { "tr" }.into();
+                *draft.value("siteTitle") = "Moxcrew".into();
+                *draft.value("siteEyebrow") = if english {
+                    "LOCAL AI WORKSPACE"
+                } else {
+                    "YEREL AI ÇALIŞMA ALANI"
+                }
+                .into();
+                *draft.value("siteHeadline") = if english {
+                    "Make the work impossible to hide."
+                } else {
+                    "İşi görünmez olmaktan çıkar."
+                }
+                .into();
+                *draft.value("siteSubhead") = if english {
+                    "Plan, produce and review with a crew you can actually see. Every handoff stays local, explicit and yours."
+                } else {
+                    "Gerçekten görebildiğin bir ekiple planla, üret ve incele. Her devir yerel, açık ve senin kontrolünde kalsın."
+                }
+                .into();
+                *draft.value("siteFeatures") = if english {
+                    "Owner control | Nothing starts until you say so.\nReal outputs | Files and evidence arrive together."
+                } else {
+                    "Kontrol sende | Sen söylemeden hiçbir şey başlamaz.\nGerçek çıktılar | Dosya ve kanıt birlikte gelir."
+                }
+                .into();
+                *draft.value("siteCtaLabel") = if english {
+                    "See how it works"
+                } else {
+                    "Nasıl çalıştığını gör"
+                }
+                .into();
+                *draft.value("siteCtaHref") = "#features".into();
+            } else if scene == "capabilities-batch-images" {
                 draft.sources.extend(selected);
                 *draft.value("width") = "1600".into();
                 *draft.value("height") = "1600".into();
@@ -2003,6 +2042,7 @@ impl Console {
             "Create motion video",
             "Clean and level audio",
             "Clean and analyze data",
+            "Website / landing page",
         ];
         form_combo(
             ui,
@@ -2020,7 +2060,7 @@ impl Console {
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
             );
         }
-        if ![15, 16, 17, 18, 19].contains(&draft.kind)
+        if ![15, 16, 17, 18, 19, 30].contains(&draft.kind)
             && studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked()
         {
             self.create.select_productive_view(2);
@@ -2029,7 +2069,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 27].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 27, 30].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -4100,6 +4140,121 @@ impl Console {
                     }));
                 }
             }
+            30 => {
+                hint(
+                    ui,
+                    "Create a bold, responsive local page with no scripts, trackers or remote assets. Nothing is published.",
+                );
+                if draft.get("siteLanguage").is_empty() {
+                    *draft.value("siteLanguage") = "tr".into();
+                }
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Site language"));
+                    ui.selectable_value(draft.value("siteLanguage"), "tr".into(), "Türkçe");
+                    ui.selectable_value(draft.value("siteLanguage"), "en".into(), "English");
+                });
+                ui.columns(2, |columns| {
+                    field(
+                        &mut columns[0],
+                        "Site title",
+                        draft.value("siteTitle"),
+                        80,
+                        false,
+                    );
+                    field(
+                        &mut columns[1],
+                        "Eyebrow",
+                        draft.value("siteEyebrow"),
+                        80,
+                        false,
+                    );
+                });
+                ui.columns(2, |columns| {
+                    multiline(
+                        &mut columns[0],
+                        "Headline",
+                        draft.value("siteHeadline"),
+                        160,
+                        2,
+                    );
+                    multiline(
+                        &mut columns[1],
+                        "Supporting copy",
+                        draft.value("siteSubhead"),
+                        400,
+                        2,
+                    );
+                });
+                multiline(
+                    ui,
+                    "Features · title | body",
+                    draft.value("siteFeatures"),
+                    2000,
+                    4,
+                );
+                ui.columns(2, |columns| {
+                    field(
+                        &mut columns[0],
+                        "Call to action",
+                        draft.value("siteCtaLabel"),
+                        60,
+                        false,
+                    );
+                    field(
+                        &mut columns[1],
+                        "CTA link · #features or HTTPS",
+                        draft.value("siteCtaHref"),
+                        2048,
+                        false,
+                    );
+                });
+                hint(
+                    ui,
+                    "Delivers editable index.html, canonical content.json, a hash manifest and verification summary.",
+                );
+                let features: Option<Vec<Value>> = draft
+                    .get("siteFeatures")
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(|line| {
+                        let (title, body) = line.split_once('|')?;
+                        let title = title.trim();
+                        let body = body.trim();
+                        (valid_input(title, 80) && valid_input(body, 240))
+                            .then(|| json!({"title":title,"body":body}))
+                    })
+                    .collect();
+                let href = draft.get("siteCtaHref").trim();
+                let safe_href = matches!(href, "#top" | "#features")
+                    || (href.starts_with("https://")
+                        && !href.chars().any(char::is_whitespace)
+                        && valid_input(href, 2048));
+                if matches!(draft.get("siteLanguage"), "tr" | "en")
+                    && valid_input(draft.get("siteTitle"), 80)
+                    && valid_input(draft.get("siteEyebrow"), 80)
+                    && valid_input(draft.get("siteHeadline"), 160)
+                    && valid_input(draft.get("siteSubhead"), 400)
+                    && valid_input(draft.get("siteCtaLabel"), 60)
+                    && safe_href
+                    && features
+                        .as_ref()
+                        .is_some_and(|features| (2..=6).contains(&features.len()))
+                {
+                    operation = Some(json!({
+                        "operation":"web.site",
+                        "arguments":{
+                            "language":draft.get("siteLanguage"),
+                            "title":draft.get("siteTitle"),
+                            "eyebrow":draft.get("siteEyebrow"),
+                            "headline":draft.get("siteHeadline"),
+                            "subhead":draft.get("siteSubhead"),
+                            "features":features,
+                            "cta":{"label":draft.get("siteCtaLabel"),"href":href}
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -4148,6 +4303,7 @@ impl Console {
                         27 => "Use video.motion with this exact approved scene plan. Preserve every title and duration, deliver the editable storyboard and rendered MP4, verify intra-scene movement and full decode, and keep visual-quality review explicit.",
                         28 => "Use audio.cleanup with this exact source, cleanup treatment and LUFS target. Preserve the original, duration and channels; deliver the checked WAV and manifest, verify full decode and before/after measured level, and keep subjective-quality review explicit.",
                         29 => "Use the requested typed data operation with this exact CSV, deduplication choice and numeric column list. Preserve the source, deliver the cleaned CSV or editable XLSX plus analysis.json, and report hashes, trimmed cells, removed duplicates, missing counts and checked statistics without inventing a trend narrative.",
+                        30 => "Use web.site with this exact approved content. Deliver editable index.html, canonical content.json, site-manifest.json and summary.md; reopen every file and report the security, accessibility and responsive checks. Do not add scripts, remote assets, trackers, invented copy, deployment or publication.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -6450,6 +6606,133 @@ mod tests {
                     .unwrap()
                 });
                 assert!(visibility.1, "{language}/{theme:?}: transcription action");
+            }
+        }
+    }
+    #[test]
+    fn website_request_freezes_exact_content_without_execution_or_publication() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let data = fixture();
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 30;
+        *draft.value("siteLanguage") = "tr".into();
+        *draft.value("siteTitle") = "Moxcrew".into();
+        *draft.value("siteEyebrow") = "Yerel AI çalışma alanı".into();
+        *draft.value("siteHeadline") = "İşi görünür kıl.".into();
+        *draft.value("siteSubhead") = "Planla, üret ve kanıtla.".into();
+        *draft.value("siteFeatures") =
+            "Kontrol sende | Hiçbir iş senden habersiz başlamaz.\nGerçek çıktılar | Dosyalar ve kontroller birlikte gelir.".into();
+        *draft.value("siteCtaLabel") = "Özellikleri gör".into();
+        *draft.value("siteCtaHref") = "#features".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        for _ in 0..5 {
+            render(
+                &ctx,
+                &mut c,
+                &data,
+                size,
+                false,
+                vec![
+                    egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Page,
+                        delta: egui::vec2(0.0, -1.0),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        }
+        assert!(click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"web.site\""));
+        assert!(request.contains("\"language\": \"tr\""));
+        assert!(request.contains("\"headline\": \"İşi görünür kıl.\""));
+        assert!(request.contains("\"href\": \"#features\""));
+        assert!(request.contains("Gerçek çıktılar"));
+        assert!(request.contains("Do not add scripts, remote assets, trackers"));
+        assert!(!request.contains("publish this site"));
+    }
+    #[test]
+    fn website_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 30;
+                *draft.value("siteLanguage") = language.into();
+                *draft.value("siteTitle") = "Moxcrew".into();
+                *draft.value("siteEyebrow") = "Local AI workspace".into();
+                *draft.value("siteHeadline") = "Make work visible.".into();
+                *draft.value("siteSubhead") = "Plan, produce and verify in one place.".into();
+                *draft.value("siteFeatures") =
+                    "Owner control | Nothing starts without you.\nReal outputs | Files and checks arrive together.".into();
+                *draft.value("siteCtaLabel") = "See the system".into();
+                *draft.value("siteCtaHref") = "#features".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..5 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: website action");
             }
         }
     }

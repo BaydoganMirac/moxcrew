@@ -328,6 +328,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-transcription");
         let data_profile = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-data-profile");
+        let website = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-site");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
@@ -350,6 +352,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Launch research" } else { "Lansman araştırması" }
         } else if pdf_merge {
             if english { "Board packet" } else { "Yönetim kurulu paketi" }
+        } else if website {
+            if english { "Website studio" } else { "Web sitesi stüdyosu" }
         } else if data_profile {
             if english { "Data cleanup" } else { "Veri temizleme" }
         } else if transcription {
@@ -586,12 +590,15 @@ fn seed_create_scene(directory: &std::path::Path) {
         let audio_cleanup=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-audio-cleanup");
         let transcription=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-transcription");
         let data_profile=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-profile");
+        let website=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-site");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
             ("A4",if english{"Podcast edit package"}else{"Podcast kurgu paketi"},if english{"Edit the selected recording into ordered chapters and produce a playable package."}else{"Seçili kaydı sıralı bölümlere kurgula ve oynatılabilir bir paket üret."})
         } else if transcription {
             ("A1",if english{"Checked local transcription"}else{"Doğrulanmış yerel transkripsiyon"},if english{"Transcribe the exact recording locally and retain timed subtitles, hashes and explicit human accuracy review."}else{"Kesin kaydı yerelde yazıya çevir; zamanlı altyazıları, özetleri ve açık insan doğruluk incelemesini koru."})
+        } else if website {
+            ("W1",if english{"Verified local website"}else{"Doğrulanmış yerel web sitesi"},if english{"Create a bold static landing page with exact approved content, local editable files and explicit security, accessibility and responsive checks."}else{"Kesin onaylı içerikle cesur bir statik landing page oluştur; yerel düzenlenebilir dosyaları ve açık güvenlik, erişilebilirlik ve responsive kontrollerini koru."})
         } else if data_profile {
             ("T1",if english{"Checked data cleanup"}else{"Doğrulanmış veri temizleme"},if english{"Clean the exact CSV and retain checked transforms, missing counts and numeric statistics."}else{"Kesin CSV'yi temizle; doğrulanmış dönüşümleri, eksik sayılarını ve sayısal istatistikleri koru."})
         } else if data_chart {

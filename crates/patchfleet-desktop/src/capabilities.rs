@@ -179,6 +179,12 @@ fn presentation_logo_source(resource: &Value) -> bool {
         .iter()
         .any(|extension| name.ends_with(extension))
 }
+fn campaign_image_source(resource: &Value) -> bool {
+    presentation_logo_source(resource)
+        && resource["bytes"]
+            .as_u64()
+            .is_some_and(|bytes| bytes <= 512 * 1024)
+}
 fn presentation_hex(value: &str) -> Option<String> {
     let value = value.trim().trim_start_matches('#').to_ascii_uppercase();
     (value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(value)
@@ -284,6 +290,77 @@ fn presentation_brand_fields(ui: &mut Ui, draft: &mut CapabilityDraft) -> Option
             "name":draft.get("brandName"),"font":draft.get("font"),
             "primary":colors[0],"accent":colors[1],"background":colors[2],
             "text":colors[3],"muted":colors[4]
+        })
+    })
+}
+fn campaign_contrast(first: &str, second: &str) -> Option<f64> {
+    fn luminance(value: &str) -> Option<f64> {
+        let value = presentation_hex(value)?;
+        let mut channels = [0.0; 3];
+        for (index, start) in [0, 2, 4].into_iter().enumerate() {
+            let channel = u8::from_str_radix(&value[start..start + 2], 16).ok()? as f64 / 255.0;
+            channels[index] = if channel <= 0.04045 {
+                channel / 12.92
+            } else {
+                ((channel + 0.055) / 1.055).powf(2.4)
+            };
+        }
+        Some(0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2])
+    }
+    let first = luminance(first)?;
+    let second = luminance(second)?;
+    let (light, dark) = if first >= second {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    Some((light + 0.05) / (dark + 0.05))
+}
+fn campaign_brand_fields(ui: &mut Ui, draft: &mut CapabilityDraft) -> Option<Value> {
+    for (key, value) in [
+        ("brandName", "Moxcrew"),
+        ("primary", "2854F4"),
+        ("accent", "FF7A2F"),
+        ("background", "F8F7F3"),
+        ("text", "15223D"),
+        ("muted", "56627A"),
+    ] {
+        if draft.get(key).is_empty() {
+            *draft.value(key) = value.into();
+        }
+    }
+    field(ui, "Brand name", draft.value("brandName"), 80, false);
+    ui.label(t(ui, "Theme colours · hexadecimal"));
+    for (label, key) in [
+        ("Primary", "primary"),
+        ("Accent", "accent"),
+        ("Background", "background"),
+        ("Text", "text"),
+        ("Muted text", "muted"),
+    ] {
+        ui.horizontal(|ui| {
+            ui.label(t(ui, label));
+            studio::input(ui, draft.value(key), 7, "2854F4", false);
+        });
+    }
+    let colors = ["primary", "accent", "background", "text", "muted"]
+        .map(|key| presentation_hex(draft.get(key)))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?;
+    let contrast = campaign_contrast(&colors[3], &colors[2])? >= 4.5
+        && campaign_contrast(&colors[4], &colors[2])? >= 3.0
+        && campaign_contrast(&colors[0], &colors[2])? >= 3.0;
+    if !contrast {
+        hint(
+            ui,
+            "Increase text, muted text and primary contrast against the background.",
+        );
+        return None;
+    }
+    valid_input(draft.get("brandName"), 80).then(|| {
+        json!({
+            "name":draft.get("brandName"),"primary":colors[0],"accent":colors[1],
+            "background":colors[2],"text":colors[3],"muted":colors[4]
         })
     })
 }
@@ -685,6 +762,8 @@ impl Console {
             self.create.ability = "D1".into();
         } else if scene == "capabilities-presentation-revise" {
             self.create.ability = "P2".into();
+        } else if scene == "capabilities-image-campaign" {
+            self.create.ability = "I4".into();
         } else if matches!(
             scene,
             "capabilities-video-compose"
@@ -774,6 +853,7 @@ impl Console {
             | "capabilities-site"
             | "capabilities-document-create"
             | "capabilities-presentation-revise"
+            | "capabilities-image-campaign"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -839,9 +919,58 @@ impl Console {
                 "capabilities-site" => 30,
                 "capabilities-document-create" => 31,
                 "capabilities-presentation-revise" => 32,
+                "capabilities-image-campaign" => 33,
                 _ => 0,
             };
-            if scene == "capabilities-presentation-revise" {
+            if scene == "capabilities-image-campaign" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                draft.record = available
+                    .iter()
+                    .find(|resource| campaign_image_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                draft.sources.extend(
+                    ["square", "landscape", "portrait", "thumbnail"]
+                        .map(|format| format!("campaign:{format}")),
+                );
+                *draft.value("campaignFormatsInitialized") = "true".into();
+                *draft.value("campaignTitle") = if english {
+                    "Make ambitious work impossible to hide"
+                } else {
+                    "İddialı işi görünmez olmaktan çıkar"
+                }
+                .into();
+                *draft.value("campaignEyebrow") = if english {
+                    "YOUR CREW. YOUR CONTROL."
+                } else {
+                    "EKİBİN. KONTROLÜN."
+                }
+                .into();
+                *draft.value("campaignSubtitle") = if english {
+                    "Plan, produce and review in one local workspace with every handoff visible."
+                } else {
+                    "Her devrin görünür kaldığı tek yerel çalışma alanında planla, üret ve incele."
+                }
+                .into();
+                *draft.value("campaignCta") = if english {
+                    "Start local"
+                } else {
+                    "Yerelde başla"
+                }
+                .into();
+                *draft.value("campaignHeroAlt") = if english {
+                    "Moxcrew campaign visual"
+                } else {
+                    "Moxcrew kampanya görseli"
+                }
+                .into();
+                *draft.value("brandName") = "Moxcrew".into();
+                *draft.value("primary") = "2854F4".into();
+                *draft.value("accent") = "FF7A2F".into();
+                *draft.value("background") = "F8F7F3".into();
+                *draft.value("text") = "15223D".into();
+                *draft.value("muted") = "56627A".into();
+            } else if scene == "capabilities-presentation-revise" {
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = available
                     .iter()
@@ -2108,6 +2237,7 @@ impl Console {
             "Website / landing page",
             "Create editable document",
             "Edit presentation slide",
+            "Create branded asset pack",
         ];
         form_combo(
             ui,
@@ -2135,7 +2265,7 @@ impl Console {
 
         let all = resources(snapshot, &self.create.project);
         if ![
-            0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 27, 30, 31,
+            0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 27, 30, 31, 33,
         ]
         .contains(&draft.kind)
         {
@@ -4543,6 +4673,214 @@ impl Console {
                     }
                 }
             }
+            33 => {
+                hint(
+                    ui,
+                    "Turn exact approved copy and Project colours into a checked multi-format asset pack. Nothing is generated by a model or published.",
+                );
+                if draft.get("campaignFormatsInitialized").is_empty() {
+                    for format in ["square", "landscape", "portrait", "thumbnail"] {
+                        draft.sources.insert(format!("campaign:{format}"));
+                    }
+                    *draft.value("campaignFormatsInitialized") = "true".into();
+                }
+                field(
+                    ui,
+                    "Campaign title",
+                    draft.value("campaignTitle"),
+                    120,
+                    false,
+                );
+                field(
+                    ui,
+                    "Eyebrow (optional)",
+                    draft.value("campaignEyebrow"),
+                    80,
+                    false,
+                );
+                multiline(
+                    ui,
+                    "Supporting copy (optional)",
+                    draft.value("campaignSubtitle"),
+                    240,
+                    2,
+                );
+                field(
+                    ui,
+                    "Call to action (optional)",
+                    draft.value("campaignCta"),
+                    80,
+                    false,
+                );
+                ui.label(t(ui, "Asset formats"));
+                ui.horizontal_wrapped(|ui| {
+                    for format in ["square", "landscape", "portrait", "thumbnail"] {
+                        let key = format!("campaign:{format}");
+                        let mut selected = draft.sources.contains(&key);
+                        if ui.checkbox(&mut selected, t(ui, format)).changed() {
+                            if selected {
+                                draft.sources.insert(key);
+                            } else {
+                                draft.sources.remove(&key);
+                            }
+                        }
+                    }
+                });
+                form_combo(
+                    ui,
+                    egui::ComboBox::from_id_salt("campaign-hero").selected_text(
+                        all.iter()
+                            .find(|resource| {
+                                text(resource, "resourceId") == draft.record
+                                    && text(resource, "status") == "available"
+                                    && campaign_image_source(resource)
+                            })
+                            .map(|resource| text(resource, "name"))
+                            .unwrap_or(t(ui, "No hero image").as_ref()),
+                    ),
+                    |ui| {
+                        ui.selectable_value(
+                            &mut draft.record,
+                            String::new(),
+                            t(ui, "No hero image"),
+                        );
+                        for resource in all.iter().filter(|resource| {
+                            text(resource, "status") == "available"
+                                && campaign_image_source(resource)
+                        }) {
+                            ui.selectable_value(
+                                &mut draft.record,
+                                text(resource, "resourceId").into(),
+                                text(resource, "name"),
+                            );
+                        }
+                    },
+                );
+                if !draft.record.is_empty() {
+                    field(
+                        ui,
+                        "Hero image description",
+                        draft.value("campaignHeroAlt"),
+                        160,
+                        false,
+                    );
+                }
+                form_combo(
+                    ui,
+                    egui::ComboBox::from_id_salt("campaign-logo").selected_text(
+                        all.iter()
+                            .find(|resource| {
+                                text(resource, "resourceId") == draft.get("campaignLogo")
+                                    && text(resource, "status") == "available"
+                                    && campaign_image_source(resource)
+                            })
+                            .map(|resource| text(resource, "name"))
+                            .unwrap_or(t(ui, "No logo").as_ref()),
+                    ),
+                    |ui| {
+                        ui.selectable_value(
+                            draft.value("campaignLogo"),
+                            String::new(),
+                            t(ui, "No logo"),
+                        );
+                        for resource in all.iter().filter(|resource| {
+                            text(resource, "status") == "available"
+                                && campaign_image_source(resource)
+                        }) {
+                            ui.selectable_value(
+                                draft.value("campaignLogo"),
+                                text(resource, "resourceId").into(),
+                                text(resource, "name"),
+                            );
+                        }
+                    },
+                );
+                if !draft.get("campaignLogo").is_empty() {
+                    field(
+                        ui,
+                        "Logo description",
+                        draft.value("campaignLogoAlt"),
+                        160,
+                        false,
+                    );
+                }
+                hint(
+                    ui,
+                    "Optional hero and logo must be PNG or JPEG, each at most 512 KiB and together at most 768 KiB.",
+                );
+                let brand = campaign_brand_fields(ui, draft);
+                hint(
+                    ui,
+                    "Python and Chrome render editable SVG plus exact-size PNG files locally. Contrast, dimensions and hashes are checked; visual quality still needs your review.",
+                );
+                let formats = ["square", "landscape", "portrait", "thumbnail"]
+                    .into_iter()
+                    .filter(|format| draft.sources.contains(&format!("campaign:{format}")))
+                    .collect::<Vec<_>>();
+                let hero = all.iter().find(|resource| {
+                    text(resource, "resourceId") == draft.record
+                        && text(resource, "status") == "available"
+                        && campaign_image_source(resource)
+                });
+                let logo = all.iter().find(|resource| {
+                    text(resource, "resourceId") == draft.get("campaignLogo")
+                        && text(resource, "status") == "available"
+                        && campaign_image_source(resource)
+                });
+                let optional_copy_valid = [
+                    (draft.get("campaignEyebrow"), 80),
+                    (draft.get("campaignSubtitle"), 240),
+                    (draft.get("campaignCta"), 80),
+                ]
+                .into_iter()
+                .all(|(value, max)| optional_text(value, max));
+                let images_valid = hero
+                    .is_none_or(|_| valid_input(draft.get("campaignHeroAlt"), 160))
+                    && logo.is_none_or(|_| valid_input(draft.get("campaignLogoAlt"), 160))
+                    && hero.zip(logo).is_none_or(|(hero, logo)| {
+                        text(hero, "resourceId") != text(logo, "resourceId")
+                    })
+                    && hero
+                        .into_iter()
+                        .chain(logo)
+                        .filter_map(|resource| resource["bytes"].as_u64())
+                        .sum::<u64>()
+                        <= 768 * 1024;
+                if valid_input(draft.get("campaignTitle"), 120)
+                    && optional_copy_valid
+                    && !formats.is_empty()
+                    && brand.is_some()
+                    && images_valid
+                {
+                    let mut arguments = json!({
+                        "title":draft.get("campaignTitle"),
+                        "formats":formats,
+                        "brand":brand
+                    });
+                    for (key, value) in [
+                        ("eyebrow", draft.get("campaignEyebrow")),
+                        ("subtitle", draft.get("campaignSubtitle")),
+                        ("callToAction", draft.get("campaignCta")),
+                    ] {
+                        if !value.trim().is_empty() {
+                            arguments[key] = json!(value);
+                        }
+                    }
+                    if let Some(resource) = hero {
+                        arguments["hero"] = json!({
+                            "source":format!("resource:{}",text(resource,"resourceId").trim_start_matches("resource:")),
+                            "alt":draft.get("campaignHeroAlt")
+                        });
+                    }
+                    if let Some(resource) = logo {
+                        arguments["logo"] = json!({
+                            "source":format!("resource:{}",text(resource,"resourceId").trim_start_matches("resource:")),
+                            "alt":draft.get("campaignLogoAlt")
+                        });
+                    }
+                    operation = Some(json!({"operation":"images.campaign","arguments":arguments}));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -4594,6 +4932,7 @@ impl Console {
                         30 => "Use web.site with this exact approved content. Deliver editable index.html, canonical content.json, site-manifest.json and summary.md; reopen every file and report the security, accessibility and responsive checks. Do not add scripts, remote assets, trackers, invented copy, deployment or publication.",
                         31 => "Use documents.create with this exact approved title, subtitle, language and section text. Preserve every string literally, deliver the editable DOCX with canonical content.json, document-manifest.json and summary.md, and report exact reopen and hash checks. Do not invent copy, add facts, publish, upload or claim semantic or Microsoft Word quality without human review.",
                         32 => "Use presentations.revise on this exact PPTX and one-based slide only. Preserve the supplied layout, title, supporting text, bullets, notes and render choice literally. Deliver the editable revised deck and manifest only after reopening it and proving every non-target slide XML part stayed byte-identical. Do not reorder, delete, rewrite or publish anything else.",
+                        33 => "Use images.campaign with this exact approved copy, selected formats, brand colours and optional frozen visuals. Preserve every string and source hash, deliver editable SVG plus exact-size PNG files with canonical content and the verification manifest, and keep visual, copy, trademark and campaign-performance review explicit. Do not call a model, fetch remote assets, publish or upload anything.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -6329,6 +6668,153 @@ mod tests {
                     .create
                     .conversation_input()
                     .contains("\"operation\": \"presentations.create\""));
+            }
+        }
+    }
+    #[test]
+    fn branded_campaign_request_stages_exact_copy_sources_and_formats_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"hero.jpg","kind":"image","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"logo.png","kind":"image","sha256":"b".repeat(64),"bytes":2048,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"notes.txt","kind":"text","sha256":"c".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 33;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        draft.sources.extend([
+            "campaign:square".into(),
+            "campaign:landscape".into(),
+            "campaign:thumbnail".into(),
+        ]);
+        *draft.value("campaignFormatsInitialized") = "true".into();
+        *draft.value("campaignTitle") = "Ship the work, not the busywork".into();
+        *draft.value("campaignEyebrow") = "OWNER CONTROL".into();
+        *draft.value("campaignSubtitle") =
+            "One visible crew turns approved copy into a consistent launch system.".into();
+        *draft.value("campaignCta") = "Start local".into();
+        *draft.value("campaignHeroAlt") = "Product workspace".into();
+        *draft.value("campaignLogo") = "resource:22222222-2222-4222-8222-222222222222".into();
+        *draft.value("campaignLogoAlt") = "Moxcrew logo".into();
+        *draft.value("brandName") = "Moxcrew".into();
+        *draft.value("primary") = "2854F4".into();
+        *draft.value("accent") = "FF7A2F".into();
+        *draft.value("background") = "F8F7F3".into();
+        *draft.value("text") = "15223D".into();
+        *draft.value("muted") = "56627A".into();
+        let size = egui::vec2(900.0, 720.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click(
+            &ctx,
+            &mut c,
+            &data,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"images.campaign\""));
+        assert!(request.contains("Ship the work, not the busywork"));
+        assert!(request.contains("\"square\""));
+        assert!(request.contains("\"landscape\""));
+        assert!(request.contains("\"thumbnail\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(request.contains("Do not call a model"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn branded_campaign_form_is_scroll_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 33;
+                draft
+                    .sources
+                    .extend(["campaign:square".into(), "campaign:landscape".into()]);
+                *draft.value("campaignFormatsInitialized") = "true".into();
+                *draft.value("campaignTitle") = "Visible local work".into();
+                *draft.value("brandName") = "Moxcrew".into();
+                *draft.value("primary") = "2854F4".into();
+                *draft.value("accent") = "FF7A2F".into();
+                *draft.value("background") = "F8F7F3".into();
+                *draft.value("text") = "15223D".into();
+                *draft.value("muted") = "56627A".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..8 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    visibility.1,
+                    "{language}/{theme:?}: campaign action must be scroll-reachable"
+                );
+                assert!(click_at_size(
+                    &ctx,
+                    &mut c,
+                    &data,
+                    size,
+                    false,
+                    "memory_control",
+                    "Add request to Chat"
+                )
+                .is_empty());
+                assert!(c
+                    .create
+                    .conversation_input()
+                    .contains("\"operation\": \"images.campaign\""));
             }
         }
     }

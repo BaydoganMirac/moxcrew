@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "title": "Make ambitious work impossible to hide",
+  "eyebrow": "YOUR CREW. YOUR CONTROL.",
+  "subtitle": "Plan, produce and review in one local workspace with every handoff visible.",
+  "callToAction": "Start local",
+  "formats": [
+    "square",
+    "landscape",
+    "portrait",
+    "thumbnail"
+  ],
+  "brand": {
+    "name": "Moxcrew",
+    "primary": "2854F4",
+    "accent": "FF7A2F",
+    "background": "F8F7F3",
+    "text": "15223D",
+    "muted": "56627A"
+  },
+  "hero": null,
+  "logo": null
+}

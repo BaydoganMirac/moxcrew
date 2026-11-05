@@ -25,7 +25,7 @@ pub(crate) async fn run(
 ) -> Result<production::Output> {
     if !matches!(
         operation,
-        "browser.inspect" | "browser.draft" | "browser.research"
+        "browser.inspect" | "browser.draft" | "browser.research" | "images.campaign"
     ) {
         return Err(Error("BROWSER_OPERATION_UNSUPPORTED".into()));
     }
@@ -228,6 +228,79 @@ else:raise AssertionError('unused browser source accepted')
             .as_str()
             .unwrap()
             .contains("browser.research"));
+    }
+    #[test]
+    fn branded_campaign_worker_checks_formats_contrast_dimensions_and_hashes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tools = production::paths(tmp.path()).unwrap();
+        let python = tools["python"]
+            .as_str()
+            .expect("Python is required by production fixture tests");
+        store::atomic_write(&tmp.path().join("browser.py"), SCRIPT.as_bytes()).unwrap();
+        let code = r#"import base64,hashlib,json,runpy,struct
+from pathlib import Path
+b=runpy.run_path('browser.py',run_name='campaign_test')
+def png(width,height):return b'\x89PNG\r\n\x1a\n'+b'\x00\x00\x00\rIHDR'+struct.pack('>II',width,height)
+Path('inputs').mkdir();Path('inputs/hero.png').write_bytes(png(64,64))
+class Peer:
+ def __init__(self,*args):self.attached={};self.session=None;self.width=1200;self.height=800;self.sources=[];self.requests=0;self.deadline=10**20
+ def call(self,method,args=None,session=True):
+  args=args or {}
+  if method=='Target.createTarget':self.attached['page']='session';return {'targetId':'page'}
+  if method=='Emulation.setDeviceMetricsOverride':self.width=args['width'];self.height=args['height']
+  if method=='Page.getFrameTree':return {'frameTree':{'frame':{'id':'frame'}}}
+  if method=='Page.captureScreenshot':
+   return {'data':base64.b64encode(png(self.width,self.height)).decode()}
+  return {}
+ def evaluate(self,expression):
+  if expression=='document.readyState':return 'complete'
+  if 'img[data-campaign-source]' in expression:return {'count':1,'ready':True}
+  return [{'id':'title','x':40,'y':40,'r':self.width-40,'b':self.height-40}]
+ def close(self):pass
+b['image_campaign'].__globals__['Browser']=Peer
+args={'title':'Ship the work, not the busywork','eyebrow':'MOXCREW CAMPAIGN','subtitle':'One focused local crew turns approved copy into a consistent launch system.','callToAction':'Start local','formats':['square','landscape','portrait','thumbnail'],'brand':{'name':'Moxcrew','primary':'2854F4','accent':'FF7A2F','background':'F8F7F3','text':'15223D','muted':'56627A'},'hero':{'source':'inputs/hero.png','alt':'Checked campaign source'}}
+result=b['run']({'operation':'images.campaign','arguments':args,'tools':{'chrome':'/fake/chrome'}})
+assert result['kind']=='branded_campaign_assets' and result['assets']==4 and result['humanReviewRequired']
+out=Path('outputs'); files=sorted(path.name for path in out.iterdir())
+assert len(files)==11 and files[0].startswith('campaign-')
+manifest=json.loads((out/'campaign-manifest.json').read_text())
+assert manifest['checks']['networkEnabled'] is False and manifest['checks']['pageScriptsEnabled'] is False
+assert manifest['inputs']['hero']['sha256']==hashlib.sha256(png(64,64)).hexdigest()
+assert manifest['inputs']['hero']['alt']=='Checked campaign source'
+assert [item['format'] for item in manifest['artifacts']]==args['formats']
+for item in manifest['artifacts']:
+ for kind in ('svg','png'):
+  payload=(out/item[kind]['file']).read_bytes()
+  assert len(payload)==item[kind]['bytes'] and hashlib.sha256(payload).hexdigest()==item[kind]['sha256']
+assert hashlib.sha256((out/'campaign-manifest.json').read_bytes()).hexdigest()==result['manifestSha256']
+bad=dict(args);bad['formats']=['square','square']
+try:b['run']({'operation':'images.campaign','arguments':bad,'tools':{'chrome':'/fake/chrome'}})
+except ValueError as error:assert str(error)=='BROWSER_CAMPAIGN_FORMAT_INVALID'
+else:raise AssertionError('duplicate format accepted')
+bad=dict(args);bad['brand']=dict(args['brand'],text='F8F7F3')
+try:b['run']({'operation':'images.campaign','arguments':bad,'tools':{'chrome':'/fake/chrome'}})
+except ValueError as error:assert str(error)=='BROWSER_CAMPAIGN_CONTRAST_INVALID'
+else:raise AssertionError('low contrast accepted')
+"#;
+        let result = std::process::Command::new(python)
+            .args(["-I", "-B", "-c", code])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(production::OPERATIONS.contains(&"images.campaign"));
+        let production_tool = crate::project_studio::tool_schema()
+            .into_iter()
+            .find(|tool| tool["name"] == "production_run")
+            .unwrap();
+        assert!(production_tool["description"]
+            .as_str()
+            .unwrap()
+            .contains("images.campaign"));
     }
     #[tokio::test]
     async fn unknown_browser_operations_never_start_a_process() {

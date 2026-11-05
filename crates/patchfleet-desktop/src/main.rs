@@ -334,6 +334,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-document-create");
         let presentation_revise = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-presentation-revise");
+        let image_campaign = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-image-campaign");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
@@ -362,6 +364,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Document studio" } else { "Belge stüdyosu" }
         } else if presentation_revise {
             if english { "Presentation editing" } else { "Sunum düzenleme" }
+        } else if image_campaign {
+            if english { "Campaign studio" } else { "Kampanya stüdyosu" }
         } else if data_profile {
             if english { "Data cleanup" } else { "Veri temizleme" }
         } else if transcription {
@@ -418,6 +422,13 @@ fn seed_create_scene(directory: &std::path::Path) {
         }
         if presentations {
             let source=directory.join("mox-brand.png");
+            std::fs::write(&source,include_bytes!("../assets/brand/mox-master.png")).unwrap();
+            let snapshot=host.snapshot().unwrap();
+            let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+            host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+        }
+        if image_campaign {
+            let source=directory.join("mox-campaign.png");
             std::fs::write(&source,include_bytes!("../assets/brand/mox-master.png")).unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
@@ -607,7 +618,10 @@ fn seed_create_scene(directory: &std::path::Path) {
         let website=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-site");
         let document_create=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-document-create");
         let presentation_revise=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-presentation-revise");
-        let (ability,title,instruction)=if batch_images {
+        let image_campaign=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-image-campaign");
+        let (ability,title,instruction)=if image_campaign {
+            ("I4",if english{"Verified campaign assets"}else{"Doğrulanmış kampanya görselleri"},if english{"Turn exact approved copy and Project colours into a checked multi-format campaign pack."}else{"Kesin onaylı metni ve proje renklerini doğrulanmış çok formatlı kampanya paketine dönüştür."})
+        } else if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
             ("A4",if english{"Podcast edit package"}else{"Podcast kurgu paketi"},if english{"Edit the selected recording into ordered chapters and produce a playable package."}else{"Seçili kaydı sıralı bölümlere kurgula ve oynatılabilir bir paket üret."})

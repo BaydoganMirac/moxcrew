@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "kind": "branded_campaign_assets",
+  "brand": "Moxcrew",
+  "formats": [
+    "square",
+    "landscape",
+    "portrait",
+    "thumbnail"
+  ],
+  "inputs": {
+    "hero": null,
+    "logo": null
+  },
+  "checks": {
+    "contrast": {
+      "textBackground": 14.75,
+      "mutedBackground": 5.72,
+      "primaryBackground": 5.35
+    },
+    "networkEnabled": false,
+    "pageScriptsEnabled": false,
+    "downloadsEnabled": false,
+    "renderer": "isolated-chrome"
+  },
+  "artifacts": [
+    {
+      "format": "square",
+      "width": 1080,
+      "height": 1080,
+      "svg": {
+        "file": "campaign-square.svg",
+        "bytes": 2424,
+        "sha256": "50df2f9b17eab45a2f38f6eed4d53f7e3c6f9ea4ce0690a575d388656e2129bb"
+      },
+      "png": {
+        "file": "campaign-square.png",
+        "bytes": 279267,
+        "sha256": "75ed780b746fe504f224e0974df4dd71ea69c8a48d36a1b6ea4d4c3e389f3253"
+      }
+    },
+    {
+      "format": "landscape",
+      "width": 1200,
+      "height": 628,
+      "svg": {
+        "file": "campaign-landscape.svg",
+        "bytes": 2363,
+        "sha256": "57043517f675f8d81bc95843bc2144731a7b9d8ff9ab9480cb67f6a56bf60a27"
+      },
+      "png": {
+        "file": "campaign-landscape.png",
+        "bytes": 190826,
+        "sha256": "78d0b2dfe8a75f7828db00ae3477511de4acd14554916b77bee9bdb05e1ff7bf"
+      }
+    },
+    {
+      "format": "portrait",
+      "width": 1080,
+      "height": 1350,
+      "svg": {
+        "file": "campaign-portrait.svg",
+        "bytes": 2429,
+        "sha256": "c7d642b65191ca16e60821da7dda5b075cb3ed4b7bd4c07e737e3e017e0992d9"
+      },
+      "png": {
+        "file": "campaign-portrait.png",
+        "bytes": 342848,
+        "sha256": "bed9498b6ae605627e31a27a55ccef79a084600d7fecefc063e665e786a86c2f"
+      }
+    },
+    {
+      "format": "thumbnail",
+      "width": 1280,
+      "height": 720,
+      "svg": {
+        "file": "campaign-thumbnail.svg",
+        "bytes": 2376,
+        "sha256": "8cf7a34a069296bc5bbdbe14536983e7a49674abeb43a24012a53f036d712f83"
+      },
+      "png": {
+        "file": "campaign-thumbnail.png",
+        "bytes": 215747,
+        "sha256": "ad9b9b1571e102d6daa59cad6be5a172c58b9649d648546de2b99aac5b11aca2"
+      }
+    }
+  ],
+  "supporting": [
+    {
+      "file": "campaign-content.json",
+      "bytes": 522,
+      "sha256": "78b39fb74060252dc607e4a9037fabd958cff4c4534bc834810925f3cb564c5a"
+    },
+    {
+      "file": "campaign-summary.md",
+      "bytes": 432,
+      "sha256": "8122edb8e3165879a41fe51d3a654a40bf58b3753626acb909bda8d8ceee023d"
+    }
+  ],
+  "humanReview": [
+    "copy",
+    "aesthetics",
+    "trademark rights",
+    "campaign performance"
+  ]
+}

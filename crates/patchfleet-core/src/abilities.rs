@@ -37,8 +37,9 @@ fn readiness_profile(id: &str) -> Option<Value> {
             &["whisper", "whisperModel"],
             &[],
         ),
-        "I1" | "I2" | "I4" | "I5" => (&[], &[], &["imageEngine"]),
+        "I1" | "I2" => (&[], &[], &["imageEngine"]),
         "I3" => (&["python", "ffmpeg"], &[], &[]),
+        "I4" | "I5" => (&["python", "chrome"], &[], &[]),
         "A1" => (
             &["python", "ffmpeg", "ffprobe", "whisper", "whisperModel"],
             &[],
@@ -193,5 +194,13 @@ mod tests {
         assert!(skill_guide("é").is_none());
         assert!(readiness_profile("P1").is_some());
         assert!(readiness_profile("P10").is_none());
+        assert_eq!(
+            find("I4").unwrap()["readiness"],
+            json!({"requiredTools":["python","chrome"],"optionalTools":[],"access":[]})
+        );
+        assert_eq!(
+            find("I1").unwrap()["readiness"],
+            json!({"requiredTools":[],"optionalTools":[],"access":["imageEngine"]})
+        );
     }
 }

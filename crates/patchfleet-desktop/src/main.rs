@@ -322,6 +322,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-video-highlights");
         let video_motion = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-video-motion");
+        let audio_cleanup = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-audio-cleanup");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
@@ -344,6 +346,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Launch research" } else { "Lansman araştırması" }
         } else if pdf_merge {
             if english { "Board packet" } else { "Yönetim kurulu paketi" }
+        } else if audio_cleanup {
+            if english { "Audio cleanup" } else { "Ses temizleme" }
         } else if video_motion {
             if english { "Motion studio" } else { "Hareket stüdyosu" }
         } else if video_highlights {
@@ -424,6 +428,12 @@ fn seed_create_scene(directory: &std::path::Path) {
             }
             let source=directory.join("mox-overlay.png");
             std::fs::write(&source,include_bytes!("../assets/brand/mox-master.png")).unwrap();
+            let snapshot=host.snapshot().unwrap();
+            let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+            host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+        }
+        if audio_cleanup {
+            let source=directory.join("field-recording.wav");std::fs::write(&source,b"disposable audio cleanup fixture").unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
@@ -553,6 +563,7 @@ fn seed_create_scene(directory: &std::path::Path) {
         let video_composition=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-compose");
         let video_highlights=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-highlights");
         let video_motion=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-motion");
+        let audio_cleanup=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-audio-cleanup");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
@@ -581,6 +592,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             ("R1",if english{"Source-backed launch research"}else{"Kaynaklı lansman araştırması"},if english{"Retrieve public launch sources and keep access times, response hashes and literal evidence for every material claim."}else{"Herkese açık lansman kaynaklarını getir; her önemli iddia için erişim zamanını, yanıt özetini ve birebir kanıtı koru."})
         } else if pdf_merge {
             ("D2",if english{"Verified board packet"}else{"Doğrulanmış yönetim kurulu paketi"},if english{"Merge the selected PDFs in the owner's exact order and verify page counts, source hashes and rendered boundaries."}else{"Seçili PDF'leri sahibin kesin sırasıyla birleştir; sayfa sayılarını, kaynak özetlerini ve render sınırlarını doğrula."})
+        } else if audio_cleanup {
+            ("A3",if english{"Checked audio cleanup"}else{"Doğrulanmış ses temizleme"},if english{"Clean and level the exact recording while preserving its original, duration and channels."}else{"Kesin kaydı; orijinalini, süresini ve kanallarını koruyarak temizle ve seviyesini ayarla."})
         } else if video_motion {
             ("V5",if english{"Motion launch video"}else{"Hareketli lansman videosu"},if english{"Turn the approved scene plan into an editable storyboard and checked motion video."}else{"Onaylı sahne planını düzenlenebilir bir storyboard'a ve doğrulanmış hareketli videoya dönüştür."})
         } else if video_highlights {

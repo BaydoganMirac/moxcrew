@@ -57,3 +57,4 @@ supersedes the old one.
 | [0051](0051-atomic-owner-export-publication.md) | Accepted; Task0060 | Publish owner exports atomically without replacing an existing destination |
 | [0052](0052-explicit-recipe-handoffs.md) | Accepted; Task0099 | Preserve bounded, frozen task dependencies in reusable local workflow recipes |
 | [0053](0053-moxcrew-pairing-code-prefix.md) | Accepted | Issue Moxcrew-branded `MX-` pairing codes while accepting the legacy prefix temporarily |
+| [0054](0054-composed-workflow-recipe-revisions.md) | Accepted; Task0100 | Version the ten J1–J10 bundled recipes as explicit frozen workflow graphs |

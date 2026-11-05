@@ -3589,6 +3589,145 @@ mod tests {
         }
     }
     #[test]
+    fn every_visible_composed_recipe_field_is_localized() {
+        let recipes: Vec<Value> =
+            serde_json::from_str(include_str!("../../moxcrew-core/assets/crew-recipes.json"))
+                .unwrap();
+        let composed = [
+            "builtin:launch",
+            "builtin:podcast",
+            "builtin:study",
+            "builtin:travel",
+            "builtin:data-briefing",
+            "builtin:career-package",
+            "builtin:content",
+            "builtin:event-package",
+            "builtin:research",
+            "builtin:meeting-follow-up",
+        ];
+        for recipe in recipes
+            .iter()
+            .filter(|recipe| composed.contains(&text(recipe, "recipeId")))
+        {
+            let visible = std::iter::once(text(recipe, "name"))
+                .chain(std::iter::once(text(recipe, "description")))
+                .chain(
+                    array(&recipe["members"])
+                        .iter()
+                        .map(|member| text(member, "name")),
+                )
+                .chain(
+                    ["deliverables", "toolRequirements"]
+                        .into_iter()
+                        .flat_map(|key| array(&recipe[key]).iter())
+                        .map(|value| value.as_str().unwrap()),
+                );
+            for value in visible {
+                assert_ne!(
+                    i18n::tr(Language::from_code("tr"), value).as_ref(),
+                    value,
+                    "missing Turkish built-in recipe copy: {value}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn composed_recipe_keeps_localized_handoffs_and_prepare_action_visible_at_minimum_size() {
+        let recipes: Vec<Value> =
+            serde_json::from_str(include_str!("../../moxcrew-core/assets/crew-recipes.json"))
+                .unwrap();
+        let launch = recipes
+            .into_iter()
+            .find(|recipe| recipe["recipeId"] == "builtin:launch")
+            .unwrap();
+        for language in ["en", "tr"] {
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"]["language"] = json!(language);
+                data["projectWorkflows"] = json!({"revision":7,"recipes":[launch.clone()]});
+                let mut console = console();
+                console.create.crew.workflow.read = Some(("project:one".into(), 7));
+                console.create.select_productive_view(1);
+                console.create.crew.workflow.tab = 2;
+                console
+                    .create
+                    .crew
+                    .workflow
+                    .recipe
+                    .insert("project:one".into(), "builtin:launch".into());
+                console.create.crew.workflow.recipe_goal.insert(
+                    ("project:one".into(), "builtin:launch".into()),
+                    "Owner launch goal".into(),
+                );
+                let size = egui::vec2(800.0, 560.0);
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                let (_, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
+                for source in [
+                    "Product launch crew",
+                    "Audience researcher",
+                    "Prepare recipe",
+                ] {
+                    let expected = i18n::tr(Language::from_code(language), source);
+                    assert!(
+                        copy.iter().any(|line| line == expected.as_ref()),
+                        "{language}/{theme:?}: missing {expected:?}"
+                    );
+                }
+                let rect = ctx.data(|data| {
+                    data.get_temp::<egui::Rect>(egui::Id::new((
+                        "test-action",
+                        "memory_control",
+                        "Prepare recipe",
+                    )))
+                    .unwrap()
+                });
+                let (clip, _) = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Prepare recipe",
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    screen.contains_rect(rect) && clip.contains_rect(rect),
+                    "{language}/{theme:?}: prepare action clipped"
+                );
+                let (_, expanded_copy) = render(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    egui::vec2(1280.0, 880.0),
+                    false,
+                    vec![],
+                );
+                let presentation = i18n::tr(Language::from_code(language), "Presentation producer");
+                assert!(expanded_copy
+                    .iter()
+                    .any(|line| line == presentation.as_ref()));
+                let expected = i18n::tr(Language::from_code(language), "After {0}")
+                    .replace("{0}", &presentation);
+                assert!(expanded_copy.iter().any(|line| line == &expected));
+                let commands = click_at_size(
+                    &ctx,
+                    &mut console,
+                    &data,
+                    size,
+                    false,
+                    "memory_control",
+                    "Prepare recipe",
+                );
+                assert_eq!(commands.len(), 1);
+                assert_eq!(commands[0].payload["recipeId"], "builtin:launch");
+                assert_eq!(commands[0].payload["expectedRecipeRevision"], 2);
+            }
+        }
+    }
+
+    #[test]
     fn direction_and_recipe_have_one_visible_frozen_primary_action_at_minimum_size() {
         for language in ["en", "tr"] {
             for theme in [egui::Theme::Light, egui::Theme::Dark] {

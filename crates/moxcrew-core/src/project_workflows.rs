@@ -817,6 +817,9 @@ fn recipe_valid(r: &Value) -> Result<()> {
                         | "builtin:study"
                         | "builtin:data"
                         | "builtin:data-briefing"
+                        | "builtin:career-package"
+                        | "builtin:event-package"
+                        | "builtin:meeting-follow-up"
                 )
             ),
             "WORKFLOW_RECIPE_INVALID",
@@ -3598,9 +3601,159 @@ mod tests {
     }
     #[test]
     fn bundled_recipes_and_untrusted_plans_are_validated() {
-        assert_eq!(bundled().len(), 8);
+        assert_eq!(bundled().len(), 11);
         for recipe in bundled() {
             recipe_valid(&recipe).unwrap();
+        }
+        let expected = vec![
+            (
+                "builtin:launch",
+                2,
+                vec!["R1", "P1", "W1", "V4", "I5", "D1"],
+                vec![
+                    vec![],
+                    vec![0],
+                    vec![1],
+                    vec![1, 2],
+                    vec![2, 3],
+                    vec![0, 1, 2, 3, 4],
+                ],
+            ),
+            (
+                "builtin:podcast",
+                2,
+                vec!["A1", "V2", "V3", "I4", "D1"],
+                vec![vec![], vec![0], vec![0, 1], vec![0, 1, 2], vec![0, 1, 2, 3]],
+            ),
+            (
+                "builtin:study",
+                2,
+                vec!["R3", "D1", "D1", "V5", "A2", "D1"],
+                vec![
+                    vec![],
+                    vec![0],
+                    vec![1],
+                    vec![1, 2],
+                    vec![1, 2, 3],
+                    vec![0, 1, 2, 3, 4],
+                ],
+            ),
+            (
+                "builtin:travel",
+                2,
+                vec!["R1", "R2", "T4", "D1", "D2", "D1"],
+                vec![
+                    vec![],
+                    vec![0],
+                    vec![1],
+                    vec![1, 2],
+                    vec![3],
+                    vec![0, 1, 2, 3, 4],
+                ],
+            ),
+            (
+                "builtin:data-briefing",
+                1,
+                vec!["T1", "T2", "T3", "P4", "A2", "D1"],
+                vec![
+                    vec![],
+                    vec![0],
+                    vec![1],
+                    vec![2],
+                    vec![3],
+                    vec![0, 1, 2, 3, 4],
+                ],
+            ),
+            (
+                "builtin:career-package",
+                1,
+                vec!["T5", "D1", "W1", "D1", "D1"],
+                vec![vec![], vec![0], vec![0, 1], vec![0, 1, 2], vec![0, 1, 2, 3]],
+            ),
+            (
+                "builtin:content",
+                2,
+                vec!["R1", "I1", "D1", "I5", "V4", "D1"],
+                vec![
+                    vec![],
+                    vec![0],
+                    vec![0, 1],
+                    vec![1, 2],
+                    vec![1, 2, 3],
+                    vec![0, 1, 2, 3, 4],
+                ],
+            ),
+            (
+                "builtin:event-package",
+                1,
+                vec!["T4", "D1", "W1", "P1", "P5", "D1"],
+                vec![
+                    vec![],
+                    vec![0],
+                    vec![0, 1],
+                    vec![0, 1, 2],
+                    vec![3],
+                    vec![0, 1, 2, 3, 4],
+                ],
+            ),
+            (
+                "builtin:research",
+                2,
+                vec!["D2", "R4", "R3", "I4", "V5", "D1"],
+                vec![
+                    vec![],
+                    vec![0],
+                    vec![0, 1],
+                    vec![1, 2],
+                    vec![2, 3],
+                    vec![0, 1, 2, 3, 4],
+                ],
+            ),
+            (
+                "builtin:meeting-follow-up",
+                1,
+                vec!["D3", "D1", "W4", "D1"],
+                vec![vec![], vec![0], vec![0, 1], vec![0, 1, 2]],
+            ),
+        ];
+        for (recipe_id, revision, abilities, dependencies) in expected {
+            let recipe = bundled()
+                .into_iter()
+                .find(|recipe| recipe["recipeId"] == recipe_id)
+                .unwrap();
+            assert_eq!(recipe["revision"], revision, "{recipe_id}");
+            assert_eq!(
+                array(&recipe, "members")
+                    .iter()
+                    .map(|member| member["abilityId"].as_str().unwrap())
+                    .collect::<Vec<_>>(),
+                abilities,
+                "{recipe_id}"
+            );
+            assert_eq!(
+                recipe["memberDependencies"],
+                json!(dependencies),
+                "{recipe_id}"
+            );
+        }
+        for recipe_id in [
+            "builtin:launch",
+            "builtin:content",
+            "builtin:podcast",
+            "builtin:research",
+            "builtin:travel",
+            "builtin:study",
+        ] {
+            let mut frozen_revision_one = bundled()
+                .into_iter()
+                .find(|recipe| recipe["recipeId"] == recipe_id)
+                .unwrap();
+            frozen_revision_one["revision"] = json!(1);
+            frozen_revision_one
+                .as_object_mut()
+                .unwrap()
+                .remove("memberDependencies");
+            recipe_valid(&frozen_revision_one).unwrap();
         }
         let legacy_data = bundled()
             .into_iter()
@@ -3652,7 +3805,7 @@ mod tests {
         let recipe = bundled().remove(0);
         let project = json!(format!("project:{}", uuid::Uuid::new_v4()));
         let legacy = command(
-            json!({"projectId":project,"expectedProjectRevision":1,"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"],"intervalMinutes":15,"firstRunAt":"2100-01-01T00:00:00Z","maxOccurrences":2,"budgets":{"maxJobs":4,"maxElapsedMinutes":20,"maxReviewRounds":0}}),
+            json!({"projectId":project,"expectedProjectRevision":1,"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"],"intervalMinutes":15,"firstRunAt":"2100-01-01T00:00:00Z","maxOccurrences":2,"budgets":{"maxJobs":6,"maxElapsedMinutes":20,"maxReviewRounds":0}}),
         );
         let legacy_schedule = saved_schedule(&legacy, &recipe, None, &json!(now())).unwrap();
         assert!(legacy_schedule.get("providerId").is_none());
@@ -3684,6 +3837,159 @@ mod tests {
             data_schedule["recipe"]["memberDependencies"],
             data["memberDependencies"]
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn ten_composed_recipes_wait_for_checked_inputs_and_preserve_saved_graphs() {
+        let (_temporary, _peer, host, project) = fixture("complete").await;
+        for recipe_id in [
+            "builtin:launch",
+            "builtin:podcast",
+            "builtin:study",
+            "builtin:travel",
+            "builtin:data-briefing",
+            "builtin:career-package",
+            "builtin:content",
+            "builtin:event-package",
+            "builtin:research",
+            "builtin:meeting-follow-up",
+        ] {
+            let recipe = bundled()
+                .into_iter()
+                .find(|recipe| recipe["recipeId"] == recipe_id)
+                .unwrap();
+            let prepared = host
+                .action(
+                    "project_recipe_run",
+                    command(json!({
+                        "projectId": project,
+                        "expectedProjectRevision": project_revision(&host, &project),
+                        "recipeId": recipe["recipeId"],
+                        "expectedRecipeRevision": recipe["revision"]
+                    })),
+                )
+                .await
+                .unwrap();
+            let initial = mission(&host, &prepared["missionId"]);
+            let expected_dependencies = recipe["memberDependencies"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|dependencies| {
+                    dependencies
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|dependency| dependency.as_u64().unwrap() as usize)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                dependency_indices(&initial),
+                expected_dependencies,
+                "{recipe_id}"
+            );
+
+            configure(
+                &host,
+                &project,
+                &prepared["missionId"],
+                array(&initial, "tasks").len() as u64,
+            )
+            .await;
+            host.action(
+                "project_crew_start",
+                lifecycle(&project, &mission(&host, &prepared["missionId"])),
+            )
+            .await
+            .unwrap();
+            for _ in 0..120 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                host.background_tick(false).await.unwrap();
+                if mission(&host, &prepared["missionId"])["status"] == "completed" {
+                    break;
+                }
+            }
+            let completed = mission(&host, &prepared["missionId"]);
+            assert_eq!(completed["status"], "completed", "{recipe_id}: {completed}");
+            let events = host.store.read_events().unwrap();
+            let snapshot = host.snapshot().unwrap();
+            for task in array(&completed, "tasks") {
+                let allocation_index = events
+                    .iter()
+                    .position(|event| {
+                        event["type"] == "project_workflow.task_allocated"
+                            && event["payload"]["taskId"] == task["taskId"]
+                    })
+                    .unwrap();
+                for dependency in array(task, "dependsOn") {
+                    let upstream = array(&completed, "tasks")
+                        .iter()
+                        .find(|candidate| candidate["taskId"] == *dependency)
+                        .unwrap();
+                    assert!(
+                        crews::completed_before(&events, allocation_index, &upstream["workItemId"]),
+                        "{recipe_id}: {} allocated before {} completed",
+                        task["taskId"],
+                        upstream["taskId"]
+                    );
+                }
+                let work = array(&snapshot["work"], "items")
+                    .iter()
+                    .find(|work| work["workItemId"] == task["workItemId"])
+                    .unwrap();
+                host.crew_work_inputs_check(work).unwrap();
+                if array(task, "dependsOn").is_empty() {
+                    continue;
+                }
+                let manifest: Value = serde_json::from_slice(
+                    &std::fs::read(
+                        std::path::Path::new(work["workingDirectory"].as_str().unwrap())
+                            .join("inputs/manifest.json"),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    array(&manifest, "files").len(),
+                    array(task, "dependsOn").len(),
+                    "{recipe_id}: {}",
+                    task["taskId"]
+                );
+            }
+
+            let saved = host
+                .action(
+                    "project_recipe_save",
+                    command(json!({
+                        "projectId": project,
+                        "missionId": completed["missionId"],
+                        "expectedMissionRevision": completed["revision"],
+                        "name": format!("Saved {recipe_id}")
+                    })),
+                )
+                .await
+                .unwrap();
+            let reused = host
+                .action(
+                    "project_recipe_run",
+                    command(json!({
+                        "projectId": project,
+                        "expectedProjectRevision": project_revision(&host, &project),
+                        "recipeId": saved["recipeId"],
+                        "expectedRecipeRevision": saved["revision"]
+                    })),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                dependency_indices(&mission(&host, &reused["missionId"])),
+                dependency_indices(&completed),
+                "{recipe_id}"
+            );
+        }
+        host.shutdown().await;
     }
 
     #[cfg(unix)]

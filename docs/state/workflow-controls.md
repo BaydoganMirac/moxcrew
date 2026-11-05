@@ -2,12 +2,14 @@
 
 Updated: 2026-11-05
 
-Status: Implemented; integrated tests and explicit J5 handoffs are locally verified.
+Status: Implemented; integrated tests and all ten J1–J10 handoff graphs are locally verified.
 
 Plans: [Task0044](../plans/0044-productive-project-crews.md) and
-[Task0099](../plans/0099-explicit-recipe-handoffs.md).
+[Task0099](../plans/0099-explicit-recipe-handoffs.md) and
+[Task0100](../plans/0100-ten-composed-workflow-graphs.md).
 Decisions: [ADR0045](../decisions/0045-productive-crews-and-explicit-tools.md)
-and [ADR0052](../decisions/0052-explicit-recipe-handoffs.md).
+and [ADR0052](../decisions/0052-explicit-recipe-handoffs.md) and
+[ADR0054](../decisions/0054-composed-workflow-recipe-revisions.md).
 
 ## Behavior
 
@@ -42,14 +44,18 @@ acceptance is tied to the current actual producer work item. Text alone does not
 complete a required review; exhausting the configured correction/job budget fails
 explicitly. Agent guidance explains this requirement and the typed production tools.
 
-Eight bundled launch/content/podcast/research/travel/study/data recipes describe
-roles, deliverables and external tool requirements. The separate data-briefing
-recipe freezes the J5 chain from clean data through analysis, charts/report,
-editable presentation and audio brief, with a reviewer depending on all five
-producers. Owners can save a Project composition and prepare another mission
-from it. Recipes retain roles, settings and any explicit earlier-member
-dependencies; legacy recipes without that field keep their original phase
-derivation. Provider assignments are configured on the prepared mission. New
+The catalog now contains ten bounded J1–J10 compositions plus the unchanged
+legacy data recipe. Launch, recording repurpose, study, travel, data briefing,
+career package, product campaign, event package, evidence synthesis and meeting
+follow-up freeze their exact earlier-member dependencies and final review fan-in.
+The meeting flow retains proposed decisions and external app operations behind
+the existing owner acceptance and preview/dispatch gates. The older launch,
+content, podcast, research, travel and study IDs advance to revision2; persisted
+revision1 bodies remain valid rather than being silently rewritten. Owners can
+save a Project composition and prepare another mission from it. Recipes retain
+roles, settings and any explicit earlier-member dependencies; the legacy data
+recipe without that field keeps its original phase derivation. Provider
+assignments are configured on the prepared mission. New
 recurring local schedules freeze the owner's ready Codex, Claude Code or Gemini
 CLI selection; legacy schedules without a provider retain their Codex default.
 Durable schedules pause/resume, retain exact occurrence identity, prevent overlap
@@ -116,6 +122,19 @@ package passed 291/291 with all features after its dynamic-name localization
 expectation was corrected. Strict workspace Clippy passes for all targets and
 features with warnings denied, formatting passes, and all 153 legacy parity
 tests pass on Node 24.22.1. The combined locked workspace command exits cleanly.
+
+Task0100 adds exact catalog assertions for every J1–J10 ID, revision, ability
+sequence and dependency matrix. One parameterized native-peer test prepares,
+configures, starts and completes all ten graphs, proves every dependent
+allocation follows its checked upstream completions, rechecks hash-pinned input
+manifests and verifies saved reuse preserves the exact graph. The focused run
+passes with local loopback MCP enabled. Native Turkish/English light/dark tests
+also prove every visible built-in field is localized and the six-member launch
+handoff keeps its Prepare action reachable at the minimum 800×560 window.
+The final locked all-feature workspace run passes 135 core tests with 13
+intentional private-fixture ignores, every integration binary and 293/293
+desktop tests. Strict locked workspace Clippy passes with warnings denied,
+formatting and diff checks pass, and all 153 parity tests pass on Node 24.22.1.
 
 Live inference, account mutations and native Windows/Linux execution were not
 performed. Safe result-file operations retain the existing Unix-only support.

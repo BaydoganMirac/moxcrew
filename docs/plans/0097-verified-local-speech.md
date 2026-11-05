@@ -58,7 +58,7 @@ evidence.
 This operation proves exact text transfer, local model identity, file integrity
 and bounded audio structure. It does not prove pronunciation, semantic accuracy,
 voice naturalness, accessibility, ownership or licence suitability. It does not
-clone a voice, translate text, download a model, publish audio or complete A5.
+clone a voice, translate text, align sentences, download a model or publish audio.
 Real voice quality and model licensing remain owner review. No provider/model
 account call, upload, push, tag or release is authorized by this card. Native
 Windows runtime verification remains deferred to the owner's Windows PC.

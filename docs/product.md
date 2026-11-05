@@ -36,7 +36,7 @@ Files can be attached in the composer; targeted output selections return to the
 same conversation. Optional Project tools contain brand guidance, taught skills,
 bounded folder/URL triggers, parallel alternatives and inspectable source evidence.
 Typed requests for images, bounded batch conversion, podcast edits, checked local
-voiceovers, checked CSV
+voiceovers, owner-approved translated audio, checked CSV
 charts, editable scenario workbooks, evidence-bound structured extraction, video
 packages, attributed briefs/action plans, static browser work and interactive outputs enter this same
 plan/prepare/start flow.

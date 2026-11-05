@@ -23,6 +23,63 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
+def markdown_title(value):
+    return ''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character
+                   for character in value.replace('\r',' ').replace('\n',' '))
+
+
+def local_voice(tools, script, language, stem):
+    require(isinstance(tools.get('piper'),str)
+            and Path(tools['piper']).is_absolute(),'PRODUCTION_SPEECH_ENGINE_REQUIRED')
+    model_value=tools.get('piperModel')
+    require(isinstance(model_value,str) and Path(model_value).is_absolute(),
+            'PRODUCTION_SPEECH_MODEL_REQUIRED')
+    model=Path(model_value)
+    require(model.is_file() and model.suffix.lower()=='.onnx'
+            and 4<=model.stat().st_size<=2*1024*1024*1024,
+            'PRODUCTION_SPEECH_MODEL_INVALID')
+    config=Path(str(model)+'.json')
+    require(config.is_file() and 2<=config.stat().st_size<=1024*1024,
+            'PRODUCTION_SPEECH_CONFIG_INVALID')
+    try:
+        configuration=json.loads(config.read_text(encoding='utf-8'))
+        configured_language=configuration['language']['code']
+    except (OSError,UnicodeError,json.JSONDecodeError,KeyError,TypeError):
+        raise ValueError('PRODUCTION_SPEECH_CONFIG_INVALID')
+    require(isinstance(configured_language,str)
+            and re.fullmatch(r'[a-z]{2}_[A-Z]{2}',configured_language) is not None,
+            'PRODUCTION_SPEECH_CONFIG_INVALID')
+    require(configured_language==language,'PRODUCTION_SPEECH_LANGUAGE_MISMATCH')
+    model_digest=file_sha256(model)
+    config_digest=file_sha256(config)
+    input_file=ROOT/f'{stem}-input.txt'
+    input_file.write_text(script,encoding='utf-8')
+    raw=ROOT/f'{stem}-raw.wav'
+    try:
+        run_tool(tools,'piper',['--model',str(model),'--config',str(config),
+                 '--input-file',str(input_file),'--output-file',str(raw)])
+    except ValueError as error:
+        if str(error)=='PRODUCTION_TOOL_FAILED':
+            raise ValueError('PRODUCTION_SPEECH_SYNTHESIS_FAILED')
+        raise
+    require(raw.is_file() and 44<=raw.stat().st_size<=MAX_FILE,
+            'PRODUCTION_SPEECH_OUTPUT_INVALID')
+    raw_info=media_info(tools,raw)
+    raw_streams=raw_info.get('streams',[])
+    require(len(raw_streams)==1 and raw_streams[0].get('codec_type')=='audio',
+            'PRODUCTION_SPEECH_OUTPUT_INVALID')
+    duration=number(float(raw_info.get('format',{}).get('duration',0)),0.02,240)
+    return {'raw':raw,'duration':duration,'model':model,'config':config,
+            'modelDigest':model_digest,'configDigest':config_digest,
+            'configuredLanguage':configured_language}
+
+
+def voice_unchanged(voice):
+    require(file_sha256(voice['model'])==voice['modelDigest']
+            and file_sha256(voice['config'])==voice['configDigest'],
+            'PRODUCTION_SPEECH_MODEL_CHANGED')
+
+
 def png(data, expected=None):
     require(8 <= len(data) <= MAX_FILE and data[:8] == b'\x89PNG\r\n\x1a\n', 'PRODUCTION_IMAGE_FORMAT_UNSUPPORTED')
     offset=8; chunks=[]; compressed=bytearray(); dimensions=None; ended=False; palette=0; transparent=False; idat=False; after_idat=False
@@ -157,46 +214,8 @@ def speech(args,tools):
     language=text(args['language'],5)
     require(title and title==title.strip() and script.strip()
             and re.fullmatch(r'[a-z]{2}_[A-Z]{2}',language) is not None)
-    require(isinstance(tools.get('piper'),str)
-            and Path(tools['piper']).is_absolute(),'PRODUCTION_SPEECH_ENGINE_REQUIRED')
-    model_value=tools.get('piperModel')
-    require(isinstance(model_value,str) and Path(model_value).is_absolute(),
-            'PRODUCTION_SPEECH_MODEL_REQUIRED')
-    model=Path(model_value)
-    require(model.is_file() and model.suffix.lower()=='.onnx'
-            and 4<=model.stat().st_size<=2*1024*1024*1024,
-            'PRODUCTION_SPEECH_MODEL_INVALID')
-    config=Path(str(model)+'.json')
-    require(config.is_file() and 2<=config.stat().st_size<=1024*1024,
-            'PRODUCTION_SPEECH_CONFIG_INVALID')
-    try:
-        configuration=json.loads(config.read_text(encoding='utf-8'))
-        configured_language=configuration['language']['code']
-    except (OSError,UnicodeError,json.JSONDecodeError,KeyError,TypeError):
-        raise ValueError('PRODUCTION_SPEECH_CONFIG_INVALID')
-    require(isinstance(configured_language,str)
-            and re.fullmatch(r'[a-z]{2}_[A-Z]{2}',configured_language) is not None,
-            'PRODUCTION_SPEECH_CONFIG_INVALID')
-    require(configured_language==language,'PRODUCTION_SPEECH_LANGUAGE_MISMATCH')
-    model_digest=file_sha256(model)
-    config_digest=file_sha256(config)
-    input_file=ROOT/'speech-input.txt'
-    input_file.write_text(script,encoding='utf-8')
-    raw=ROOT/'speech-raw.wav'
-    try:
-        run_tool(tools,'piper',['--model',str(model),'--config',str(config),
-                 '--input-file',str(input_file),'--output-file',str(raw)])
-    except ValueError as error:
-        if str(error)=='PRODUCTION_TOOL_FAILED':
-            raise ValueError('PRODUCTION_SPEECH_SYNTHESIS_FAILED')
-        raise
-    require(raw.is_file() and 44<=raw.stat().st_size<=MAX_FILE,
-            'PRODUCTION_SPEECH_OUTPUT_INVALID')
-    raw_info=media_info(tools,raw)
-    raw_streams=raw_info.get('streams',[])
-    require(len(raw_streams)==1 and raw_streams[0].get('codec_type')=='audio',
-            'PRODUCTION_SPEECH_OUTPUT_INVALID')
-    duration=number(float(raw_info.get('format',{}).get('duration',0)),0.02,240)
+    voice=local_voice(tools,script,language,'speech')
+    raw=voice['raw'];duration=voice['duration']
     target=-18
     measured=audio_loudness(tools,raw,target)
     normalize=(f'loudnorm=I={target}:TP=-1.5:LRA=11:'
@@ -221,13 +240,11 @@ def speech(args,tools):
     after=audio_loudness(tools,output,target)
     target_difference=abs(after['input_i']-target)
     require(target_difference<=1,'PRODUCTION_AUDIO_LEVEL_MISMATCH')
-    require(file_sha256(model)==model_digest and file_sha256(config)==config_digest,
-            'PRODUCTION_SPEECH_MODEL_CHANGED')
+    voice_unchanged(voice)
     content={'schemaVersion':1,'title':title,'text':script,'language':language}
     content_file=OUT/'speech-content.json'
     content_file.write_text(json.dumps(content,ensure_ascii=False,indent=2),encoding='utf-8')
-    safe_title=''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character
-                       for character in title.replace('\r',' ').replace('\n',' '))
+    safe_title=markdown_title(title)
     summary=OUT/'summary.md'
     summary.write_text(
         f'# {safe_title}\n\n'
@@ -241,8 +258,8 @@ def speech(args,tools):
     manifest={'schemaVersion':1,'kind':'local-speech','engine':'Piper',
               'title':title,'language':language,
               'script':{'characters':len(script),'sha256':hashlib.sha256(script.encode('utf-8')).hexdigest()},
-              'voice':{'modelSha256':model_digest,'configSha256':config_digest,
-                       'configuredLanguage':configured_language},
+              'voice':{'modelSha256':voice['modelDigest'],'configSha256':voice['configDigest'],
+                       'configuredLanguage':voice['configuredLanguage']},
               'output':{'file':output.name,'sha256':artifacts[output.name],
                         'durationSeconds':actual,'codec':streams[0].get('codec_name'),
                         'sampleRate':streams[0].get('sample_rate'),'channels':streams[0].get('channels'),
@@ -259,6 +276,113 @@ def speech(args,tools):
     return {'kind':'local_speech','file':output.name,'language':language,
             'durationSeconds':actual,'manifestSha256':file_sha256(manifest_file),
             'humanReviewRequired':True}
+
+
+def dub(args,tools):
+    exact(args,('source','title','sourceText','sourceLanguage','translatedText',
+                'targetLanguage','meaningReviewed'))
+    title=text(args['title'],160)
+    source_text=text(args['sourceText'],2000)
+    translated=text(args['translatedText'],2000)
+    source_language=text(args['sourceLanguage'],5)
+    target_language=text(args['targetLanguage'],5)
+    locale=r'[a-z]{2}_[A-Z]{2}'
+    require(title and title==title.strip() and source_text.strip() and translated.strip()
+            and re.fullmatch(locale,source_language) is not None
+            and re.fullmatch(locale,target_language) is not None
+            and source_language!=target_language)
+    require(args['meaningReviewed'] is True,'PRODUCTION_DUB_MEANING_REVIEW_REQUIRED')
+    original=source(args['source'])
+    require(original.suffix.lower() in ('.wav','.mp3','.m4a'),
+            'PRODUCTION_DUB_SOURCE_INVALID')
+    source_digest=file_sha256(original)
+    info=media_info(tools,original);streams=info.get('streams',[])
+    require(len(streams)==1 and streams[0].get('codec_type')=='audio',
+            'PRODUCTION_DUB_SOURCE_INVALID')
+    source_duration=number(float(info.get('format',{}).get('duration',0)),0.25,240)
+    voice=local_voice(tools,translated,target_language,'dub')
+    pace=voice['duration']/source_duration
+    require(0.5<=pace<=2.0,'PRODUCTION_DUB_TIMING_UNSUPPORTED')
+    timing=[f'atempo={pace:.12g}',f'apad=pad_dur={source_duration:.12g}',
+            f'atrim=duration={source_duration:.12g}']
+    target=-18
+    measured=audio_loudness(tools,voice['raw'],target,timing)
+    normalize=(f'loudnorm=I={target}:TP=-1.5:LRA=11:'
+               f'measured_I={measured["input_i"]}:measured_TP={measured["input_tp"]}:'
+               f'measured_LRA={measured["input_lra"]}:measured_thresh={measured["input_thresh"]}:'
+               f'offset={measured["target_offset"]}:linear=true:print_format=summary')
+    output=OUT/'translated-audio.wav'
+    run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-n',
+             *input_format(voice['raw']),'-i',str(voice['raw']),'-vn','-af',
+             ','.join(timing+[normalize]),'-ar','48000','-ac','1','-c:a','pcm_s16le',
+             str(output)])
+    checked=media_info(tools,output);output_streams=checked.get('streams',[])
+    actual=number(float(checked.get('format',{}).get('duration',0)),0.25,240)
+    require(len(output_streams)==1 and output_streams[0].get('codec_type')=='audio'
+            and output_streams[0].get('codec_name')=='pcm_s16le'
+            and output_streams[0].get('sample_rate')=='48000'
+            and output_streams[0].get('channels')==1,
+            'PRODUCTION_DUB_OUTPUT_INVALID')
+    difference=abs(actual-source_duration)
+    require(difference<=max(0.05,source_duration*.002),'PRODUCTION_DURATION_MISMATCH')
+    run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error',
+             *input_format(output),'-i',str(output),'-map','0:a:0','-f','null','-'])
+    after=audio_loudness(tools,output,target)
+    target_difference=abs(after['input_i']-target)
+    require(target_difference<=1,'PRODUCTION_AUDIO_LEVEL_MISMATCH')
+    require(file_sha256(original)==source_digest,'PRODUCTION_SOURCE_CHANGED')
+    voice_unchanged(voice)
+    content={'schemaVersion':1,'title':title,
+             'source':{'language':source_language,'text':source_text},
+             'translation':{'language':target_language,'text':translated,
+                            'meaningOwnerReviewed':True}}
+    content_file=OUT/'translation-content.json'
+    content_file.write_text(json.dumps(content,ensure_ascii=False,indent=2),encoding='utf-8')
+    summary=OUT/'summary.md'
+    summary.write_text(
+        f'# {markdown_title(title)}\n\n'
+        f'- Result: `translated-audio.wav` · {actual:.3f} seconds · 48 kHz mono PCM WAV\n'
+        f'- Translation: `{source_language}` → `{target_language}` · owner confirmed meaning review\n'
+        f'- Timing: source {source_duration:.3f} seconds · raw voice {voice["duration"]:.3f} seconds · pace factor {pace:.6f}\n'
+        f'- Checks: source and voice locale checked; output reopened; duration matched; full audio decoded; integrated loudness within 1 LU of {target} LUFS\n'
+        '- Human review still required: source-transcript accuracy, pronunciation, naturalness, listening quality, accessibility and voice-model licence\n'
+        '- Not performed: translation, transcription, sentence alignment, lip sync, voice cloning, model download, remote generation or publication\n',
+        encoding='utf-8')
+    artifacts={path.name:file_sha256(path) for path in (output,content_file,summary)}
+    manifest={'schemaVersion':1,'kind':'translated-audio','engine':'Piper',
+              'title':title,
+              'source':{'sha256':source_digest,'durationSeconds':source_duration,
+                        'language':source_language,
+                        'textSha256':hashlib.sha256(source_text.encode('utf-8')).hexdigest()},
+              'translation':{'language':target_language,
+                             'textSha256':hashlib.sha256(translated.encode('utf-8')).hexdigest(),
+                             'meaningOwnerReviewed':True},
+              'voice':{'modelSha256':voice['modelDigest'],
+                       'configSha256':voice['configDigest'],
+                       'configuredLanguage':voice['configuredLanguage']},
+              'timing':{'rawVoiceSeconds':voice['duration'],'paceFactor':pace,
+                        'outputSeconds':actual,'differenceSeconds':difference,
+                        'allowedPaceFactor':[0.5,2.0]},
+              'output':{'file':output.name,'sha256':artifacts[output.name],
+                        'codec':output_streams[0].get('codec_name'),
+                        'sampleRate':output_streams[0].get('sample_rate'),
+                        'channels':output_streams[0].get('channels'),
+                        'integratedLufs':after['input_i'],'targetLufs':target,
+                        'targetDifferenceLu':target_difference},
+              'artifacts':artifacts,
+              'verification':{'sourcePreserved':True,'translationPreserved':True,
+                              'meaningOwnerReviewed':True,'voiceLocaleMatched':True,
+                              'durationMatched':True,'outputReopened':True,
+                              'fullAudioDecoded':True,'loudnessTargetMatched':True,
+                              'sourceTranscriptReviewed':False,
+                              'pronunciationReviewed':False,'naturalnessReviewed':False,
+                              'modelLicenceReviewed':False}}
+    manifest_file=OUT/'translation-manifest.json'
+    manifest_file.write_text(json.dumps(manifest,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
+    return {'kind':'translated_audio','file':output.name,
+            'sourceLanguage':source_language,'targetLanguage':target_language,
+            'durationSeconds':actual,'paceFactor':pace,
+            'manifestSha256':file_sha256(manifest_file),'humanReviewRequired':True}
 
 
 def data_chart(args,tools):
@@ -1652,6 +1776,7 @@ def execute(operation,args,tools):
     if operation=='resources.ocr': return ocr(args,tools)
     if operation=='audio.transcribe': return transcribe(args,tools)
     if operation=='audio.speech': return speech(args,tools)
+    if operation=='audio.dub': return dub(args,tools)
     if operation=='audio.podcast': return podcast(args,tools)
     if operation=='data.chart': return data_chart(args,tools)
     if operation=='data.scenario': return data_scenario(args,tools)

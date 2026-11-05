@@ -15,9 +15,11 @@ Inspect supported input formats and duration. Transcribe only inspected media. F
 
 For cleanup/leveling, use `audio.cleanup` with one exact Project source, a target between -24 and -14 LUFS and one fixed treatment: `level-only`, `gentle` or `voice`. Preserve the source, channels and duration. Require the output manifest's before/after loudness, source/output hashes and full-decode proof; measured level does not prove subjective quality.
 
+For a translated audio version, use `audio.dub` only after the owner supplies an exact source transcript, an exact approved translation, both locales and an explicit meaning review. The selected target-locale Piper voice may fit that narration to the checked source duration only inside the operation's pace bounds. Never translate, transcribe or sentence-align text implicitly.
+
 ## Produce
 
-Create a real transcript, timed SRT/VTT, audio file or edit plan as requested. Keep timestamps traceable to the input. Local narration should use `audio.speech` only for exact approved text and a configured voice. Treat pronunciation, meaning, voice suitability and the selected model's licence as explicit human review; no voice cloning is implied.
+Create a real transcript, timed SRT/VTT, audio file or edit plan as requested. Keep timestamps traceable to the input. Local narration should use `audio.speech` only for exact approved text and a configured voice. A translated version uses `audio.dub` with the reviewed source/translation pair; owner meaning review is evidence, not an automatic semantic verdict. Treat source-transcript accuracy, pronunciation, naturalness, voice suitability and the selected model's licence as explicit human review; no voice cloning is implied.
 
 ## Verify and revise
 

@@ -328,6 +328,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-transcription");
         let local_speech = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-local-speech");
+        let translated_audio = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-translated-audio");
         let data_profile = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-data-profile");
         let website = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
@@ -374,6 +376,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Transcription" } else { "Transkripsiyon" }
         } else if local_speech {
             if english { "Local voice studio" } else { "Yerel ses stüdyosu" }
+        } else if translated_audio {
+            if english { "Translated audio" } else { "Çevrilmiş ses" }
         } else if audio_cleanup {
             if english { "Audio cleanup" } else { "Ses temizleme" }
         } else if video_motion {
@@ -481,6 +485,12 @@ fn seed_create_scene(directory: &std::path::Path) {
         }
         if transcription {
             let source=directory.join("interview.wav");std::fs::write(&source,b"disposable transcription interface fixture").unwrap();
+            let snapshot=host.snapshot().unwrap();
+            let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+            host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+        }
+        if translated_audio {
+            let source=directory.join("approved-turkish-source.wav");std::fs::write(&source,b"disposable translated-audio interface fixture").unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
@@ -619,12 +629,15 @@ fn seed_create_scene(directory: &std::path::Path) {
         let audio_cleanup=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-audio-cleanup");
         let transcription=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-transcription");
         let local_speech=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-local-speech");
+        let translated_audio=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-translated-audio");
         let data_profile=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-profile");
         let website=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-site");
         let document_create=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-document-create");
         let presentation_revise=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-presentation-revise");
         let image_campaign=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-image-campaign");
-        let (ability,title,instruction)=if local_speech {
+        let (ability,title,instruction)=if translated_audio {
+            ("A5",if english{"Approved translated audio"}else{"Onaylı çevrilmiş ses"},if english{"Fit an exact owner-approved translation to the source recording with local speech and explicit timing evidence."}else{"Kesin onaylı çeviriyi yerel ses ve açık zamanlama kanıtıyla kaynak kayda oturt."})
+        } else if local_speech {
             ("A2",if english{"Checked local voiceover"}else{"Doğrulanmış yerel seslendirme"},if english{"Turn exact approved text into a checked local voiceover while keeping pronunciation and model-licence review explicit."}else{"Kesin onaylı metni doğrulanmış yerel bir seslendirmeye dönüştür; telaffuz ve model lisansı incelemesini açık tut."})
         } else if image_campaign {
             ("I4",if english{"Verified campaign assets"}else{"Doğrulanmış kampanya görselleri"},if english{"Turn exact approved copy and Project colours into a checked multi-format campaign pack."}else{"Kesin onaylı metni ve proje renklerini doğrulanmış çok formatlı kampanya paketine dönüştür."})

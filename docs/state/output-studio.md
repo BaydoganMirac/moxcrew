@@ -81,7 +81,10 @@ source-pinned text/DOCX translation and rewrite with protected facts and paired 
 with an optional SRT sidecar, audio cleanup, and 1–12 segment podcast packaging
 to checked M4A plus output-relative chapter JSON. Exact local speech uses an
 owner-configured Piper executable and ONNX/config voice pair, then emits a
-checked 48 kHz mono WAV, canonical content and hashes. Python 3.9+ is required;
+checked 48 kHz mono WAV, canonical content and hashes. Owner-approved translated
+audio can also be time-fitted to one checked source recording inside a fixed
+0.5×–2× pace range, with the exact text pair and duration evidence retained.
+Python 3.9+ is required;
 FFmpeg/FFprobe, Piper/model and optional pdftotext are detected/configured
 separately. No binary/model is installed or bundled by these operations.
 See [batch image conversion](batch-image-conversion.md) for its exact limits and
@@ -90,6 +93,8 @@ See [podcast editing](podcast-editing.md) for its source/range contract and
 real-FFmpeg/FFprobe evidence.
 See [verified local speech](verified-local-speech.md) for its exact-script,
 voice-locale, output verification and human licensing-review contract.
+See [verified translated audio](verified-translated-audio.md) for its explicit
+meaning-review, source-duration, pace and remaining listening-review contract.
 See [checked CSV charts](checked-csv-charts.md) for its aggregation, escaping and
 static-output contract.
 See [editable scenario workbooks](editable-scenario-workbooks.md) for its exact

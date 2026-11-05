@@ -390,6 +390,20 @@ fn speech_language(value: &str) -> bool {
         && bytes[3].is_ascii_uppercase()
         && bytes[4].is_ascii_uppercase()
 }
+fn dub_review_key(
+    source_text: &str,
+    source_language: &str,
+    translated_text: &str,
+    target_language: &str,
+) -> String {
+    serde_json::to_string(&(
+        source_text,
+        source_language,
+        translated_text,
+        target_language,
+    ))
+    .unwrap_or_default()
+}
 fn source_refs(draft: &CapabilityDraft, resources: &[Value]) -> Vec<Value> {
     resources
         .iter()
@@ -763,6 +777,8 @@ impl Console {
             self.create.ability = "A1".into();
         } else if scene == "capabilities-local-speech" {
             self.create.ability = "A2".into();
+        } else if scene == "capabilities-translated-audio" {
+            self.create.ability = "A5".into();
         } else if scene == "capabilities-audio-cleanup" {
             self.create.ability = "A3".into();
         } else if scene == "capabilities-data-profile" {
@@ -860,6 +876,7 @@ impl Console {
             | "capabilities-video-motion"
             | "capabilities-transcription"
             | "capabilities-local-speech"
+            | "capabilities-translated-audio"
             | "capabilities-audio-cleanup"
             | "capabilities-data-profile"
             | "capabilities-site"
@@ -927,6 +944,7 @@ impl Console {
                 "capabilities-video-motion" => 27,
                 "capabilities-transcription" => 5,
                 "capabilities-local-speech" => 34,
+                "capabilities-translated-audio" => 35,
                 "capabilities-audio-cleanup" => 28,
                 "capabilities-data-profile" => 29,
                 "capabilities-site" => 30,
@@ -1220,6 +1238,26 @@ impl Console {
                 }
                 .into();
                 *draft.value("speechLanguage") = if english { "en_US" } else { "tr_TR" }.into();
+            } else if scene == "capabilities-translated-audio" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                draft.record = audio.clone().unwrap_or_default();
+                *draft.value("dubTitle") = if english {
+                    "Approved English audio version"
+                } else {
+                    "Onaylı İngilizce ses sürümü"
+                }
+                .into();
+                *draft.value("dubSourceText") = "Mox her devri görünür tutar.".into();
+                *draft.value("dubSourceLanguage") = "tr_TR".into();
+                *draft.value("dubTranslatedText") = "Mox keeps every handoff visible.".into();
+                *draft.value("dubTargetLanguage") = "en_US".into();
+                *draft.value("dubMeaningReviewed") = "true".into();
+                *draft.value("dubMeaningReviewKey") = dub_review_key(
+                    "Mox her devri görünür tutar.",
+                    "tr_TR",
+                    "Mox keeps every handoff visible.",
+                    "en_US",
+                );
             } else if scene == "capabilities-audio-cleanup" {
                 draft.record = available
                     .iter()
@@ -2267,6 +2305,7 @@ impl Console {
             "Edit presentation slide",
             "Create branded asset pack",
             "Create local voiceover",
+            "Create translated audio",
         ];
         form_combo(
             ui,
@@ -2307,6 +2346,7 @@ impl Console {
                             text(r, "resourceId") == draft.record
                                 && match kind {
                                     5 | 8 | 28 => podcast_source(r),
+                                    35 => narration_source(r),
                                     9 | 10 | 29 => chart_source(r),
                                     13 => template_source(r),
                                     14 => rewrite_source(r),
@@ -2321,12 +2361,13 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![5, 8, 9, 10, 13, 14, 20, 25, 26, 28, 29, 32].contains(&kind) {
+                        if ![5, 8, 9, 10, 13, 14, 20, 25, 26, 28, 29, 32, 35].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
                             && match kind {
                                 5 | 8 | 28 => podcast_source(r),
+                                35 => narration_source(r),
                                 9 | 10 | 29 => chart_source(r),
                                 13 => template_source(r),
                                 14 => rewrite_source(r),
@@ -4951,6 +4992,89 @@ impl Console {
                     }));
                 }
             }
+            35 => {
+                hint(
+                    ui,
+                    "Fit an exact owner-approved translation to one source recording with your configured local Piper voice. Mox does not translate, clone, download or publish anything.",
+                );
+                field(
+                    ui,
+                    "Translated audio title",
+                    draft.value("dubTitle"),
+                    160,
+                    false,
+                );
+                multiline(
+                    ui,
+                    "Exact source transcript",
+                    draft.value("dubSourceText"),
+                    2000,
+                    4,
+                );
+                field(
+                    ui,
+                    "Source locale · for example tr_TR",
+                    draft.value("dubSourceLanguage"),
+                    5,
+                    false,
+                );
+                multiline(
+                    ui,
+                    "Exact approved translation",
+                    draft.value("dubTranslatedText"),
+                    2000,
+                    5,
+                );
+                field(
+                    ui,
+                    "Target voice locale · for example en_US",
+                    draft.value("dubTargetLanguage"),
+                    5,
+                    false,
+                );
+                let review_key = dub_review_key(
+                    draft.get("dubSourceText"),
+                    draft.get("dubSourceLanguage"),
+                    draft.get("dubTranslatedText"),
+                    draft.get("dubTargetLanguage"),
+                );
+                let mut reviewed = draft.get("dubMeaningReviewed") == "true"
+                    && draft.get("dubMeaningReviewKey") == review_key;
+                ui.checkbox(
+                    &mut reviewed,
+                    t(ui, "I reviewed the source and translation meaning"),
+                );
+                *draft.value("dubMeaningReviewed") = reviewed.to_string();
+                *draft.value("dubMeaningReviewKey") =
+                    if reviewed { review_key } else { String::new() };
+                hint(
+                    ui,
+                    "The output matches the source duration only when the required pace stays between 0.5× and 2×. Pronunciation, naturalness, transcript accuracy, accessibility and model licence still need human review.",
+                );
+                let title = draft.get("dubTitle").trim();
+                let source_text = draft.get("dubSourceText");
+                let source_language = draft.get("dubSourceLanguage");
+                let translated_text = draft.get("dubTranslatedText");
+                let target_language = draft.get("dubTargetLanguage");
+                if let Some(source) = source_id.filter(|_| source.is_some_and(narration_source)) {
+                    if valid_input(title, 160)
+                        && valid_input(source_text, 2000)
+                        && valid_input(translated_text, 2000)
+                        && speech_language(source_language)
+                        && speech_language(target_language)
+                        && source_language != target_language
+                        && reviewed
+                    {
+                        operation = Some(json!({
+                            "operation":"audio.dub",
+                            "arguments":{"source":source,"title":title,
+                                "sourceText":source_text,"sourceLanguage":source_language,
+                                "translatedText":translated_text,"targetLanguage":target_language,
+                                "meaningReviewed":true}
+                        }));
+                    }
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -5004,6 +5128,7 @@ impl Console {
                         32 => "Use presentations.revise on this exact PPTX and one-based slide only. Preserve the supplied layout, title, supporting text, bullets, notes and render choice literally. Deliver the editable revised deck and manifest only after reopening it and proving every non-target slide XML part stayed byte-identical. Do not reorder, delete, rewrite or publish anything else.",
                         33 => "Use images.campaign with this exact approved copy, selected formats, brand colours and optional frozen visuals. Preserve every string and source hash, deliver editable SVG plus exact-size PNG files with canonical content and the verification manifest, and keep visual, copy, trademark and campaign-performance review explicit. Do not call a model, fetch remote assets, publish or upload anything.",
                         34 => "Use audio.speech with this exact approved title, script and locale. Preserve the script literally, use only the configured local Piper voice, and deliver the checked 48 kHz mono WAV, canonical content, hashes and manifest. Keep pronunciation, meaning, voice suitability, listening quality and model-licence review explicit. Do not translate, clone a voice, download a model, call a remote service or publish anything.",
+                        35 => "Use audio.dub with this exact source, source transcript, owner-approved translation and language pair. Preserve both texts literally, use only the configured target-locale Piper voice, fit the narration to the checked source duration within the fixed pace bounds, and deliver the checked 48 kHz mono WAV, canonical pair, hashes and manifest. Record the owner's meaning review without claiming automatic semantic verification. Keep transcript accuracy, pronunciation, naturalness, accessibility, listening quality and model-licence review explicit. Do not translate, transcribe, align sentences, clone a voice, download a model, call a remote service or publish anything.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -7018,6 +7143,224 @@ mod tests {
                     .create
                     .conversation_input()
                     .contains("\"operation\": \"audio.speech\""));
+            }
+        }
+    }
+    #[test]
+    fn translated_audio_request_requires_review_and_stages_exact_pair_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"source.wav","kind":"audio","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"notes.txt","kind":"text","sha256":"b".repeat(64),"bytes":100,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"video.mp4","kind":"video","sha256":"c".repeat(64),"bytes":8192,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 35;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("dubTitle") = "Onaylı İngilizce ses sürümü".into();
+        *draft.value("dubSourceText") = "Mox her devri görünür tutar.".into();
+        *draft.value("dubSourceLanguage") = "tr_TR".into();
+        *draft.value("dubTranslatedText") = "Mox keeps every handoff visible.".into();
+        *draft.value("dubTargetLanguage") = "en_US".into();
+        *draft.value("dubMeaningReviewed") = "true".into();
+        *draft.value("dubMeaningReviewKey") = dub_review_key(
+            "Mox her devri görünür tutar.",
+            "tr_TR",
+            "An older translation that was reviewed.",
+            "en_US",
+        );
+        let before = c.create.conversation_input().clone();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        for _ in 0..12 {
+            render(
+                &ctx,
+                &mut c,
+                &data,
+                size,
+                false,
+                vec![
+                    egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Page,
+                        delta: egui::vec2(0.0, -1.0),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        }
+        assert!(click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        assert_eq!(c.create.conversation_input(), &before);
+        *c.create
+            .capabilities
+            .drafts
+            .get_mut(&("project:one".into(), 5))
+            .unwrap()
+            .value("dubMeaningReviewed") = "true".into();
+        *c.create
+            .capabilities
+            .drafts
+            .get_mut(&("project:one".into(), 5))
+            .unwrap()
+            .value("dubMeaningReviewKey") = dub_review_key(
+            "Mox her devri görünür tutar.",
+            "tr_TR",
+            "Mox keeps every handoff visible.",
+            "en_US",
+        );
+        c.create
+            .capabilities
+            .drafts
+            .get_mut(&("project:one".into(), 5))
+            .unwrap()
+            .record = "resource:33333333-3333-4333-8333-333333333333".into();
+        render(&ctx, &mut c, &data, size, false, vec![]);
+        assert!(click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        )
+        .is_empty());
+        assert_eq!(c.create.conversation_input(), &before);
+        c.create
+            .capabilities
+            .drafts
+            .get_mut(&("project:one".into(), 5))
+            .unwrap()
+            .record = "resource:11111111-1111-4111-8111-111111111111".into();
+        render(&ctx, &mut c, &data, size, false, vec![]);
+        let commands = click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"audio.dub\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("Mox her devri görünür tutar."));
+        assert!(request.contains("Mox keeps every handoff visible."));
+        assert!(request.contains("\"sourceLanguage\": \"tr_TR\""));
+        assert!(request.contains("\"targetLanguage\": \"en_US\""));
+        assert!(request.contains("\"meaningReviewed\": true"));
+        assert!(request.contains("without claiming automatic semantic verification"));
+        assert!(request.contains("Do not translate, transcribe, align sentences"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn translated_audio_form_is_scroll_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                data["projectStudio"]["resources"] = json!([
+                    {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"source.wav","kind":"audio","sha256":"a".repeat(64),"bytes":4096,"status":"available"}
+                ]);
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 35;
+                draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+                *draft.value("dubTitle") = "Approved translated audio".into();
+                *draft.value("dubSourceText") = "Mox her devri görünür tutar.".into();
+                *draft.value("dubSourceLanguage") = "tr_TR".into();
+                *draft.value("dubTranslatedText") = "Mox keeps every handoff visible.".into();
+                *draft.value("dubTargetLanguage") = "en_US".into();
+                *draft.value("dubMeaningReviewed") = "true".into();
+                *draft.value("dubMeaningReviewKey") = dub_review_key(
+                    "Mox her devri görünür tutar.",
+                    "tr_TR",
+                    "Mox keeps every handoff visible.",
+                    "en_US",
+                );
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..12 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    visibility.1,
+                    "{language}/{theme:?}: translated audio action must be scroll-reachable"
+                );
+                assert!(click_at_size(
+                    &ctx,
+                    &mut c,
+                    &data,
+                    size,
+                    false,
+                    "memory_control",
+                    "Add request to Chat"
+                )
+                .is_empty());
+                assert!(c
+                    .create
+                    .conversation_input()
+                    .contains("\"operation\": \"audio.dub\""));
             }
         }
     }

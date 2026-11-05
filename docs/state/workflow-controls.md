@@ -131,6 +131,9 @@ manifests and verifies saved reuse preserves the exact graph. The focused run
 passes with local loopback MCP enabled. Native Turkish/English light/dark tests
 also prove every visible built-in field is localized and the six-member launch
 handoff keeps its Prepare action reachable at the minimum 800×560 window.
+The [Turkish dark native capture](../screenshots/workflow-recipes-j1-j10-tr-dark.png)
+shows the actual bundled catalog, localized career-package handoffs and visible
+Prepare action using disposable Project data and no provider turn.
 The final locked all-feature workspace run passes 135 core tests with 13
 intentional private-fixture ignores, every integration binary and 293/293
 desktop tests. Strict locked workspace Clippy passes with warnings denied,

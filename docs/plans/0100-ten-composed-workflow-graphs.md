@@ -72,8 +72,12 @@ verification and human-review boundaries remain authoritative.
   the declared dependency count and saved reuse preserved the exact graph.
 - Every visible built-in recipe field has Turkish copy. The six-member launch
   detail and Prepare action pass English/Turkish light/dark native tests at the
-  800×560 minimum window.
+  800×560 minimum window. The real test-only native scene is preserved in the
+  [Turkish dark recipe capture](../screenshots/workflow-recipes-j1-j10-tr-dark.png)
+  (2560×1760, SHA-256
+  `35ad5635e4880f5a0fdcd4df54fbd2c33514fc241b08f98704dca12e37d6bb27`).
 - `cargo fmt --all -- --check`, strict locked all-target/all-feature Clippy,
   all 153 Node 24.22.1 parity tests and the locked all-feature Rust workspace
   pass. Rust results include 135 passing core tests with 13 intentional ignores,
-  all integration binaries and 293/293 desktop tests.
+  all integration binaries and 293/293 desktop tests. The locked optimized
+  desktop release build also passes after the graph and UI changes.

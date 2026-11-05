@@ -675,6 +675,8 @@ impl Console {
     pub fn capabilities_smoke(&mut self, snapshot: &Value, scene: &str) {
         if scene == "capabilities-audio-cleanup" {
             self.create.ability = "A3".into();
+        } else if scene == "capabilities-data-profile" {
+            self.create.ability = "T1".into();
         } else if matches!(
             scene,
             "capabilities-video-compose"
@@ -759,6 +761,7 @@ impl Console {
             | "capabilities-video-highlights"
             | "capabilities-video-motion"
             | "capabilities-audio-cleanup"
+            | "capabilities-data-profile"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -819,6 +822,7 @@ impl Console {
                 "capabilities-video-highlights" => 26,
                 "capabilities-video-motion" => 27,
                 "capabilities-audio-cleanup" => 28,
+                "capabilities-data-profile" => 29,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -954,6 +958,11 @@ impl Console {
                     .unwrap_or_default();
                 *draft.value("cleanupTargetLufs") = "-16".into();
                 *draft.value("cleanupTreatment") = "voice".into();
+            } else if scene == "capabilities-data-profile" {
+                draft.record = csv.unwrap_or_default();
+                *draft.value("dataDeduplicate") = "true".into();
+                *draft.value("dataNumericColumns") = "revenue, units".into();
+                *draft.value("dataOutput") = "xlsx".into();
             } else if scene == "capabilities-data-scenario" {
                 draft.record = csv.unwrap_or_default();
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
@@ -1982,6 +1991,7 @@ impl Console {
             "Find video highlights",
             "Create motion video",
             "Clean and level audio",
+            "Clean and analyze data",
         ];
         form_combo(
             ui,
@@ -2018,7 +2028,7 @@ impl Console {
                             text(r, "resourceId") == draft.record
                                 && match kind {
                                     8 | 28 => podcast_source(r),
-                                    9 | 10 => chart_source(r),
+                                    9 | 10 | 29 => chart_source(r),
                                     13 => template_source(r),
                                     14 => rewrite_source(r),
                                     20 => pdf_source(r),
@@ -2031,13 +2041,13 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![8, 9, 10, 13, 14, 20, 25, 26, 28].contains(&kind) {
+                        if ![8, 9, 10, 13, 14, 20, 25, 26, 28, 29].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
                             && match kind {
                                 8 | 28 => podcast_source(r),
-                                9 | 10 => chart_source(r),
+                                9 | 10 | 29 => chart_source(r),
                                 13 => template_source(r),
                                 14 => rewrite_source(r),
                                 20 => pdf_source(r),
@@ -3998,6 +4008,52 @@ impl Console {
                     }}));
                 }
             }
+            29 => {
+                hint(
+                    ui,
+                    "Trim exact CSV cells, optionally remove exact duplicate rows and verify selected numeric columns.",
+                );
+                let mut deduplicate = draft.get("dataDeduplicate") == "true";
+                ui.checkbox(&mut deduplicate, t(ui, "Remove exact duplicate rows"));
+                *draft.value("dataDeduplicate") = deduplicate.to_string();
+                field(
+                    ui,
+                    "Numeric columns · comma-separated (optional)",
+                    draft.value("dataNumericColumns"),
+                    2000,
+                    false,
+                );
+                let mut output = match draft.get("dataOutput") {
+                    "csv" => "csv",
+                    _ => "xlsx",
+                };
+                ui.label(t(ui, "Cleaned output"));
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut output, "csv", t(ui, "CSV + profile"));
+                    ui.selectable_value(&mut output, "xlsx", t(ui, "Editable XLSX + profile"));
+                });
+                *draft.value("dataOutput") = output.into();
+                let raw = draft.get("dataNumericColumns").trim();
+                let columns = if raw.is_empty() {
+                    Some(Vec::new())
+                } else {
+                    let values = raw.split(',').map(str::trim).collect::<Vec<_>>();
+                    ((1..=20).contains(&values.len())
+                        && values.iter().all(|value| valid_input(value, 160))
+                        && values.iter().collect::<HashSet<_>>().len() == values.len())
+                    .then(|| values.into_iter().map(str::to_owned).collect::<Vec<_>>())
+                };
+                if let (Some(source), Some(columns)) = (
+                    source_id.filter(|_| source.is_some_and(chart_source)),
+                    columns,
+                ) {
+                    operation = Some(json!({
+                        "operation":if output=="xlsx"{"data.xlsx"}else{"data.analyze"},
+                        "arguments":{"source":source,"deduplicate":deduplicate,
+                            "numericColumns":columns}
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -4044,6 +4100,7 @@ impl Console {
                         26 => "Use video.highlights with this exact video and bounded selection policy. Preserve every measured score and selected range, decode the full output and require human review because motion and loudness do not prove meaning or aesthetic quality.",
                         27 => "Use video.motion with this exact approved scene plan. Preserve every title and duration, deliver the editable storyboard and rendered MP4, verify intra-scene movement and full decode, and keep visual-quality review explicit.",
                         28 => "Use audio.cleanup with this exact source, cleanup treatment and LUFS target. Preserve the original, duration and channels; deliver the checked WAV and manifest, verify full decode and before/after measured level, and keep subjective-quality review explicit.",
+                        29 => "Use the requested typed data operation with this exact CSV, deduplication choice and numeric column list. Preserve the source, deliver the cleaned CSV or editable XLSX plus analysis.json, and report hashes, trimmed cells, removed duplicates, missing counts and checked statistics without inventing a trend narrative.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -6347,6 +6404,110 @@ mod tests {
                     .unwrap()
                 });
                 assert!(visibility.1, "{language}/{theme:?}: audio cleanup action");
+            }
+        }
+    }
+    #[test]
+    fn data_profile_request_freezes_exact_source_and_policy_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"operations.csv","kind":"data","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"unused.csv","kind":"data","sha256":"b".repeat(64),"bytes":4096,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 29;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("dataDeduplicate") = "true".into();
+        *draft.value("dataNumericColumns") = "revenue, units".into();
+        *draft.value("dataOutput") = "xlsx".into();
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, egui::vec2(800.0, 560.0), false, vec![]);
+        }
+        assert!(click(
+            &ctx,
+            &mut c,
+            &data,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"data.xlsx\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"deduplicate\": true"));
+        assert!(request.contains("\"revenue\""));
+        assert!(request.contains("\"units\""));
+        assert!(request.contains("trimmed cells"));
+    }
+    #[test]
+    fn data_profile_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                data["projectStudio"]["resources"] = json!([
+                    {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"operations.csv","kind":"data","sha256":"a".repeat(64),"bytes":4096,"status":"available"}
+                ]);
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 29;
+                draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+                *draft.value("dataDeduplicate") = "true".into();
+                *draft.value("dataNumericColumns") = "revenue".into();
+                *draft.value("dataOutput") = "csv".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..3 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: data profile action");
             }
         }
     }

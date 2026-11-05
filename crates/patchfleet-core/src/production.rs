@@ -1301,10 +1301,111 @@ mod tests {
         .unwrap();
         assert_eq!(stats["columns"]["amount"]["sum"], 6.0);
         assert_eq!(stats["outputRows"], 2);
+        assert_eq!(stats["trimmedCells"], 1);
+        assert_eq!(stats["verification"]["exactValuesMatched"], true);
+        let workbook = run(
+            data.path(),
+            "data.xlsx",
+            &json!({"source":"inputs/source.csv","deduplicate":true,"numericColumns":["amount"]}),
+            &[(
+                "inputs/source.csv".into(),
+                b"name,amount\n a ,2\nb,4\nb,4\n".to_vec(),
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(workbook.files.iter().any(|(name, _)| name == "data.xlsx"));
+        let duplicate_headers = run(
+            data.path(),
+            "data.analyze",
+            &json!({"source":"inputs/source.csv"}),
+            &[("inputs/source.csv".into(), b"name,name\na,b\n".to_vec())],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(duplicate_headers,Err(Error(ref code)) if code=="PRODUCTION_DATA_HEADER_INVALID")
+        );
+        let unknown_column = run(
+            data.path(),
+            "data.analyze",
+            &json!({"source":"inputs/source.csv","numericColumns":["missing"]}),
+            &[("inputs/source.csv".into(), b"name,amount\na,2\n".to_vec())],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(unknown_column,Err(Error(ref code)) if code=="PRODUCTION_DATA_COLUMN_NOT_FOUND")
+        );
         assert!(input_paths(&json!({"source":"inputs/../../secret"})).is_err());
         assert!(run(data.path(), "shell.exec", &json!({}), &[], None)
             .await
             .is_err());
+    }
+    #[tokio::test]
+    #[ignore = "writes retained checked CSV/XLSX evidence to an explicit destination"]
+    async fn exact_csv_produces_checked_cleaned_and_profiled_outputs() {
+        let data = tempfile::tempdir().unwrap();
+        let source =
+            b"region,revenue,units\n North ,42000,12\nSouth,,9\nSouth,,9\nWest,38750,11\n".to_vec();
+        let arguments = json!({"source":"inputs/source.csv","deduplicate":true,
+            "numericColumns":["revenue","units"]});
+        let csv = run(
+            data.path(),
+            "data.analyze",
+            &arguments,
+            &[("inputs/source.csv".into(), source.clone())],
+            None,
+        )
+        .await
+        .unwrap();
+        let xlsx = run(
+            data.path(),
+            "data.xlsx",
+            &arguments,
+            &[("inputs/source.csv".into(), source.clone())],
+            None,
+        )
+        .await
+        .unwrap();
+        let evidence = PathBuf::from(std::env::var("MOXCREW_DATA_PROFILE_EVIDENCE_DIR").unwrap());
+        fs::create_dir_all(&evidence).unwrap();
+        fs::write(evidence.join("source.csv"), source).unwrap();
+        for (output, names) in [
+            (
+                &csv,
+                [
+                    ("data.csv", "cleaned-data.csv"),
+                    ("analysis.json", "analysis.json"),
+                ],
+            ),
+            (
+                &xlsx,
+                [
+                    ("data.xlsx", "cleaned-data.xlsx"),
+                    ("analysis.json", "xlsx-analysis.json"),
+                ],
+            ),
+        ] {
+            for (source_name, target_name) in names {
+                let bytes = &output
+                    .files
+                    .iter()
+                    .find(|(name, _)| name == source_name)
+                    .unwrap()
+                    .1;
+                fs::write(evidence.join(target_name), bytes).unwrap();
+            }
+        }
+        let analysis: Value =
+            serde_json::from_slice(&fs::read(evidence.join("analysis.json")).unwrap()).unwrap();
+        assert_eq!(analysis["inputRows"], 4);
+        assert_eq!(analysis["outputRows"], 3);
+        assert_eq!(analysis["removedDuplicates"], 1);
+        assert_eq!(analysis["missingByColumn"]["revenue"], 1);
+        assert_eq!(analysis["columns"]["revenue"]["sum"], 80750.0);
+        assert_eq!(analysis["verification"]["outputReopened"], true);
     }
     #[tokio::test]
     #[ignore = "requires explicitly provided MOXCREW_MEDIA_TEST_FFPROBE and FFmpeg executables"]

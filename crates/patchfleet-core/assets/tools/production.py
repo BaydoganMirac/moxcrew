@@ -1026,7 +1026,8 @@ def documents(args, revise):
 
 def data_operation(args, operation):
     exact(args, ("source",), ("deduplicate", "numericColumns"))
-    data = source(args["source"]).read_text(encoding="utf-8-sig")
+    source_path=source(args["source"]);source_digest=hashlib.sha256(source_path.read_bytes()).hexdigest()
+    data = source_path.read_text(encoding="utf-8-sig")
     rows = list(itertools.islice(csv.reader(io.StringIO(data)), 100002))
     require(1 <= len(rows) <= 100001 and 1 <= len(rows[0]) <= 100)
     require(sum(len(row) for row in rows)<=200000,"PRODUCTION_DATA_LIMIT")
@@ -1034,29 +1035,53 @@ def data_operation(args, operation):
     for row in rows:
         for cell in row: text(cell,20000)
     cleaned = [[cell.strip() for cell in row] for row in rows]
-    if args.get("deduplicate",False):
-        require(type(args["deduplicate"]) is bool)
+    require(all(cleaned[0]) and len(set(cleaned[0]))==len(cleaned[0]),
+            "PRODUCTION_DATA_HEADER_INVALID")
+    deduplicate=args.get("deduplicate",False);require(type(deduplicate) is bool)
+    if deduplicate:
         seen=set();cleaned=cleaned[:1]+[row for row in cleaned[1:] if not (tuple(row) in seen or seen.add(tuple(row)))]
+    output=None;reopened=None
     if operation == 'data.xlsx':
         def column(n):
             label=''
             while n: n,r=divmod(n-1,26);label=chr(65+r)+label
             return label
         body=''.join(f'<row r="{i}">'+''.join(f'<c r="{column(j)}{i}" t="inlineStr"><is><t xml:space="preserve">{escape(cell)}</t></is></c>' for j,cell in enumerate(row,1))+'</row>' for i,row in enumerate(cleaned,1))
-        write_zip('data.xlsx',{'[Content_Types].xml':content_types([('xl/workbook.xml','spreadsheetml.sheet.main'),('xl/worksheets/sheet1.xml','spreadsheetml.worksheet')]),'_rels/.rels':rels([(1,'officeDocument','xl/workbook.xml')]),'xl/workbook.xml':f'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="{OFFICE}"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>','xl/_rels/workbook.xml.rels':rels([(1,'worksheet','worksheets/sheet1.xml')]),'xl/worksheets/sheet1.xml':f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{body}</sheetData></worksheet>'})
+        output=write_zip('data.xlsx',{'[Content_Types].xml':content_types([('xl/workbook.xml','spreadsheetml.sheet.main'),('xl/worksheets/sheet1.xml','spreadsheetml.worksheet')]),'_rels/.rels':rels([(1,'officeDocument','xl/workbook.xml')]),'xl/workbook.xml':f'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="{OFFICE}"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>','xl/_rels/workbook.xml.rels':rels([(1,'worksheet','worksheets/sheet1.xml')]),'xl/worksheets/sheet1.xml':f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{body}</sheetData></worksheet>'})
+        sheet=xml(read_zip(output)['xl/worksheets/sheet1.xml'])
+        namespace='{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+        reopened=[[ ''.join(node.text or '' for node in cell.findall(f'.//{namespace}t'))
+                    for cell in row.findall(f'./{namespace}c')]
+                  for row in sheet.findall(f'.//{namespace}row')]
     else:
-        with (OUT/'data.csv').open('x',newline='',encoding='utf-8') as f: csv.writer(f).writerows(cleaned)
-    stats={"inputRows":len(rows)-1,"outputRows":len(cleaned)-1,"removedDuplicates":len(rows)-len(cleaned),"columns":{}}
+        output=OUT/'data.csv'
+        with output.open('x',newline='',encoding='utf-8') as f: csv.writer(f).writerows(cleaned)
+        with output.open(newline='',encoding='utf-8') as f: reopened=list(csv.reader(f))
+    require(reopened==cleaned,"PRODUCTION_DATA_OUTPUT_MISMATCH")
+    require(hashlib.sha256(source_path.read_bytes()).hexdigest()==source_digest,
+            "PRODUCTION_SOURCE_CHANGED")
+    stats={"kind":"data-profile","operation":operation,"sourceSha256":source_digest,
+           "output":{"file":output.name,"sha256":hashlib.sha256(output.read_bytes()).hexdigest()},
+           "inputRows":len(rows)-1,"outputRows":len(cleaned)-1,
+           "removedDuplicates":len(rows)-len(cleaned),
+           "trimmedCells":sum(cell!=cell.strip() for row in rows for cell in row),
+           "missingByColumn":{name:sum(not row[index] for row in cleaned[1:])
+                              for index,name in enumerate(cleaned[0])},"columns":{}}
     columns=args.get('numericColumns',[])
     require(isinstance(columns,list) and len(columns)<=len(rows[0]))
+    columns=[text(name,160).strip() for name in columns]
+    require(not columns or (all(columns) and len(set(columns))==len(columns)),
+            "PRODUCTION_DATA_COLUMNS_INVALID")
     for name in columns:
-        require(name in cleaned[0]);index=cleaned[0].index(name);values=[];missing=0
+        require(name in cleaned[0],"PRODUCTION_DATA_COLUMN_NOT_FOUND");index=cleaned[0].index(name);values=[];missing=0
         for row in cleaned[1:]:
             if not row[index]: missing+=1;continue
             try: value=float(row[index])
             except ValueError: raise ValueError('PRODUCTION_NON_NUMERIC_VALUE')
             require(math.isfinite(value));values.append(value)
         stats['columns'][name]={"count":len(values),"missing":missing,"sum":math.fsum(values),"mean":statistics.mean(values) if values else None,"min":min(values) if values else None,"max":max(values) if values else None}
+    stats['verification']={"sourcePreserved":True,"outputReopened":True,
+                           "shapeMatched":True,"exactValuesMatched":True}
     (OUT/'analysis.json').write_text(json.dumps(stats,ensure_ascii=False,allow_nan=False),encoding='utf-8')
 
 

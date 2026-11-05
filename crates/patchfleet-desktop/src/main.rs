@@ -324,6 +324,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-video-motion");
         let audio_cleanup = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-audio-cleanup");
+        let data_profile = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-data-profile");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
@@ -346,6 +348,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Launch research" } else { "Lansman araştırması" }
         } else if pdf_merge {
             if english { "Board packet" } else { "Yönetim kurulu paketi" }
+        } else if data_profile {
+            if english { "Data cleanup" } else { "Veri temizleme" }
         } else if audio_cleanup {
             if english { "Audio cleanup" } else { "Ses temizleme" }
         } else if video_motion {
@@ -446,6 +450,12 @@ fn seed_create_scene(directory: &std::path::Path) {
         }
         if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-chart") {
             let source=directory.join("regional-revenue.csv");std::fs::write(&source,b"region,revenue\nNorth,42000\nSouth,31500\nWest,38750\nEast,46200\n").unwrap();
+            let snapshot=host.snapshot().unwrap();
+            let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+            host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+        }
+        if data_profile {
+            let source=directory.join("regional-operations.csv");std::fs::write(&source,b"region,revenue,units\n North ,42000,12\nSouth,,9\nSouth,,9\nWest,38750,11\n").unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
@@ -564,10 +574,13 @@ fn seed_create_scene(directory: &std::path::Path) {
         let video_highlights=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-highlights");
         let video_motion=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-motion");
         let audio_cleanup=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-audio-cleanup");
+        let data_profile=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-profile");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
             ("A4",if english{"Podcast edit package"}else{"Podcast kurgu paketi"},if english{"Edit the selected recording into ordered chapters and produce a playable package."}else{"Seçili kaydı sıralı bölümlere kurgula ve oynatılabilir bir paket üret."})
+        } else if data_profile {
+            ("T1",if english{"Checked data cleanup"}else{"Doğrulanmış veri temizleme"},if english{"Clean the exact CSV and retain checked transforms, missing counts and numeric statistics."}else{"Kesin CSV'yi temizle; doğrulanmış dönüşümleri, eksik sayılarını ve sayısal istatistikleri koru."})
         } else if data_chart {
             ("T3",if english{"Regional revenue chart"}else{"Bölgesel gelir grafiği"},if english{"Aggregate the checked CSV columns and produce a static chart with a concise report."}else{"Kontrol edilen CSV sütunlarını grupla ve kısa raporla birlikte statik grafik üret."})
         } else if data_scenario {

@@ -21,7 +21,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Presentations | P1–P5 | Theme-aware editable native layouts and bars, exact slide revision, exact-part theme application, notes, all-slide LibreOffice/Poppler renders and exact-audio narrated MP4 packaging implemented; live provider content quality, spoken-word review, Microsoft PowerPoint and Windows release proof pending |
 | Video | V1–V5 | V1–V5 deterministic paths implemented: exact cuts/order, scored full-source motion/audio highlight selection, three-aspect packages, burned captions/covers, checked title/image/audio composition, and approved scenes to editable storyboard plus real pan/zoom MP4; semantic/aesthetic review, live content-quality proof and model-generated footage remain pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |
-| Audio | A1–A5 | Owner-visible A3 cleanup now freezes one exact source, fixed treatment and LUFS target and emits a source/output-hashed 48 kHz WAV with before/after level and full-decode proof; timed whisper.cpp transcription adapter and checked ordered podcast M4A/chapter packaging are implemented; speech generation, translated narration, subjective listening and live quality proof remain pending |
+| Audio | A1–A5 | Owner-visible A1 transcription now freezes one exact source/language and emits source/output-hashed text/JSON plus reopened SRT/VTT after checked 16 kHz mono normalization; A3 cleanup and ordered A4 podcast packaging are also checked; real-model recognition quality, speech generation, translated narration and subjective listening remain pending |
 | Data | T1–T5 | Owner-visible exact CSV cleanup now freezes deduplication/output/statistic choices and emits source/output-hashed CSV or editable XLSX with missing counts and exact reopen proof; exact-column charts, formula-backed scenario workbooks, and literal-evidence structured extraction are also implemented; semantic business interpretation and broader quality proof pending |
 | Web/actions | W1–W5 | Explicit app actions, isolated static public-page/form-draft browser and offline interactive tools; live accounts/full area pending |
 | Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery, local schedules and checked multi-file delivery packages implemented; full ten-workflow release proof pending |
@@ -186,6 +186,11 @@ column/output request. It emits source/output-hashed cleaned CSV or editable
 XLSX, reopens the result and records exact transforms, missing counts and
 selected descriptive statistics. It does not infer types, repair business data
 or claim semantic trends.
+[Task0091](verified-local-transcription.md) upgrades the bounded A1 adapter to an
+owner-visible exact source/language request. It hashes and probes the source,
+fully decodes checked 16 kHz mono PCM and emits transcript text/JSON plus SRT,
+VTT and a verification manifest. The retained protocol peer does not substitute
+for real-model recognition accuracy or human review of uncertain passages.
 Finish the remaining per-ability quality, licensing/distribution and platform
 release matrix on this foundation; broad catalog entries still do not count as
 completed ability acceptance.

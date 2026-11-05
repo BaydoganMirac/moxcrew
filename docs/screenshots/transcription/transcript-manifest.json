@@ -1,0 +1,37 @@
+{
+  "kind": "transcription",
+  "engine": "whisper.cpp",
+  "requestedLanguage": "en",
+  "detectedLanguage": "en",
+  "source": {
+    "sha256": "c64f702097fd529e4f46048b4792dc3eefb3acada08244d5a5134fc173fe01ea",
+    "durationSeconds": 12.0,
+    "codec": "pcm_s16le",
+    "sampleRate": "48000",
+    "channels": 2
+  },
+  "normalizedAudio": {
+    "sha256": "60aff6feb71219a7333ef7c21f9bec65bee6303746678c23258f2f71962fe7c9",
+    "durationSeconds": 12.0,
+    "codec": "pcm_s16le",
+    "sampleRate": "16000",
+    "channels": 1
+  },
+  "segmentCount": 2,
+  "artifacts": {
+    "transcript.json": "cf110c017bf29c8230d348fefb63044f05bdd0b108c2e05b9c51e59bb65fefc5",
+    "transcript.txt": "464a0300cfd1ffde27ec1f0628ef676a49aed550a7b821f190a8f324f6b0bc58",
+    "captions.srt": "98d7c6ded1acbb719239d16d6eb2caeb4c009f1a50e4ae11b4143f650fded4f1",
+    "captions.vtt": "8d3dfed4b38eeb39a530f411177beca5242c422efdf97177776823a8bf0a4335"
+  },
+  "verification": {
+    "originalPreserved": true,
+    "durationMatched": true,
+    "normalizedAudioDecoded": true,
+    "segmentTimelineValid": true,
+    "subtitleFilesReopened": true,
+    "textMatched": true,
+    "contentAccuracyReviewed": false,
+    "uncertainPassagesReviewed": false
+  }
+}

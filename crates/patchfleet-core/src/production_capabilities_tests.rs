@@ -1877,8 +1877,10 @@ if kind=='tesseract':
 elif kind=='ffprobe':
  print(json.dumps({'format':{'duration':'0.5'},'streams':[{'codec_type':'audio','sample_rate':'16000','channels':1}]}))
 elif kind=='ffmpeg':
- assert args[args.index('-ar')+1]=='16000'
- pathlib.Path(args[-1]).write_bytes(pathlib.Path(args[args.index('-i')+1]).read_bytes())
+ if '-ar' in args:
+  assert args[args.index('-ar')+1]=='16000'
+  pathlib.Path(args[-1]).write_bytes(pathlib.Path(args[args.index('-i')+1]).read_bytes())
+ else: assert args[-3:]==['-f','null','-']
 elif kind=='whisper':
  assert args[args.index('-l')+1]=='en' and '-oj' in args and '-np' in args
  out=pathlib.Path(args[args.index('-of')+1]+'.json')
@@ -1926,9 +1928,73 @@ else: sys.exit(2)
         .iter()
         .any(|(name, data)| name == "captions.srt"
             && String::from_utf8_lossy(data).contains("00:00:00,000 --> 00:00:00,400")));
+    assert!(transcript.files.iter().any(|(name, data)| {
+        name == "captions.vtt"
+            && String::from_utf8_lossy(data).contains("00:00:00.000 --> 00:00:00.400")
+    }));
+    let manifest: Value = serde_json::from_slice(
+        &transcript
+            .files
+            .iter()
+            .find(|(name, _)| name == "transcript-manifest.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(manifest["segmentCount"], 1);
+    assert_eq!(manifest["normalizedAudio"]["sampleRate"], "16000");
+    assert_eq!(manifest["verification"]["normalizedAudioDecoded"], true);
+    assert_eq!(manifest["verification"]["contentAccuracyReviewed"], false);
+    assert!(
+        manifest["artifacts"]["captions.srt"]
+            .as_str()
+            .unwrap()
+            .len()
+            == 64
+    );
     for (_, bytes) in transcript.files {
         assert!(!String::from_utf8_lossy(&bytes).contains("DO_NOT_EXPORT_MODEL"));
     }
+    fs::write(
+        bin.join("whisper"),
+        r#"#!/usr/bin/python3
+import json,pathlib,sys
+args=sys.argv[1:]
+if args==['--help']: print('fixture');sys.exit(0)
+out=pathlib.Path(args[args.index('-of')+1]+'.json')
+out.write_text(json.dumps({'result':{'language':'en'},'transcription':[
+ {'offsets':{'from':0,'to':300},'text':'First'},
+ {'offsets':{'from':200,'to':400},'text':'Overlapping'}
+]}))
+"#,
+    )
+    .unwrap();
+    let invalid_timeline = run(
+        data.path(),
+        "audio.transcribe",
+        &json!({"source":"inputs/speech.wav","language":"en"}),
+        &[(
+            "inputs/speech.wav".into(),
+            b"RIFF deterministic adapter peer input".to_vec(),
+        )],
+        None,
+    )
+    .await;
+    assert!(
+        matches!(invalid_timeline,Err(Error(ref code)) if code=="PRODUCTION_TRANSCRIPTION_INVALID")
+    );
+    let invalid_language = run(
+        data.path(),
+        "audio.transcribe",
+        &json!({"source":"inputs/speech.wav","language":"English"}),
+        &[(
+            "inputs/speech.wav".into(),
+            b"RIFF deterministic adapter peer input".to_vec(),
+        )],
+        None,
+    )
+    .await;
+    assert!(matches!(invalid_language,Err(Error(ref code)) if code=="PRODUCTION_INVALID_INPUT"));
 }
 
 #[tokio::test]

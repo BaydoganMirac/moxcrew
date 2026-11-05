@@ -1,0 +1,80 @@
+{
+  "kind": "presentation",
+  "operation": "create",
+  "slides": [
+    {
+      "slide": 1,
+      "layout": "cover",
+      "title": "A crew you can actually see",
+      "notes": false,
+      "imageSha256": null,
+      "chart": null
+    },
+    {
+      "slide": 2,
+      "layout": "statement",
+      "title": "Every handoff stays visible.",
+      "notes": false,
+      "imageSha256": null,
+      "chart": null
+    },
+    {
+      "slide": 3,
+      "layout": "statement",
+      "title": "Files, checks and revisions—not mystery progress.",
+      "notes": false,
+      "imageSha256": null,
+      "chart": null
+    },
+    {
+      "slide": 4,
+      "layout": "cover",
+      "title": "Ship with proof.",
+      "notes": false,
+      "imageSha256": null,
+      "chart": null
+    }
+  ],
+  "theme": {
+    "name": "Moxcrew",
+    "primary": "2854F4",
+    "accent": "FF7A2F",
+    "background": "F8F7F3",
+    "text": "15223D",
+    "muted": "56627A",
+    "font": "Arial"
+  },
+  "slideCount": 4,
+  "editable": true,
+  "verification": {
+    "packageReopened": true,
+    "titlesMatched": true,
+    "allSlidesRendered": true
+  },
+  "renders": [
+    {
+      "slide": 1,
+      "file": "slide-01.png",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "slide": 2,
+      "file": "slide-02.png",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "slide": 3,
+      "file": "slide-03.png",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "slide": 4,
+      "file": "slide-04.png",
+      "width": 1280,
+      "height": 720
+    }
+  ]
+}

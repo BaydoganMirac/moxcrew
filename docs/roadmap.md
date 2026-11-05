@@ -108,6 +108,10 @@ commitments.
   selection gap: bounded full-source motion/audio measurements produce a scored,
   non-overlapping and fully decoded highlight reel with retained review frames.
   The signals remain explicitly separate from semantic or aesthetic judgment.
+  [Task0088](state/motion-explainer-video.md) closes the deterministic V5 motion
+  gap: an exact approved scene plan becomes an editable storyboard and fully
+  decoded 1280×720 pan/zoom video with per-scene movement proof and retained
+  review frames. Copy, pacing and aesthetics remain explicit human judgments.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

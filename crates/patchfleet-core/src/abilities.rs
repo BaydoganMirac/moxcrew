@@ -20,7 +20,12 @@ fn readiness_profile(id: &str) -> Option<Value> {
             &[],
             &[],
         ),
-        "V1" | "V5" => (&["python", "ffmpeg", "ffprobe"], &[], &[]),
+        "V1" => (&["python", "ffmpeg", "ffprobe"], &[], &[]),
+        "V5" => (
+            &["python", "ffmpeg", "ffprobe", "libreoffice", "pdftoppm"],
+            &[],
+            &[],
+        ),
         "V4" => (
             &["python", "ffmpeg", "ffprobe", "libreoffice", "pdftoppm"],
             &[],

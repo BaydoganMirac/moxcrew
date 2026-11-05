@@ -320,6 +320,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-video-compose");
         let video_highlights = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-video-highlights");
+        let video_motion = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-video-motion");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
         } else if extraction {
@@ -342,6 +344,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Launch research" } else { "Lansman araştırması" }
         } else if pdf_merge {
             if english { "Board packet" } else { "Yönetim kurulu paketi" }
+        } else if video_motion {
+            if english { "Motion studio" } else { "Hareket stüdyosu" }
         } else if video_highlights {
             if english { "Highlight studio" } else { "Öne çıkanlar stüdyosu" }
         } else if video_composition {
@@ -548,6 +552,7 @@ fn seed_create_scene(directory: &std::path::Path) {
         let presentation_narration=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-presentation-narration");
         let video_composition=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-compose");
         let video_highlights=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-highlights");
+        let video_motion=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-motion");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
@@ -576,6 +581,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             ("R1",if english{"Source-backed launch research"}else{"Kaynaklı lansman araştırması"},if english{"Retrieve public launch sources and keep access times, response hashes and literal evidence for every material claim."}else{"Herkese açık lansman kaynaklarını getir; her önemli iddia için erişim zamanını, yanıt özetini ve birebir kanıtı koru."})
         } else if pdf_merge {
             ("D2",if english{"Verified board packet"}else{"Doğrulanmış yönetim kurulu paketi"},if english{"Merge the selected PDFs in the owner's exact order and verify page counts, source hashes and rendered boundaries."}else{"Seçili PDF'leri sahibin kesin sırasıyla birleştir; sayfa sayılarını, kaynak özetlerini ve render sınırlarını doğrula."})
+        } else if video_motion {
+            ("V5",if english{"Motion launch video"}else{"Hareketli lansman videosu"},if english{"Turn the approved scene plan into an editable storyboard and checked motion video."}else{"Onaylı sahne planını düzenlenebilir bir storyboard'a ve doğrulanmış hareketli videoya dönüştür."})
         } else if video_highlights {
             ("V2",if english{"Measured video highlights"}else{"Ölçümlü video öne çıkanları"},if english{"Select a checked highlight reel from measured motion and audio signals while keeping human meaning review explicit."}else{"Ölçülen hareket ve ses sinyallerinden doğrulanmış bir öne çıkanlar videosu seç; insan anlam incelemesini açık tut."})
         } else if video_composition {

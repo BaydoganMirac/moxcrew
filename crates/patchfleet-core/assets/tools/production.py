@@ -702,6 +702,136 @@ def narrated_presentation(args, tools):
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def motion_video(args, tools):
+    exact(args, ("title", "scenes", "motion", "fps"))
+    title = text(args["title"], 120).strip()
+    require(title, "PRODUCTION_VIDEO_MOTION_TITLE_REQUIRED")
+    motion = args["motion"]
+    require(motion in ("calm", "push", "drift"), "PRODUCTION_VIDEO_MOTION_INVALID")
+    fps = args["fps"]
+    require(type(fps) is int and fps in (24, 25, 30))
+    scenes = args["scenes"]
+    require(isinstance(scenes, list) and 2 <= len(scenes) <= 8,
+            "PRODUCTION_VIDEO_MOTION_SCENES_INVALID")
+    checked = []
+    total = 0.0
+    for index, scene in enumerate(scenes, 1):
+        exact(scene, ("layout", "duration", "eyebrow", "title", "subtitle"))
+        require(scene["layout"] in ("cover", "statement"),
+                "PRODUCTION_VIDEO_MOTION_LAYOUT_INVALID")
+        duration = number(scene["duration"], 2, 12)
+        slide = presentation_slide({key: scene[key] for key in
+                                    ("layout", "eyebrow", "title", "subtitle")})
+        total += duration
+        checked.append({"scene": index, "duration": duration, "slide": slide})
+    require(total <= 90, "PRODUCTION_VIDEO_MOTION_DURATION_INVALID")
+
+    presentations({"slides": [{key: value for key, value in item["slide"].items()
+                                if key in ("layout", "eyebrow", "title", "subtitle")}
+                               for item in checked], "render": True},
+                  "presentations.create", tools)
+    deck = OUT / "presentation.pptx"
+    storyboard = OUT / "motion-storyboard.pptx"
+    deck.rename(storyboard)
+    (OUT / "presentation-manifest.json").rename(OUT / "motion-storyboard.json")
+
+    segment_dir = ROOT / "motion-video-segments"
+    segment_dir.mkdir()
+    common = ["-nostdin", "-hide_banner", "-loglevel", "error", "-n"]
+    pieces = []
+    motion_proofs = []
+    for item in checked:
+        image = OUT / f'slide-{item["scene"]:02}.png'
+        target = segment_dir / f'segment-{item["scene"]:02}.mp4'
+        duration = item["duration"]
+        frames = max(1, round(duration * fps))
+        if motion == "drift":
+            x = (f"(iw-iw/zoom)*on/{frames}" if item["scene"] % 2 else
+                 f"(iw-iw/zoom)*(1-on/{frames})")
+            zoom = "1.08"
+        else:
+            x = "iw/2-(iw/zoom/2)"
+            step = "0.00035" if motion == "calm" else "0.0012"
+            maximum = "1.035" if motion == "calm" else "1.08"
+            zoom = f"min(zoom+{step},{maximum})"
+        fade_out = max(.35, duration - .35)
+        video_filter = ("scale=1408:792:force_original_aspect_ratio=increase,"
+                        "crop=1408:792,"
+                        f"zoompan=z='{zoom}':x='{x}':y='ih/2-(ih/zoom/2)':"
+                        f"d=1:s=1280x720:fps={fps},"
+                        f"fade=t=in:st=0:d=0.35,fade=t=out:st={fade_out:.6f}:d=0.35,"
+                        "format=yuv420p")
+        run_tool(tools, "ffmpeg", common + ["-loop", "1", "-framerate", str(fps),
+                 "-f", "image2", "-i", str(image), "-f", "lavfi", "-i",
+                 "anullsrc=r=48000:cl=stereo", "-t", f"{duration:.6f}",
+                 "-map", "0:v:0", "-map", "1:a:0", "-vf", video_filter,
+                 "-c:v", "mpeg4", "-q:v", "3", "-c:a", "aac", "-ar", "48000",
+                 "-ac", "2", "-shortest", "-movflags", "+faststart", str(target)])
+        require(target.is_file() and target.stat().st_size > 32,
+                "PRODUCTION_VIDEO_MOTION_OUTPUT_INVALID")
+        proof = []
+        for label, moment in (("early", .75), ("late", duration - .75)):
+            frame = ROOT / f'motion-proof-{item["scene"]:02}-{label}.png'
+            run_tool(tools, "ffmpeg", common + [*input_format(target), "-ss", f"{moment:.6f}",
+                     "-i", str(target), "-frames:v", "1", "-f", "image2", str(frame)])
+            require(frame.is_file(), "PRODUCTION_VIDEO_MOTION_OUTPUT_INVALID")
+            proof.append({"seconds": moment,
+                          "sha256": hashlib.sha256(frame.read_bytes()).hexdigest()})
+        require(proof[0]["sha256"] != proof[1]["sha256"],
+                "PRODUCTION_VIDEO_MOTION_NOT_DETECTED")
+        motion_proofs.append({"scene": item["scene"], "frames": proof})
+        pieces.append(target)
+    concat = ROOT / "motion-video-concat.txt"
+    concat.write_text("".join(f"file '{path.relative_to(ROOT).as_posix()}'\n"
+                              for path in pieces), encoding="utf-8")
+    video = OUT / "motion-video.mp4"
+    run_tool(tools, "ffmpeg", common + ["-f", "concat", "-safe", "1", "-i", str(concat),
+             "-map", "0:v:0", "-map", "0:a:0", "-c", "copy", "-movflags",
+             "+faststart", str(video)])
+    result = media_info(tools, video)
+    streams = result.get("streams", [])
+    video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+    audio_stream = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
+    actual = float(result.get("format", {}).get("duration", 0))
+    require(video_stream is not None and video_stream.get("width") == 1280
+            and video_stream.get("height") == 720 and audio_stream is not None,
+            "PRODUCTION_VIDEO_MOTION_OUTPUT_INVALID")
+    require(abs(actual - total) <= max(.5, total * .01),
+            "PRODUCTION_DURATION_MISMATCH")
+    run_tool(tools, "ffmpeg", ["-nostdin", "-hide_banner", "-loglevel", "error",
+             *input_format(video), "-i", str(video), "-map", "0:v:0", "-map", "0:a:0",
+             "-f", "null", "-"])
+    middle_index = len(checked) // 2
+    middle = sum(item["duration"] for item in checked[:middle_index]) + checked[middle_index]["duration"] / 2
+    review_frames = []
+    for label, moment in (("start", .75), ("middle", middle),
+                          ("end", max(.75, actual - .75))):
+        frame = OUT / f"motion-frame-{label}.png"
+        run_tool(tools, "ffmpeg", common + [*input_format(video), "-ss", f"{moment:.6f}",
+                 "-i", str(video), "-frames:v", "1", "-f", "image2", str(frame)])
+        width, height = raster_dimensions(frame.read_bytes(), "png")
+        require((width, height) == (1280, 720),
+                "PRODUCTION_VIDEO_MOTION_OUTPUT_INVALID")
+        review_frames.append({"label": label, "seconds": round(moment, 6),
+                              "file": frame.name})
+    manifest = {"kind": "motion-video", "title": title, "motion": motion,
+                "fps": fps, "durationSeconds": actual,
+                "storyboardSha256": hashlib.sha256(storyboard.read_bytes()).hexdigest(),
+                "outputSha256": hashlib.sha256(video.read_bytes()).hexdigest(),
+                "scenes": [{"scene": item["scene"], "duration": item["duration"],
+                            **{key: item["slide"][key] for key in
+                               ("layout", "eyebrow", "title", "subtitle")}}
+                           for item in checked], "motionProofs": motion_proofs,
+                "frames": review_frames, "streams": streams,
+                "verification": {"storyboardRendered": True, "motionFramesDiffer": True,
+                                 "fullVideoDecoded": True, "durationMatched": True,
+                                 "dimensionsMatched": True, "audioPresent": True,
+                                 "visualQualityReviewed": False}}
+    (OUT / "motion-video-manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False),
+        encoding="utf-8")
+
+
 def apply_presentation_brand(theme, brand):
     node = xml(theme)
     scheme = node.find(".//a:clrScheme", NS)
@@ -1071,7 +1201,9 @@ def main(request):
         (OUT/'outline.json').write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
         (OUT/'extracted.txt').write_text(result.get('text','\n\n'.join(p['title']+'\n'+p['text'] for p in result.get('pages',[]))),encoding='utf-8')
         return {'files':[{'name':p.name,'bytes':p.stat().st_size} for p in OUT.iterdir()],'verified':True}
-    if operation == 'presentations.narrate':
+    if operation == 'video.motion':
+        motion_video(args,tools)
+    elif operation == 'presentations.narrate':
         narrated_presentation(args,tools)
     elif operation in ('presentations.create','presentations.revise','presentations.brand'):
         presentations(args,operation,tools)

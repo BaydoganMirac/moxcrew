@@ -17,6 +17,8 @@ Inspect real input duration, streams, dimensions, frame rate and audio before ed
 
 Keep outputs/edit-plan.json describing source references, exact cut ranges, order, aspect, captions and audio. Produce a real playable media file only when rendering succeeds. Originals stay unchanged; exports use new paths.
 
+For a composed title/image/audio request, use `video.compose` with exact Project resources, bounded times, an enumerated corner and explicit mix or replace behavior. Do not substitute a text sidecar for visible placement in the rendered video.
+
 ## Verify and revise
 
 Probe output duration, dimensions and streams, decode the full output when practical and inspect representative frames plus audio joins. Check caption timing and content order. A storyboard or command proposal is not a rendered video.

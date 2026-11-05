@@ -1,0 +1,73 @@
+{
+  "kind": "composed-video",
+  "title": "Every handoff stays visible",
+  "durationSeconds": 15.579938,
+  "outputSha256": "8ed572cf6457ed2e466b4ce8f454d93348fb5d9008193ed7988d9ef31abc7844",
+  "sourceSha256": "6178e65a941a66dce8f74cc2c5cc9f13ff686f58ddeb5e30547b8315ed8886d0",
+  "imageSha256": "71188e35a3ad61573651ba48c2933336791c46f6dce244625dc7cde3a21a9149",
+  "audioSha256": "0c47f2046f1b29367b4a89fc5f8d8aab668d7774a3ef00cc723d63250cef2f4c",
+  "titleSeconds": 2.5,
+  "overlay": {
+    "start": 3,
+    "end": 12,
+    "position": "bottom-right"
+  },
+  "audio": {
+    "mode": "replace",
+    "level": 0.8,
+    "sourceHadAudio": true,
+    "sourceDurationSeconds": 6.658594
+  },
+  "streams": [
+    {
+      "codec_name": "mpeg4",
+      "codec_type": "video",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2
+    }
+  ],
+  "frames": [
+    {
+      "label": "start",
+      "seconds": 0,
+      "file": "video-frame-start.png",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "label": "middle",
+      "seconds": 7.789969,
+      "file": "video-frame-middle.png",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "label": "overlay",
+      "seconds": 7.5,
+      "file": "video-frame-overlay.png",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "label": "end",
+      "seconds": 15.079938,
+      "file": "video-frame-end.png",
+      "width": 1280,
+      "height": 720
+    }
+  ],
+  "verification": {
+    "fullVideoDecoded": true,
+    "durationMatched": true,
+    "dimensionsMatched": true,
+    "audioPresent": true,
+    "placementFramesRetained": true,
+    "visualPlacementReviewed": false
+  }
+}

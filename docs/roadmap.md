@@ -100,6 +100,10 @@ commitments.
   path: exact speaker notes and ordered approved audio become one checked
   1280×720 presentation video with retained slide, frame, stream and duration
   evidence. Spoken-word agreement remains an explicit human review.
+  [Task0086](state/composed-video-studio.md) closes the deterministic V4 gap:
+  an exact title, image and approved audio resource are placed in one checked
+  1280×720 video with explicit timing, position, audio policy and retained frame
+  evidence. Content selection and generative motion remain separate abilities.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

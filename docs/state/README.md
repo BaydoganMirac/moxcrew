@@ -69,6 +69,9 @@
 | Attributed brief and action plan | Complete; literal-evidence findings/actions, explicit questions and missing assignments; 553-test gate | 2026-11-04 | [attributed-brief-action-plan.md](attributed-brief-action-plan.md) |
 | Explicit DOCX template filling | Complete; exact placeholders, visible missing values and editable output; 555-test gate | 2026-11-04 | [explicit-docx-template-filling.md](explicit-docx-template-filling.md) |
 | Source-pinned document translation and rewrite | Complete; exact segment coverage, protected facts and paired human review; 557-test gate | 2026-11-04 | [source-pinned-document-rewrite.md](source-pinned-document-rewrite.md) |
+| Branded visual presentations | Complete; editable theme-aware decks, exact revisions and all-slide render evidence | 2026-11-05 | [branded-visual-presentations.md](branded-visual-presentations.md) |
+| Narrated presentation video | Complete; exact notes/audio timing, playable MP4 and retained slide/frame evidence | 2026-11-05 | [narrated-presentation-video.md](narrated-presentation-video.md) |
+| Composed video studio | Complete; exact title/image/audio placement, mix/replace policy and fully decoded MP4 evidence | 2026-11-05 | [composed-video-studio.md](composed-video-studio.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

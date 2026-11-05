@@ -49,6 +49,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "documents.render",
     "video.frame",
     "video.package",
+    "video.compose",
     "interactive.create",
     "images.generate",
     "images.edit",
@@ -939,6 +940,126 @@ mod tests {
                 "missing evidence file {name}"
             );
         }
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn composed_video_rejects_unknown_placement_and_missing_video_streams() {
+        use std::os::unix::fs::PermissionsExt;
+        let data = tempfile::tempdir().unwrap();
+        let invalid = run(
+            data.path(),
+            "video.compose",
+            &json!({"source":"inputs/source.mp4","image":{"source":"inputs/logo.png"},
+                "audio":{"source":"inputs/music.wav"},"title":"Visible title","titleSeconds":1,
+                "overlay":{"start":0,"end":1,"position":"center"},"audioMode":"replace","audioLevel":0.5}),
+            &[],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(invalid,Err(Error(ref code)) if code=="PRODUCTION_VIDEO_POSITION_INVALID")
+        );
+
+        let ffprobe = data.path().join("ffprobe-fixture");
+        fs::write(
+            &ffprobe,
+            "#!/bin/sh\nprintf '%s' '{\"format\":{\"duration\":\"2\"},\"streams\":[]}'\n",
+        )
+        .unwrap();
+        fs::set_permissions(&ffprobe, fs::Permissions::from_mode(0o700)).unwrap();
+        configure(data.path(), "ffprobe", ffprobe.to_str().unwrap()).unwrap();
+        let missing = run(
+            data.path(),
+            "video.compose",
+            &json!({"source":"inputs/source.mp4","image":{"source":"inputs/logo.png"},
+                "audio":{"source":"inputs/music.wav"},"title":"Visible title","titleSeconds":1,
+                "overlay":{"start":0,"end":1,"position":"bottom-right"},"audioMode":"replace","audioLevel":0.5}),
+            &[
+                ("inputs/source.mp4".into(), b"video fixture".to_vec()),
+                ("inputs/logo.png".into(), b"image fixture".to_vec()),
+                ("inputs/music.wav".into(), b"audio fixture".to_vec()),
+            ],
+            None,
+        )
+        .await;
+        assert!(matches!(missing,Err(Error(ref code)) if code=="PRODUCTION_VIDEO_REQUIRED"));
+    }
+    #[tokio::test]
+    #[ignore = "requires real media/render tools, exact video/image/audio inputs and an evidence destination"]
+    async fn exact_title_image_and_audio_render_a_checked_composed_video() {
+        let data = tempfile::tempdir().unwrap();
+        for (id, key) in [
+            ("libreoffice", "MOXCREW_TEST_LIBREOFFICE"),
+            ("pdftoppm", "MOXCREW_TEST_PDFTOPPM"),
+            ("ffmpeg", "MOXCREW_TEST_FFMPEG"),
+            ("ffprobe", "MOXCREW_TEST_FFPROBE"),
+        ] {
+            configure(data.path(), id, &std::env::var(key).unwrap()).unwrap();
+        }
+        let source = fs::read(std::env::var("MOXCREW_VIDEO_COMPOSE_SOURCE").unwrap()).unwrap();
+        let image = fs::read(std::env::var("MOXCREW_VIDEO_COMPOSE_IMAGE").unwrap()).unwrap();
+        let audio = fs::read(std::env::var("MOXCREW_VIDEO_COMPOSE_AUDIO").unwrap()).unwrap();
+        let evidence = PathBuf::from(std::env::var("MOXCREW_VIDEO_COMPOSE_EVIDENCE_DIR").unwrap());
+        let output = run(
+            data.path(),
+            "video.compose",
+            &json!({"source":"inputs/source.mp4","image":{"source":"inputs/mox.png"},
+                "audio":{"source":"inputs/music.wav"},"title":"Every handoff stays visible",
+                "titleSeconds":2.5,"overlay":{"start":3,"end":12,"position":"bottom-right"},
+                "audioMode":"replace","audioLevel":0.8}),
+            &[
+                ("inputs/source.mp4".into(), source.clone()),
+                ("inputs/mox.png".into(), image.clone()),
+                ("inputs/music.wav".into(), audio.clone()),
+            ],
+            None,
+        )
+        .await
+        .unwrap();
+        fs::create_dir_all(&evidence).unwrap();
+        for (name, bytes) in output.files {
+            fs::write(evidence.join(name), bytes).unwrap();
+        }
+        for name in [
+            "composed-video.mp4",
+            "composition-manifest.json",
+            "video-frame-start.png",
+            "video-frame-middle.png",
+            "video-frame-overlay.png",
+            "video-frame-end.png",
+        ] {
+            assert!(
+                evidence.join(name).is_file(),
+                "missing evidence file {name}"
+            );
+        }
+        let mixed = run(
+            data.path(),
+            "video.compose",
+            &json!({"source":"inputs/source.mp4","image":{"source":"inputs/mox.png"},
+                "audio":{"source":"inputs/music.wav"},"title":"Every handoff stays visible",
+                "titleSeconds":2.5,"overlay":{"start":3,"end":12,"position":"bottom-right"},
+                "audioMode":"mix","audioLevel":0.25}),
+            &[
+                ("inputs/source.mp4".into(), source),
+                ("inputs/mox.png".into(), image),
+                ("inputs/music.wav".into(), audio),
+            ],
+            None,
+        )
+        .await
+        .unwrap();
+        let manifest: Value = serde_json::from_slice(
+            &mixed
+                .files
+                .iter()
+                .find(|(name, _)| name == "composition-manifest.json")
+                .unwrap()
+                .1,
+        )
+        .unwrap();
+        assert_eq!(manifest["audio"]["mode"], "mix");
+        assert_eq!(manifest["verification"]["fullVideoDecoded"], true);
     }
     #[tokio::test]
     async fn csv_analysis_is_deterministic_and_sources_are_strict() {

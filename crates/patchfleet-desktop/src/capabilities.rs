@@ -135,6 +135,18 @@ fn narration_source(resource: &Value) -> bool {
         .iter()
         .any(|extension| name.ends_with(extension))
 }
+fn video_source(resource: &Value) -> bool {
+    let name = text(resource, "name").to_ascii_lowercase();
+    [".mp4", ".mov", ".mkv", ".webm"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+}
+fn composition_image_source(resource: &Value) -> bool {
+    let name = text(resource, "name").to_ascii_lowercase();
+    [".png", ".jpg", ".jpeg", ".webp"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+}
 fn chart_source(resource: &Value) -> bool {
     text(resource, "name")
         .to_ascii_lowercase()
@@ -661,6 +673,9 @@ impl CreateState {
 impl Console {
     #[cfg(feature = "ui-smoke")]
     pub fn capabilities_smoke(&mut self, snapshot: &Value, scene: &str) {
+        if scene == "capabilities-video-compose" {
+            self.create.ability = "V4".into();
+        }
         self.chat_smoke(snapshot, false, false);
         self.hold_automatic_reads = true;
         let project = self.create.project.clone();
@@ -728,6 +743,7 @@ impl Console {
             | "capabilities-presentations"
             | "capabilities-presentation-brand"
             | "capabilities-presentation-narration"
+            | "capabilities-video-compose"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -784,6 +800,7 @@ impl Console {
                 "capabilities-presentations" => 22,
                 "capabilities-presentation-brand" => 23,
                 "capabilities-presentation-narration" => 24,
+                "capabilities-video-compose" => 25,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -857,6 +874,35 @@ impl Console {
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
                 *draft.value("presentationFps") = "30".into();
+            } else if scene == "capabilities-video-compose" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                draft.record = available
+                    .iter()
+                    .find(|resource| video_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                *draft.value("compositionImage") = available
+                    .iter()
+                    .find(|resource| composition_image_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                *draft.value("compositionAudio") = available
+                    .iter()
+                    .find(|resource| narration_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                *draft.value("compositionTitle") = if english {
+                    "Every handoff stays visible"
+                } else {
+                    "Her teslim görünür kalır"
+                }
+                .into();
+                *draft.value("compositionTitleSeconds") = "2.5".into();
+                *draft.value("compositionOverlayStart") = "3".into();
+                *draft.value("compositionOverlayEnd") = "12".into();
+                *draft.value("compositionPosition") = "bottom-right".into();
+                *draft.value("compositionAudioMode") = "replace".into();
+                *draft.value("compositionAudioLevel") = "0.8".into();
             } else if scene == "capabilities-data-scenario" {
                 draft.record = csv.unwrap_or_default();
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
@@ -1881,6 +1927,7 @@ impl Console {
             "Design presentation",
             "Apply presentation brand",
             "Narrate presentation",
+            "Compose video",
         ];
         form_combo(
             ui,
@@ -1921,6 +1968,7 @@ impl Console {
                                     13 => template_source(r),
                                     14 => rewrite_source(r),
                                     20 => pdf_source(r),
+                                    25 => video_source(r),
                                     _ => true,
                                 }
                         })
@@ -1929,7 +1977,7 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![8, 9, 10, 13, 14, 20].contains(&kind) {
+                        if ![8, 9, 10, 13, 14, 20, 25].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
@@ -1939,6 +1987,7 @@ impl Console {
                                 13 => template_source(r),
                                 14 => rewrite_source(r),
                                 20 => pdf_source(r),
+                                25 => video_source(r),
                                 _ => false,
                             }
                     }) {
@@ -3552,6 +3601,183 @@ impl Console {
                     }));
                 }
             }
+            25 => {
+                hint(
+                    ui,
+                    "Combine an exact title, image and approved audio in a checked 1280×720 video.",
+                );
+                let images = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available"
+                            && composition_image_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                let audio = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && narration_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Overlay image"));
+                    form_combo(
+                        ui,
+                        egui::ComboBox::from_id_salt("video-composition-image").selected_text(
+                            images
+                                .iter()
+                                .find(|resource| {
+                                    text(resource, "resourceId") == draft.get("compositionImage")
+                                })
+                                .map(|resource| text(resource, "name"))
+                                .unwrap_or(t(ui, "Choose an image").as_ref()),
+                        ),
+                        |ui| {
+                            for resource in &images {
+                                ui.selectable_value(
+                                    draft.value("compositionImage"),
+                                    text(resource, "resourceId").into(),
+                                    text(resource, "name"),
+                                );
+                            }
+                        },
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Approved audio"));
+                    form_combo(
+                        ui,
+                        egui::ComboBox::from_id_salt("video-composition-audio").selected_text(
+                            audio
+                                .iter()
+                                .find(|resource| {
+                                    text(resource, "resourceId") == draft.get("compositionAudio")
+                                })
+                                .map(|resource| text(resource, "name"))
+                                .unwrap_or(t(ui, "Choose audio").as_ref()),
+                        ),
+                        |ui| {
+                            for resource in &audio {
+                                ui.selectable_value(
+                                    draft.value("compositionAudio"),
+                                    text(resource, "resourceId").into(),
+                                    text(resource, "name"),
+                                );
+                            }
+                        },
+                    );
+                });
+                field(
+                    ui,
+                    "On-video title",
+                    draft.value("compositionTitle"),
+                    120,
+                    false,
+                );
+                let mut title_seconds = draft
+                    .get("compositionTitleSeconds")
+                    .parse::<f64>()
+                    .unwrap_or(2.5);
+                let mut start = draft
+                    .get("compositionOverlayStart")
+                    .parse::<f64>()
+                    .unwrap_or(3.0);
+                let mut end = draft
+                    .get("compositionOverlayEnd")
+                    .parse::<f64>()
+                    .unwrap_or(8.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Title duration (seconds)"));
+                    ui.add(egui::DragValue::new(&mut title_seconds).range(0.5..=10.0));
+                    ui.label(t(ui, "Image start"));
+                    ui.add(egui::DragValue::new(&mut start).range(0.0..=1200.0));
+                    ui.label(t(ui, "Image end"));
+                    ui.add(egui::DragValue::new(&mut end).range(0.0..=1200.0));
+                });
+                *draft.value("compositionTitleSeconds") = title_seconds.to_string();
+                *draft.value("compositionOverlayStart") = start.to_string();
+                *draft.value("compositionOverlayEnd") = end.to_string();
+                let mut position = match draft.get("compositionPosition") {
+                    "top-left" => 0,
+                    "top-right" => 1,
+                    "bottom-left" => 2,
+                    _ => 3,
+                };
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Image position"));
+                    for (index, label) in ["Top left", "Top right", "Bottom left", "Bottom right"]
+                        .iter()
+                        .enumerate()
+                    {
+                        ui.selectable_value(&mut position, index, t(ui, label));
+                    }
+                });
+                let position = ["top-left", "top-right", "bottom-left", "bottom-right"][position];
+                *draft.value("compositionPosition") = position.into();
+                let mut mode = if draft.get("compositionAudioMode") == "mix" {
+                    "mix"
+                } else {
+                    "replace"
+                };
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Audio behavior"));
+                    ui.selectable_value(&mut mode, "replace", t(ui, "Replace source audio"));
+                    ui.selectable_value(&mut mode, "mix", t(ui, "Mix with source audio"));
+                });
+                *draft.value("compositionAudioMode") = mode.into();
+                let mut level = draft
+                    .get("compositionAudioLevel")
+                    .parse::<f64>()
+                    .unwrap_or(0.8);
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Added audio level"));
+                    ui.add(
+                        egui::DragValue::new(&mut level)
+                            .range(0.05..=1.0)
+                            .speed(0.05)
+                            .fixed_decimals(2),
+                    );
+                });
+                *draft.value("compositionAudioLevel") = level.to_string();
+                hint(
+                    ui,
+                    "The full video is decoded; four review frames are retained.",
+                );
+                let selected_image = images
+                    .iter()
+                    .find(|resource| text(resource, "resourceId") == draft.get("compositionImage"));
+                let selected_audio = audio
+                    .iter()
+                    .find(|resource| text(resource, "resourceId") == draft.get("compositionAudio"));
+                if let (Some(source), Some(image), Some(audio)) = (
+                    source.filter(|resource| video_source(resource)),
+                    selected_image,
+                    selected_audio,
+                ) {
+                    if valid_input(draft.get("compositionTitle"), 120)
+                        && title_seconds.is_finite()
+                        && (0.5..=10.0).contains(&title_seconds)
+                        && start.is_finite()
+                        && end.is_finite()
+                        && start >= 0.0
+                        && end > start
+                        && end <= 1200.0
+                        && level.is_finite()
+                    {
+                        operation = Some(json!({
+                            "operation":"video.compose",
+                            "arguments":{
+                                "source":format!("resource:{}",text(source,"resourceId").trim_start_matches("resource:")),
+                                "image":{"source":format!("resource:{}",text(image,"resourceId").trim_start_matches("resource:"))},
+                                "audio":{"source":format!("resource:{}",text(audio,"resourceId").trim_start_matches("resource:"))},
+                                "title":draft.get("compositionTitle"),"titleSeconds":title_seconds,
+                                "overlay":{"start":start,"end":end,"position":position},
+                                "audioMode":mode,"audioLevel":level
+                            }
+                        }));
+                    }
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -3594,6 +3820,7 @@ impl Console {
                         22 => "Use presentations.create with these exact slide layouts, chart values, theme fields and optional logo. Keep the slide text editable, preserve the supplied data literally and deliver the PPTX only after every requested slide render succeeds.",
                         23 => "Use presentations.brand on this exact PPTX and theme. Preserve every slide, note, image and relationship part; report explicit colours that cannot follow the theme and do not claim full visual adaptation until the renders are reviewed.",
                         24 => "Use presentations.narrate on this exact PPTX and filename-ordered audio set. Require one speaker-note part and one approved clip per slide, preserve the deck, verify the rendered video and state that spoken-word matching still needs human review.",
+                        25 => "Use video.compose with these exact video, image and audio resources. Preserve every source, keep the visible title/timing/position/audio policy unchanged, decode the full output and require human review of the retained placement frames before delivery.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -5492,6 +5719,127 @@ mod tests {
                     .unwrap()
                 });
                 assert!(visibility.1, "{language}/{theme:?}: narration action");
+            }
+        }
+    }
+    #[test]
+    fn composed_video_request_freezes_exact_resources_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"source.mp4","kind":"video","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"mox.png","kind":"image","sha256":"b".repeat(64),"bytes":1024,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"approved.wav","kind":"audio","sha256":"c".repeat(64),"bytes":2048,"status":"available"},
+            {"resourceId":"resource:44444444-4444-4444-8444-444444444444","revision":1,"name":"unused.wav","kind":"audio","sha256":"d".repeat(64),"bytes":2048,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 25;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("compositionImage") = "resource:22222222-2222-4222-8222-222222222222".into();
+        *draft.value("compositionAudio") = "resource:33333333-3333-4333-8333-333333333333".into();
+        *draft.value("compositionTitle") = "Every handoff stays visible".into();
+        *draft.value("compositionTitleSeconds") = "2.5".into();
+        *draft.value("compositionOverlayStart") = "3".into();
+        *draft.value("compositionOverlayEnd") = "8".into();
+        *draft.value("compositionPosition") = "top-right".into();
+        *draft.value("compositionAudioMode") = "replace".into();
+        *draft.value("compositionAudioLevel") = "0.8".into();
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, egui::vec2(800.0, 560.0), false, vec![]);
+        }
+        assert!(click(
+            &ctx,
+            &mut c,
+            &data,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"video.compose\""));
+        for id in [
+            "11111111-1111-4111-8111-111111111111",
+            "22222222-2222-4222-8222-222222222222",
+            "33333333-3333-4333-8333-333333333333",
+        ] {
+            assert!(request.contains(id), "missing frozen resource {id}");
+        }
+        assert!(!request.contains("44444444-4444-4444-8444-444444444444"));
+        assert!(request.contains("\"position\": \"top-right\""));
+        assert!(request.contains("\"audioMode\": \"replace\""));
+        assert!(request.contains("decode the full output"));
+    }
+    #[test]
+    fn composed_video_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                data["projectStudio"]["resources"] = json!([
+                    {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"source.mp4","kind":"video","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+                    {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"mox.png","kind":"image","sha256":"b".repeat(64),"bytes":1024,"status":"available"},
+                    {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"approved.wav","kind":"audio","sha256":"c".repeat(64),"bytes":2048,"status":"available"}
+                ]);
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 25;
+                draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+                *draft.value("compositionImage") =
+                    "resource:22222222-2222-4222-8222-222222222222".into();
+                *draft.value("compositionAudio") =
+                    "resource:33333333-3333-4333-8333-333333333333".into();
+                *draft.value("compositionTitle") = "Visible composition".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..5 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: composition action");
             }
         }
     }

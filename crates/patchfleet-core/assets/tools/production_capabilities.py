@@ -1116,6 +1116,99 @@ def caption_cards(captions,tools):
     return cards
 
 
+def video_title_card(title,tools):
+    require(tools.get('libreoffice') and tools.get('pdftoppm'),'PRODUCTION_CAPTION_RENDERER_REQUIRED')
+    lines=textwrap.wrap(' '.join(title.split()),width=48,break_long_words=True,break_on_hyphens=False)
+    require(1<=len(lines)<=3,'PRODUCTION_VIDEO_TITLE_RANGE_INVALID')
+    profile=ROOT/'video-title-profile';(profile/'user').mkdir(parents=True)
+    (profile/'user'/'registrymodifications.xcu').write_text('<?xml version="1.0"?><oor:items xmlns:oor="http://openoffice.org/2001/registry"><item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item></oor:items>')
+    paragraphs=''.join('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:color w:val="FFFFFF"/><w:sz w:val="38"/></w:rPr><w:t xml:space="preserve">'+escape(line)+'</w:t></w:r></w:p>' for line in lines)
+    table='<w:tbl><w:tblPr><w:tblW w:w="9600" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="single" w:sz="28" w:color="FF7A2F"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="9600"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="1700" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="9600" w:type="dxa"/><w:shd w:fill="15223D"/><w:vAlign w:val="center"/><w:tcMar><w:left w:w="420" w:type="dxa"/><w:right w:w="420" w:type="dxa"/></w:tcMar></w:tcPr>'+paragraphs+'</w:tc></w:tr></w:tbl>'
+    parts={'[Content_Types].xml':content_types([('word/document.xml','wordprocessingml.document.main')]),'_rels/.rels':rels([(1,'officeDocument','word/document.xml')]),'word/document.xml':f'<w:document xmlns:w="{NS["w"]}"><w:body>{table}<w:sectPr><w:pgSz w:w="9600" w:h="1800"/><w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0" w:header="0" w:footer="0"/></w:sectPr></w:body></w:document>'}
+    doc=ROOT/'video-title.docx'
+    with zipfile.ZipFile(doc,'x',compression=zipfile.ZIP_DEFLATED) as archive:
+        for name,body in parts.items():archive.writestr(name,body)
+    read_zip(doc)
+    run_tool(tools,'libreoffice',['-env:UserInstallation='+profile.as_uri(),'--headless','--nologo','--nodefault','--norestore','--convert-to','pdf','--outdir',str(ROOT),str(doc)])
+    pdf=doc.with_suffix('.pdf');require(pdf.is_file() and pdf.stat().st_size<=MAX_FILE,'PRODUCTION_CAPTION_RENDER_FAILED')
+    prefix=ROOT/'video-title-card'
+    run_tool(tools,'pdftoppm',['-f','1','-l','2','-scale-to-x','960','-scale-to-y','-1','-png',str(pdf),str(prefix)])
+    pages=list(ROOT.glob(prefix.name+'-*.png'));require(len(pages)==1,'PRODUCTION_CAPTION_RENDERER_LIMIT')
+    checked,w,h=png(pages[0].read_bytes());require(w==960 and 1<=h<=220,'PRODUCTION_CAPTION_RENDER_FAILED')
+    pages[0].write_bytes(checked);return pages[0]
+
+
+def compose_video(args,tools):
+    exact(args,('source','image','audio','title','titleSeconds','overlay','audioMode','audioLevel'))
+    exact(args['image'],('source',));exact(args['audio'],('source',))
+    title=text(args['title'],120);title_seconds=number(args['titleSeconds'],0.5,10)
+    overlay=args['overlay'];exact(overlay,('start','end','position'))
+    position=overlay['position'];require(position in ('top-left','top-right','bottom-left','bottom-right'),'PRODUCTION_VIDEO_POSITION_INVALID')
+    mode=args['audioMode'];require(mode in ('mix','replace'),'PRODUCTION_VIDEO_AUDIO_MODE_INVALID')
+    level=number(args['audioLevel'],0.05,1)
+    video_path=source(args['source']);image_path=source(args['image']['source']);audio_path=source(args['audio']['source'])
+    require(video_path.suffix.lower() in ('.mp4','.mov','.mkv','.webm'),'PRODUCTION_VIDEO_FORMAT_UNSUPPORTED')
+    require(image_path.suffix.lower() in ('.png','.jpg','.jpeg','.webp'),'PRODUCTION_IMAGE_FORMAT_UNSUPPORTED')
+    require(audio_path.suffix.lower() in ('.wav','.mp3','.m4a'),'PRODUCTION_AUDIO_FORMAT_UNSUPPORTED')
+    video_info=media_info(tools,video_path);image_info=media_info(tools,image_path);audio_info=media_info(tools,audio_path)
+    duration=number(float(video_info.get('format',{}).get('duration',0)),0.5,1200)
+    video_streams=[stream for stream in video_info.get('streams',[]) if stream.get('codec_type')=='video']
+    require(video_streams,'PRODUCTION_VIDEO_REQUIRED')
+    image_streams=[stream for stream in image_info.get('streams',[]) if stream.get('codec_type')=='video']
+    require(len(image_streams)==1 and 1<=int(image_streams[0].get('width',0))<=4096
+            and 1<=int(image_streams[0].get('height',0))<=4096,'PRODUCTION_IMAGE_FORMAT_UNSUPPORTED')
+    require(any(stream.get('codec_type')=='audio' for stream in audio_info.get('streams',[])),'PRODUCTION_AUDIO_REQUIRED')
+    audio_duration=number(float(audio_info.get('format',{}).get('duration',0)),0.05,3600)
+    source_has_audio=any(stream.get('codec_type')=='audio' for stream in video_info.get('streams',[]))
+    require(mode!='mix' or source_has_audio,'PRODUCTION_VIDEO_AUDIO_MIX_REQUIRES_SOURCE')
+    start=number(overlay['start'],0,max(0,duration-0.05));end=number(overlay['end'],start+0.05,duration)
+    require(title_seconds<=duration,'PRODUCTION_VIDEO_TITLE_RANGE_INVALID')
+    card=video_title_card(title,tools)
+    x,y={'top-left':('48','48'),'top-right':('main_w-overlay_w-48','48'),
+         'bottom-left':('48','main_h-overlay_h-48'),
+         'bottom-right':('main_w-overlay_w-48','main_h-overlay_h-48')}[position]
+    common=['-nostdin','-hide_banner','-loglevel','error','-n']
+    command=common+input_format(video_path)+['-i',str(video_path)]+input_format(image_path)+['-i',str(image_path)]
+    command+=['-stream_loop','-1']+input_format(audio_path)+['-i',str(audio_path)]+input_format(card)+['-i',str(card)]
+    graph=[
+        '[0:v:0]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=0x090D18,fps=30,setsar=1[base]',
+        '[1:v:0]scale=260:260:force_original_aspect_ratio=decrease[image]',
+        f"[base][image]overlay={x}:{y}:enable='gte(t,{start})*lt(t,{end})'[withimage]",
+        '[3:v:0]scale=960:-1[title]',
+        f"[withimage][title]overlay=(main_w-overlay_w)/2:48:enable='lt(t,{title_seconds})'[v]",
+        f'[2:a:0]volume={level},aresample=48000,aformat=channel_layouts=stereo,atrim=duration={duration},asetpts=PTS-STARTPTS[music]',
+    ]
+    if mode=='mix':
+        graph+=[f'[0:a:0]aresample=48000,aformat=channel_layouts=stereo,apad=pad_dur={duration},atrim=duration={duration},asetpts=PTS-STARTPTS[original]',
+                '[original][music]amix=inputs=2:duration=first:dropout_transition=0[a]']
+    else: graph+=['[music]anull[a]']
+    output=OUT/'composed-video.mp4'
+    run_tool(tools,'ffmpeg',command+['-filter_complex',';'.join(graph),'-map','[v]','-map','[a]','-t',str(duration),
+        '-c:v','mpeg4','-q:v','3','-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-movflags','+faststart',str(output)])
+    info=media_info(tools,output);streams=info.get('streams',[])
+    rendered_video=[stream for stream in streams if stream.get('codec_type')=='video']
+    require(len(rendered_video)==1 and (rendered_video[0].get('width'),rendered_video[0].get('height'))==(1280,720),'PRODUCTION_OUTPUT_INVALID')
+    require(any(stream.get('codec_type')=='audio' for stream in streams),'PRODUCTION_OUTPUT_INVALID')
+    actual=float(info.get('format',{}).get('duration',0));require(abs(actual-duration)<max(0.2,duration*0.005),'PRODUCTION_DURATION_MISMATCH')
+    run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error',*input_format(output),'-i',str(output),'-map','0:v:0','-map','0:a:0','-f','null','-'])
+    moments=[('start',0),('middle',duration/2),('overlay',(start+end)/2),('end',max(0,duration-0.5))]
+    frames=[]
+    for label,at in moments:
+        image=OUT/f'video-frame-{label}.png'
+        run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-n',*input_format(output),'-ss',str(at),'-i',str(output),'-frames:v','1',str(image)])
+        checked,w,h=png(image.read_bytes(),(1280,720));image.write_bytes(checked)
+        frames.append({'label':label,'seconds':at,'file':image.name,'width':w,'height':h})
+    digest=lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest={'kind':'composed-video','title':title,'durationSeconds':actual,'outputSha256':digest(output),
+        'sourceSha256':digest(video_path),'imageSha256':digest(image_path),'audioSha256':digest(audio_path),
+        'titleSeconds':title_seconds,'overlay':{'start':start,'end':end,'position':position},
+        'audio':{'mode':mode,'level':level,'sourceHadAudio':source_has_audio,'sourceDurationSeconds':audio_duration},
+        'streams':streams,'frames':frames,'verification':{'fullVideoDecoded':True,'durationMatched':True,
+        'dimensionsMatched':True,'audioPresent':True,'placementFramesRetained':True,'visualPlacementReviewed':False}}
+    (OUT/'composition-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
+    return manifest
+
+
 def package(args,tools):
     exact(args,('clips','aspects','captions','title'),('description','hashtags'))
     aspects=args['aspects'];require(isinstance(aspects,list) and 1<=len(aspects)<=3 and len(set(aspects))==len(aspects)
@@ -1229,5 +1322,6 @@ def execute(operation,args,tools):
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)
     if operation=='video.package': return package(args,tools)
+    if operation=='video.compose': return compose_video(args,tools)
     if operation=='interactive.create': return interactive(args)
     raise ValueError('PRODUCTION_OPERATION_UNSUPPORTED')

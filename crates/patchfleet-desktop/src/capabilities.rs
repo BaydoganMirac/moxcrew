@@ -675,12 +675,14 @@ impl Console {
     pub fn capabilities_smoke(&mut self, snapshot: &Value, scene: &str) {
         if matches!(
             scene,
-            "capabilities-video-compose" | "capabilities-video-highlights"
+            "capabilities-video-compose"
+                | "capabilities-video-highlights"
+                | "capabilities-video-motion"
         ) {
-            self.create.ability = if scene == "capabilities-video-highlights" {
-                "V2"
-            } else {
-                "V4"
+            self.create.ability = match scene {
+                "capabilities-video-highlights" => "V2",
+                "capabilities-video-motion" => "V5",
+                _ => "V4",
             }
             .into();
         }
@@ -753,6 +755,7 @@ impl Console {
             | "capabilities-presentation-narration"
             | "capabilities-video-compose"
             | "capabilities-video-highlights"
+            | "capabilities-video-motion"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -811,6 +814,7 @@ impl Console {
                 "capabilities-presentation-narration" => 24,
                 "capabilities-video-compose" => 25,
                 "capabilities-video-highlights" => 26,
+                "capabilities-video-motion" => 27,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -922,6 +926,22 @@ impl Console {
                 *draft.value("highlightTargetSeconds") = "8".into();
                 *draft.value("highlightClipSeconds") = "4".into();
                 *draft.value("highlightEmphasis") = "balanced".into();
+            } else if scene == "capabilities-video-motion" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("motionTitle") = if english {
+                    "Mox keeps work visible"
+                } else {
+                    "Mox işi görünür tutar"
+                }
+                .into();
+                *draft.value("motionTreatment") = "drift".into();
+                *draft.value("motionFps") = "30".into();
+                *draft.value("motionScenes") = if english {
+                    "cover | 3 | MEET MOX | A crew you can actually see | Plan, produce and review in one local workspace.\nstatement | 3 | OWNER CONTROL | Every handoff stays visible. | Nothing starts until you say so.\nstatement | 3 | REAL OUTPUTS | Files, checks and revisions—not mystery progress. | Each delivery keeps its evidence.\ncover | 3 | MOXCREW | Ship with proof. | Keep the final call."
+                } else {
+                    "cover | 3 | MOX İLE TANIŞ | Gerçekten görebildiğin bir ekip | Tek yerel çalışma alanında planla, üret ve incele.\nstatement | 3 | KONTROL SENDE | Her devir görünür kalır. | Sen söylemeden hiçbir şey başlamaz.\nstatement | 3 | GERÇEK ÇIKTILAR | Gizemli ilerleme değil; dosya, kontrol ve sürüm. | Her teslimat kanıtını korur.\ncover | 3 | MOXCREW | Kanıtla teslim et. | Son karar sende kalsın."
+                }
+                .into();
             } else if scene == "capabilities-data-scenario" {
                 draft.record = csv.unwrap_or_default();
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
@@ -1948,6 +1968,7 @@ impl Console {
             "Narrate presentation",
             "Compose video",
             "Find video highlights",
+            "Create motion video",
         ];
         form_combo(
             ui,
@@ -1974,7 +1995,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 27].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -3855,6 +3876,84 @@ impl Console {
                     }
                 }
             }
+            27 => {
+                hint(
+                    ui,
+                    "Turn an approved scene plan into an editable storyboard and real pan/zoom motion video.",
+                );
+                field(
+                    ui,
+                    "Motion video title",
+                    draft.value("motionTitle"),
+                    120,
+                    false,
+                );
+                multiline(
+                    ui,
+                    "Scenes · layout | seconds | eyebrow | title | subtitle",
+                    draft.value("motionScenes"),
+                    6000,
+                    6,
+                );
+                let mut treatment = match draft.get("motionTreatment") {
+                    "calm" => "calm",
+                    "push" => "push",
+                    _ => "drift",
+                };
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Motion treatment"));
+                    for value in ["calm", "push", "drift"] {
+                        ui.selectable_value(&mut treatment, value, t(ui, value));
+                    }
+                });
+                *draft.value("motionTreatment") = treatment.into();
+                let mut fps = draft.get("motionFps").parse::<u64>().unwrap_or(30);
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Frames per second"));
+                    for value in [24, 25, 30] {
+                        ui.selectable_value(&mut fps, value, value.to_string());
+                    }
+                });
+                *draft.value("motionFps") = fps.to_string();
+                let scenes: Option<Vec<Value>> = draft
+                    .get("motionScenes")
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .map(|line| {
+                        let mut parts = line.splitn(5, '|').map(str::trim);
+                        let layout = parts.next()?;
+                        let duration = parts.next()?.parse::<f64>().ok()?;
+                        let eyebrow = parts.next()?;
+                        let title = parts.next()?;
+                        let subtitle = parts.next()?;
+                        (matches!(layout, "cover" | "statement")
+                            && duration.is_finite()
+                            && (2.0..=12.0).contains(&duration)
+                            && valid_input(eyebrow, 80)
+                            && valid_input(title, 160)
+                            && valid_input(subtitle, 240))
+                        .then(|| {
+                            json!({"layout":layout,"duration":duration,
+                                "eyebrow":eyebrow,"title":title,"subtitle":subtitle})
+                        })
+                    })
+                    .collect();
+                if let Some(scenes) = scenes.filter(|scenes| {
+                    (2..=8).contains(&scenes.len())
+                        && scenes
+                            .iter()
+                            .filter_map(|scene| scene["duration"].as_f64())
+                            .sum::<f64>()
+                            <= 90.0
+                }) {
+                    if valid_input(draft.get("motionTitle"), 120) {
+                        operation = Some(json!({"operation":"video.motion","arguments":{
+                            "title":draft.get("motionTitle"),"scenes":scenes,
+                            "motion":treatment,"fps":fps
+                        }}));
+                    }
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -3899,6 +3998,7 @@ impl Console {
                         24 => "Use presentations.narrate on this exact PPTX and filename-ordered audio set. Require one speaker-note part and one approved clip per slide, preserve the deck, verify the rendered video and state that spoken-word matching still needs human review.",
                         25 => "Use video.compose with these exact video, image and audio resources. Preserve every source, keep the visible title/timing/position/audio policy unchanged, decode the full output and require human review of the retained placement frames before delivery.",
                         26 => "Use video.highlights with this exact video and bounded selection policy. Preserve every measured score and selected range, decode the full output and require human review because motion and loudness do not prove meaning or aesthetic quality.",
+                        27 => "Use video.motion with this exact approved scene plan. Preserve every title and duration, deliver the editable storyboard and rendered MP4, verify intra-scene movement and full decode, and keep visual-quality review explicit.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -6003,6 +6103,123 @@ mod tests {
                     .unwrap()
                 });
                 assert!(visibility.1, "{language}/{theme:?}: highlight action");
+            }
+        }
+    }
+    #[test]
+    fn motion_video_request_freezes_exact_scene_plan_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let data = fixture();
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 27;
+        *draft.value("motionTitle") = "Mox keeps work visible".into();
+        *draft.value("motionScenes") = "cover | 3 | MEET MOX | A crew you can actually see | Plan, produce and review in one local workspace.\nstatement | 4 | OWNER CONTROL | Every handoff stays visible. | Nothing starts until you say so.".into();
+        *draft.value("motionTreatment") = "drift".into();
+        *draft.value("motionFps") = "30".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        for _ in 0..4 {
+            render(
+                &ctx,
+                &mut c,
+                &data,
+                size,
+                false,
+                vec![
+                    egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Page,
+                        delta: egui::vec2(0.0, -1.0),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        }
+        assert!(click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"video.motion\""));
+        assert!(request.contains("A crew you can actually see"));
+        assert!(request.contains("Every handoff stays visible."));
+        assert!(request.contains("\"duration\": 4.0"));
+        assert!(request.contains("\"motion\": \"drift\""));
+        assert!(request.contains("\"fps\": 30"));
+        assert!(request.contains("editable storyboard and rendered MP4"));
+    }
+    #[test]
+    fn motion_video_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 27;
+                *draft.value("motionTitle") = "Visible motion".into();
+                *draft.value("motionScenes") = "cover | 3 | MEET MOX | Visible work | One local workspace.\nstatement | 3 | OWNER CONTROL | Keep the final call. | Every handoff stays visible.".into();
+                *draft.value("motionTreatment") = "calm".into();
+                *draft.value("motionFps") = "24".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..4 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: motion action");
             }
         }
     }

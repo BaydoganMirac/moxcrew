@@ -1,0 +1,137 @@
+{
+  "kind": "motion-video",
+  "title": "Mox keeps work visible",
+  "motion": "drift",
+  "fps": 30,
+  "durationSeconds": 12.021354,
+  "storyboardSha256": "71c95d25858abd9f9552d13166992cabd4886bf2e992283f546faf1298f4b397",
+  "outputSha256": "f4df58de88c17af063b291466471eb7cb6d7a107cf9da3fe23ada79d06b1c502",
+  "scenes": [
+    {
+      "scene": 1,
+      "duration": 3,
+      "layout": "cover",
+      "eyebrow": "MEET MOX",
+      "title": "A crew you can actually see",
+      "subtitle": "Plan, produce and review in one local workspace."
+    },
+    {
+      "scene": 2,
+      "duration": 3,
+      "layout": "statement",
+      "eyebrow": "OWNER CONTROL",
+      "title": "Every handoff stays visible.",
+      "subtitle": "Nothing starts until you say so."
+    },
+    {
+      "scene": 3,
+      "duration": 3,
+      "layout": "statement",
+      "eyebrow": "REAL OUTPUTS",
+      "title": "Files, checks and revisions—not mystery progress.",
+      "subtitle": "Each delivery keeps its evidence."
+    },
+    {
+      "scene": 4,
+      "duration": 3,
+      "layout": "cover",
+      "eyebrow": "MOXCREW",
+      "title": "Ship with proof.",
+      "subtitle": "Keep the final call."
+    }
+  ],
+  "motionProofs": [
+    {
+      "scene": 1,
+      "frames": [
+        {
+          "seconds": 0.75,
+          "sha256": "3cdb402e90e7972c95cf3426bec7b68a98d30cdaadcd2e57206483d05e997b34"
+        },
+        {
+          "seconds": 2.25,
+          "sha256": "ea43d76313cef1fc315ce2d17fafd265d5b37bbba4a7960c1708320fc0c0838a"
+        }
+      ]
+    },
+    {
+      "scene": 2,
+      "frames": [
+        {
+          "seconds": 0.75,
+          "sha256": "9203ced75bbd830c492c90d3f86a09e6177a5f8006aa3d77df08723b78be23f7"
+        },
+        {
+          "seconds": 2.25,
+          "sha256": "86280e27e80be9b348ca7b9b568417c022eefc46cfa273adc333e81938393f65"
+        }
+      ]
+    },
+    {
+      "scene": 3,
+      "frames": [
+        {
+          "seconds": 0.75,
+          "sha256": "a8c583794467cfa4b9e8bc3b73be97e31ea14bcc2370e490613358e591636083"
+        },
+        {
+          "seconds": 2.25,
+          "sha256": "ad78b9f070aa5562b6be8188f982d957587f6fa9c019bc48aa08dcfccfbb1b35"
+        }
+      ]
+    },
+    {
+      "scene": 4,
+      "frames": [
+        {
+          "seconds": 0.75,
+          "sha256": "547ae20bcb1f1c50e6285d52ca926794970f6857c9748404509ac45aafc6ecfa"
+        },
+        {
+          "seconds": 2.25,
+          "sha256": "6a2819836efb139f1b9906e5d6d49ff4280710bb2f8573de94aabd6a2c020746"
+        }
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "label": "start",
+      "seconds": 0.75,
+      "file": "motion-frame-start.png"
+    },
+    {
+      "label": "middle",
+      "seconds": 7.5,
+      "file": "motion-frame-middle.png"
+    },
+    {
+      "label": "end",
+      "seconds": 11.271354,
+      "file": "motion-frame-end.png"
+    }
+  ],
+  "streams": [
+    {
+      "codec_name": "mpeg4",
+      "codec_type": "video",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2
+    }
+  ],
+  "verification": {
+    "storyboardRendered": true,
+    "motionFramesDiffer": true,
+    "fullVideoDecoded": true,
+    "durationMatched": true,
+    "dimensionsMatched": true,
+    "audioPresent": true,
+    "visualQualityReviewed": false
+  }
+}

@@ -21,6 +21,8 @@ For a composed title/image/audio request, use `video.compose` with exact Project
 
 For a highlight request without owner-supplied ranges, use `video.highlights` with one exact Project video and an explicit target, fixed clip length and signal emphasis. Preserve the measured motion/audio scores and selected ranges. Treat them as repeatable ranking signals, never as proof of semantic importance or aesthetic quality.
 
+For an approved promo or explainer scene plan, use `video.motion` with exact text, bounded durations, an enumerated treatment and a supported frame rate. Deliver the editable storyboard with the rendered video, motion proofs and retained review frames. Do not present a prose storyboard or static slideshow as a motion video.
+
 ## Verify and revise
 
 Probe output duration, dimensions and streams, decode the full output when practical and inspect representative frames plus audio joins. Check caption timing and content order. A storyboard or command proposal is not a rendered video.

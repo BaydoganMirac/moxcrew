@@ -51,6 +51,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "video.package",
     "video.highlights",
     "video.compose",
+    "video.motion",
     "interactive.create",
     "images.generate",
     "images.edit",
@@ -941,6 +942,78 @@ mod tests {
                 "missing evidence file {name}"
             );
         }
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn motion_video_rejects_unknown_treatment_before_tools() {
+        let data = tempfile::tempdir().unwrap();
+        let result = run(
+            data.path(),
+            "video.motion",
+            &json!({"title":"Visible work","scenes":[],"motion":"random", "fps":30}),
+            &[],
+            None,
+        )
+        .await;
+        assert!(matches!(result,Err(Error(ref code)) if code=="PRODUCTION_VIDEO_MOTION_INVALID"));
+    }
+    #[tokio::test]
+    #[ignore = "requires real LibreOffice, Poppler, FFmpeg/FFprobe and an evidence destination"]
+    async fn approved_scenes_render_a_checked_motion_video() {
+        let data = tempfile::tempdir().unwrap();
+        for (id, key) in [
+            ("libreoffice", "MOXCREW_TEST_LIBREOFFICE"),
+            ("pdftoppm", "MOXCREW_TEST_PDFTOPPM"),
+            ("ffmpeg", "MOXCREW_TEST_FFMPEG"),
+            ("ffprobe", "MOXCREW_TEST_FFPROBE"),
+        ] {
+            configure(data.path(), id, &std::env::var(key).unwrap()).unwrap();
+        }
+        let evidence = PathBuf::from(std::env::var("MOXCREW_VIDEO_MOTION_EVIDENCE_DIR").unwrap());
+        let output = run(
+            data.path(),
+            "video.motion",
+            &json!({"title":"Mox keeps work visible","motion":"drift","fps":30,"scenes":[
+                {"layout":"cover","duration":3,"eyebrow":"MEET MOX","title":"A crew you can actually see","subtitle":"Plan, produce and review in one local workspace."},
+                {"layout":"statement","duration":3,"eyebrow":"OWNER CONTROL","title":"Every handoff stays visible.","subtitle":"Nothing starts until you say so."},
+                {"layout":"statement","duration":3,"eyebrow":"REAL OUTPUTS","title":"Files, checks and revisions—not mystery progress.","subtitle":"Each delivery keeps its evidence."},
+                {"layout":"cover","duration":3,"eyebrow":"MOXCREW","title":"Ship with proof.","subtitle":"Keep the final call."}
+            ]}),
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        fs::create_dir_all(&evidence).unwrap();
+        for (name, bytes) in output.files {
+            fs::write(evidence.join(name), bytes).unwrap();
+        }
+        for name in [
+            "motion-video.mp4",
+            "motion-video-manifest.json",
+            "motion-storyboard.pptx",
+            "motion-storyboard.json",
+            "slides.pdf",
+            "slide-01.png",
+            "slide-02.png",
+            "slide-03.png",
+            "slide-04.png",
+            "motion-frame-start.png",
+            "motion-frame-middle.png",
+            "motion-frame-end.png",
+        ] {
+            assert!(
+                evidence.join(name).is_file(),
+                "missing evidence file {name}"
+            );
+        }
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(evidence.join("motion-video-manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["scenes"].as_array().unwrap().len(), 4);
+        assert_eq!(manifest["verification"]["motionFramesDiffer"], true);
+        assert_eq!(manifest["verification"]["fullVideoDecoded"], true);
+        assert_eq!(manifest["verification"]["visualQualityReviewed"], false);
     }
     #[cfg(unix)]
     #[tokio::test]

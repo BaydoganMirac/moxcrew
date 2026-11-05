@@ -32,7 +32,7 @@
 | Futuristic native studio | Complete; independently reviewed and locally verified | 2026-10-19 | [futuristic-native-studio.md](futuristic-native-studio.md) |
 | Project crew orchestration | Implemented and locally verified | 2026-10-19 | [project-crew-orchestration.md](project-crew-orchestration.md) |
 | Productive Project crews | Complete; independently reviewed, integrated tests and macOS development package verified | 2026-10-19 | [productive-project-crews.md](productive-project-crews.md) |
-| Workflow controls | Explicit frozen handoffs and the J5 data-briefing composition implemented and locally verified | 2026-11-05 | [workflow-controls.md](workflow-controls.md) |
+| Workflow controls | Exact frozen J1–J10 composition graphs, checked file handoffs and localized recipe detail implemented and locally verified | 2026-11-05 | [workflow-controls.md](workflow-controls.md) |
 | Multi-provider execution | Implemented; protocol-peer evidence | 2026-10-19 | [provider-execution.md](provider-execution.md) |
 | Output Studio and production | Implemented; bounded Office/data/media operations | 2026-10-19 | [output-studio.md](output-studio.md) |
 | Explicit app connections | Implemented; loopback evidence | 2026-10-19 | [app-connections.md](app-connections.md) |

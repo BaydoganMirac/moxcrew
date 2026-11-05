@@ -1,394 +1,192 @@
 [
   {
-    "recipeId": "builtin:launch",
-    "projectId": null,
-    "revision": 1,
-    "name": "Product launch",
-    "description": "Research the audience and produce a practical product launch plan with actual deliverables.",
+    "recipeId": "builtin:launch", "projectId": null, "revision": 2,
+    "name": "Product launch crew",
+    "description": "Turn checked audience research into an editable presentation, a static site, a promo video and a coordinated image and content package.",
     "abilityId": "D1",
     "members": [
-      {
-        "name": "Researcher",
-        "role": "research",
-        "abilityId": "R1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Launch writer",
-        "role": "document",
-        "abilityId": "D1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Designer",
-        "role": "image",
-        "abilityId": "I1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Reviewer",
-        "role": "review",
-        "abilityId": "D1",
-        "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."
-      }
+      {"name": "Audience researcher", "role": "research", "abilityId": "R1", "instruction": "Research the audience and product claims from dated supplied or public sources. Produce a source-linked brief, preserve disagreements and report unavailable access honestly."},
+      {"name": "Presentation producer", "role": "presentation", "abilityId": "P1", "instruction": "Turn the checked research into an editable launch presentation with source notes, a clear story and explicit unresolved claims."},
+      {"name": "Site producer", "role": "web", "abilityId": "W1", "instruction": "Use the checked presentation and approved copy to build an editable script-free launch site. Do not publish it and keep claims aligned with the research."},
+      {"name": "Promo video producer", "role": "video", "abilityId": "V4", "instruction": "Compose a bounded promo video from exact upstream presentation and site assets and approved audio or copy. Preserve timing and source evidence; never invent publication."},
+      {"name": "Campaign package producer", "role": "image", "abilityId": "I5", "instruction": "Create an editable coordinated image and content package from the checked site and video story and Project brand. Report missing assets or tools honestly."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
     ],
-    "settings": {
-      "concurrency": 2,
-      "retryLimit": 1,
-      "timeoutMinutes": 30
-    },
-    "createdAt": "2026-10-19T00:00:00.000Z",
-    "deliverables": [
-      "Audience research",
-      "Launch brief and schedule",
-      "Original visual assets"
-    ],
-    "toolRequirements": [
-      "Connected research provider",
-      "Python 3.9+ for editable Office files",
-      "Image generation or SVG authoring capability"
-    ]
+    "memberDependencies": [[], [0], [1], [1, 2], [2, 3], [0, 1, 2, 3, 4]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-10-19T00:00:00.000Z",
+    "deliverables": ["Checked audience research", "Editable launch presentation", "Editable static launch site", "Promo video", "Coordinated image and content package"],
+    "toolRequirements": ["Connected research provider or frozen supplied sources", "Python 3.9+ and LibreOffice for editable presentation work", "FFmpeg and FFprobe for video composition", "Isolated Chrome for site and campaign rendering"]
   },
   {
-    "recipeId": "builtin:content",
-    "projectId": null,
-    "revision": 1,
-    "name": "Content crew",
-    "description": "Create a sourced content package for the requested audience, channels and topic.",
+    "recipeId": "builtin:podcast", "projectId": null, "revision": 2,
+    "name": "Recording repurpose crew",
+    "description": "Turn a supplied recording into a checked transcript, selected clips, captions, publishing copy and original cover assets without publishing them.",
+    "abilityId": "A1",
+    "members": [
+      {"name": "Transcript producer", "role": "audio", "abilityId": "A1", "instruction": "Transcribe only the supplied recording, preserve timing evidence and mark uncertain speech. Never invent a recording or speaker."},
+      {"name": "Clip selector", "role": "video", "abilityId": "V2", "instruction": "Select bounded clips from the exact supplied recording and checked transcript. Preserve timestamps and never claim an export you could not inspect."},
+      {"name": "Caption package producer", "role": "video", "abilityId": "V3", "instruction": "Create captions and editable clip outputs from checked timestamps and source media. Preserve the original and report unavailable codecs or tools honestly."},
+      {"name": "Cover and copy producer", "role": "image", "abilityId": "I4", "instruction": "Create original cover assets and publishing copy from the checked transcript and clips. Do not publish or use third-party assets without provenance."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
+    ],
+    "memberDependencies": [[], [0], [0, 1], [0, 1, 2], [0, 1, 2, 3]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-10-19T00:00:00.000Z",
+    "deliverables": ["Checked transcript with timestamps", "Selected clip plan", "Captioned editable clips", "Original cover assets and publishing copy"],
+    "toolRequirements": ["Explicitly supplied recording", "FFmpeg and FFprobe for media inspection and editing", "Local transcription capability", "Image or SVG authoring capability"]
+  },
+  {
+    "recipeId": "builtin:study", "projectId": null, "revision": 2,
+    "name": "Study package crew",
+    "description": "Turn checked learning sources into a study guide, quiz, explanation video and accessible audio companion.",
     "abilityId": "D1",
     "members": [
-      {
-        "name": "Researcher",
-        "role": "research",
-        "abilityId": "R1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Writer",
-        "role": "document",
-        "abilityId": "D1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Designer",
-        "role": "image",
-        "abilityId": "I1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Reviewer",
-        "role": "review",
-        "abilityId": "D1",
-        "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."
-      }
+      {"name": "Source synthesizer", "role": "research", "abilityId": "R3", "instruction": "Synthesize the supplied or dated sources for the learning goal. Separate evidence from interpretation and report missing access honestly."},
+      {"name": "Study guide producer", "role": "document", "abilityId": "D1", "instruction": "Create an editable structured guide from the checked synthesis with source notes, objectives and an achievable study schedule."},
+      {"name": "Quiz producer", "role": "document", "abilityId": "D1", "instruction": "Create questions and a checked answer key from the guide. Keep every answer traceable and mark ambiguous material."},
+      {"name": "Explanation video producer", "role": "video", "abilityId": "V5", "instruction": "Produce a bounded explanation video from the checked guide and quiz using only available, attributable assets."},
+      {"name": "Audio companion producer", "role": "audio", "abilityId": "A2", "instruction": "Prepare an accessible audio companion from exact checked text. Synthesize only with an available configured local voice; otherwise return the script and blocker."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
     ],
-    "settings": {
-      "concurrency": 2,
-      "retryLimit": 1,
-      "timeoutMinutes": 30
-    },
-    "createdAt": "2026-10-19T00:00:00.000Z",
-    "deliverables": [
-      "Sourced content plan",
-      "Channel drafts",
-      "Original visual assets"
-    ],
-    "toolRequirements": [
-      "Connected research provider",
-      "Python 3.9+ for editable Office files",
-      "Image generation or SVG authoring capability"
-    ]
+    "memberDependencies": [[], [0], [1], [1, 2], [1, 2, 3], [0, 1, 2, 3, 4]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-10-19T00:00:00.000Z",
+    "deliverables": ["Source synthesis", "Editable study guide", "Quiz and answer key", "Explanation video", "Audio companion or explicit setup blocker"],
+    "toolRequirements": ["Connected provider or frozen supplied sources", "Python 3.9+ for editable Office output", "FFmpeg and FFprobe for video", "Configured local voice for synthesized audio"]
   },
   {
-    "recipeId": "builtin:podcast",
-    "projectId": null,
-    "revision": 1,
-    "name": "Podcast crew",
-    "description": "Prepare a sourced podcast script and actual supported audio outputs, reporting missing tools.",
-    "abilityId": "A4",
-    "members": [
-      {
-        "name": "Researcher",
-        "role": "research",
-        "abilityId": "R1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Script writer",
-        "role": "document",
-        "abilityId": "D1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Audio producer",
-        "role": "audio",
-        "abilityId": "A4",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Reviewer",
-        "role": "review",
-        "abilityId": "D1",
-        "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."
-      }
-    ],
-    "settings": {
-      "concurrency": 2,
-      "retryLimit": 1,
-      "timeoutMinutes": 30
-    },
-    "createdAt": "2026-10-19T00:00:00.000Z",
-    "deliverables": [
-      "Source notes",
-      "Episode script",
-      "Edited audio when source audio is supplied"
-    ],
-    "toolRequirements": [
-      "Connected research provider",
-      "Python 3.9+ for editable scripts",
-      "FFmpeg and FFprobe for audio cleanup and podcast editing"
-    ]
-  },
-  {
-    "recipeId": "builtin:research",
-    "projectId": null,
-    "revision": 1,
-    "name": "Research crew",
-    "description": "Research the question, compare credible evidence and write an actionable report with sources.",
+    "recipeId": "builtin:travel", "projectId": null, "revision": 2,
+    "name": "Travel planning crew",
+    "description": "Compare dated travel options and constraints, calculate a budget and produce an editable itinerary and PDF without making bookings.",
     "abilityId": "R1",
     "members": [
-      {
-        "name": "Researcher",
-        "role": "research",
-        "abilityId": "R1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Analyst",
-        "role": "document",
-        "abilityId": "D1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Reviewer",
-        "role": "review",
-        "abilityId": "D1",
-        "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."
-      }
+      {"name": "Travel researcher", "role": "research", "abilityId": "R1", "instruction": "Research dated travel facts and constraints from supplied or public sources. Preserve URLs and access dates; never make a booking."},
+      {"name": "Alternatives analyst", "role": "research", "abilityId": "R2", "instruction": "Compare checked alternatives, tradeoffs and uncertainty from the dated research. Keep prices and availability explicitly time-bound."},
+      {"name": "Budget producer", "role": "data", "abilityId": "T4", "instruction": "Build a checked editable travel budget from the compared alternatives. Show formulas, assumptions, currency and missing costs."},
+      {"name": "Itinerary producer", "role": "document", "abilityId": "D1", "instruction": "Create a practical editable itinerary from the checked alternatives and budget. Keep booking and purchase actions outside the deliverable."},
+      {"name": "PDF producer", "role": "document", "abilityId": "D2", "instruction": "Render and inspect an accessible PDF from the checked itinerary. Preserve the editable source and report rendering limitations."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
     ],
-    "settings": {
-      "concurrency": 2,
-      "retryLimit": 1,
-      "timeoutMinutes": 30
-    },
-    "createdAt": "2026-10-19T00:00:00.000Z",
-    "deliverables": [
-      "Source comparison",
-      "Evidence-based report"
-    ],
-    "toolRequirements": [
-      "Connected research provider",
-      "Python 3.9+ for editable Office output"
-    ]
+    "memberDependencies": [[], [0], [1], [1, 2], [3], [0, 1, 2, 3, 4]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-10-19T00:00:00.000Z",
+    "deliverables": ["Dated travel research", "Compared alternatives", "Editable travel budget", "Editable itinerary", "Inspected itinerary PDF"],
+    "toolRequirements": ["Connected research provider or frozen supplied sources", "Python 3.9+ for budget and document work", "LibreOffice and PDF rendering tools"]
   },
   {
-    "recipeId": "builtin:travel",
-    "projectId": null,
-    "revision": 1,
-    "name": "Travel crew",
-    "description": "Compare travel options, dates and constraints and prepare an itinerary with checked sources; make no bookings.",
-    "abilityId": "R1",
-    "members": [
-      {
-        "name": "Travel researcher",
-        "role": "research",
-        "abilityId": "R1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Itinerary writer",
-        "role": "document",
-        "abilityId": "D1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Reviewer",
-        "role": "review",
-        "abilityId": "D1",
-        "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."
-      }
-    ],
-    "settings": {
-      "concurrency": 2,
-      "retryLimit": 1,
-      "timeoutMinutes": 30
-    },
-    "createdAt": "2026-10-19T00:00:00.000Z",
-    "deliverables": [
-      "Dated source comparison",
-      "Practical itinerary and constraints"
-    ],
-    "toolRequirements": [
-      "Connected research provider",
-      "Python 3.9+ for editable Office output"
-    ]
-  },
-  {
-    "recipeId": "builtin:study",
-    "projectId": null,
-    "revision": 1,
-    "name": "Study crew",
-    "description": "Create a sourced study guide, schedule and exercises for the requested learning goal.",
-    "abilityId": "D1",
-    "members": [
-      {
-        "name": "Researcher",
-        "role": "research",
-        "abilityId": "R1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Tutor",
-        "role": "document",
-        "abilityId": "D1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Reviewer",
-        "role": "review",
-        "abilityId": "D1",
-        "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."
-      }
-    ],
-    "settings": {
-      "concurrency": 2,
-      "retryLimit": 1,
-      "timeoutMinutes": 30
-    },
-    "createdAt": "2026-10-19T00:00:00.000Z",
-    "deliverables": [
-      "Study guide",
-      "Learning schedule",
-      "Exercises and answer key"
-    ],
-    "toolRequirements": [
-      "Connected provider",
-      "Python 3.9+ for editable Office output"
-    ]
-  },
-  {
-    "recipeId": "builtin:data",
-    "projectId": null,
-    "revision": 1,
-    "name": "Data crew",
-    "description": "Analyze the explicitly supplied data and create checked tables and an explained report.",
-    "abilityId": "T1",
-    "members": [
-      {
-        "name": "Data analyst",
-        "role": "data",
-        "abilityId": "T1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Report writer",
-        "role": "document",
-        "abilityId": "D1",
-        "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."
-      },
-      {
-        "name": "Reviewer",
-        "role": "review",
-        "abilityId": "D1",
-        "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."
-      }
-    ],
-    "settings": {
-      "concurrency": 2,
-      "retryLimit": 1,
-      "timeoutMinutes": 30
-    },
-    "createdAt": "2026-10-19T00:00:00.000Z",
-    "deliverables": [
-      "Cleaned data",
-      "Actual analysis tables",
-      "Explained report"
-    ],
-    "toolRequirements": [
-      "Explicitly imported dataset",
-      "Python 3.9+ for data and editable Office operations"
-    ]
-  },
-  {
-    "recipeId": "builtin:data-briefing",
-    "projectId": null,
-    "revision": 1,
+    "recipeId": "builtin:data-briefing", "projectId": null, "revision": 1,
     "name": "Data briefing crew",
     "description": "Turn explicitly supplied data into clean data, checked analysis, charts and a report, an editable presentation and an audio brief. Audio is produced only from exact owner-approved text with a configured local voice.",
     "abilityId": "T2",
     "members": [
-      {
-        "name": "Data cleaner",
-        "role": "data",
-        "abilityId": "T1",
-        "instruction": "Inspect only the explicitly supplied dataset. Produce clean CSV/XLSX data and a profiling report with transformation, missing-value and source evidence. Use typed data operations; preserve the original and report unavailable inputs or tools honestly."
-      },
-      {
-        "name": "Data analyst",
-        "role": "data",
-        "abilityId": "T2",
-        "instruction": "Use the checked upstream clean data and profile. Verify every numerical conclusion, produce traceable analysis tables and distinguish evidence from interpretation. Do not invent missing facts."
-      },
-      {
-        "name": "Report and chart producer",
-        "role": "data",
-        "abilityId": "T3",
-        "instruction": "Use the checked upstream analysis to produce accurate charts and a concise editable report. Keep values traceable to supplied data and include limitations and calculation checks."
-      },
-      {
-        "name": "Presentation producer",
-        "role": "presentation",
-        "abilityId": "P4",
-        "instruction": "Turn the upstream report and charts into an editable presentation with a clear visual story, source notes and speaker notes. Preserve numerical meaning and report missing tools honestly."
-      },
-      {
-        "name": "Audio briefing producer",
-        "role": "audio",
-        "abilityId": "A2",
-        "instruction": "Prepare a concise audio briefing from the upstream presentation. Synthesize audio only when the exact briefing text is owner-approved and a configured local voice is available; otherwise deliver the script and an actionable unavailable reason without claiming audio success."
-      },
-      {
-        "name": "Reviewer",
-        "role": "review",
-        "abilityId": "D1",
-        "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."
-      }
+      {"name": "Data cleaner", "role": "data", "abilityId": "T1", "instruction": "Inspect only the explicitly supplied dataset. Produce clean CSV/XLSX data and a profiling report with transformation, missing-value and source evidence. Use typed data operations; preserve the original and report unavailable inputs or tools honestly."},
+      {"name": "Data analyst", "role": "data", "abilityId": "T2", "instruction": "Use the checked upstream clean data and profile. Verify every numerical conclusion, produce traceable analysis tables and distinguish evidence from interpretation. Do not invent missing facts."},
+      {"name": "Report and chart producer", "role": "data", "abilityId": "T3", "instruction": "Use the checked upstream analysis to produce accurate charts and a concise editable report. Keep values traceable to supplied data and include limitations and calculation checks."},
+      {"name": "Presentation producer", "role": "presentation", "abilityId": "P4", "instruction": "Turn the upstream report and charts into an editable presentation with a clear visual story, source notes and speaker notes. Preserve numerical meaning and report missing tools honestly."},
+      {"name": "Audio briefing producer", "role": "audio", "abilityId": "A2", "instruction": "Prepare a concise audio briefing from the upstream presentation. Synthesize audio only when the exact briefing text is owner-approved and a configured local voice is available; otherwise deliver the script and an actionable unavailable reason without claiming audio success."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
     ],
-    "memberDependencies": [
-      [],
-      [0],
-      [1],
-      [2],
-      [3],
-      [0, 1, 2, 3, 4]
+    "memberDependencies": [[], [0], [1], [2], [3], [0, 1, 2, 3, 4]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-11-05T00:00:00.000Z",
+    "deliverables": ["Cleaned data", "Checked analysis tables", "Charts and editable report", "Editable presentation", "Approved-text audio brief or an explicit setup blocker"],
+    "toolRequirements": ["Explicitly imported dataset", "Python 3.9+ for data and editable Office operations", "Configured local voice plus exact owner-approved briefing text for audio"]
+  },
+  {
+    "recipeId": "builtin:career-package", "projectId": null, "revision": 1,
+    "name": "Career package crew",
+    "description": "Turn supplied career facts into a checked CV, cover letter, portfolio site and interview package without inventing experience.",
+    "abilityId": "D1",
+    "members": [
+      {"name": "Career facts analyst", "role": "data", "abilityId": "T5", "instruction": "Extract only supported career facts from owner-supplied material. Normalize dates and skills, flag gaps and never invent experience or credentials."},
+      {"name": "CV and letter producer", "role": "document", "abilityId": "D1", "instruction": "Create editable CV and cover-letter drafts from checked facts and the supplied target role. Mark unsupported claims and preserve source notes."},
+      {"name": "Portfolio producer", "role": "web", "abilityId": "W1", "instruction": "Build an editable script-free portfolio from checked facts and documents. Do not publish it or expose private source material."},
+      {"name": "Interview package producer", "role": "document", "abilityId": "D1", "instruction": "Create interview prompts and evidence-backed answer notes from the checked career package. Keep answers truthful and editable."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
     ],
-    "settings": {
-      "concurrency": 2,
-      "retryLimit": 1,
-      "timeoutMinutes": 30
-    },
-    "createdAt": "2026-11-05T00:00:00.000Z",
-    "deliverables": [
-      "Cleaned data",
-      "Checked analysis tables",
-      "Charts and editable report",
-      "Editable presentation",
-      "Approved-text audio brief or an explicit setup blocker"
+    "memberDependencies": [[], [0], [0, 1], [0, 1, 2], [0, 1, 2, 3]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-11-05T00:00:00.000Z",
+    "deliverables": ["Checked career fact sheet", "Editable CV and cover letter", "Editable portfolio site", "Interview preparation package"],
+    "toolRequirements": ["Explicitly supplied career material", "Python 3.9+ and LibreOffice for editable documents", "Isolated Chrome for portfolio rendering"]
+  },
+  {
+    "recipeId": "builtin:content", "projectId": null, "revision": 2,
+    "name": "Product campaign crew",
+    "description": "Turn checked product sources into original images, catalog copy, ad variants and a promo video without publishing them.",
+    "abilityId": "D1",
+    "members": [
+      {"name": "Product researcher", "role": "research", "abilityId": "R1", "instruction": "Research the supplied product, audience and allowed claims from dated sources. Keep provenance and distinguish facts from requested positioning."},
+      {"name": "Product image producer", "role": "image", "abilityId": "I1", "instruction": "Create original editable product images from checked references and supplied brand assets. Record provenance and report unavailable generation tools."},
+      {"name": "Catalog copy producer", "role": "document", "abilityId": "D1", "instruction": "Create catalog and channel copy aligned with the checked research and actual image assets. Do not invent product claims."},
+      {"name": "Ad variant producer", "role": "image", "abilityId": "I5", "instruction": "Create coordinated editable ad variants from the checked images and copy. Keep claims, formats and brand treatment consistent."},
+      {"name": "Campaign video producer", "role": "video", "abilityId": "V4", "instruction": "Compose a bounded campaign video from checked copy and image variants. Do not publish it and report missing codecs or assets honestly."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
     ],
-    "toolRequirements": [
-      "Explicitly imported dataset",
-      "Python 3.9+ for data and editable Office operations",
-      "Configured local voice plus exact owner-approved briefing text for audio"
-    ]
+    "memberDependencies": [[], [0], [0, 1], [1, 2], [1, 2, 3], [0, 1, 2, 3, 4]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-10-19T00:00:00.000Z",
+    "deliverables": ["Checked product research", "Original product images", "Editable catalog and channel copy", "Coordinated ad variants", "Promo video"],
+    "toolRequirements": ["Connected research provider or frozen supplied sources", "Image generation or SVG authoring capability", "Python 3.9+ for editable Office output", "FFmpeg and FFprobe for video"]
+  },
+  {
+    "recipeId": "builtin:event-package", "projectId": null, "revision": 1,
+    "name": "Event package crew",
+    "description": "Turn supplied event constraints into a checked budget, invitation, information site, presentation and recap clip without publishing or purchasing.",
+    "abilityId": "T4",
+    "members": [
+      {"name": "Event plan and budget producer", "role": "data", "abilityId": "T4", "instruction": "Create an editable event plan and formula-checked budget from supplied constraints. Keep purchases, bookings and missing prices explicit."},
+      {"name": "Invitation producer", "role": "document", "abilityId": "D1", "instruction": "Create an editable invitation from the checked event plan. Keep dates, location and promises aligned with owner-supplied facts."},
+      {"name": "Event site producer", "role": "web", "abilityId": "W1", "instruction": "Build an editable script-free information site from the checked plan and invitation. Do not publish it or collect attendee data."},
+      {"name": "Event presentation producer", "role": "presentation", "abilityId": "P1", "instruction": "Create an editable event presentation from the checked plan, invitation and site. Preserve source notes and unresolved constraints."},
+      {"name": "Recap clip producer", "role": "video", "abilityId": "P5", "instruction": "Create a bounded presentation-based clip from the checked event deck and supplied media. Do not imply the event occurred when it has not."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
+    ],
+    "memberDependencies": [[], [0], [0, 1], [0, 1, 2], [3], [0, 1, 2, 3, 4]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-11-05T00:00:00.000Z",
+    "deliverables": ["Checked event plan and budget", "Editable invitation", "Editable event information site", "Editable event presentation", "Presentation-based recap clip"],
+    "toolRequirements": ["Explicitly supplied event constraints", "Python 3.9+ and LibreOffice", "Isolated Chrome for site rendering", "FFmpeg and FFprobe for clip production"]
+  },
+  {
+    "recipeId": "builtin:research", "projectId": null, "revision": 2,
+    "name": "Evidence synthesis crew",
+    "description": "Extract supplied papers, compare evidence and disagreement, produce a sourced synthesis, original visuals and an explanation video.",
+    "abilityId": "R1",
+    "members": [
+      {"name": "Paper extraction producer", "role": "document", "abilityId": "D2", "instruction": "Extract text, tables and citation metadata only from supplied papers. Preserve page references and report unreadable content honestly."},
+      {"name": "Evidence analyst", "role": "research", "abilityId": "R4", "instruction": "Compare claims, methods, limitations and disagreements in the checked paper extracts. Separate source facts from inference."},
+      {"name": "Synthesis producer", "role": "research", "abilityId": "R3", "instruction": "Write a source-linked synthesis from checked extracts and evidence analysis. Preserve disagreement and unresolved uncertainty."},
+      {"name": "Research visual producer", "role": "image", "abilityId": "I4", "instruction": "Create original, attributable visuals from the checked evidence and synthesis. Do not fabricate quantitative relationships."},
+      {"name": "Explainer video producer", "role": "video", "abilityId": "V5", "instruction": "Create a bounded explanation video from the checked synthesis and visuals. Preserve citations and report unavailable media tools."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
+    ],
+    "memberDependencies": [[], [0], [0, 1], [1, 2], [2, 3], [0, 1, 2, 3, 4]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-10-19T00:00:00.000Z",
+    "deliverables": ["Page-referenced paper extracts", "Evidence and disagreement analysis", "Source-linked synthesis", "Original research visuals", "Explanation video"],
+    "toolRequirements": ["Explicitly supplied papers", "PDF extraction and rendering tools", "Image or SVG authoring capability", "FFmpeg and FFprobe for video"]
+  },
+  {
+    "recipeId": "builtin:meeting-follow-up", "projectId": null, "revision": 1,
+    "name": "Meeting follow-up crew",
+    "description": "Turn a supplied meeting record into proposed decisions, tasks, a follow-up draft and an app-action preview; nothing is accepted or sent automatically.",
+    "abilityId": "D3",
+    "members": [
+      {"name": "Meeting record analyst", "role": "document", "abilityId": "D3", "instruction": "Extract proposed decisions, owners, deadlines and unresolved questions only from the supplied meeting record. Keep every item proposed until the owner explicitly accepts it."},
+      {"name": "Follow-up draft producer", "role": "document", "abilityId": "D1", "instruction": "Create an editable follow-up draft from the checked proposed decisions and tasks. Do not send it or turn proposals into accepted Project decisions."},
+      {"name": "App action draft producer", "role": "web", "abilityId": "W4", "instruction": "Prepare only an inspectable app-operation draft from the checked follow-up. Preview and dispatch remain separate and require the owner's exact authorization; never auto-send."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Confirm proposed decisions remain unaccepted and external actions remain undispatched. Request a correction only within the approved review budget; never claim checks you did not perform."}
+    ],
+    "memberDependencies": [[], [0], [0, 1], [0, 1, 2]],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-11-05T00:00:00.000Z",
+    "deliverables": ["Proposed decisions and task ledger", "Editable meeting follow-up draft", "Inspectable app-action draft", "Review of owner-gated boundaries"],
+    "toolRequirements": ["Explicitly supplied meeting record", "Python 3.9+ for editable documents", "Connected app only for later owner-authorized preview and dispatch"]
+  },
+  {
+    "recipeId": "builtin:data", "projectId": null, "revision": 1,
+    "name": "Data crew",
+    "description": "Analyze the explicitly supplied data and create checked tables and an explained report.",
+    "abilityId": "T1",
+    "members": [
+      {"name": "Data analyst", "role": "data", "abilityId": "T1", "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."},
+      {"name": "Report writer", "role": "document", "abilityId": "D1", "instruction": "Produce actual deliverables for your assignment and the owner goal. Use available typed tools; report unavailable inputs/tools honestly. Preserve original sources and document limitations."},
+      {"name": "Reviewer", "role": "review", "abilityId": "D1", "instruction": "Review actual upstream files against the owner goal. Use crew_review for each checked producer task, with concrete checks and feedback. Request a correction only within the approved review budget; never claim checks you did not perform."}
+    ],
+    "settings": {"concurrency": 2, "retryLimit": 1, "timeoutMinutes": 30}, "createdAt": "2026-10-19T00:00:00.000Z",
+    "deliverables": ["Cleaned data", "Actual analysis tables", "Explained report"],
+    "toolRequirements": ["Explicitly imported dataset", "Python 3.9+ for data and editable Office operations"]
   }
 ]

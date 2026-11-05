@@ -156,7 +156,10 @@ commitments.
   model planning, mixed providers, output revisions, typed production, live
   direction, cross-crew delivery/review, resources, recurring recipes, explicit
   app actions and actual usage. Track evidence and limits in
-  [Task0044 state](state/productive-project-crews.md).
+  [Task0044 state](state/productive-project-crews.md). [Task0100](plans/0100-ten-composed-workflow-graphs.md)
+  now represents every J1–J10 composition as an explicit reusable graph and
+  locally proves its checked handoffs; live-provider content quality and human
+  semantic acceptance remain separate evidence.
 
 - Execute the owner-approved [1.0.0 master release](plans/0039-version-one-release.md):
   eight capability areas, forty abilities and ten composed Project workflows

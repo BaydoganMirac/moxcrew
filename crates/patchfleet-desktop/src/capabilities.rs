@@ -681,6 +681,8 @@ impl Console {
             self.create.ability = "T1".into();
         } else if scene == "capabilities-site" {
             self.create.ability = "W1".into();
+        } else if scene == "capabilities-document-create" {
+            self.create.ability = "D1".into();
         } else if matches!(
             scene,
             "capabilities-video-compose"
@@ -768,6 +770,7 @@ impl Console {
             | "capabilities-audio-cleanup"
             | "capabilities-data-profile"
             | "capabilities-site"
+            | "capabilities-document-create"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -831,9 +834,31 @@ impl Console {
                 "capabilities-audio-cleanup" => 28,
                 "capabilities-data-profile" => 29,
                 "capabilities-site" => 30,
+                "capabilities-document-create" => 31,
                 _ => 0,
             };
-            if scene == "capabilities-site" {
+            if scene == "capabilities-document-create" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                *draft.value("documentLanguage") = if english { "en" } else { "tr" }.into();
+                *draft.value("documentTitle") = if english {
+                    "Moxcrew · 2027 Working Plan"
+                } else {
+                    "Moxcrew · 2027 Çalışma Planı"
+                }
+                .into();
+                *draft.value("documentSubtitle") = if english {
+                    "Visible decisions and verifiable delivery for ambitious work."
+                } else {
+                    "İddialı işler için görünür kararlar ve doğrulanabilir teslimatlar."
+                }
+                .into();
+                *draft.value("documentSections") = if english {
+                    "Why now? | Make every handoff visible.\nWorking principles | Nothing starts without approval.\nNext 30 days | Complete and review the pilot."
+                } else {
+                    "Neden şimdi? | Her devri görünür kıl.\nÇalışma ilkeleri | Onay olmadan hiçbir iş başlamaz.\nÖnümüzdeki 30 gün | Pilotu tamamla ve incele."
+                }
+                .into();
+            } else if scene == "capabilities-site" {
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("siteLanguage") = if english { "en" } else { "tr" }.into();
                 *draft.value("siteTitle") = "Moxcrew".into();
@@ -2043,6 +2068,7 @@ impl Console {
             "Clean and level audio",
             "Clean and analyze data",
             "Website / landing page",
+            "Create editable document",
         ];
         form_combo(
             ui,
@@ -2060,7 +2086,7 @@ impl Console {
                 "This adds a precise request to Chat. Send, review the plan and start explicitly.",
             );
         }
-        if ![15, 16, 17, 18, 19, 30].contains(&draft.kind)
+        if ![15, 16, 17, 18, 19, 30, 31].contains(&draft.kind)
             && studio::quiet_button(ui, t(ui, "Set up tools").as_ref()).clicked()
         {
             self.create.select_productive_view(2);
@@ -2069,7 +2095,11 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 27, 30].contains(&draft.kind) {
+        if ![
+            0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 27, 30, 31,
+        ]
+        .contains(&draft.kind)
+        {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -4255,6 +4285,86 @@ impl Console {
                     }));
                 }
             }
+            31 => {
+                hint(
+                    ui,
+                    "Compose exact owner-approved text into a polished editable Word file. Mox does not invent copy or publish the document.",
+                );
+                if draft.get("documentLanguage").is_empty() {
+                    *draft.value("documentLanguage") = "tr".into();
+                }
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(t(ui, "Document language"));
+                    ui.selectable_value(draft.value("documentLanguage"), "tr".into(), "Türkçe");
+                    ui.selectable_value(draft.value("documentLanguage"), "en".into(), "English");
+                });
+                field(
+                    ui,
+                    "Document title",
+                    draft.value("documentTitle"),
+                    160,
+                    false,
+                );
+                multiline(
+                    ui,
+                    "Subtitle (optional)",
+                    draft.value("documentSubtitle"),
+                    240,
+                    2,
+                );
+                multiline(
+                    ui,
+                    "Sections · heading | paragraph; paragraph",
+                    draft.value("documentSections"),
+                    48_000,
+                    3,
+                );
+                hint(
+                    ui,
+                    "Each non-empty line becomes one section. Separate up to 12 paragraphs with semicolons; the package includes canonical content, hashes and a verification summary.",
+                );
+                let sections: Option<Vec<Value>> = draft
+                    .get("documentSections")
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(|line| {
+                        let (heading, body) = line.split_once('|')?;
+                        let heading = heading.trim();
+                        let paragraphs = body
+                            .split(';')
+                            .map(str::trim)
+                            .filter(|paragraph| !paragraph.is_empty())
+                            .collect::<Vec<_>>();
+                        (valid_input(heading, 120)
+                            && (1..=12).contains(&paragraphs.len())
+                            && paragraphs
+                                .iter()
+                                .all(|paragraph| valid_input(paragraph, 4000)))
+                        .then(|| json!({"heading":heading,"paragraphs":paragraphs}))
+                    })
+                    .collect();
+                if matches!(draft.get("documentLanguage"), "tr" | "en")
+                    && valid_input(draft.get("documentTitle"), 160)
+                    && draft.get("documentSubtitle").encode_utf16().count() <= 240
+                    && sections
+                        .as_ref()
+                        .is_some_and(|sections| (1..=20).contains(&sections.len()))
+                {
+                    let mut arguments = json!({
+                        "language":draft.get("documentLanguage"),
+                        "title":draft.get("documentTitle"),
+                        "sections":sections
+                    });
+                    if !draft.get("documentSubtitle").trim().is_empty() {
+                        arguments["subtitle"] = json!(draft.get("documentSubtitle"));
+                    }
+                    operation = Some(json!({
+                        "operation":"documents.create",
+                        "arguments":arguments
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -4304,6 +4414,7 @@ impl Console {
                         28 => "Use audio.cleanup with this exact source, cleanup treatment and LUFS target. Preserve the original, duration and channels; deliver the checked WAV and manifest, verify full decode and before/after measured level, and keep subjective-quality review explicit.",
                         29 => "Use the requested typed data operation with this exact CSV, deduplication choice and numeric column list. Preserve the source, deliver the cleaned CSV or editable XLSX plus analysis.json, and report hashes, trimmed cells, removed duplicates, missing counts and checked statistics without inventing a trend narrative.",
                         30 => "Use web.site with this exact approved content. Deliver editable index.html, canonical content.json, site-manifest.json and summary.md; reopen every file and report the security, accessibility and responsive checks. Do not add scripts, remote assets, trackers, invented copy, deployment or publication.",
+                        31 => "Use documents.create with this exact approved title, subtitle, language and section text. Preserve every string literally, deliver the editable DOCX with canonical content.json, document-manifest.json and summary.md, and report exact reopen and hash checks. Do not invent copy, add facts, publish, upload or claim semantic or Microsoft Word quality without human review.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -6733,6 +6844,125 @@ mod tests {
                     .unwrap()
                 });
                 assert!(visibility.1, "{language}/{theme:?}: website action");
+            }
+        }
+    }
+    #[test]
+    fn editable_document_request_freezes_exact_text_without_execution_or_publication() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let data = fixture();
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 31;
+        *draft.value("documentLanguage") = "tr".into();
+        *draft.value("documentTitle") = "Moxcrew · 2027 Çalışma Planı".into();
+        *draft.value("documentSubtitle") = "Görünür kararlar, doğrulanabilir teslimatlar.".into();
+        *draft.value("documentSections") = "Yön | Planı görünür tut.; Son kararı sahibinde bırak.\nSonraki adımlar | Pilot akışlarını tamamla.; Her çıktıyı kanıtıyla incele.".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        for _ in 0..6 {
+            render(
+                &ctx,
+                &mut c,
+                &data,
+                size,
+                false,
+                vec![
+                    egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Page,
+                        delta: egui::vec2(0.0, -1.0),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        }
+        assert!(click_at_size(
+            &ctx,
+            &mut c,
+            &data,
+            size,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"documents.create\""));
+        assert!(request.contains("\"language\": \"tr\""));
+        assert!(request.contains("Moxcrew · 2027 Çalışma Planı"));
+        assert!(request.contains("Görünür kararlar, doğrulanabilir teslimatlar."));
+        assert!(request.contains("Planı görünür tut."));
+        assert!(request.contains("Son kararı sahibinde bırak."));
+        assert!(request.contains("Do not invent copy, add facts, publish, upload"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn editable_document_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 31;
+                *draft.value("documentLanguage") = language.into();
+                *draft.value("documentTitle") = "Moxcrew working plan".into();
+                *draft.value("documentSubtitle") = "Visible, editable and reviewable.".into();
+                *draft.value("documentSections") =
+                    "Direction | Keep the plan visible.; Keep the final call.\nNext steps | Complete the pilot.; Review every output.".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..6 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: document action");
             }
         }
     }

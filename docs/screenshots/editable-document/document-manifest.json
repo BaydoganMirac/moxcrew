@@ -1,0 +1,31 @@
+{
+  "kind": "editable_document",
+  "operation": "create",
+  "structured": true,
+  "editable": true,
+  "published": false,
+  "language": "tr",
+  "sectionCount": 3,
+  "paragraphCount": 11,
+  "files": {
+    "document.docx": {
+      "bytes": 2315,
+      "sha256": "52ca8cb284cafa9f9b9bba282daf24c423001683654b6a017308ed42c50e9d27"
+    },
+    "content.json": {
+      "bytes": 1073,
+      "sha256": "da535a9299aa5bc0947ac5123059874dd3c99907330632dea6ead00ee7f6c406"
+    },
+    "summary.md": {
+      "bytes": 302,
+      "sha256": "4eca961c1f63071ac6a118bb267f3f94c299e752ef2ee2b3b30f9335c07fb00f"
+    }
+  },
+  "verification": {
+    "packageReopened": true,
+    "textAndStylesExact": true,
+    "externalReferences": false,
+    "activeContent": false,
+    "humanReviewRequired": true
+  }
+}

@@ -171,6 +171,39 @@ pub(crate) fn task(value: &Value) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn member_dependencies(
+    value: Option<&Value>,
+    member_count: usize,
+) -> Result<Option<Vec<Vec<usize>>>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let rows = value
+        .as_array()
+        .filter(|rows| rows.len() == member_count)
+        .ok_or_else(|| fail("WORKFLOW_RECIPE_INVALID"))?;
+    let mut plan = Vec::with_capacity(rows.len());
+    for (member_index, row) in rows.iter().enumerate() {
+        let dependencies = row
+            .as_array()
+            .filter(|dependencies| dependencies.len() <= 5)
+            .ok_or_else(|| fail("WORKFLOW_RECIPE_INVALID"))?;
+        let mut seen = HashSet::new();
+        let mut checked = Vec::with_capacity(dependencies.len());
+        for dependency in dependencies {
+            let dependency = dependency
+                .as_u64()
+                .and_then(|dependency| usize::try_from(dependency).ok())
+                .filter(|dependency| *dependency < member_index)
+                .ok_or_else(|| fail("WORKFLOW_RECIPE_INVALID"))?;
+            require(seen.insert(dependency), "WORKFLOW_RECIPE_INVALID")?;
+            checked.push(dependency);
+        }
+        plan.push(checked);
+    }
+    Ok(Some(plan))
+}
+
 pub(crate) fn input_manifest(value: &Value, project: &Value, mission: &Value) -> Result<()> {
     if value.is_null() {
         return Ok(());
@@ -1329,36 +1362,53 @@ impl Host {
             json!({"crewId":format!("crew:{}",payload["commandId"].as_str().unwrap().strip_prefix("cmd:").unwrap()),"projectId":payload["projectId"],"name":name,"members":members,"createdAt":created})
         };
         crew(&selected)?;
-        let mut members = array(&selected, "members").to_vec();
-        members.sort_by_key(|a| match a["role"].as_str() {
-            Some("research") => 0,
-            Some("review") => 2,
-            _ => 1,
-        });
+        let explicit_dependencies = member_dependencies(
+            payload.get("memberDependencies"),
+            array(&selected, "members").len(),
+        )?;
+        let mut members: Vec<_> = array(&selected, "members")
+            .iter()
+            .cloned()
+            .enumerate()
+            .collect();
+        if explicit_dependencies.is_none() {
+            members.sort_by_key(|(_, member)| match member["role"].as_str() {
+                Some("research") => 0,
+                Some("review") => 2,
+                _ => 1,
+            });
+        }
         let mut tasks: Vec<Value> = Vec::new();
-        for member in members {
+        for (member_index, member) in members {
             let phase = match member["role"].as_str() {
                 Some("research") => 0,
                 Some("review") => 2,
                 _ => 1,
             };
-            let dependencies: Vec<_> = tasks
-                .iter()
-                .filter(|task| {
-                    let role = array(&selected, "members")
-                        .iter()
-                        .find(|m| m["agentId"] == task["agentId"])
-                        .unwrap()["role"]
-                        .as_str()
-                        .unwrap();
-                    match phase {
-                        1 => role == "research",
-                        2 => role != "review",
-                        _ => false,
-                    }
-                })
-                .map(|t| t["taskId"].clone())
-                .collect();
+            let dependencies: Vec<_> = if let Some(plan) = &explicit_dependencies {
+                plan[member_index]
+                    .iter()
+                    .map(|dependency| tasks[*dependency]["taskId"].clone())
+                    .collect()
+            } else {
+                tasks
+                    .iter()
+                    .filter(|task| {
+                        let role = array(&selected, "members")
+                            .iter()
+                            .find(|m| m["agentId"] == task["agentId"])
+                            .unwrap()["role"]
+                            .as_str()
+                            .unwrap();
+                        match phase {
+                            1 => role == "research",
+                            2 => role != "review",
+                            _ => false,
+                        }
+                    })
+                    .map(|t| t["taskId"].clone())
+                    .collect()
+            };
             tasks.push(json!({"taskId":format!("task:{}",uuid::Uuid::new_v4()),"agentId":member["agentId"],"title":clip(&format!("{} · {}",payload["title"].as_str().unwrap(),member["name"].as_str().unwrap()),160),"instruction":member["instruction"],"abilityId":member["abilityId"],"dependsOn":dependencies}));
         }
         let settings_value = payload.get("settings").cloned().unwrap_or_else(

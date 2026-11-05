@@ -15,7 +15,7 @@ started by the installed app. Reuse the accepted Rust core and data directory.
 
 - Coordinator: root/Cargo manifests and lock, desktop main/lifecycle/command
   bridge, integration, old Tauri retirement, docs and final verification.
-- Interface builder: `crates/patchfleet-desktop/src/ui.rs` and its UI helpers/tests.
+- Interface builder: `crates/moxcrew-desktop/src/ui.rs` and its UI helpers/tests.
   Render existing operational flows and emit typed actions; do not mutate core,
   provider, Cloud, manifests or coordinator lifecycle files.
 - Packaging builder: `Packager.toml`, native CI workflow and desktop icon assets.

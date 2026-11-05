@@ -61,7 +61,7 @@ by text; keyboard activation and reduced motion remain supported.
 
 ## Native source
 
-[studio.rs](../../crates/patchfleet-desktop/src/studio.rs) owns the shared metrics,
+[studio.rs](../../crates/moxcrew-desktop/src/studio.rs) owns the shared metrics,
 palette, button variants, single-line input and card frame. Existing `control`,
 `submit`, `action`, `field`, `field_hint`, `card` and Project `view_control` helpers
 delegate to these components while preserving their command and test hooks.

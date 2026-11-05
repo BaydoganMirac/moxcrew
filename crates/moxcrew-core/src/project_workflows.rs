@@ -798,7 +798,7 @@ fn recipe_valid(r: &Value) -> Result<()> {
             "settings",
             "createdAt",
         ],
-        &["deliverables", "toolRequirements"],
+        &["deliverables", "toolRequirements", "memberDependencies"],
     )?;
     bounded(&r["recipeId"], 128)?;
     if !r["projectId"].is_null() {
@@ -816,6 +816,7 @@ fn recipe_valid(r: &Value) -> Result<()> {
                         | "builtin:travel"
                         | "builtin:study"
                         | "builtin:data"
+                        | "builtin:data-briefing"
                 )
             ),
             "WORKFLOW_RECIPE_INVALID",
@@ -832,6 +833,7 @@ fn recipe_valid(r: &Value) -> Result<()> {
             }
         }
     }
+    crews::member_dependencies(r.get("memberDependencies"), array(r, "members").len())?;
     let plan = json!({"abilityId":r["abilityId"],"members":r["members"],"settings":r["settings"],"questions":[]});
     validated_plan(&plan)?;
     Ok(())
@@ -1115,7 +1117,31 @@ fn prepared_matches(p: &Value, expected: &Value) -> Result<()> {
                 .all(|key| p["mission"][*key] == expected[*key])
             && p["workflow"] == initial_workflow(expected, &p["crew"])?,
         "WORKFLOW_PLAN_CHANGED",
-    )
+    )?;
+    let Some(raw_dependencies) = expected.get("memberDependencies") else {
+        return Ok(());
+    };
+    let dependencies =
+        crews::member_dependencies(Some(raw_dependencies), array(&p["crew"], "members").len())?
+            .ok_or_else(|| fail("WORKFLOW_RECIPE_INVALID"))?;
+    let tasks = array(&p["mission"], "tasks");
+    let members = array(&p["crew"], "members");
+    require(tasks.len() == members.len(), "WORKFLOW_PLAN_CHANGED")?;
+    for (index, task) in tasks.iter().enumerate() {
+        require(
+            task["agentId"] == members[index]["agentId"],
+            "WORKFLOW_PLAN_CHANGED",
+        )?;
+        let expected_dependencies: Vec<_> = dependencies[index]
+            .iter()
+            .map(|dependency| tasks[*dependency]["taskId"].clone())
+            .collect();
+        require(
+            array(task, "dependsOn") == expected_dependencies,
+            "WORKFLOW_PLAN_CHANGED",
+        )?;
+    }
+    Ok(())
 }
 fn stopped_before(events: &[Value], index: usize, work: &Value) -> bool {
     if work.is_null() {
@@ -1740,6 +1766,9 @@ pub(crate) fn project(events: &[Value], crews_state: &Value, work: &Value) -> Re
                         expected["abilityId"] = r["abilityId"].clone();
                         expected["members"] = r["members"].clone();
                         expected["settings"] = r["settings"].clone();
+                        if let Some(dependencies) = r.get("memberDependencies") {
+                            expected["memberDependencies"] = dependencies.clone();
+                        }
                         expected
                     }
                 } else if origin["kind"] == "capability" {
@@ -1754,7 +1783,11 @@ pub(crate) fn project(events: &[Value], crews_state: &Value, work: &Value) -> Re
                             && s["occurrences"] == origin["ordinal"],
                         "WORKFLOW_SCOPE_INVALID",
                     )?;
-                    json!({"projectId":s["projectId"],"title":s["recipe"]["name"],"instruction":s["recipe"]["description"],"abilityId":s["recipe"]["abilityId"],"members":s["recipe"]["members"],"settings":s["recipe"]["settings"],"budgets":s["budgets"],"providerId":schedule_provider_id(s)})
+                    let mut expected = json!({"projectId":s["projectId"],"title":s["recipe"]["name"],"instruction":s["recipe"]["description"],"abilityId":s["recipe"]["abilityId"],"members":s["recipe"]["members"],"settings":s["recipe"]["settings"],"budgets":s["budgets"],"providerId":schedule_provider_id(s)});
+                    if let Some(dependencies) = s["recipe"].get("memberDependencies") {
+                        expected["memberDependencies"] = dependencies.clone();
+                    }
+                    expected
                 };
                 expected["projectId"] = p["mission"]["projectId"].clone();
                 prepared_matches(p, &expected)?;
@@ -2292,6 +2325,7 @@ pub(crate) fn metadata(state: &Value) -> Value {
                 "createdAt",
                 "deliverables",
                 "toolRequirements",
+                "memberDependencies",
             ],
         ),
         (
@@ -2758,8 +2792,27 @@ impl Host {
                 } else {
                     1
                 };
-                let members:Vec<_>=array(roster,"members").iter().map(|m|json!({"name":m["name"],"role":m["role"],"abilityId":m["abilityId"],"instruction":m["instruction"]})).collect();
-                let r = json!({"recipeId":id,"projectId":p["projectId"],"revision":rev,"name":p["name"],"description":m["workflow"]["currentInstruction"].as_str().unwrap_or(m["instruction"].as_str().unwrap()),"abilityId":m["abilityId"],"members":members,"settings":m["settings"],"createdAt":now()});
+                let tasks = array(&m, "tasks");
+                let members:Vec<_>=tasks.iter().map(|task| {
+                    let member = array(roster,"members").iter().find(|member| member["agentId"] == task["agentId"]).unwrap();
+                    json!({"name":member["name"],"role":member["role"],"abilityId":member["abilityId"],"instruction":member["instruction"]})
+                }).collect();
+                let member_dependencies: Vec<Vec<usize>> = tasks
+                    .iter()
+                    .map(|task| {
+                        array(task, "dependsOn")
+                            .iter()
+                            .map(|dependency| {
+                                tasks
+                                    .iter()
+                                    .position(|candidate| candidate["taskId"] == *dependency)
+                                    .unwrap()
+                            })
+                            .collect()
+                    })
+                    .collect();
+                let r = json!({"recipeId":id,"projectId":p["projectId"],"revision":rev,"name":p["name"],"description":m["workflow"]["currentInstruction"].as_str().unwrap_or(m["instruction"].as_str().unwrap()),"abilityId":m["abilityId"],"members":members,"memberDependencies":member_dependencies,"settings":m["settings"],"createdAt":now()});
+                recipe_valid(&r)?;
                 let mut result = receipt("WORKFLOW_RECIPE_SAVED", p);
                 result["recipeId"] = id;
                 result["revision"] = json!(rev);
@@ -2787,6 +2840,9 @@ impl Host {
                 payload["abilityId"] = r["abilityId"].clone();
                 payload["members"] = r["members"].clone();
                 payload["settings"] = r["settings"].clone();
+                if let Some(dependencies) = r.get("memberDependencies") {
+                    payload["memberDependencies"] = dependencies.clone();
+                }
                 self.prepare_workflow_crew(&payload,&json!({"kind":"owner","action":action,"recipeId":r["recipeId"],"recipeRevision":r["revision"]})).await
             }
             "project_schedule_save" => {
@@ -3198,6 +3254,9 @@ impl Host {
                 continue;
             }
             let mut payload = json!({"projectId":s["projectId"],"commandId":stable_command(&format!("{}:{}",s["scheduleId"],p["ordinal"])),"title":s["recipe"]["name"],"instruction":s["recipe"]["description"],"abilityId":s["recipe"]["abilityId"],"members":s["recipe"]["members"],"settings":s["recipe"]["settings"],"budgets":s["budgets"],"providerId":schedule_provider_id(s)});
+            if let Some(dependencies) = s["recipe"].get("memberDependencies") {
+                payload["memberDependencies"] = dependencies.clone();
+            }
             payload["expectedProjectRevision"] = self.store.runtime_projections()?["projectMemory"]
                 ["projects"]
                 .as_array()
@@ -3482,6 +3541,23 @@ mod tests {
             .unwrap()["revision"]
             .clone()
     }
+    fn dependency_indices(mission: &Value) -> Vec<Vec<usize>> {
+        let tasks = array(mission, "tasks");
+        tasks
+            .iter()
+            .map(|task| {
+                array(task, "dependsOn")
+                    .iter()
+                    .map(|dependency| {
+                        tasks
+                            .iter()
+                            .position(|candidate| candidate["taskId"] == *dependency)
+                            .unwrap()
+                    })
+                    .collect()
+            })
+            .collect()
+    }
     async fn plan(host: &Host, p: &Value) -> Value {
         let request = command(
             json!({"projectId":p,"expectedProjectRevision":project_revision(host,p),"providerId":"codex","title":"A useful report","instruction":"Write an accurate report."}),
@@ -3522,9 +3598,35 @@ mod tests {
     }
     #[test]
     fn bundled_recipes_and_untrusted_plans_are_validated() {
-        assert_eq!(bundled().len(), 7);
+        assert_eq!(bundled().len(), 8);
         for recipe in bundled() {
             recipe_valid(&recipe).unwrap();
+        }
+        let legacy_data = bundled()
+            .into_iter()
+            .find(|recipe| recipe["recipeId"] == "builtin:data")
+            .unwrap();
+        assert_eq!(legacy_data["revision"], 1);
+        assert_eq!(array(&legacy_data, "members").len(), 3);
+        assert!(legacy_data.get("memberDependencies").is_none());
+        let data = bundled()
+            .into_iter()
+            .find(|recipe| recipe["recipeId"] == "builtin:data-briefing")
+            .unwrap();
+        assert_eq!(data["revision"], 1);
+        assert_eq!(
+            data["memberDependencies"],
+            json!([[], [0], [1], [2], [3], [0, 1, 2, 3, 4]])
+        );
+        for (name, dependencies) in [
+            ("short", json!([[], [0]])),
+            ("forward", json!([[1], [0], [1], [2], [3], [4]])),
+            ("duplicate", json!([[], [0, 0], [1], [2], [3], [4]])),
+            ("foreign", json!([[], ["0"], [1], [2], [3], [4]])),
+        ] {
+            let mut invalid = data.clone();
+            invalid["memberDependencies"] = dependencies;
+            assert!(recipe_valid(&invalid).is_err(), "{name}");
         }
         let mut plan = json!({"abilityId":"D1","members":[crews::default_member("document","D1")],"settings":{"concurrency":1,"retryLimit":1,"timeoutMinutes":20},"questions":[]});
         validated_plan(&plan).unwrap();
@@ -3573,6 +3675,161 @@ mod tests {
         )
         .unwrap();
         assert_eq!(schedule_provider_id(&preserved), "claude");
+
+        let data_request = command(
+            json!({"projectId":project,"expectedProjectRevision":1,"recipeId":data["recipeId"],"expectedRecipeRevision":data["revision"],"providerId":"codex","intervalMinutes":15,"firstRunAt":"2100-01-01T00:00:00Z","maxOccurrences":1,"budgets":{"maxJobs":6,"maxElapsedMinutes":20,"maxReviewRounds":0}}),
+        );
+        let data_schedule = saved_schedule(&data_request, &data, None, &json!(now())).unwrap();
+        assert_eq!(
+            data_schedule["recipe"]["memberDependencies"],
+            data["memberDependencies"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn data_briefing_recipe_waits_hands_off_files_and_saves_the_exact_graph() {
+        let (_temporary, _peer, host, p) = fixture("complete").await;
+        let recipe = bundled()
+            .into_iter()
+            .find(|recipe| recipe["recipeId"] == "builtin:data-briefing")
+            .unwrap();
+        let prepared = host
+            .action(
+                "project_recipe_run",
+                command(json!({"projectId":p,"expectedProjectRevision":project_revision(&host,&p),"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"]})),
+            )
+            .await
+            .unwrap();
+        let initial = mission(&host, &prepared["missionId"]);
+        assert_eq!(
+            array(&initial, "tasks")
+                .iter()
+                .map(|task| task["abilityId"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["T1", "T2", "T3", "P4", "A2", "D1"]
+        );
+        assert_eq!(
+            dependency_indices(&initial),
+            vec![
+                vec![],
+                vec![0],
+                vec![1],
+                vec![2],
+                vec![3],
+                vec![0, 1, 2, 3, 4]
+            ]
+        );
+
+        let events = host.store.read_events().unwrap();
+        let prepared_index = events
+            .iter()
+            .position(|event| event["type"] == "project_workflow.mission_prepared")
+            .unwrap();
+        let mut changed = events.clone();
+        changed[prepared_index]["payload"]["mission"]["tasks"][2]["dependsOn"] = json!([]);
+        assert!(crate::domain::project_events(&changed).is_err());
+
+        configure(&host, &p, &prepared["missionId"], 6).await;
+        host.action(
+            "project_crew_start",
+            lifecycle(&p, &mission(&host, &prepared["missionId"])),
+        )
+        .await
+        .unwrap();
+        for _ in 0..80 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            host.background_tick(false).await.unwrap();
+            if mission(&host, &prepared["missionId"])["status"] == "completed" {
+                break;
+            }
+        }
+        let completed = mission(&host, &prepared["missionId"]);
+        assert_eq!(completed["status"], "completed", "{completed}");
+        let snapshot = host.snapshot().unwrap();
+        let events = host.store.read_events().unwrap();
+        for task in array(&completed, "tasks").iter().skip(1) {
+            let allocation_index = events
+                .iter()
+                .position(|event| {
+                    event["type"] == "project_workflow.task_allocated"
+                        && event["payload"]["taskId"] == task["taskId"]
+                })
+                .unwrap();
+            for dependency in array(task, "dependsOn") {
+                let upstream = array(&completed, "tasks")
+                    .iter()
+                    .find(|candidate| candidate["taskId"] == *dependency)
+                    .unwrap();
+                assert!(crews::completed_before(
+                    &events,
+                    allocation_index,
+                    &upstream["workItemId"]
+                ));
+            }
+            let work = array(&snapshot["work"], "items")
+                .iter()
+                .find(|work| work["workItemId"] == task["workItemId"])
+                .unwrap();
+            host.crew_work_inputs_check(work).unwrap();
+            let manifest: Value = serde_json::from_slice(
+                &std::fs::read(
+                    std::path::Path::new(work["workingDirectory"].as_str().unwrap())
+                        .join("inputs/manifest.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                array(&manifest, "files").len(),
+                array(task, "dependsOn").len()
+            );
+        }
+
+        let saved = host
+            .action(
+                "project_recipe_save",
+                command(json!({"projectId":p,"missionId":completed["missionId"],"expectedMissionRevision":completed["revision"],"name":"Saved data briefing"})),
+            )
+            .await
+            .unwrap();
+        let reused = host
+            .action(
+                "project_recipe_run",
+                command(json!({"projectId":p,"expectedProjectRevision":project_revision(&host,&p),"recipeId":saved["recipeId"],"expectedRecipeRevision":saved["revision"]})),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            dependency_indices(&mission(&host, &reused["missionId"])),
+            dependency_indices(&completed)
+        );
+
+        let schedule = host
+            .action(
+                "project_schedule_save",
+                command(json!({"projectId":p,"expectedProjectRevision":project_revision(&host,&p),"recipeId":recipe["recipeId"],"expectedRecipeRevision":recipe["revision"],"providerId":"codex","intervalMinutes":15,"firstRunAt":now(),"maxOccurrences":1,"budgets":{"maxJobs":6,"maxElapsedMinutes":20,"maxReviewRounds":0}})),
+            )
+            .await
+            .unwrap();
+        for _ in 0..3 {
+            host.background_tick(false).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let events = host.store.read_events().unwrap();
+        let scheduled = events
+            .iter()
+            .find(|event| {
+                event["type"] == "project_workflow.mission_prepared"
+                    && event["payload"]["origin"]["kind"] == "schedule"
+                    && event["payload"]["origin"]["scheduleId"] == schedule["scheduleId"]
+            })
+            .unwrap();
+        assert_eq!(
+            dependency_indices(&scheduled["payload"]["mission"]),
+            dependency_indices(&completed)
+        );
+        host.shutdown().await;
     }
     #[cfg(unix)]
     #[tokio::test]

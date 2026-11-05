@@ -10,18 +10,18 @@ homepage = "https://github.com/BaydoganMirac/moxcrew"
 license-file = "LICENSE"
 resources = [
   { src = "LICENSE", target = "LICENSE.txt" },
-  { src = "crates/patchfleet-desktop/assets/fonts/OFL.txt", target = "FONT-LICENSE.txt" },
-  { src = "crates/patchfleet-desktop/assets/windows/LICENSE-cargo-packager-MIT", target = "LICENSE-CARGO-PACKAGER-MIT.txt" },
+  { src = "crates/moxcrew-desktop/assets/fonts/OFL.txt", target = "FONT-LICENSE.txt" },
+  { src = "crates/moxcrew-desktop/assets/windows/LICENSE-cargo-packager-MIT", target = "LICENSE-CARGO-PACKAGER-MIT.txt" },
 ]
 category = "DeveloperTool"
 out-dir = "dist/native"
 binaries-dir = "target/release"
 icons = [
-  "crates/patchfleet-desktop/assets/icons/32x32.png",
-  "crates/patchfleet-desktop/assets/icons/128x128.png",
-  "crates/patchfleet-desktop/assets/icons/128x128@2x.png",
-  "crates/patchfleet-desktop/assets/icons/icon.icns",
-  "crates/patchfleet-desktop/assets/icons/icon.ico",
+  "crates/moxcrew-desktop/assets/icons/32x32.png",
+  "crates/moxcrew-desktop/assets/icons/128x128.png",
+  "crates/moxcrew-desktop/assets/icons/128x128@2x.png",
+  "crates/moxcrew-desktop/assets/icons/icon.icns",
+  "crates/moxcrew-desktop/assets/icons/icon.ico",
 ]
 
 [[binaries]]
@@ -32,16 +32,16 @@ main = true
 minimum-system-version = "11.0"
 # Development artifacts use an ad-hoc signature; public signing is a separate release action.
 signing-identity = "-"
-info-plist-path = "crates/patchfleet-desktop/assets/macos-permissions.plist"
+info-plist-path = "crates/moxcrew-desktop/assets/macos-permissions.plist"
 
 [nsis]
-template = "crates/patchfleet-desktop/assets/windows/installer.nsi"
+template = "crates/moxcrew-desktop/assets/windows/installer.nsi"
 installMode = "currentUser"
-installer-icon = "crates/patchfleet-desktop/assets/icons/icon.ico"
+installer-icon = "crates/moxcrew-desktop/assets/icons/icon.ico"
 # No appdata-paths: uninstallers must preserve the existing local canonical data.
 
 [wix]
-template = "crates/patchfleet-desktop/assets/windows/main.wxs"
+template = "crates/moxcrew-desktop/assets/windows/main.wxs"
 
 [deb]
 package-name = "patchfleet-desktop"

@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/patchfleet-core", "crates/patchfleet-desktop"]
-default-members = ["crates/patchfleet-core"]
+members = ["crates/moxcrew-core", "crates/moxcrew-desktop"]
+default-members = ["crates/moxcrew-core"]
 resolver = "2"
 
 [workspace.package]

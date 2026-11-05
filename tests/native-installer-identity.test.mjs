@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const directory = "crates/patchfleet-desktop/assets/windows/";
+const directory = "crates/moxcrew-desktop/assets/windows/";
 const [config, nsis, wix] = await Promise.all([
   readFile("Packager.toml", "utf8"), readFile(`${directory}installer.nsi`, "utf8"), readFile(`${directory}main.wxs`, "utf8"),
 ]);
@@ -20,7 +20,7 @@ function nsisDefines(product, manufacturer) {
 }
 
 test("display rename retains existing NSIS upgrade and install identities", () => {
-  assert.match(section("nsis"), /template = "crates\/patchfleet-desktop\/assets\/windows\/installer.nsi"/);
+  assert.match(section("nsis"), /template = "crates\/moxcrew-desktop\/assets\/windows\/installer.nsi"/);
   assert.match(section("nsis"), /installMode = "currentUser"/);
   for (const display of ["Patchfleet", "Moxcrew"]) {
     assert.deepEqual(nsisDefines(display, display), {
@@ -45,7 +45,7 @@ test("NSIS detects both legacy and current WiX identity pairs without changing v
 });
 
 test("WiX restores and rewrites the original registry and directory identities", () => {
-  assert.match(section("wix"), /template = "crates\/patchfleet-desktop\/assets\/windows\/main.wxs"/);
+  assert.match(section("wix"), /template = "crates\/moxcrew-desktop\/assets\/windows\/main.wxs"/);
   assert.match(wix, /RegistrySearch Id="PrevInstallDirReg" Root="HKCU" Key="Software\\\\Patchfleet\\\\Patchfleet" Name="InstallDir"/);
   assert.match(wix, /RegistryKey Root="HKCU" Key="Software\\\\Patchfleet\\\\Patchfleet"/);
   assert.doesNotMatch(wix, /Key="Software\\\\\{\{manufacturer\}\}\\\\\{\{product_name\}\}"/);

@@ -20,9 +20,9 @@ prerequisite for preserving the current product.
   scheduling, CLI, integration, governance/docs and release CI.
 - Desktop builder: `desktop/`, `src-tauri/`, root package/lock and frontend
   configuration. Preserve user flows through Rust IPC, no Node sidecar.
-- Integration builder: `crates/patchfleet-core/src/providers.rs` and `cloud.rs`,
+- Integration builder: `crates/moxcrew-core/src/providers.rs` and `cloud.rs`,
   their tests and fixtures. Port supported surfaces, never scrape transcripts.
-- Persistence builder: `crates/patchfleet-core/src/domain.rs` and `store.rs`,
+- Persistence builder: `crates/moxcrew-core/src/domain.rs` and `store.rs`,
   persistence/parity fixtures and tests. Preserve existing V1 event meaning.
 - Independent review: after a stable integrated diff, inspect durability,
   cancellation, permissions, Cloud redaction and platform build configuration.

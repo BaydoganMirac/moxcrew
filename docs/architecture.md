@@ -64,8 +64,8 @@ events, local process control, or shell execution.
 
 ## Desktop deployable shape
 
-`crates/patchfleet-core` owns domain validation, provider processes, canonical
-storage, scheduling and outbound Cloud sync. `crates/patchfleet-desktop` renders
+`crates/moxcrew-core` owns domain validation, provider processes, canonical
+storage, scheduling and outbound Cloud sync. `crates/moxcrew-desktop` renders
 the interface in egui/eframe using a native window and Glow renderer. No WebView,
 Node/Next server or embedded JavaScript bundle executes in the application.
 

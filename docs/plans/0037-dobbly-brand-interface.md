@@ -20,15 +20,15 @@ display-name compatibility proposal are recorded in
 
 ## Current implementation
 
-- `crates/patchfleet-desktop/src/studio.rs`: bundled Manrope, dark-only palette,
+- `crates/moxcrew-desktop/src/studio.rs`: bundled Manrope, dark-only palette,
   widget defaults and the three-stroke fleet mark.
-- `crates/patchfleet-desktop/src/ui.rs`: eight tabs, navigation, forms, notices,
+- `crates/moxcrew-desktop/src/ui.rs`: eight tabs, navigation, forms, notices,
   account, source/decision/publication flows and UI boundary tests. Several
   fills and text colors remain literal values outside `studio.rs`.
-- `crates/patchfleet-desktop/src/main.rs`: window identity, app icon, native
+- `crates/moxcrew-desktop/src/main.rs`: window identity, app icon, native
   startup, production error screen and feature-gated disposable smoke scenes.
-- `crates/patchfleet-desktop/src/i18n.rs`: Turkish/English presentation copy.
-- `crates/patchfleet-desktop/assets/icons`, `scripts/build-studio-icons.swift`, `Packager.toml`: native
+- `crates/moxcrew-desktop/src/i18n.rs`: Turkish/English presentation copy.
+- `crates/moxcrew-desktop/assets/icons`, `scripts/build-studio-icons.swift`, `Packager.toml`: native
   icon exports and packaged display identity.
 
 The old Next.js Local UI is a legacy parity reference, not this task's app.

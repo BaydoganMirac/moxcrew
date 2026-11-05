@@ -126,12 +126,16 @@ bodies are JSON, carry `Content-Type: application/json`, and are limited to
 
 Pairing consumes:
 
+Cloud issues `MX-` codes. The legacy `PF-` prefix is accepted only during the
+compatibility window; both forms have the same entropy, expiry, and single-use
+rules.
+
 ```json
 {
   "schemaVersion": 1,
   "messageId": "opaque",
   "occurredAt": "2026-07-16T00:00:00.000Z",
-  "pairingCode": "PF-0123456789AB",
+  "pairingCode": "MX-0123456789AB",
   "installationId": "opaque",
   "displayName": "user chosen, 1 to 80 characters",
   "appVersion": "0.1.0",

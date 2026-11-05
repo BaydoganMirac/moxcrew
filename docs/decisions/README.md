@@ -56,3 +56,4 @@ supersedes the old one.
 | [0050](0050-local-product-capabilities.md) | Accepted; Task0052 | Eleven local capabilities through the existing Project/Chat authority, optional engines and V14 facts; remote intake excluded |
 | [0051](0051-atomic-owner-export-publication.md) | Accepted; Task0060 | Publish owner exports atomically without replacing an existing destination |
 | [0052](0052-explicit-recipe-handoffs.md) | Accepted; Task0099 | Preserve bounded, frozen task dependencies in reusable local workflow recipes |
+| [0053](0053-moxcrew-pairing-code-prefix.md) | Accepted | Issue Moxcrew-branded `MX-` pairing codes while accepting the legacy prefix temporarily |

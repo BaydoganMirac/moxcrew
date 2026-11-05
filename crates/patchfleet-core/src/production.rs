@@ -945,6 +945,84 @@ mod tests {
     }
     #[cfg(unix)]
     #[tokio::test]
+    async fn audio_cleanup_rejects_unknown_treatment_before_tools() {
+        let data = tempfile::tempdir().unwrap();
+        let result = run(
+            data.path(),
+            "audio.cleanup",
+            &json!({"source":"inputs/source.wav","targetLufs":-16,"treatment":"magic"}),
+            &[("inputs/source.wav".into(), b"audio fixture".to_vec())],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(result,Err(Error(ref code)) if code=="PRODUCTION_AUDIO_CLEANUP_TREATMENT_INVALID")
+        );
+        let target = run(
+            data.path(),
+            "audio.cleanup",
+            &json!({"source":"inputs/source.wav","targetLufs":-30,"treatment":"voice"}),
+            &[("inputs/source.wav".into(), b"audio fixture".to_vec())],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(target,Err(Error(ref code)) if code=="PRODUCTION_AUDIO_CLEANUP_TARGET_INVALID")
+        );
+    }
+    #[tokio::test]
+    #[ignore = "requires real FFmpeg/FFprobe, one exact audio input and an evidence destination"]
+    async fn exact_audio_renders_a_measured_checked_cleanup() {
+        let data = tempfile::tempdir().unwrap();
+        for (id, key) in [
+            ("ffmpeg", "MOXCREW_TEST_FFMPEG"),
+            ("ffprobe", "MOXCREW_TEST_FFPROBE"),
+        ] {
+            configure(data.path(), id, &std::env::var(key).unwrap()).unwrap();
+        }
+        let source = fs::read(std::env::var("MOXCREW_AUDIO_CLEANUP_SOURCE").unwrap()).unwrap();
+        let evidence = PathBuf::from(std::env::var("MOXCREW_AUDIO_CLEANUP_EVIDENCE_DIR").unwrap());
+        let output = run(
+            data.path(),
+            "audio.cleanup",
+            &json!({"source":"inputs/source.wav","targetLufs":-16,"treatment":"voice"}),
+            &[("inputs/source.wav".into(), source.clone())],
+            None,
+        )
+        .await
+        .unwrap();
+        fs::create_dir_all(&evidence).unwrap();
+        fs::write(evidence.join("source-fixture.wav"), source).unwrap();
+        for (name, bytes) in output.files {
+            fs::write(evidence.join(name), bytes).unwrap();
+        }
+        for name in [
+            "source-fixture.wav",
+            "cleaned-audio.wav",
+            "audio-cleanup-manifest.json",
+        ] {
+            assert!(
+                evidence.join(name).is_file(),
+                "missing evidence file {name}"
+            );
+        }
+        let manifest: Value = serde_json::from_slice(
+            &fs::read(evidence.join("audio-cleanup-manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["policy"]["targetLufs"], -16);
+        assert_eq!(manifest["verification"]["targetMatched"], true);
+        assert_eq!(manifest["verification"]["fullAudioDecoded"], true);
+        assert_eq!(manifest["verification"]["subjectiveQualityReviewed"], false);
+        assert!(
+            manifest["measurement"]["targetDifferenceLu"]
+                .as_f64()
+                .unwrap()
+                <= 1.0
+        );
+    }
+    #[cfg(unix)]
+    #[tokio::test]
     async fn motion_video_rejects_unknown_treatment_before_tools() {
         let data = tempfile::tempdir().unwrap();
         let result = run(

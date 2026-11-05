@@ -1,0 +1,43 @@
+{
+  "kind": "audio-cleanup",
+  "policy": {
+    "treatment": "voice",
+    "targetLufs": -16
+  },
+  "source": {
+    "sha256": "c64f702097fd529e4f46048b4792dc3eefb3acada08244d5a5134fc173fe01ea",
+    "durationSeconds": 12.0,
+    "codec": "pcm_s16le",
+    "sampleRate": "48000",
+    "channels": 2
+  },
+  "output": {
+    "file": "cleaned-audio.wav",
+    "sha256": "861f6b5e53e5711bcec4d072179fe58cc879a7052f0e03c19830e333b3cebbf7",
+    "durationSeconds": 12.0,
+    "codec": "pcm_s16le",
+    "sampleRate": "48000",
+    "channels": 2
+  },
+  "measurement": {
+    "before": {
+      "integratedLufs": -36.74,
+      "truePeakDb": -31.08,
+      "loudnessRangeLu": 0.0
+    },
+    "after": {
+      "integratedLufs": -16.0,
+      "truePeakDb": -12.56,
+      "loudnessRangeLu": 0.1
+    },
+    "targetDifferenceLu": 0.0
+  },
+  "verification": {
+    "originalPreserved": true,
+    "durationMatched": true,
+    "channelsPreserved": true,
+    "targetMatched": true,
+    "fullAudioDecoded": true,
+    "subjectiveQualityReviewed": false
+  }
+}

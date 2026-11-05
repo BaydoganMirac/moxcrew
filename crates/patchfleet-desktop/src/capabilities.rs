@@ -673,7 +673,9 @@ impl CreateState {
 impl Console {
     #[cfg(feature = "ui-smoke")]
     pub fn capabilities_smoke(&mut self, snapshot: &Value, scene: &str) {
-        if matches!(
+        if scene == "capabilities-audio-cleanup" {
+            self.create.ability = "A3".into();
+        } else if matches!(
             scene,
             "capabilities-video-compose"
                 | "capabilities-video-highlights"
@@ -756,6 +758,7 @@ impl Console {
             | "capabilities-video-compose"
             | "capabilities-video-highlights"
             | "capabilities-video-motion"
+            | "capabilities-audio-cleanup"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -815,6 +818,7 @@ impl Console {
                 "capabilities-video-compose" => 25,
                 "capabilities-video-highlights" => 26,
                 "capabilities-video-motion" => 27,
+                "capabilities-audio-cleanup" => 28,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -942,6 +946,14 @@ impl Console {
                     "cover | 3 | MOX İLE TANIŞ | Gerçekten görebildiğin bir ekip | Tek yerel çalışma alanında planla, üret ve incele.\nstatement | 3 | KONTROL SENDE | Her devir görünür kalır. | Sen söylemeden hiçbir şey başlamaz.\nstatement | 3 | GERÇEK ÇIKTILAR | Gizemli ilerleme değil; dosya, kontrol ve sürüm. | Her teslimat kanıtını korur.\ncover | 3 | MOXCREW | Kanıtla teslim et. | Son karar sende kalsın."
                 }
                 .into();
+            } else if scene == "capabilities-audio-cleanup" {
+                draft.record = available
+                    .iter()
+                    .find(|resource| podcast_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                *draft.value("cleanupTargetLufs") = "-16".into();
+                *draft.value("cleanupTreatment") = "voice".into();
             } else if scene == "capabilities-data-scenario" {
                 draft.record = csv.unwrap_or_default();
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
@@ -1969,6 +1981,7 @@ impl Console {
             "Compose video",
             "Find video highlights",
             "Create motion video",
+            "Clean and level audio",
         ];
         form_combo(
             ui,
@@ -2004,7 +2017,7 @@ impl Console {
                         .find(|r| {
                             text(r, "resourceId") == draft.record
                                 && match kind {
-                                    8 => podcast_source(r),
+                                    8 | 28 => podcast_source(r),
                                     9 | 10 => chart_source(r),
                                     13 => template_source(r),
                                     14 => rewrite_source(r),
@@ -2018,12 +2031,12 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![8, 9, 10, 13, 14, 20, 25, 26].contains(&kind) {
+                        if ![8, 9, 10, 13, 14, 20, 25, 26, 28].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
                             && match kind {
-                                8 => podcast_source(r),
+                                8 | 28 => podcast_source(r),
                                 9 | 10 => chart_source(r),
                                 13 => template_source(r),
                                 14 => rewrite_source(r),
@@ -3954,6 +3967,37 @@ impl Console {
                     }
                 }
             }
+            28 => {
+                hint(
+                    ui,
+                    "Clean and level one exact recording up to two minutes while preserving its duration, channels and original resource.",
+                );
+                let mut treatment = match draft.get("cleanupTreatment") {
+                    "level-only" => "level-only",
+                    "gentle" => "gentle",
+                    _ => "voice",
+                };
+                ui.label(t(ui, "Cleanup treatment"));
+                ui.horizontal(|ui| {
+                    for value in ["level-only", "gentle", "voice"] {
+                        ui.selectable_value(&mut treatment, value, t(ui, value));
+                    }
+                });
+                *draft.value("cleanupTreatment") = treatment.into();
+                let mut target = draft.get("cleanupTargetLufs").parse::<i64>().unwrap_or(-16);
+                ui.label(t(ui, "Target loudness · LUFS"));
+                ui.horizontal(|ui| {
+                    for value in [-24, -20, -16, -14] {
+                        ui.selectable_value(&mut target, value, value.to_string());
+                    }
+                });
+                *draft.value("cleanupTargetLufs") = target.to_string();
+                if let Some(source) = source_id.filter(|_| source.is_some_and(podcast_source)) {
+                    operation = Some(json!({"operation":"audio.cleanup","arguments":{
+                        "source":source,"targetLufs":target,"treatment":treatment
+                    }}));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -3999,6 +4043,7 @@ impl Console {
                         25 => "Use video.compose with these exact video, image and audio resources. Preserve every source, keep the visible title/timing/position/audio policy unchanged, decode the full output and require human review of the retained placement frames before delivery.",
                         26 => "Use video.highlights with this exact video and bounded selection policy. Preserve every measured score and selected range, decode the full output and require human review because motion and loudness do not prove meaning or aesthetic quality.",
                         27 => "Use video.motion with this exact approved scene plan. Preserve every title and duration, deliver the editable storyboard and rendered MP4, verify intra-scene movement and full decode, and keep visual-quality review explicit.",
+                        28 => "Use audio.cleanup with this exact source, cleanup treatment and LUFS target. Preserve the original, duration and channels; deliver the checked WAV and manifest, verify full decode and before/after measured level, and keep subjective-quality review explicit.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -6220,6 +6265,88 @@ mod tests {
                     .unwrap()
                 });
                 assert!(visibility.1, "{language}/{theme:?}: motion action");
+            }
+        }
+    }
+    #[test]
+    fn audio_cleanup_request_freezes_exact_source_and_policy_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"field.wav","kind":"audio","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"unused.wav","kind":"audio","sha256":"b".repeat(64),"bytes":4096,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 28;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("cleanupTreatment") = "voice".into();
+        *draft.value("cleanupTargetLufs") = "-16".into();
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, egui::vec2(800.0, 560.0), false, vec![]);
+        }
+        assert!(click(
+            &ctx,
+            &mut c,
+            &data,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"audio.cleanup\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"targetLufs\": -16"));
+        assert!(request.contains("\"treatment\": \"voice\""));
+        assert!(request.contains("before/after measured level"));
+    }
+    #[test]
+    fn audio_cleanup_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                data["projectStudio"]["resources"] = json!([
+                    {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"field.wav","kind":"audio","sha256":"a".repeat(64),"bytes":4096,"status":"available"}
+                ]);
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 28;
+                draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+                *draft.value("cleanupTreatment") = "gentle".into();
+                *draft.value("cleanupTargetLufs") = "-20".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: audio cleanup action");
             }
         }
     }

@@ -112,6 +112,10 @@ commitments.
   gap: an exact approved scene plan becomes an editable storyboard and fully
   decoded 1280×720 pan/zoom video with per-scene movement proof and retained
   review frames. Copy, pacing and aesthetics remain explicit human judgments.
+  [Task0089](state/verified-audio-cleanup.md) closes the owner-visible A3 gap:
+  one exact mono/stereo recording, fixed cleanup preset and LUFS target produce
+  a source/output-hashed 48 kHz WAV with before/after measurement and full-decode
+  proof. Signal checks remain separate from subjective listening quality.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

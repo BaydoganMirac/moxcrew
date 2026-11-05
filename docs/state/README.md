@@ -74,6 +74,7 @@
 | Composed video studio | Complete; exact title/image/audio placement, mix/replace policy and fully decoded MP4 evidence | 2026-11-05 | [composed-video-studio.md](composed-video-studio.md) |
 | Signal-based video highlights | Complete; scored motion/audio selection, fully decoded MP4 and native form evidence | 2026-11-05 | [signal-based-video-highlights.md](signal-based-video-highlights.md) |
 | Motion explainer video | Complete; editable storyboard, real pan/zoom motion, full-decode and native form evidence | 2026-11-05 | [motion-explainer-video.md](motion-explainer-video.md) |
+| Verified audio cleanup | Complete; exact preset/LUFS request, before/after measurement, full-decode and native form evidence | 2026-11-05 | [verified-audio-cleanup.md](verified-audio-cleanup.md) |
 | Codex connection compatibility | Complete; installed App updated; real 0.163.0 available after restart | 2026-10-25 | [codex-connection-compatibility.md](codex-connection-compatibility.md) |
 
 Phase 1 local observation, Phase 2 durable local work control, and Phase 3

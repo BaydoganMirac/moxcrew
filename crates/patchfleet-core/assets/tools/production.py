@@ -1075,6 +1075,21 @@ def run_tool(tools, name, args):
         return data
 
 
+def run_tool_report(tools, name, args):
+    executable=tools.get(name)
+    require(isinstance(executable,str) and Path(executable).is_absolute(),'PRODUCTION_TOOL_UNAVAILABLE')
+    with tempfile.TemporaryFile() as output:
+        def limits():
+            import resource
+            resource.setrlimit(resource.RLIMIT_FSIZE,(MAX_FILE,MAX_FILE))
+        result=subprocess.run([executable,*args],stdout=subprocess.DEVNULL,stderr=output,
+                              timeout=90,preexec_fn=limits if sys.platform!='win32' else None)
+        require(result.returncode==0,'PRODUCTION_TOOL_FAILED')
+        output.seek(0);data=output.read(1024*1024+1)
+        require(len(data)<=1024*1024,'PRODUCTION_OUTPUT_LIMIT')
+        return data
+
+
 def input_format(path):
     formats={'.mp4':'mov','.mov':'mov','.m4a':'mov','.wav':'wav','.mp3':'mp3',
              '.mkv':'matroska','.webm':'matroska','.png':'png_pipe','.jpg':'jpeg_pipe',
@@ -1091,6 +1106,21 @@ def media_info(tools,path):
     return json.loads(raw)
 
 
+def audio_loudness(tools, path, target, filters=()):
+    chain=list(filters)+[f'loudnorm=I={target}:TP=-1.5:LRA=11:print_format=json']
+    raw=run_tool_report(tools,'ffmpeg',['-nostdin','-hide_banner','-nostats','-loglevel','info',
+                        *input_format(path),'-i',str(path),'-vn','-af',','.join(chain),
+                        '-f','null','-']).decode('utf-8','replace')
+    start=raw.rfind('{');end=raw.rfind('}')
+    require(0<=start<end,'PRODUCTION_AUDIO_LEVEL_UNMEASURABLE')
+    report=json.loads(raw[start:end+1])
+    result={key:float(report[key]) for key in
+            ('input_i','input_tp','input_lra','input_thresh','target_offset')}
+    require(all(math.isfinite(value) for value in result.values()),
+            'PRODUCTION_AUDIO_LEVEL_UNMEASURABLE')
+    return result
+
+
 def media(args,operation,tools):
     common=['-nostdin','-hide_banner','-loglevel','error','-n','-protocol_whitelist','file,pipe']
     if operation=='images.resize':
@@ -1098,12 +1128,70 @@ def media(args,operation,tools):
         w=int(number(args['width'],1,4096));h=int(number(args['height'],1,4096))
         run_tool(tools,'ffmpeg',common+input_format(source(args['source']))+['-i',str(source(args['source'])),'-vf',f'scale={w}:{h}:force_original_aspect_ratio=decrease','-frames:v','1',str(OUT/'image.png')])
     elif operation=='audio.cleanup':
-        exact(args,('source',))
-        input_path=source(args['source']);before=media_info(tools,input_path)
+        exact(args,('source','targetLufs','treatment'))
+        target=args['targetLufs']
+        require(type(target) in (int,float) and math.isfinite(target) and -24<=target<=-14,
+                'PRODUCTION_AUDIO_CLEANUP_TARGET_INVALID')
+        treatment=args['treatment']
+        require(treatment in ('level-only','gentle','voice'),
+                'PRODUCTION_AUDIO_CLEANUP_TREATMENT_INVALID')
+        input_path=source(args['source']);source_digest=hashlib.sha256(input_path.read_bytes()).hexdigest()
+        before=media_info(tools,input_path)
         duration=float(before.get('format',{}).get('duration',0))
-        require(0<duration<=1200,'PRODUCTION_DURATION_LIMIT')
-        require(any(s.get('codec_type')=='audio' for s in before.get('streams',[])), 'PRODUCTION_AUDIO_REQUIRED')
-        run_tool(tools,'ffmpeg',common+input_format(input_path)+['-i',str(input_path),'-vn','-af','highpass=f=80,afftdn,loudnorm=I=-16:TP=-1.5:LRA=11','-ar','24000','-ac','1','-c:a','pcm_s16le',str(OUT/'audio.wav')])
+        require(0<duration<=120,'PRODUCTION_DURATION_LIMIT')
+        stream=next((s for s in before.get('streams',[]) if s.get('codec_type')=='audio'),None)
+        require(stream is not None,'PRODUCTION_AUDIO_REQUIRED')
+        channels=stream.get('channels')
+        require(type(channels) is int and channels in (1,2),
+                'PRODUCTION_AUDIO_CHANNELS_UNSUPPORTED')
+        filters={'level-only':(),
+                 'gentle':('highpass=f=60','afftdn=nf=-40'),
+                 'voice':('highpass=f=80','lowpass=f=12000','afftdn=nf=-35')}[treatment]
+        raw_before=audio_loudness(tools,input_path,target)
+        measured=audio_loudness(tools,input_path,target,filters)
+        normalize=(f'loudnorm=I={target}:TP=-1.5:LRA=11:'
+                   f'measured_I={measured["input_i"]}:measured_TP={measured["input_tp"]}:'
+                   f'measured_LRA={measured["input_lra"]}:measured_thresh={measured["input_thresh"]}:'
+                   f'offset={measured["target_offset"]}:linear=true:print_format=summary')
+        output=OUT/'cleaned-audio.wav'
+        run_tool(tools,'ffmpeg',common+input_format(input_path)+['-i',str(input_path),'-vn',
+                 '-af',','.join((*filters,normalize)),'-ar','48000','-ac',str(channels),
+                 '-c:a','pcm_s16le',str(output)])
+        after=media_info(tools,output)
+        after_stream=next((s for s in after.get('streams',[]) if s.get('codec_type')=='audio'),None)
+        actual=float(after.get('format',{}).get('duration',0))
+        require(after_stream is not None and after_stream.get('sample_rate')=='48000'
+                and after_stream.get('channels')==channels,
+                'PRODUCTION_AUDIO_OUTPUT_INVALID')
+        require(abs(actual-duration)<max(0.2,duration*.005),'PRODUCTION_DURATION_MISMATCH')
+        run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error',
+                 *input_format(output),'-i',str(output),'-map','0:a:0','-f','null','-'])
+        measured_after=audio_loudness(tools,output,target)
+        difference=abs(measured_after['input_i']-target)
+        require(difference<=1,'PRODUCTION_AUDIO_LEVEL_MISMATCH')
+        require(hashlib.sha256(input_path.read_bytes()).hexdigest()==source_digest,
+                'PRODUCTION_SOURCE_CHANGED')
+        manifest={'kind':'audio-cleanup','policy':{'treatment':treatment,'targetLufs':target},
+                  'source':{'sha256':source_digest,
+                            'durationSeconds':duration,'codec':stream.get('codec_name'),
+                            'sampleRate':stream.get('sample_rate'),'channels':channels},
+                  'output':{'file':output.name,
+                            'sha256':hashlib.sha256(output.read_bytes()).hexdigest(),
+                            'durationSeconds':actual,'codec':after_stream.get('codec_name'),
+                            'sampleRate':after_stream.get('sample_rate'),'channels':channels},
+                  'measurement':{'before':{'integratedLufs':raw_before['input_i'],
+                                           'truePeakDb':raw_before['input_tp'],
+                                           'loudnessRangeLu':raw_before['input_lra']},
+                                 'after':{'integratedLufs':measured_after['input_i'],
+                                          'truePeakDb':measured_after['input_tp'],
+                                          'loudnessRangeLu':measured_after['input_lra']},
+                                 'targetDifferenceLu':difference},
+                  'verification':{'originalPreserved':True,'durationMatched':True,
+                                  'channelsPreserved':True,'targetMatched':True,
+                                  'fullAudioDecoded':True,'subjectiveQualityReviewed':False}}
+        (OUT/'audio-cleanup-manifest.json').write_text(
+            json.dumps(manifest,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
+        return
     elif operation=='video.edit':
         exact(args,('clips',),('width','height','captions'))
         require(isinstance(args['clips'],list) and 1<=len(args['clips'])<=12)
@@ -1137,7 +1225,7 @@ def media(args,operation,tools):
     result=next(p for p in OUT.iterdir() if p.suffix in ('.png','.wav','.mp4'))
     info=media_info(tools,result)
     require(info.get('streams'),'PRODUCTION_OUTPUT_INVALID')
-    if operation in ('audio.cleanup','video.edit'):
+    if operation=='video.edit':
         actual=float(info.get('format',{}).get('duration',0))
         require(abs(actual-duration)<max(0.2,duration*0.005),'PRODUCTION_DURATION_MISMATCH')
     (OUT/'validation.json').write_text(json.dumps(info),encoding='utf-8')

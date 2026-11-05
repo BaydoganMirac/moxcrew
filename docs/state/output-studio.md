@@ -79,13 +79,17 @@ explicit DOCX template filling with visible missing values,
 source-pinned text/DOCX translation and rewrite with protected facts and paired review,
 2–12 image batch conversion with per-source results, video clip concatenation
 with an optional SRT sidecar, audio cleanup, and 1–12 segment podcast packaging
-to checked M4A plus output-relative chapter JSON. Python
-3.9+ is required; FFmpeg/FFprobe and optional pdftotext are detected/configured
+to checked M4A plus output-relative chapter JSON. Exact local speech uses an
+owner-configured Piper executable and ONNX/config voice pair, then emits a
+checked 48 kHz mono WAV, canonical content and hashes. Python 3.9+ is required;
+FFmpeg/FFprobe, Piper/model and optional pdftotext are detected/configured
 separately. No binary/model is installed or bundled by these operations.
 See [batch image conversion](batch-image-conversion.md) for its exact limits and
 real-FFmpeg evidence.
 See [podcast editing](podcast-editing.md) for its source/range contract and
 real-FFmpeg/FFprobe evidence.
+See [verified local speech](verified-local-speech.md) for its exact-script,
+voice-locale, output verification and human licensing-review contract.
 See [checked CSV charts](checked-csv-charts.md) for its aggregation, escaping and
 static-output contract.
 See [editable scenario workbooks](editable-scenario-workbooks.md) for its exact

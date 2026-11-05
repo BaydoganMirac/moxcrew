@@ -79,10 +79,12 @@ frozen local recipe and budgets, not publishing, purchases or external writes.
   LibreOffice/Poppler→PNG/FFmpeg overlay fallback supports at most 20 captions,
   each 120 characters/three lines. This fallback was tested with actual pixels.
 - OCR requires Tesseract. Timed transcription requires whisper.cpp and a
-  compatible local model. CLI peers verify their adapters; actual OCR/speech
-  engines/models were unavailable. No transcript or quality is claimed from a
-  fixture. Native file/recording input is implemented; microphone/screen capture
-  is not added.
+  compatible local model. Exact local voiceover requires Piper plus an
+  owner-selected ONNX voice and matching configuration. CLI peers verify these
+  adapters; actual OCR, recognition and voice quality remain separately
+  unverified, and no transcript, pronunciation or licence quality is claimed
+  from a fixture. Native file/recording input is implemented; microphone/screen
+  capture and voice cloning are not added.
 - Images require a running local ComfyUI service, supported checkpoint nodes and
   per-job cancellation. Configure its literal loopback HTTP URL and checkpoint
   privately for the Project. Inputs/masks are same-size PNGs; dimensions 64–2048,

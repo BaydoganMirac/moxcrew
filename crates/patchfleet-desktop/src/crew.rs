@@ -3029,6 +3029,7 @@ mod tests {
                 {"id":"ffprobe","available":true},{"id":"pdftotext","available":true},
                 {"id":"pdftoppm","available":true},{"id":"tesseract","available":true},
                 {"id":"whisper","available":true},{"id":"whisperModel","available":true},
+                {"id":"piper","available":true},{"id":"piperModel","available":true},
                 {"id":"libreoffice","available":true},{"id":"chrome","available":true}
             ],
             "imageEngine":{"configured":true,"available":true},

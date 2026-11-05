@@ -326,6 +326,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-audio-cleanup");
         let transcription = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-transcription");
+        let local_speech = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-local-speech");
         let data_profile = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-data-profile");
         let website = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
@@ -370,6 +372,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Data cleanup" } else { "Veri temizleme" }
         } else if transcription {
             if english { "Transcription" } else { "Transkripsiyon" }
+        } else if local_speech {
+            if english { "Local voice studio" } else { "Yerel ses stüdyosu" }
         } else if audio_cleanup {
             if english { "Audio cleanup" } else { "Ses temizleme" }
         } else if video_motion {
@@ -614,12 +618,15 @@ fn seed_create_scene(directory: &std::path::Path) {
         let video_motion=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-motion");
         let audio_cleanup=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-audio-cleanup");
         let transcription=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-transcription");
+        let local_speech=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-local-speech");
         let data_profile=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-profile");
         let website=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-site");
         let document_create=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-document-create");
         let presentation_revise=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-presentation-revise");
         let image_campaign=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-image-campaign");
-        let (ability,title,instruction)=if image_campaign {
+        let (ability,title,instruction)=if local_speech {
+            ("A2",if english{"Checked local voiceover"}else{"Doğrulanmış yerel seslendirme"},if english{"Turn exact approved text into a checked local voiceover while keeping pronunciation and model-licence review explicit."}else{"Kesin onaylı metni doğrulanmış yerel bir seslendirmeye dönüştür; telaffuz ve model lisansı incelemesini açık tut."})
+        } else if image_campaign {
             ("I4",if english{"Verified campaign assets"}else{"Doğrulanmış kampanya görselleri"},if english{"Turn exact approved copy and Project colours into a checked multi-format campaign pack."}else{"Kesin onaylı metni ve proje renklerini doğrulanmış çok formatlı kampanya paketine dönüştür."})
         } else if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
@@ -1060,6 +1067,9 @@ impl eframe::App for Patchfleet {
                 if let Some(request) = self.console.take_studio_path_request() {
                     let title = match &request.kind {
                         ui::StudioPathKind::Resource => "Import resource",
+                        ui::StudioPathKind::Tool { tool_id } if tool_id.ends_with("Model") => {
+                            "Choose model file"
+                        }
                         ui::StudioPathKind::Tool { .. } => "Choose executable",
                     };
                     let choice = rfd::AsyncFileDialog::new()

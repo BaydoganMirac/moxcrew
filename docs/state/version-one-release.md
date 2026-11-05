@@ -21,7 +21,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 | Presentations | P1–P5 | Theme-aware editable native layouts and bars, exact slide revision, exact-part theme application, notes, all-slide LibreOffice/Poppler renders and exact-audio narrated MP4 packaging implemented; live provider content quality, spoken-word review, Microsoft PowerPoint and Windows release proof pending |
 | Video | V1–V5 | V1–V5 deterministic paths implemented: exact cuts/order, scored full-source motion/audio highlight selection, three-aspect packages, burned captions/covers, checked title/image/audio composition, and approved scenes to editable storyboard plus real pan/zoom MP4; semantic/aesthetic review, live content-quality proof and model-generated footage remain pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and a deterministic exact-copy four-format branded SVG/PNG campaign pack with contrast/dimension/hash evidence; live model quality, arbitrary brand-manual coverage and full-area proof pending |
-| Audio | A1–A5 | Owner-visible A1 transcription now freezes one exact source/language and emits source/output-hashed text/JSON plus reopened SRT/VTT after checked 16 kHz mono normalization; A3 cleanup and ordered A4 podcast packaging are also checked; real-model recognition quality, speech generation, translated narration and subjective listening remain pending |
+| Audio | A1–A5 | Owner-visible A1 transcription freezes one exact source/language and emits source/output-hashed text/JSON plus reopened SRT/VTT after checked 16 kHz mono normalization; bounded A2 local speech freezes exact text/locale and an owner-selected Piper ONNX voice into a script/model/config/output-hashed 48 kHz mono WAV; A3 cleanup and ordered A4 podcast packaging are also checked; real-model recognition/pronunciation quality, voice licensing, translated narration and subjective listening remain pending |
 | Data | T1–T5 | Owner-visible exact CSV cleanup now freezes deduplication/output/statistic choices and emits source/output-hashed CSV or editable XLSX with missing counts and exact reopen proof; exact-column charts, formula-backed scenario workbooks, and literal-evidence structured extraction are also implemented; semantic business interpretation and broader quality proof pending |
 | Web/actions | W1–W5 | Explicit app actions, isolated static public-page/form-draft browser and offline interactive tools; live accounts/full area pending |
 | Composed workflows | J1–J10 | Reusable crews, model planner, review/delivery, local schedules and checked multi-file delivery packages implemented; full ten-workflow release proof pending |
@@ -191,6 +191,11 @@ owner-visible exact source/language request. It hashes and probes the source,
 fully decodes checked 16 kHz mono PCM and emits transcript text/JSON plus SRT,
 VTT and a verification manifest. The retained protocol peer does not substitute
 for real-model recognition accuracy or human review of uncertain passages.
+[Task0097](verified-local-speech.md) adds the bounded A2 local adapter: exact
+approved text and locale use owner-configured Piper plus an ONNX/config pair to
+produce a checked 48 kHz mono WAV, canonical content and a script/model/config/
+output-hashed manifest. The deterministic protocol peer does not substitute for real
+pronunciation, naturalness, meaning, accessibility or voice-model licence review.
 [Task0092](verified-static-landing-site.md) upgrades W1 from a catalog promise to
 an owner-visible exact-content request and deterministic local `web.site`
 operation. It emits editable script-free HTML, canonical content, a hash

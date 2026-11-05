@@ -358,6 +358,8 @@ impl Bridge {
                     {"id":"tesseract","name":"Tesseract · image text","available":false},
                     {"id":"whisper","name":"whisper.cpp · transcription","available":false},
                     {"id":"whisperModel","name":"whisper.cpp · local model file","available":false},
+                    {"id":"piper","name":"Piper · local speech synthesis","available":false},
+                    {"id":"piperModel","name":"Piper · ONNX voice and config","available":false},
                     {"id":"libreoffice","name":"LibreOffice · document rendering","available":true},
                     {"id":"chrome","name":"Chrome · isolated browser work","available":true}
                 ],

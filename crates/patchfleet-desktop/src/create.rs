@@ -183,6 +183,8 @@ fn readiness_tool_name(id: &str) -> &str {
         "tesseract" => "Tesseract",
         "whisper" => "whisper.cpp",
         "whisperModel" => "whisper.cpp model",
+        "piper" => "Piper",
+        "piperModel" => "Piper voice model",
         "libreoffice" => "LibreOffice",
         "chrome" => "Chrome",
         _ => "Unknown tool",

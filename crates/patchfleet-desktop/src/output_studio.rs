@@ -1809,7 +1809,7 @@ impl Console {
         _commands: &mut Vec<Command>,
     ) {
         hint(ui,"Production uses installed tools: editable Office files and data with Python; images, video and audio with FFmpeg.");
-        hint(ui,"Tool paths are shared by all local projects. Choose an existing executable; nothing is installed automatically.");
+        hint(ui,"Tool paths are shared by all local projects. Choose an existing executable or model file; nothing is installed automatically.");
         for tool in array(&page["tools"]) {
             ui.push_id(text(tool, "id"), |ui| {
                 ui.vertical(|ui| {
@@ -1829,7 +1829,11 @@ impl Console {
                         .show(ui, |ui| {
                             if view_control(
                                 ui,
-                                "Choose executable",
+                                if text(tool, "id").ends_with("Model") {
+                                    "Choose model file"
+                                } else {
+                                    "Choose executable"
+                                },
                                 studio::commands_ready(ui) && !text(tool, "id").is_empty(),
                                 false,
                             )

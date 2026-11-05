@@ -1415,7 +1415,7 @@ def main(request):
     exact(request,('operation','arguments','tools'))
     OUT.mkdir(exist_ok=True)
     operation=request['operation'];args=request['arguments'];tools=request['tools']
-    if operation in ('images.verify','images.batch','images.mask','pdf.extract','pdf.merge','resources.ocr','audio.transcribe','audio.podcast','data.chart','data.scenario','data.extract','documents.brief','documents.rewrite','documents.template','research.claims','research.compare','research.synthesis','research.changes','documents.render','video.frame','video.package','video.highlights','video.compose','interactive.create','web.site'):
+    if operation in ('images.verify','images.batch','images.mask','pdf.extract','pdf.merge','resources.ocr','audio.transcribe','audio.speech','audio.podcast','data.chart','data.scenario','data.extract','documents.brief','documents.rewrite','documents.template','research.claims','research.compare','research.synthesis','research.changes','documents.render','video.frame','video.package','video.highlights','video.compose','interactive.create','web.site'):
         extras=runpy.run_path(str(ROOT/'production_capabilities.py'),init_globals=globals())
         result=extras['execute'](operation,args,tools)
         files=[{'name':p.name,'bytes':p.stat().st_size} for p in sorted(OUT.iterdir()) if p.is_file()]

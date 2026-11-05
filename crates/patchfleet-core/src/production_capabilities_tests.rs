@@ -2248,6 +2248,145 @@ out.write_text(json.dumps({'result':{'language':'en'},'transcription':[
 }
 
 #[tokio::test]
+async fn local_speech_preserves_exact_text_and_checks_voice_audio_and_private_paths() {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::fs::PermissionsExt;
+
+    let data = tempfile::tempdir().unwrap();
+    let bin = data.path().join("bin");
+    fs::create_dir(&bin).unwrap();
+    let script = r#"#!/usr/bin/python3
+import json,pathlib,struct,sys
+kind=pathlib.Path(sys.argv[0]).name
+args=sys.argv[1:]
+if args in [['--help'],['-version']]: print('fixture');sys.exit(0)
+def wav():
+ rate=48000;size=rate*2
+ return (b'RIFF'+struct.pack('<I',36+size)+b'WAVEfmt '+struct.pack('<IHHIIHH',16,1,1,rate,rate*2,2,16)+b'data'+struct.pack('<I',size)+bytes(size))
+if kind=='piper':
+ assert args[0]=='--model' and args[2]=='--config' and args[4]=='--input-file' and args[6]=='--output-file'
+ assert pathlib.Path(args[5]).read_text(encoding='utf-8')=='Merhaba Mox.\nKontrol bende.'
+ pathlib.Path(args[7]).write_bytes(wav())
+elif kind=='ffprobe':
+ print(json.dumps({'format':{'duration':'1.0'},'streams':[{'codec_type':'audio','codec_name':'pcm_s16le','sample_rate':'48000','channels':1}]}))
+elif kind=='ffmpeg':
+ if args[-3:]==['-f','null','-']:
+  if '-af' in args:
+   print(json.dumps({'input_i':'-18.0','input_tp':'-2.0','input_lra':'1.0','input_thresh':'-28.0','target_offset':'0.0'}),file=sys.stderr)
+ elif args[-1].endswith('.wav'):
+  pathlib.Path(args[-1]).write_bytes(pathlib.Path(args[args.index('-i')+1]).read_bytes())
+ else: raise AssertionError(args)
+else: sys.exit(2)
+"#;
+    for id in ["piper", "ffmpeg", "ffprobe"] {
+        let path = bin.join(id);
+        fs::write(&path, script).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        configure(data.path(), id, path.to_str().unwrap()).unwrap();
+    }
+    let model = data.path().join("tr_TR-test.onnx");
+    fs::write(&model, b"fixture onnx voice").unwrap();
+    assert_eq!(
+        configure(data.path(), "piperModel", model.to_str().unwrap())
+            .unwrap_err()
+            .0,
+        "PRODUCTION_MODEL_INVALID"
+    );
+    let config = data.path().join("tr_TR-test.onnx.json");
+    fs::write(
+        &config,
+        br#"{"language":{"code":"tr_TR"},"audio":{"sample_rate":22050}}"#,
+    )
+    .unwrap();
+    configure(data.path(), "piperModel", model.to_str().unwrap()).unwrap();
+
+    let result = run(
+        data.path(),
+        "audio.speech",
+        &json!({"title":"Yerel lansman sesi","text":"Merhaba Mox.\nKontrol bende.","language":"tr_TR"}),
+        &[],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.value["kind"], "local_speech");
+    assert_eq!(result.value["language"], "tr_TR");
+    assert_eq!(result.value["humanReviewRequired"], true);
+    assert_eq!(result.value["manifestSha256"].as_str().unwrap().len(), 64);
+    let names = result
+        .files
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(
+        names,
+        [
+            "speech.wav",
+            "speech-content.json",
+            "speech-manifest.json",
+            "summary.md"
+        ]
+        .into_iter()
+        .collect()
+    );
+    let content: Value = serde_json::from_slice(
+        &result
+            .files
+            .iter()
+            .find(|(name, _)| name == "speech-content.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert_eq!(content["text"], "Merhaba Mox.\nKontrol bende.");
+    let manifest_bytes = &result
+        .files
+        .iter()
+        .find(|(name, _)| name == "speech-manifest.json")
+        .unwrap()
+        .1;
+    let manifest: Value = serde_json::from_slice(manifest_bytes).unwrap();
+    assert_eq!(manifest["voice"]["configuredLanguage"], "tr_TR");
+    assert_eq!(manifest["output"]["sampleRate"], "48000");
+    assert_eq!(manifest["output"]["channels"], 1);
+    assert_eq!(manifest["verification"]["fullAudioDecoded"], true);
+    assert_eq!(manifest["verification"]["pronunciationReviewed"], false);
+    assert_eq!(
+        result.value["manifestSha256"],
+        format!("{:x}", Sha256::digest(manifest_bytes))
+    );
+    for (_, bytes) in &result.files {
+        let body = String::from_utf8_lossy(bytes);
+        assert!(!body.contains(data.path().to_str().unwrap()));
+        assert!(!body.contains("tr_TR-test.onnx"));
+    }
+
+    fs::write(
+        &config,
+        br#"{"language":{"code":"en_US"},"audio":{"sample_rate":22050}}"#,
+    )
+    .unwrap();
+    let mismatch = run(
+        data.path(),
+        "audio.speech",
+        &json!({"title":"Yerel lansman sesi","text":"Merhaba Mox.\nKontrol bende.","language":"tr_TR"}),
+        &[],
+        None,
+    )
+    .await;
+    assert!(matches!(mismatch,Err(Error(ref code)) if code=="PRODUCTION_SPEECH_LANGUAGE_MISMATCH"));
+    let invalid = run(
+        data.path(),
+        "audio.speech",
+        &json!({"title":"Voice","text":"Text","language":"tr-tr"}),
+        &[],
+        None,
+    )
+    .await;
+    assert!(matches!(invalid,Err(Error(ref code)) if code=="PRODUCTION_INVALID_INPUT"));
+}
+
+#[tokio::test]
 async fn pdf_extraction_and_merge_preserve_page_methods_order_and_source_evidence() {
     use sha2::{Digest, Sha256};
     use std::os::unix::fs::PermissionsExt;

@@ -15,6 +15,14 @@ import urllib.parse
 import zlib
 
 
+def file_sha256(path):
+    digest=hashlib.sha256()
+    with path.open('rb') as handle:
+        for block in iter(lambda:handle.read(1024*1024),b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def png(data, expected=None):
     require(8 <= len(data) <= MAX_FILE and data[:8] == b'\x89PNG\r\n\x1a\n', 'PRODUCTION_IMAGE_FORMAT_UNSUPPORTED')
     offset=8; chunks=[]; compressed=bytearray(); dimensions=None; ended=False; palette=0; transparent=False; idat=False; after_idat=False
@@ -140,6 +148,117 @@ def podcast(args,tools):
     (OUT/'chapters.json').write_text(json.dumps({'title':title,'durationSeconds':actual,'chapters':chapters},ensure_ascii=False),encoding='utf-8')
     (OUT/'validation.json').write_text(json.dumps(validation,ensure_ascii=False),encoding='utf-8')
     return package
+
+
+def speech(args,tools):
+    exact(args,('title','text','language'))
+    title=text(args['title'],160)
+    script=text(args['text'],2000)
+    language=text(args['language'],5)
+    require(title and title==title.strip() and script.strip()
+            and re.fullmatch(r'[a-z]{2}_[A-Z]{2}',language) is not None)
+    require(isinstance(tools.get('piper'),str)
+            and Path(tools['piper']).is_absolute(),'PRODUCTION_SPEECH_ENGINE_REQUIRED')
+    model_value=tools.get('piperModel')
+    require(isinstance(model_value,str) and Path(model_value).is_absolute(),
+            'PRODUCTION_SPEECH_MODEL_REQUIRED')
+    model=Path(model_value)
+    require(model.is_file() and model.suffix.lower()=='.onnx'
+            and 4<=model.stat().st_size<=2*1024*1024*1024,
+            'PRODUCTION_SPEECH_MODEL_INVALID')
+    config=Path(str(model)+'.json')
+    require(config.is_file() and 2<=config.stat().st_size<=1024*1024,
+            'PRODUCTION_SPEECH_CONFIG_INVALID')
+    try:
+        configuration=json.loads(config.read_text(encoding='utf-8'))
+        configured_language=configuration['language']['code']
+    except (OSError,UnicodeError,json.JSONDecodeError,KeyError,TypeError):
+        raise ValueError('PRODUCTION_SPEECH_CONFIG_INVALID')
+    require(isinstance(configured_language,str)
+            and re.fullmatch(r'[a-z]{2}_[A-Z]{2}',configured_language) is not None,
+            'PRODUCTION_SPEECH_CONFIG_INVALID')
+    require(configured_language==language,'PRODUCTION_SPEECH_LANGUAGE_MISMATCH')
+    model_digest=file_sha256(model)
+    config_digest=file_sha256(config)
+    input_file=ROOT/'speech-input.txt'
+    input_file.write_text(script,encoding='utf-8')
+    raw=ROOT/'speech-raw.wav'
+    try:
+        run_tool(tools,'piper',['--model',str(model),'--config',str(config),
+                 '--input-file',str(input_file),'--output-file',str(raw)])
+    except ValueError as error:
+        if str(error)=='PRODUCTION_TOOL_FAILED':
+            raise ValueError('PRODUCTION_SPEECH_SYNTHESIS_FAILED')
+        raise
+    require(raw.is_file() and 44<=raw.stat().st_size<=MAX_FILE,
+            'PRODUCTION_SPEECH_OUTPUT_INVALID')
+    raw_info=media_info(tools,raw)
+    raw_streams=raw_info.get('streams',[])
+    require(len(raw_streams)==1 and raw_streams[0].get('codec_type')=='audio',
+            'PRODUCTION_SPEECH_OUTPUT_INVALID')
+    duration=number(float(raw_info.get('format',{}).get('duration',0)),0.02,240)
+    target=-18
+    measured=audio_loudness(tools,raw,target)
+    normalize=(f'loudnorm=I={target}:TP=-1.5:LRA=11:'
+               f'measured_I={measured["input_i"]}:measured_TP={measured["input_tp"]}:'
+               f'measured_LRA={measured["input_lra"]}:measured_thresh={measured["input_thresh"]}:'
+               f'offset={measured["target_offset"]}:linear=true:print_format=summary')
+    output=OUT/'speech.wav'
+    run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-n',
+             *input_format(raw),'-i',str(raw),'-vn','-af',normalize,'-ar','48000',
+             '-ac','1','-c:a','pcm_s16le',str(output)])
+    checked=media_info(tools,output)
+    streams=checked.get('streams',[])
+    actual=number(float(checked.get('format',{}).get('duration',0)),0.02,240)
+    require(len(streams)==1 and streams[0].get('codec_type')=='audio'
+            and streams[0].get('codec_name')=='pcm_s16le'
+            and streams[0].get('sample_rate')=='48000'
+            and streams[0].get('channels')==1,
+            'PRODUCTION_SPEECH_OUTPUT_INVALID')
+    require(abs(actual-duration)<max(0.2,duration*.005),'PRODUCTION_DURATION_MISMATCH')
+    run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error',
+             *input_format(output),'-i',str(output),'-map','0:a:0','-f','null','-'])
+    after=audio_loudness(tools,output,target)
+    target_difference=abs(after['input_i']-target)
+    require(target_difference<=1,'PRODUCTION_AUDIO_LEVEL_MISMATCH')
+    require(file_sha256(model)==model_digest and file_sha256(config)==config_digest,
+            'PRODUCTION_SPEECH_MODEL_CHANGED')
+    content={'schemaVersion':1,'title':title,'text':script,'language':language}
+    content_file=OUT/'speech-content.json'
+    content_file.write_text(json.dumps(content,ensure_ascii=False,indent=2),encoding='utf-8')
+    safe_title=''.join(('\\'+character) if character in '\\`*_{}[]()#+-.!|>' else character
+                       for character in title.replace('\r',' ').replace('\n',' '))
+    summary=OUT/'summary.md'
+    summary.write_text(
+        f'# {safe_title}\n\n'
+        f'- Result: `speech.wav` · {actual:.3f} seconds · 48 kHz mono PCM WAV\n'
+        f'- Script: {len(script)} characters · locale `{language}`\n'
+        f'- Checks: voice configuration locale matched; output reopened; full audio decoded; integrated loudness within 1 LU of {target} LUFS\n'
+        '- Human review required: pronunciation, meaning, voice suitability, listening quality and voice-model licence\n'
+        '- Not performed: voice cloning, translation, model download, remote generation or publication\n',
+        encoding='utf-8')
+    artifacts={path.name:file_sha256(path) for path in (output,content_file,summary)}
+    manifest={'schemaVersion':1,'kind':'local-speech','engine':'Piper',
+              'title':title,'language':language,
+              'script':{'characters':len(script),'sha256':hashlib.sha256(script.encode('utf-8')).hexdigest()},
+              'voice':{'modelSha256':model_digest,'configSha256':config_digest,
+                       'configuredLanguage':configured_language},
+              'output':{'file':output.name,'sha256':artifacts[output.name],
+                        'durationSeconds':actual,'codec':streams[0].get('codec_name'),
+                        'sampleRate':streams[0].get('sample_rate'),'channels':streams[0].get('channels'),
+                        'integratedLufs':after['input_i'],'targetLufs':target,
+                        'targetDifferenceLu':target_difference},
+              'artifacts':artifacts,
+              'verification':{'scriptPreserved':True,'configurationLanguageMatched':True,
+                              'outputReopened':True,'fullAudioDecoded':True,
+                              'loudnessTargetMatched':True,'pronunciationReviewed':False,
+                              'meaningReviewed':False,'voiceSuitabilityReviewed':False,
+                              'modelLicenceReviewed':False}}
+    manifest_file=OUT/'speech-manifest.json'
+    manifest_file.write_text(json.dumps(manifest,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
+    return {'kind':'local_speech','file':output.name,'language':language,
+            'durationSeconds':actual,'manifestSha256':file_sha256(manifest_file),
+            'humanReviewRequired':True}
 
 
 def data_chart(args,tools):
@@ -1532,6 +1651,7 @@ def execute(operation,args,tools):
     if operation=='pdf.merge': return pdf_merge(args,tools)
     if operation=='resources.ocr': return ocr(args,tools)
     if operation=='audio.transcribe': return transcribe(args,tools)
+    if operation=='audio.speech': return speech(args,tools)
     if operation=='audio.podcast': return podcast(args,tools)
     if operation=='data.chart': return data_chart(args,tools)
     if operation=='data.scenario': return data_scenario(args,tools)

@@ -1,11 +1,13 @@
 # Productive Project workflows
 
-Updated: 2026-10-19
+Updated: 2026-11-05
 
-Status: Implemented; integrated tests and independent review passed.
+Status: Implemented; integrated tests and explicit J5 handoffs are locally verified.
 
-Plan: [Task0044](../plans/0044-productive-project-crews.md).
-Decision: [ADR0045](../decisions/0045-productive-crews-and-explicit-tools.md).
+Plans: [Task0044](../plans/0044-productive-project-crews.md) and
+[Task0099](../plans/0099-explicit-recipe-handoffs.md).
+Decisions: [ADR0045](../decisions/0045-productive-crews-and-explicit-tools.md)
+and [ADR0052](../decisions/0052-explicit-recipe-handoffs.md).
 
 ## Behavior
 
@@ -40,12 +42,16 @@ acceptance is tied to the current actual producer work item. Text alone does not
 complete a required review; exhausting the configured correction/job budget fails
 explicitly. Agent guidance explains this requirement and the typed production tools.
 
-Seven bundled launch/content/podcast/research/travel/study/data recipes describe
-roles, deliverables and external tool requirements. Owners can save a Project
-composition and prepare another mission from it. Recipes retain roles/settings;
-provider assignments are configured on the prepared mission. New recurring
-local schedules freeze the owner's ready Codex, Claude Code or Gemini CLI
-selection; legacy schedules without a provider retain their Codex default.
+Eight bundled launch/content/podcast/research/travel/study/data recipes describe
+roles, deliverables and external tool requirements. The separate data-briefing
+recipe freezes the J5 chain from clean data through analysis, charts/report,
+editable presentation and audio brief, with a reviewer depending on all five
+producers. Owners can save a Project composition and prepare another mission
+from it. Recipes retain roles, settings and any explicit earlier-member
+dependencies; legacy recipes without that field keep their original phase
+derivation. Provider assignments are configured on the prepared mission. New
+recurring local schedules freeze the owner's ready Codex, Claude Code or Gemini
+CLI selection; legacy schedules without a provider retain their Codex default.
 Durable schedules pause/resume, retain exact occurrence identity, prevent overlap
 and skip missed intervals. They run only while the Host is awake, with at most
 one new occurrence per tick and at most 100 occurrences.
@@ -54,6 +60,10 @@ instants. Replay binds saved/enabled schedules to the exact owner payload and
 frozen recipe. Each occurrence checks due time, terminal previous mission,
 deterministic identity, interval and occurrence budget. A return review authorizes
 one exact current-task correction and its descendants within the review budget.
+Owner preparation and scheduled occurrences derive the same exact graph. Saving
+a prepared/current mission preserves its order and dependencies, while replay
+recomputes the graph from the selected frozen recipe revision rather than
+trusting arbitrary prepared tasks.
 
 ## Bounds and state
 
@@ -93,6 +103,19 @@ All 23 tests selected by `cargo test --offline -p patchfleet-core --lib project_
 pass, including the six prior crew tests and coordinator Studio/Project fixtures.
 The native fixture uses the production-equivalent five-second probe deadline;
 there is no added retry or relaxed production deadline.
+
+Task0099 adds focused proof for the explicit graph. The six-member J5 native
+peer run waits for every upstream completion, copies only checked completed
+files through hash-pinned manifests, preserves the exact graph through save and
+schedule preparation and rejects replay tampering. Recipe-boundary validation
+rejects malformed, duplicate, self, forward and out-of-range dependencies.
+Turkish/English light/dark native tests keep the handoff summary and primary
+action reachable at the minimum window. The standard Rust run passed all 134
+core library tests and every core integration binary; the affected desktop
+package passed 291/291 with all features after its dynamic-name localization
+expectation was corrected. Strict workspace Clippy passes for all targets and
+features with warnings denied, formatting passes, and all 153 legacy parity
+tests pass on Node 24.22.1. The combined locked workspace command exits cleanly.
 
 Live inference, account mutations and native Windows/Linux execution were not
 performed. Safe result-file operations retain the existing Unix-only support.

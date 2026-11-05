@@ -2456,7 +2456,9 @@ pub(crate) mod managed_tests {
                 codex: executable,
                 claude: "unused".into(),
                 gemini: "unused".into(),
-                timeout: Duration::from_secs(2),
+                // Match the other native CLI fixtures so scheduler pressure does not
+                // turn an immediate local peer response into a probe timeout.
+                timeout: Duration::from_secs(4),
             },
         )
     }

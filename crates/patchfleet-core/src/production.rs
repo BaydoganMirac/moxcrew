@@ -19,6 +19,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "presentations.create",
     "presentations.revise",
     "presentations.brand",
+    "presentations.narrate",
     "documents.create",
     "documents.revise",
     "documents.brief",
@@ -728,6 +729,89 @@ mod tests {
         );
     }
     #[tokio::test]
+    async fn narrated_presentations_require_exact_order_and_notes_before_encoding() {
+        let data = tempfile::tempdir().unwrap();
+        let noted = run(
+            data.path(),
+            "presentations.create",
+            &json!({"slides":[
+                {"layout":"cover","title":"Opening","notes":"Approved opening narration."},
+                {"layout":"statement","title":"Close","notes":"Approved closing narration."}
+            ]}),
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        let noted = noted
+            .files
+            .iter()
+            .find(|(name, _)| name == "presentation.pptx")
+            .unwrap()
+            .1
+            .clone();
+        let count = run(
+            data.path(),
+            "presentations.narrate",
+            &json!({"source":"inputs/deck.pptx","segments":[
+                {"slide":1,"source":"inputs/one.m4a"}
+            ]}),
+            &[("inputs/deck.pptx".into(), noted.clone())],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(count,Err(Error(ref code)) if code=="PRODUCTION_PRESENTATION_NARRATION_COUNT")
+        );
+        let order = run(
+            data.path(),
+            "presentations.narrate",
+            &json!({"source":"inputs/deck.pptx","segments":[
+                {"slide":2,"source":"inputs/two.m4a"},
+                {"slide":1,"source":"inputs/one.m4a"}
+            ]}),
+            &[("inputs/deck.pptx".into(), noted)],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(order,Err(Error(ref code)) if code=="PRODUCTION_PRESENTATION_NARRATION_ORDER")
+        );
+        let missing = run(
+            data.path(),
+            "presentations.create",
+            &json!({"slides":[
+                {"layout":"cover","title":"Opening","notes":"Approved opening narration."},
+                {"layout":"statement","title":"Close"}
+            ]}),
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        let missing = missing
+            .files
+            .iter()
+            .find(|(name, _)| name == "presentation.pptx")
+            .unwrap()
+            .1
+            .clone();
+        let notes = run(
+            data.path(),
+            "presentations.narrate",
+            &json!({"source":"inputs/deck.pptx","segments":[
+                {"slide":1,"source":"inputs/one.m4a"},
+                {"slide":2,"source":"inputs/two.m4a"}
+            ]}),
+            &[("inputs/deck.pptx".into(), missing)],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(notes,Err(Error(ref code)) if code=="PRODUCTION_PRESENTATION_NOTES_REQUIRED")
+        );
+    }
+    #[tokio::test]
     #[ignore = "requires real LibreOffice and Poppler paths plus an evidence destination"]
     async fn branded_presentation_renders_every_slide_with_real_tools() {
         let libreoffice = std::env::var("MOXCREW_TEST_LIBREOFFICE").unwrap();
@@ -768,6 +852,87 @@ mod tests {
             "slide-02.png",
             "slide-03.png",
             "slide-04.png",
+        ] {
+            assert!(
+                evidence.join(name).is_file(),
+                "missing evidence file {name}"
+            );
+        }
+    }
+    #[tokio::test]
+    #[ignore = "requires real media/render tools, local narration clips and an evidence destination"]
+    async fn noted_presentation_and_real_audio_render_a_checked_video() {
+        let data = tempfile::tempdir().unwrap();
+        for (id, key) in [
+            ("libreoffice", "MOXCREW_TEST_LIBREOFFICE"),
+            ("pdftoppm", "MOXCREW_TEST_PDFTOPPM"),
+            ("ffmpeg", "MOXCREW_TEST_FFMPEG"),
+            ("ffprobe", "MOXCREW_TEST_FFPROBE"),
+        ] {
+            configure(data.path(), id, &std::env::var(key).unwrap()).unwrap();
+        }
+        let audio =
+            PathBuf::from(std::env::var("MOXCREW_PRESENTATION_NARRATION_AUDIO_DIR").unwrap());
+        let evidence =
+            PathBuf::from(std::env::var("MOXCREW_PRESENTATION_NARRATION_EVIDENCE_DIR").unwrap());
+        let created = run(
+            data.path(),
+            "presentations.create",
+            &json!({
+                "brand":{"name":"Moxcrew","primary":"2854F4","accent":"FF7A2F","background":"F8F7F3","text":"15223D","muted":"56627A","font":"Arial"},
+                "slides":[
+                    {"layout":"cover","eyebrow":"Narrated brief","title":"A crew you can see and hear","subtitle":"Every slide stays timed, sourced and reviewable.","notes":"Moxcrew turns exact speaker notes and approved audio into a reviewable presentation video."},
+                    {"layout":"statement","eyebrow":"Owner control","title":"The deck remains the source of truth.","subtitle":"Narration timing is checked without rewriting the presentation.","notes":"The original deck stays unchanged while each narration clip is matched to its exact slide."},
+                    {"layout":"bar-chart","title":"Every narration segment is accounted for","chart":{"unit":"%","sourceLabel":"Deterministic presentation-video contract","series":[{"label":"Untracked","value":0},{"label":"Checked","value":100}]},"notes":"Moxcrew renders every slide, probes every audio clip, decodes the full video, and reports what still needs human review."}
+                ]
+            }),
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        let deck = created
+            .files
+            .iter()
+            .find(|(name, _)| name == "presentation.pptx")
+            .unwrap()
+            .1
+            .clone();
+        let audio_files = (1..=3)
+            .map(|index| fs::read(audio.join(format!("narration-{index:02}.wav"))).unwrap())
+            .collect::<Vec<_>>();
+        let output = run(
+            data.path(),
+            "presentations.narrate",
+            &json!({"source":"inputs/deck.pptx","segments":[
+                {"slide":1,"source":"inputs/narration-01.wav"},
+                {"slide":2,"source":"inputs/narration-02.wav"},
+                {"slide":3,"source":"inputs/narration-03.wav"}
+            ],"fps":30}),
+            &[
+                ("inputs/deck.pptx".into(), deck),
+                ("inputs/narration-01.wav".into(), audio_files[0].clone()),
+                ("inputs/narration-02.wav".into(), audio_files[1].clone()),
+                ("inputs/narration-03.wav".into(), audio_files[2].clone()),
+            ],
+            None,
+        )
+        .await
+        .unwrap();
+        fs::create_dir_all(&evidence).unwrap();
+        for (name, bytes) in output.files {
+            fs::write(evidence.join(name), bytes).unwrap();
+        }
+        for name in [
+            "presentation-video.mp4",
+            "presentation-video-manifest.json",
+            "slides.pdf",
+            "slide-01.png",
+            "slide-02.png",
+            "slide-03.png",
+            "video-frame-start.png",
+            "video-frame-middle.png",
+            "video-frame-end.png",
         ] {
             assert!(
                 evidence.join(name).is_file(),

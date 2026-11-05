@@ -96,6 +96,10 @@ commitments.
   P2–P4 presentation gap: theme-aware native layouts, editable bars, exact
   selected-slide revision, honest third-party theme coverage and all-slide
   LibreOffice/Poppler renders now share one bounded local production path.
+  [Task0085](state/narrated-presentation-video.md) closes the deterministic P5
+  path: exact speaker notes and ordered approved audio become one checked
+  1280×720 presentation video with retained slide, frame, stream and duration
+  evidence. Spoken-word agreement remains an explicit human review.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

@@ -589,6 +589,119 @@ def presentation_slide_names(parts):
                   key=lambda name: int(re.search(r"slide([0-9]+)", name)[1]))
 
 
+def presentation_notes(parts, slide_name):
+    relationships = f'ppt/slides/_rels/{Path(slide_name).name}.rels'
+    require(relationships in parts, "PRODUCTION_PRESENTATION_NOTES_REQUIRED")
+    target = None
+    for relationship in xml(parts[relationships]):
+        if relationship.attrib.get("Type", "").endswith("/notesSlide"):
+            target = relationship.attrib.get("Target")
+            break
+    require(target is not None, "PRODUCTION_PRESENTATION_NOTES_REQUIRED")
+    note_name = "ppt/notesSlides/" + Path(target).name
+    require(note_name in parts, "PRODUCTION_PRESENTATION_NOTES_REQUIRED")
+    value = "\n".join(node.text or "" for node in xml(parts[note_name]).findall(".//a:t", NS)).strip()
+    require(1 <= len(value) <= 6000, "PRODUCTION_PRESENTATION_NOTES_REQUIRED")
+    return value
+
+
+def narrated_presentation(args, tools):
+    exact(args, ("source", "segments"), ("fps",))
+    source_path = source(args["source"])
+    require(source_path.suffix.lower() == ".pptx", "PRODUCTION_PRESENTATION_FORMAT_UNSUPPORTED")
+    parts = read_zip(source_path)
+    require(not presentation_active_content(parts), "PRODUCTION_UNSAFE_DOCUMENT")
+    slides = presentation_slide_names(parts)
+    require(1 <= len(slides) <= 8, "PRODUCTION_PRESENTATION_NARRATION_LIMIT")
+    segments = args["segments"]
+    require(isinstance(segments, list) and len(segments) == len(slides),
+            "PRODUCTION_PRESENTATION_NARRATION_COUNT")
+    fps = args.get("fps", 30)
+    require(type(fps) is int and fps in (24, 25, 30))
+    notes = [presentation_notes(parts, slide_name) for slide_name in slides]
+    checked = []
+    total = 0.0
+    for index, (note, segment) in enumerate(zip(notes, segments), 1):
+        exact(segment, ("slide", "source"))
+        require(type(segment["slide"]) is int and segment["slide"] == index,
+                "PRODUCTION_PRESENTATION_NARRATION_ORDER")
+        audio = source(segment["source"])
+        info = media_info(tools, audio)
+        streams = info.get("streams", [])
+        require(sum(stream.get("codec_type") == "audio" for stream in streams) == 1
+                and not any(stream.get("codec_type") == "video" for stream in streams),
+                "PRODUCTION_PRESENTATION_NARRATION_AUDIO_REQUIRED")
+        duration = float(info.get("format", {}).get("duration", 0))
+        require(math.isfinite(duration) and .25 <= duration <= 60,
+                "PRODUCTION_PRESENTATION_NARRATION_DURATION")
+        total += duration
+        checked.append({"slide": index, "audio": audio, "duration": duration,
+                        "audioSha256": hashlib.sha256(audio.read_bytes()).hexdigest(),
+                        "notesSha256": hashlib.sha256(note.encode("utf-8")).hexdigest(),
+                        "notesCharacters": len(note)})
+    require(total <= 180, "PRODUCTION_PRESENTATION_NARRATION_DURATION")
+    deck = ROOT / "presentation-source.pptx"
+    deck.write_bytes(source_path.read_bytes())
+    previews = presentation_previews(deck, len(slides), tools)
+    segment_dir = ROOT / "presentation-video-segments"
+    segment_dir.mkdir()
+    common = ["-nostdin", "-hide_banner", "-loglevel", "error", "-n"]
+    pieces = []
+    for item in checked:
+        image = OUT / f'slide-{item["slide"]:02}.png'
+        target = segment_dir / f'segment-{item["slide"]:02}.mp4'
+        run_tool(tools, "ffmpeg", common + ["-loop", "1", "-framerate", str(fps),
+                 "-f", "image2", "-i", str(image), *input_format(item["audio"]),
+                 "-i", str(item["audio"]), "-t", f'{item["duration"]:.6f}',
+                 "-map", "0:v:0", "-map", "1:a:0", "-vf", "format=yuv420p",
+                 "-c:v", "mpeg4", "-q:v", "3", "-c:a", "aac", "-ar", "48000",
+                 "-ac", "2", "-shortest", "-movflags", "+faststart", str(target)])
+        require(target.is_file() and target.stat().st_size > 32,
+                "PRODUCTION_PRESENTATION_VIDEO_INVALID")
+        pieces.append(target)
+    concat = ROOT / "presentation-video-concat.txt"
+    concat.write_text("".join(f"file '{path.relative_to(ROOT).as_posix()}'\n"
+                              for path in pieces), encoding="utf-8")
+    video = OUT / "presentation-video.mp4"
+    run_tool(tools, "ffmpeg", common + ["-f", "concat", "-safe", "1", "-i", str(concat),
+             "-map", "0:v:0", "-map", "0:a:0", "-c", "copy", "-movflags",
+             "+faststart", str(video)])
+    result = media_info(tools, video)
+    streams = result.get("streams", [])
+    video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+    audio_stream = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
+    actual = float(result.get("format", {}).get("duration", 0))
+    require(video_stream is not None and video_stream.get("width") == 1280
+            and video_stream.get("height") == 720 and audio_stream is not None,
+            "PRODUCTION_PRESENTATION_VIDEO_INVALID")
+    require(abs(actual - total) <= max(.5, total * .01),
+            "PRODUCTION_DURATION_MISMATCH")
+    run_tool(tools, "ffmpeg", ["-nostdin", "-hide_banner", "-loglevel", "error",
+             *input_format(video), "-i", str(video), "-map", "0:v:0", "-map", "0:a:0",
+             "-f", "null", "-"])
+    frames = []
+    for label, moment in (("start", 0), ("middle", actual / 2),
+                          ("end", max(0, min(actual, total) - .5))):
+        frame = OUT / f"video-frame-{label}.png"
+        run_tool(tools, "ffmpeg", ["-nostdin", "-hide_banner", "-loglevel", "error", "-n",
+                 *input_format(video), "-ss", f"{moment:.6f}", "-i", str(video),
+                 "-frames:v", "1", "-f", "image2", str(frame)])
+        require(frame.is_file(), "PRODUCTION_PRESENTATION_VIDEO_INVALID")
+        width, height = raster_dimensions(frame.read_bytes(), "png")
+        require((width, height) == (1280, 720), "PRODUCTION_PRESENTATION_VIDEO_INVALID")
+        frames.append({"label": label, "seconds": round(moment, 6), "file": frame.name})
+    manifest = {"kind": "narrated-presentation", "sourceSha256": hashlib.sha256(
+        source_path.read_bytes()).hexdigest(), "slideCount": len(slides), "fps": fps,
+        "durationSeconds": actual, "checkedNarrationSeconds": total,
+        "segments": [{key: value for key, value in item.items() if key != "audio"}
+                     for item in checked], "renders": previews, "frames": frames,
+        "streams": streams, "verification": {"allSlidesRendered": True,
+        "fullVideoDecoded": True, "durationMatched": True, "speakerNotesPresent": True,
+        "spokenTextVerified": False}}
+    (OUT / "presentation-video-manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def apply_presentation_brand(theme, brand):
     node = xml(theme)
     scheme = node.find(".//a:clrScheme", NS)
@@ -844,7 +957,7 @@ def input_format(path):
 
 
 def media_info(tools,path):
-    raw=run_tool(tools,'ffprobe',['-v','error',*input_format(path),'-show_entries','format=duration:stream=codec_type,width,height,sample_rate,channels','-of','json',str(path)])
+    raw=run_tool(tools,'ffprobe',['-v','error',*input_format(path),'-show_entries','format=duration:stream=codec_type,codec_name,width,height,sample_rate,channels','-of','json',str(path)])
     return json.loads(raw)
 
 
@@ -958,7 +1071,9 @@ def main(request):
         (OUT/'outline.json').write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
         (OUT/'extracted.txt').write_text(result.get('text','\n\n'.join(p['title']+'\n'+p['text'] for p in result.get('pages',[]))),encoding='utf-8')
         return {'files':[{'name':p.name,'bytes':p.stat().st_size} for p in OUT.iterdir()],'verified':True}
-    if operation in ('presentations.create','presentations.revise','presentations.brand'):
+    if operation == 'presentations.narrate':
+        narrated_presentation(args,tools)
+    elif operation in ('presentations.create','presentations.revise','presentations.brand'):
         presentations(args,operation,tools)
     elif operation in ('documents.create','documents.revise'): documents(args,operation=='documents.revise')
     elif operation in ('data.clean','data.analyze','data.xlsx'): data_operation(args,operation)

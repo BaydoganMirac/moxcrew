@@ -57,8 +57,10 @@ not described as fully adapted when explicit colors remain.
 
 ## Limits
 
-P5 narration remains a separate ability. The worker does not automatically
-rewrite arbitrary third-party slide layouts, smart art, animations or hard-coded
-colors. The retained deck was opened and rendered with LibreOffice, not checked
-inside Microsoft PowerPoint. Live provider/model quality, Windows-native behavior,
-signing and public release evidence remain separate gates.
+P5 is implemented separately in
+[narrated presentation video](narrated-presentation-video.md). The worker does
+not automatically rewrite arbitrary third-party slide layouts, smart art,
+animations or hard-coded colors. The retained deck was opened and rendered with
+LibreOffice, not checked inside Microsoft PowerPoint. Live provider/model
+quality, Windows-native behavior, signing and public release evidence remain
+separate gates.

@@ -129,6 +129,12 @@ fn podcast_source(resource: &Value) -> bool {
         .iter()
         .any(|extension| name.ends_with(extension))
 }
+fn narration_source(resource: &Value) -> bool {
+    let name = text(resource, "name").to_ascii_lowercase();
+    [".wav", ".mp3", ".m4a"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+}
 fn chart_source(resource: &Value) -> bool {
     text(resource, "name")
         .to_ascii_lowercase()
@@ -721,6 +727,7 @@ impl Console {
             | "capabilities-pdf-merge"
             | "capabilities-presentations"
             | "capabilities-presentation-brand"
+            | "capabilities-presentation-narration"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -776,6 +783,7 @@ impl Console {
                 "capabilities-pdf-merge" => 21,
                 "capabilities-presentations" => 22,
                 "capabilities-presentation-brand" => 23,
+                "capabilities-presentation-narration" => 24,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -836,6 +844,19 @@ impl Console {
                 }
                 .into();
                 *draft.value("renderSlides") = "true".into();
+            } else if scene == "capabilities-presentation-narration" {
+                draft.record = available
+                    .iter()
+                    .find(|resource| presentation_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                draft.sources.extend(
+                    available
+                        .iter()
+                        .filter(|resource| narration_source(resource))
+                        .map(|resource| text(resource, "resourceId").to_owned()),
+                );
+                *draft.value("presentationFps") = "30".into();
             } else if scene == "capabilities-data-scenario" {
                 draft.record = csv.unwrap_or_default();
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
@@ -1859,6 +1880,7 @@ impl Console {
             "Merge PDFs",
             "Design presentation",
             "Apply presentation brand",
+            "Narrate presentation",
         ];
         form_combo(
             ui,
@@ -1885,7 +1907,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -3448,6 +3470,88 @@ impl Console {
                     }));
                 }
             }
+            24 => {
+                hint(
+                    ui,
+                    "Turn exact speaker notes and one approved audio clip per slide into a checked presentation video.",
+                );
+                let decks = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && presentation_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                form_combo(
+                    ui,
+                    egui::ComboBox::from_id_salt("presentation-narration-source").selected_text(
+                        decks
+                            .iter()
+                            .find(|resource| text(resource, "resourceId") == draft.record)
+                            .map(|resource| text(resource, "name"))
+                            .unwrap_or(t(ui, "Choose a presentation").as_ref()),
+                    ),
+                    |ui| {
+                        for resource in &decks {
+                            ui.selectable_value(
+                                &mut draft.record,
+                                text(resource, "resourceId").into(),
+                                text(resource, "name"),
+                            );
+                        }
+                    },
+                );
+                ui.label(t(ui, "Narration clips · filename order"));
+                let mut audio = all
+                    .iter()
+                    .filter(|resource| narration_source(resource))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                audio.sort_by_key(|resource| text(resource, "name").to_lowercase());
+                sources(ui, draft, &audio);
+                let mut selected = audio
+                    .iter()
+                    .filter(|resource| draft.sources.contains(text(resource, "resourceId")))
+                    .collect::<Vec<_>>();
+                selected.sort_by_key(|resource| text(resource, "name").to_lowercase());
+                for (index, resource) in selected.iter().enumerate() {
+                    raw_hint(
+                        ui,
+                        &format!("{:02} · {}", index + 1, text(resource, "name")),
+                    );
+                }
+                hint(
+                    ui,
+                    "Use numbered filenames. Every slide must already contain speaker notes; spoken-word matching remains a human review.",
+                );
+                let mut fps = draft.get("presentationFps").parse::<u64>().unwrap_or(30);
+                ui.horizontal(|ui| {
+                    ui.label(t(ui, "Frames per second"));
+                    for value in [24, 25, 30] {
+                        ui.selectable_value(&mut fps, value, value.to_string());
+                    }
+                });
+                *draft.value("presentationFps") = fps.to_string();
+                if let Some(source) = decks
+                    .iter()
+                    .find(|resource| text(resource, "resourceId") == draft.record)
+                    .filter(|_| (1..=8).contains(&selected.len()))
+                {
+                    let segments = selected
+                        .iter()
+                        .enumerate()
+                        .map(|(index, resource)| {
+                            json!({"slide":index+1,"source":format!("resource:{}",text(resource,"resourceId").trim_start_matches("resource:"))})
+                        })
+                        .collect::<Vec<_>>();
+                    operation = Some(json!({
+                        "operation":"presentations.narrate",
+                        "arguments":{
+                            "source":format!("resource:{}",text(source,"resourceId").trim_start_matches("resource:")),
+                            "segments":segments,"fps":fps
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -3489,6 +3593,7 @@ impl Console {
                         21 => "Use pdf.merge with the exact source order shown. Do not reorder, omit or duplicate a source. Deliver merged.pdf only after the tool reports the expected page count, verified order, source hashes and first/last render previews.",
                         22 => "Use presentations.create with these exact slide layouts, chart values, theme fields and optional logo. Keep the slide text editable, preserve the supplied data literally and deliver the PPTX only after every requested slide render succeeds.",
                         23 => "Use presentations.brand on this exact PPTX and theme. Preserve every slide, note, image and relationship part; report explicit colours that cannot follow the theme and do not claim full visual adaptation until the renders are reviewed.",
+                        24 => "Use presentations.narrate on this exact PPTX and filename-ordered audio set. Require one speaker-note part and one approved clip per slide, preserve the deck, verify the rendered video and state that spoken-word matching still needs human review.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -5274,6 +5379,121 @@ mod tests {
         assert!(request.contains("\"render\": false"));
         assert!(request.contains("Preserve every slide, note, image and relationship part"));
         assert!(request.contains("do not claim full visual adaptation"));
+    }
+    #[test]
+    fn narrated_presentation_request_uses_exact_filename_order_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"03-proof.m4a","kind":"audio","sha256":"c".repeat(64),"bytes":300,"status":"available"},
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"brief.pptx","kind":"document","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:44444444-4444-4444-8444-444444444444","revision":1,"name":"unused.m4a","kind":"audio","sha256":"d".repeat(64),"bytes":300,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"01-opening.m4a","kind":"audio","sha256":"b".repeat(64),"bytes":300,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 24;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        draft
+            .sources
+            .insert("resource:33333333-3333-4333-8333-333333333333".into());
+        draft
+            .sources
+            .insert("resource:22222222-2222-4222-8222-222222222222".into());
+        *draft.value("presentationFps") = "25".into();
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, egui::vec2(800.0, 560.0), false, vec![]);
+        }
+        assert!(click(
+            &ctx,
+            &mut c,
+            &data,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"presentations.narrate\""));
+        assert!(request.contains("\"fps\": 25"));
+        let first = request
+            .find("22222222-2222-4222-8222-222222222222")
+            .unwrap();
+        let third = request
+            .find("33333333-3333-4333-8333-333333333333")
+            .unwrap();
+        assert!(first < third, "narration order changed: {request}");
+        assert!(!request.contains("44444444-4444-4444-8444-444444444444"));
+        assert!(request.contains("spoken-word matching still needs human review"));
+    }
+    #[test]
+    fn narration_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                data["projectStudio"]["resources"] = json!([
+                    {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"brief.pptx","kind":"document","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+                    {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"01-opening.m4a","kind":"audio","sha256":"b".repeat(64),"bytes":300,"status":"available"}
+                ]);
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 24;
+                draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+                draft
+                    .sources
+                    .insert("resource:22222222-2222-4222-8222-222222222222".into());
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..3 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: narration action");
+            }
+        }
     }
     #[test]
     fn terminal_quiet_mutations_reload_once_and_read_errors_do_not_loop() {

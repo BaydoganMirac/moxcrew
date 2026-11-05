@@ -1,0 +1,89 @@
+{
+  "kind": "narrated-presentation",
+  "sourceSha256": "e5b66aed95b2c481a7e132584d52aa2b689ea0500e46c299658094b659960853",
+  "slideCount": 3,
+  "fps": 30,
+  "durationSeconds": 15.579938,
+  "checkedNarrationSeconds": 15.586757000000002,
+  "segments": [
+    {
+      "slide": 1,
+      "duration": 4.878186,
+      "audioSha256": "5c0723614ef7de567f28e8344dd9dc6a15a7a9e1cf8103e8e139e470a7fe20cc",
+      "notesSha256": "b98ae98123d2cd1a84fd3377379d3b95810978a1e40ab0d428524625e8e626c2",
+      "notesCharacters": 90
+    },
+    {
+      "slide": 2,
+      "duration": 4.049977,
+      "audioSha256": "d362ab7eb976fa4845b409caa4bc285b3572eb6cb2815c332bac76501cf9da13",
+      "notesSha256": "bc8041735120d5dede0256a824cd1f843bd113e60fb7025c7c5f52b26a9f461b",
+      "notesCharacters": 90
+    },
+    {
+      "slide": 3,
+      "duration": 6.658594,
+      "audioSha256": "0c47f2046f1b29367b4a89fc5f8d8aab668d7774a3ef00cc723d63250cef2f4c",
+      "notesSha256": "a406960f0dbec46c197cfbbaa3df7f13aef5c0a1a02f21eb70dce83635215f00",
+      "notesCharacters": 120
+    }
+  ],
+  "renders": [
+    {
+      "slide": 1,
+      "file": "slide-01.png",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "slide": 2,
+      "file": "slide-02.png",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "slide": 3,
+      "file": "slide-03.png",
+      "width": 1280,
+      "height": 720
+    }
+  ],
+  "frames": [
+    {
+      "label": "start",
+      "seconds": 0,
+      "file": "video-frame-start.png"
+    },
+    {
+      "label": "middle",
+      "seconds": 7.789969,
+      "file": "video-frame-middle.png"
+    },
+    {
+      "label": "end",
+      "seconds": 15.079938,
+      "file": "video-frame-end.png"
+    }
+  ],
+  "streams": [
+    {
+      "codec_name": "mpeg4",
+      "codec_type": "video",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2
+    }
+  ],
+  "verification": {
+    "allSlidesRendered": true,
+    "fullVideoDecoded": true,
+    "durationMatched": true,
+    "speakerNotesPresent": true,
+    "spokenTextVerified": false
+  }
+}

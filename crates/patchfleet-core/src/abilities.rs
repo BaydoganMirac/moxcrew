@@ -51,7 +51,11 @@ fn readiness_profile(id: &str) -> Option<Value> {
             &[],
         ),
         "A3" | "A4" => (&["python", "ffmpeg", "ffprobe"], &[], &[]),
-        "A5" => (&["python", "ffmpeg", "ffprobe"], &[], &["voiceModelAccess"]),
+        "A5" => (
+            &["python", "ffmpeg", "ffprobe", "piper", "piperModel"],
+            &[],
+            &[],
+        ),
         "T1" | "T2" | "T3" | "T4" => (&["python"], &[], &[]),
         "T5" => (&["python"], &["pdftotext", "tesseract"], &[]),
         "W1" => (&[], &[], &[]),
@@ -211,6 +215,10 @@ mod tests {
         assert_eq!(
             find("A2").unwrap()["readiness"],
             json!({"requiredTools":["python","ffmpeg","ffprobe","piper","piperModel"],"optionalTools":[],"access":[]})
+        );
+        assert_eq!(
+            find("A5").unwrap()["readiness"],
+            find("A2").unwrap()["readiness"]
         );
     }
 }

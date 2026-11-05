@@ -84,7 +84,9 @@ frozen local recipe and budgets, not publishing, purchases or external writes.
   adapters; actual OCR, recognition and voice quality remain separately
   unverified, and no transcript, pronunciation or licence quality is claimed
   from a fixture. Native file/recording input is implemented; microphone/screen
-  capture and voice cloning are not added.
+  capture and voice cloning are not added. Owner-approved translated audio can
+  be time-fitted to one checked source duration within a 0.5×–2× pace bound;
+  it does not translate, transcribe, align sentences or prove listening quality.
 - Images require a running local ComfyUI service, supported checkpoint nodes and
   per-job cancellation. Configure its literal loopback HTTP URL and checkpoint
   privately for the Project. Inputs/masks are same-size PNGs; dimensions 64–2048,

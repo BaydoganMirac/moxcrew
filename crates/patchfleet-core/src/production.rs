@@ -41,6 +41,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "video.edit",
     "audio.cleanup",
     "audio.speech",
+    "audio.dub",
     "audio.podcast",
     "resources.extract",
     "resources.ocr",

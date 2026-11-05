@@ -63,5 +63,6 @@ normalization, file and evidence behavior; it does not prove pronunciation,
 naturalness, emotional tone, semantic accuracy, accessibility or permission to
 redistribute a selected voice. The owner must review the individual model's
 licence and listen to real output. Voice cloning, model discovery/download,
-translation, A5 translated narration, publication, Windows-native behavior,
-signing and public release remain separate gates.
+automatic translation, sentence alignment, publication, Windows-native behavior,
+signing and public release remain separate gates. The bounded owner-reviewed A5
+path is tracked separately in [verified translated audio](verified-translated-audio.md).

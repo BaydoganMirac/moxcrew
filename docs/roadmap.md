@@ -134,6 +134,12 @@ commitments.
   produce a script/model/config/output-hashed 48 kHz mono WAV after locale, loudness and
   full-decode checks. Real pronunciation, naturalness, meaning and individual
   voice-model licensing remain explicit human gates.
+  [Task0098](state/verified-translated-audio.md) closes the bounded A5 production
+  gap: one exact source recording and owner-reviewed source/translation pair use
+  the target-locale local Piper voice to produce a duration-matched, fully decoded
+  48 kHz mono WAV with source/text/model/output hashes and explicit pace evidence.
+  Translation, sentence alignment, listening quality and licensing remain human
+  or separately authorized work.
   [Task0092](state/verified-static-landing-site.md) closes the deterministic W1
   local-output gap: exact approved copy produces a script-free editable landing
   page, canonical content, hash manifest and summary with exact reopen plus real

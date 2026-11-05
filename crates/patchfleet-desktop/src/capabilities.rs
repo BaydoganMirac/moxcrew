@@ -673,7 +673,9 @@ impl CreateState {
 impl Console {
     #[cfg(feature = "ui-smoke")]
     pub fn capabilities_smoke(&mut self, snapshot: &Value, scene: &str) {
-        if scene == "capabilities-audio-cleanup" {
+        if scene == "capabilities-transcription" {
+            self.create.ability = "A1".into();
+        } else if scene == "capabilities-audio-cleanup" {
             self.create.ability = "A3".into();
         } else if scene == "capabilities-data-profile" {
             self.create.ability = "T1".into();
@@ -760,6 +762,7 @@ impl Console {
             | "capabilities-video-compose"
             | "capabilities-video-highlights"
             | "capabilities-video-motion"
+            | "capabilities-transcription"
             | "capabilities-audio-cleanup"
             | "capabilities-data-profile"
             | "capabilities-source-changes"
@@ -821,6 +824,7 @@ impl Console {
                 "capabilities-video-compose" => 25,
                 "capabilities-video-highlights" => 26,
                 "capabilities-video-motion" => 27,
+                "capabilities-transcription" => 5,
                 "capabilities-audio-cleanup" => 28,
                 "capabilities-data-profile" => 29,
                 _ => 0,
@@ -950,6 +954,13 @@ impl Console {
                     "cover | 3 | MOX İLE TANIŞ | Gerçekten görebildiğin bir ekip | Tek yerel çalışma alanında planla, üret ve incele.\nstatement | 3 | KONTROL SENDE | Her devir görünür kalır. | Sen söylemeden hiçbir şey başlamaz.\nstatement | 3 | GERÇEK ÇIKTILAR | Gizemli ilerleme değil; dosya, kontrol ve sürüm. | Her teslimat kanıtını korur.\ncover | 3 | MOXCREW | Kanıtla teslim et. | Son karar sende kalsın."
                 }
                 .into();
+            } else if scene == "capabilities-transcription" {
+                draft.record = available
+                    .iter()
+                    .find(|resource| podcast_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                *draft.value("language") = "tr".into();
             } else if scene == "capabilities-audio-cleanup" {
                 draft.record = available
                     .iter()
@@ -2027,7 +2038,7 @@ impl Console {
                         .find(|r| {
                             text(r, "resourceId") == draft.record
                                 && match kind {
-                                    8 | 28 => podcast_source(r),
+                                    5 | 8 | 28 => podcast_source(r),
                                     9 | 10 | 29 => chart_source(r),
                                     13 => template_source(r),
                                     14 => rewrite_source(r),
@@ -2041,12 +2052,12 @@ impl Console {
                 ),
                 |ui| {
                     for r in all.iter().filter(|r| {
-                        if ![8, 9, 10, 13, 14, 20, 25, 26, 28, 29].contains(&kind) {
+                        if ![5, 8, 9, 10, 13, 14, 20, 25, 26, 28, 29].contains(&kind) {
                             return true;
                         }
                         text(r, "status") == "available"
                             && match kind {
-                                8 | 28 => podcast_source(r),
+                                5 | 8 | 28 => podcast_source(r),
                                 9 | 10 | 29 => chart_source(r),
                                 13 => template_source(r),
                                 14 => rewrite_source(r),
@@ -2333,6 +2344,41 @@ impl Console {
                 };
                 if valid && valid_input(draft.get("title"), 160) {
                     operation = Some(json!({"operation":"interactive.create","arguments":args}));
+                }
+            }
+            5 => {
+                hint(
+                    ui,
+                    "Transcribe one exact recording locally and keep timed SRT/VTT subtitles with source-hash verification.",
+                );
+                if draft.get("language").is_empty() {
+                    *draft.value("language") = "auto".into();
+                }
+                field(
+                    ui,
+                    "Language · auto or ISO 639 code",
+                    draft.value("language"),
+                    12,
+                    false,
+                );
+                hint(
+                    ui,
+                    "Use auto for detection or a two/three-letter lowercase code such as tr or en.",
+                );
+                hint(
+                    ui,
+                    "Delivers transcript.txt, transcript.json, captions.srt, captions.vtt and a verification manifest.",
+                );
+                let language = draft.get("language").trim();
+                let valid_language = language == "auto"
+                    || ((2..=3).contains(&language.len())
+                        && language.bytes().all(|byte| byte.is_ascii_lowercase()));
+                if let Some(source) =
+                    source_id.filter(|_| source.is_some_and(podcast_source) && valid_language)
+                {
+                    operation = Some(json!({"operation":"audio.transcribe","arguments":{
+                        "source":source,"language":language
+                    }}));
                 }
             }
             7 => {
@@ -4082,6 +4128,7 @@ impl Console {
                 self.stage_operation(
                     snapshot,
                     match draft.kind {
+                        5 => "Use audio.transcribe with this exact Project recording and language policy. Preserve the source hash, deliver transcript text/JSON plus SRT/VTT and the verification manifest, and report normalized-audio decode and timeline checks. Transcript content accuracy, speaker identity and uncertain passages still require human review.",
                         11 => "Read the exact Project sources and populate rows before calling the typed tool. Every confirmed or uncertain value must appear inside its literal evidence quote. Mark absent fields missing with null value and evidence; never infer or hide uncertainty.",
                         12 => "Read the exact Project sources and populate findings, questions and actions before calling the typed tool. Every finding and action needs literal evidence from its exact source. Keep unresolved questions explicit; use null owner or due when the notes do not supply them, and never guess.",
                         13 => "Inspect the exact DOCX template before calling the typed tool. Supply every {{field_key}} exactly once. Keep blank values missing with null instead of guessing, and preserve all non-placeholder template content.",
@@ -6322,6 +6369,87 @@ mod tests {
                     .unwrap()
                 });
                 assert!(visibility.1, "{language}/{theme:?}: motion action");
+            }
+        }
+    }
+    #[test]
+    fn transcription_request_freezes_exact_source_and_language_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"interview.wav","kind":"audio","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"unused.wav","kind":"audio","sha256":"b".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:33333333-3333-4333-8333-333333333333","revision":1,"name":"notes.txt","kind":"document","sha256":"c".repeat(64),"bytes":4096,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 5;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("language") = "tr".into();
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, egui::vec2(800.0, 560.0), false, vec![]);
+        }
+        assert!(click(
+            &ctx,
+            &mut c,
+            &data,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"audio.transcribe\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(!request.contains("33333333-3333-4333-8333-333333333333"));
+        assert!(request.contains("\"language\": \"tr\""));
+        assert!(request.contains("Transcript content accuracy"));
+    }
+    #[test]
+    fn transcription_form_is_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                data["projectStudio"]["resources"] = json!([
+                    {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"interview.wav","kind":"audio","sha256":"a".repeat(64),"bytes":4096,"status":"available"}
+                ]);
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 5;
+                draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+                *draft.value("language") = "auto".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(visibility.1, "{language}/{theme:?}: transcription action");
             }
         }
     }

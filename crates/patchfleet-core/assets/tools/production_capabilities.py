@@ -871,7 +871,7 @@ def documents_template(args,tools):
     return result
 
 
-def captions_file(captions,duration,path):
+def captions_text(captions,duration,webvtt=False):
     require(isinstance(captions,list) and len(captions)<=1000)
     last=0;lines=[]
     for i,cap in enumerate(captions,1):
@@ -880,8 +880,23 @@ def captions_file(captions,duration,path):
         # Plain SRT text only: do not allow ASS override tags or SRT/HTML formatting.
         caption=caption.replace('{','(').replace('}',')').replace('<','‹').replace('>','›').replace('\\','／')
         caption='\n'.join(line for line in caption.replace('\r','').split('\n') if line.strip())
-        lines.append(f'{i}\n{stamp(start)} --> {stamp(end)}\n{caption}\n')
-    path.write_text('\n'.join(lines),encoding='utf-8')
+        begin=stamp(start).replace(',','.') if webvtt else stamp(start)
+        finish=stamp(end).replace(',','.') if webvtt else stamp(end)
+        lines.append(f'{i}\n{begin} --> {finish}\n{caption}\n')
+    body='\n'.join(lines)
+    return 'WEBVTT\n\n'+body if webvtt else body
+
+
+def captions_file(captions,duration,path):
+    body=captions_text(captions,duration)
+    path.write_text(body,encoding='utf-8')
+    return body
+
+
+def vtt_file(captions,duration,path):
+    body=captions_text(captions,duration,True)
+    path.write_text(body,encoding='utf-8')
+    return body
 
 
 def pdf_page_count(path,tools):
@@ -1017,11 +1032,18 @@ def transcribe(args,tools):
     require(language=='auto' or re.fullmatch(r'[a-z]{2,3}',language) is not None)
     require(tools.get('whisper'),'PRODUCTION_TRANSCRIPTION_ENGINE_REQUIRED')
     model=tools.get('whisperModel');require(isinstance(model,str) and Path(model).is_absolute() and Path(model).is_file(),'PRODUCTION_TRANSCRIPTION_MODEL_REQUIRED')
-    path=source(args['source']);info=media_info(tools,path)
+    path=source(args['source']);source_digest=hashlib.sha256(path.read_bytes()).hexdigest();info=media_info(tools,path)
     duration=number(float(info.get('format',{}).get('duration',0)),0.02,1200)
-    require(any(s.get('codec_type')=='audio' for s in info.get('streams',[])),'PRODUCTION_AUDIO_REQUIRED')
+    stream=next((s for s in info.get('streams',[]) if s.get('codec_type')=='audio'),None)
+    require(stream is not None,'PRODUCTION_AUDIO_REQUIRED')
     wav=ROOT/'speech.wav'
     run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-n',*input_format(path),'-i',str(path),'-vn','-ar','16000','-ac','1','-c:a','pcm_s16le',str(wav)])
+    normalized=media_info(tools,wav);normalized_duration=float(normalized.get('format',{}).get('duration',0))
+    normalized_stream=next((s for s in normalized.get('streams',[]) if s.get('codec_type')=='audio'),None)
+    require(normalized_stream is not None and normalized_stream.get('sample_rate')=='16000'
+            and normalized_stream.get('channels')==1,'PRODUCTION_TRANSCRIPTION_AUDIO_INVALID')
+    require(abs(normalized_duration-duration)<max(0.2,duration*.005),'PRODUCTION_DURATION_MISMATCH')
+    run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error',*input_format(wav),'-i',str(wav),'-map','0:a:0','-f','null','-'])
     target=ROOT/'speech-result'
     run_tool(tools,'whisper',['-m',model,'-f',str(wav),'-l',language,'-oj','-of',str(target),'-np'])
     result=target.with_suffix('.json');require(result.is_file() and result.stat().st_size<=1024*1024,'PRODUCTION_TRANSCRIPTION_INVALID')
@@ -1029,15 +1051,44 @@ def transcribe(args,tools):
     require(isinstance(items,list) and len(items)<=1000,'PRODUCTION_TRANSCRIPTION_INVALID')
     segments=[];last=0
     for item in items:
-        offsets=item.get('offsets',{});start=number(offsets.get('from'),0,duration*1000+50)/1000;end=number(offsets.get('to'),0,duration*1000+50)/1000
-        require(start>=last and end>start,'PRODUCTION_TRANSCRIPTION_INVALID');last=start
-        segments.append({'start':start,'end':min(end,duration),'text':text(item.get('text'),500).strip()})
+        offsets=item.get('offsets',{});raw_start=offsets.get('from');raw_end=offsets.get('to')
+        require(type(raw_start) in (int,float) and type(raw_end) in (int,float)
+                and math.isfinite(raw_start) and math.isfinite(raw_end),
+                'PRODUCTION_TRANSCRIPTION_INVALID')
+        start=raw_start/1000;end=min(raw_end/1000,duration)
+        caption=text(item.get('text'),500).strip()
+        require(last<=start<=duration and start<end<=duration and raw_end<=duration*1000+50
+                and caption,'PRODUCTION_TRANSCRIPTION_INVALID');last=end
+        segments.append({'start':start,'end':end,'text':caption})
     result_language=text(native.get('result',{}).get('language',language),12)
     require(re.fullmatch(r'[a-z]{2,3}|auto',result_language) is not None,'PRODUCTION_TRANSCRIPTION_INVALID')
-    value={'kind':'transcript','text':'\n'.join(s['text'] for s in segments),'segments':segments,'durationSeconds':duration,'language':result_language,'engine':'whisper.cpp'}
+    value={'kind':'transcript','text':'\n'.join(s['text'] for s in segments),'segments':segments,
+           'segmentCount':len(segments),'durationSeconds':duration,'requestedLanguage':language,
+           'language':result_language,'engine':'whisper.cpp','sourceSha256':source_digest}
     text(value['text'],150000)
-    (OUT/'transcript.json').write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');(OUT/'transcript.txt').write_text(value['text'],encoding='utf-8')
-    captions_file(segments,duration,OUT/'captions.srt')
+    transcript_json=OUT/'transcript.json';transcript_text=OUT/'transcript.txt'
+    srt=OUT/'captions.srt';vtt=OUT/'captions.vtt'
+    transcript_json.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');transcript_text.write_text(value['text'],encoding='utf-8')
+    srt_body=captions_file(segments,duration,srt);vtt_body=vtt_file(segments,duration,vtt)
+    require(srt.read_text(encoding='utf-8')==srt_body and vtt.read_text(encoding='utf-8')==vtt_body,
+            'PRODUCTION_TRANSCRIPTION_OUTPUT_MISMATCH')
+    require(hashlib.sha256(path.read_bytes()).hexdigest()==source_digest,'PRODUCTION_SOURCE_CHANGED')
+    artifacts={item.name:hashlib.sha256(item.read_bytes()).hexdigest()
+               for item in (transcript_json,transcript_text,srt,vtt)}
+    manifest={'kind':'transcription','engine':'whisper.cpp','requestedLanguage':language,
+              'detectedLanguage':result_language,'source':{'sha256':source_digest,
+              'durationSeconds':duration,'codec':stream.get('codec_name'),
+              'sampleRate':stream.get('sample_rate'),'channels':stream.get('channels')},
+              'normalizedAudio':{'sha256':hashlib.sha256(wav.read_bytes()).hexdigest(),
+              'durationSeconds':normalized_duration,'codec':normalized_stream.get('codec_name'),
+              'sampleRate':normalized_stream.get('sample_rate'),'channels':normalized_stream.get('channels')},
+              'segmentCount':len(segments),'artifacts':artifacts,
+              'verification':{'originalPreserved':True,'durationMatched':True,
+              'normalizedAudioDecoded':True,'segmentTimelineValid':True,
+              'subtitleFilesReopened':True,'textMatched':True,
+              'contentAccuracyReviewed':False,'uncertainPassagesReviewed':False}}
+    (OUT/'transcript-manifest.json').write_text(
+        json.dumps(manifest,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
     return value
 
 

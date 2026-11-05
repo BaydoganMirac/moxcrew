@@ -324,6 +324,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             == Ok("capabilities-video-motion");
         let audio_cleanup = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-audio-cleanup");
+        let transcription = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+            == Ok("capabilities-transcription");
         let data_profile = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
             == Ok("capabilities-data-profile");
         let project_name = if scenario {
@@ -350,6 +352,8 @@ fn seed_create_scene(directory: &std::path::Path) {
             if english { "Board packet" } else { "Yönetim kurulu paketi" }
         } else if data_profile {
             if english { "Data cleanup" } else { "Veri temizleme" }
+        } else if transcription {
+            if english { "Transcription" } else { "Transkripsiyon" }
         } else if audio_cleanup {
             if english { "Audio cleanup" } else { "Ses temizleme" }
         } else if video_motion {
@@ -438,6 +442,12 @@ fn seed_create_scene(directory: &std::path::Path) {
         }
         if audio_cleanup {
             let source=directory.join("field-recording.wav");std::fs::write(&source,b"disposable audio cleanup fixture").unwrap();
+            let snapshot=host.snapshot().unwrap();
+            let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
+            host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
+        }
+        if transcription {
+            let source=directory.join("interview.wav");std::fs::write(&source,b"disposable transcription interface fixture").unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
@@ -574,11 +584,14 @@ fn seed_create_scene(directory: &std::path::Path) {
         let video_highlights=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-highlights");
         let video_motion=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-motion");
         let audio_cleanup=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-audio-cleanup");
+        let transcription=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-transcription");
         let data_profile=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-profile");
         let (ability,title,instruction)=if batch_images {
             ("I3",if english{"Campaign image batch"}else{"Kampanya görsel paketi"},if english{"Convert the selected campaign images within explicit bounds and report every source separately."}else{"Seçili kampanya görsellerini açık sınırlar içinde dönüştür ve her kaynağı ayrı raporla."})
         } else if podcast {
             ("A4",if english{"Podcast edit package"}else{"Podcast kurgu paketi"},if english{"Edit the selected recording into ordered chapters and produce a playable package."}else{"Seçili kaydı sıralı bölümlere kurgula ve oynatılabilir bir paket üret."})
+        } else if transcription {
+            ("A1",if english{"Checked local transcription"}else{"Doğrulanmış yerel transkripsiyon"},if english{"Transcribe the exact recording locally and retain timed subtitles, hashes and explicit human accuracy review."}else{"Kesin kaydı yerelde yazıya çevir; zamanlı altyazıları, özetleri ve açık insan doğruluk incelemesini koru."})
         } else if data_profile {
             ("T1",if english{"Checked data cleanup"}else{"Doğrulanmış veri temizleme"},if english{"Clean the exact CSV and retain checked transforms, missing counts and numeric statistics."}else{"Kesin CSV'yi temizle; doğrulanmış dönüşümleri, eksik sayılarını ve sayısal istatistikleri koru."})
         } else if data_chart {

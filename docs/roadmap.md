@@ -121,6 +121,11 @@ commitments.
   selected numeric columns produce source/output-hashed cleaned CSV or editable
   XLSX plus missing counts, descriptive checks and exact reopen proof. No
   business interpretation, imputation or fuzzy matching is implied.
+  [Task0091](state/verified-local-transcription.md) closes the owner-visible
+  bounded A1 adapter gap: one exact recording and language policy produce
+  source/output-hashed transcript text/JSON plus reopened SRT/VTT after checked
+  16 kHz mono normalization and full decode. Real-model recognition accuracy,
+  speaker identity and uncertain-passage review remain explicit quality gates.
 
 - Validate the delivered [productive Project crews](plans/0044-productive-project-crews.md):
   model planning, mixed providers, output revisions, typed production, live

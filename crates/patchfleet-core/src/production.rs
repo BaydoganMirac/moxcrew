@@ -1407,6 +1407,79 @@ mod tests {
         assert_eq!(analysis["columns"]["revenue"]["sum"], 80750.0);
         assert_eq!(analysis["verification"]["outputReopened"], true);
     }
+    #[cfg(unix)]
+    #[tokio::test]
+    #[ignore = "requires real FFmpeg/FFprobe, one exact audio input and an evidence destination"]
+    async fn exact_audio_and_whisper_peer_produce_checked_transcription_outputs() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let data = tempfile::tempdir().unwrap();
+        for (id, key) in [
+            ("ffmpeg", "MOXCREW_TEST_FFMPEG"),
+            ("ffprobe", "MOXCREW_TEST_FFPROBE"),
+        ] {
+            configure(data.path(), id, &std::env::var(key).unwrap()).unwrap();
+        }
+        let whisper = data.path().join("fixture-whisper");
+        fs::write(
+            &whisper,
+            r#"#!/usr/bin/env python3
+import json,pathlib,sys
+args=sys.argv[1:]
+if args==['--help']:
+ print('fixture whisper protocol peer');sys.exit(0)
+assert args[args.index('-l')+1]=='en' and '-oj' in args and '-np' in args
+out=pathlib.Path(args[args.index('-of')+1]+'.json')
+out.write_text(json.dumps({'result':{'language':'en'},'transcription':[
+ {'offsets':{'from':0,'to':1600},'text':' Verified fixture segment one. '},
+ {'offsets':{'from':1600,'to':3200},'text':' Verified fixture segment two. '}
+]}))
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&whisper, fs::Permissions::from_mode(0o700)).unwrap();
+        configure(data.path(), "whisper", whisper.to_str().unwrap()).unwrap();
+        let model = data.path().join("fixture-model.bin");
+        fs::write(&model, b"ggml protocol peer model").unwrap();
+        configure(data.path(), "whisperModel", model.to_str().unwrap()).unwrap();
+        let source = fs::read(std::env::var("MOXCREW_TRANSCRIPTION_SOURCE").unwrap()).unwrap();
+        let output = run(
+            data.path(),
+            "audio.transcribe",
+            &json!({"source":"inputs/source.wav","language":"en"}),
+            &[("inputs/source.wav".into(), source.clone())],
+            None,
+        )
+        .await
+        .unwrap();
+        let evidence = PathBuf::from(std::env::var("MOXCREW_TRANSCRIPTION_EVIDENCE_DIR").unwrap());
+        fs::create_dir_all(&evidence).unwrap();
+        fs::write(evidence.join("source-fixture.wav"), source).unwrap();
+        for (name, bytes) in output.files {
+            fs::write(evidence.join(name), bytes).unwrap();
+        }
+        for name in [
+            "source-fixture.wav",
+            "transcript.json",
+            "transcript.txt",
+            "captions.srt",
+            "captions.vtt",
+            "transcript-manifest.json",
+        ] {
+            assert!(
+                evidence.join(name).is_file(),
+                "missing evidence file {name}"
+            );
+        }
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(evidence.join("transcript-manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["segmentCount"], 2);
+        assert_eq!(manifest["verification"]["originalPreserved"], true);
+        assert_eq!(manifest["verification"]["normalizedAudioDecoded"], true);
+        assert_eq!(manifest["verification"]["subtitleFilesReopened"], true);
+        assert_eq!(manifest["verification"]["contentAccuracyReviewed"], false);
+    }
     #[tokio::test]
     #[ignore = "requires explicitly provided MOXCREW_MEDIA_TEST_FFPROBE and FFmpeg executables"]
     async fn media_input_cannot_autodetect_a_network_playlist() {

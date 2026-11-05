@@ -49,6 +49,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "documents.render",
     "video.frame",
     "video.package",
+    "video.highlights",
     "video.compose",
     "interactive.create",
     "images.generate",
@@ -940,6 +941,68 @@ mod tests {
                 "missing evidence file {name}"
             );
         }
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn video_highlights_reject_unknown_emphasis_before_tools() {
+        let data = tempfile::tempdir().unwrap();
+        let result = run(
+            data.path(),
+            "video.highlights",
+            &json!({"source":"inputs/source.mp4","targetSeconds":8,
+                "clipSeconds":4,"emphasis":"semantic"}),
+            &[],
+            None,
+        )
+        .await;
+        assert!(matches!(result,Err(Error(ref code)) if code=="PRODUCTION_VIDEO_EMPHASIS_INVALID"));
+    }
+    #[tokio::test]
+    #[ignore = "requires real FFmpeg/FFprobe, one exact video input and an evidence destination"]
+    async fn measured_signals_render_a_checked_highlight_reel() {
+        let data = tempfile::tempdir().unwrap();
+        for (id, key) in [
+            ("ffmpeg", "MOXCREW_TEST_FFMPEG"),
+            ("ffprobe", "MOXCREW_TEST_FFPROBE"),
+        ] {
+            configure(data.path(), id, &std::env::var(key).unwrap()).unwrap();
+        }
+        let source = fs::read(std::env::var("MOXCREW_VIDEO_HIGHLIGHT_SOURCE").unwrap()).unwrap();
+        let evidence =
+            PathBuf::from(std::env::var("MOXCREW_VIDEO_HIGHLIGHT_EVIDENCE_DIR").unwrap());
+        let output = run(
+            data.path(),
+            "video.highlights",
+            &json!({"source":"inputs/source.mp4","targetSeconds":8,
+                "clipSeconds":4,"emphasis":"balanced"}),
+            &[("inputs/source.mp4".into(), source)],
+            None,
+        )
+        .await
+        .unwrap();
+        fs::create_dir_all(&evidence).unwrap();
+        for (name, bytes) in output.files {
+            fs::write(evidence.join(name), bytes).unwrap();
+        }
+        for name in [
+            "highlights.mp4",
+            "highlight-manifest.json",
+            "edit-plan.json",
+            "validation.json",
+            "highlight-frame-01.png",
+            "highlight-frame-02.png",
+        ] {
+            assert!(
+                evidence.join(name).is_file(),
+                "missing evidence file {name}"
+            );
+        }
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(evidence.join("highlight-manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["selections"].as_array().unwrap().len(), 2);
+        assert_eq!(manifest["verification"]["fullVideoDecoded"], true);
+        assert_eq!(manifest["verification"]["humanMeaningReviewRequired"], true);
     }
     #[cfg(unix)]
     #[tokio::test]

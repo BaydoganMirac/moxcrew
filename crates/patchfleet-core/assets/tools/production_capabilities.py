@@ -1138,6 +1138,98 @@ def video_title_card(title,tools):
     pages[0].write_bytes(checked);return pages[0]
 
 
+def video_highlights(args,tools):
+    exact(args,('source','targetSeconds','clipSeconds','emphasis'))
+    emphasis=args['emphasis'];require(emphasis in ('balanced','visual','audio'),'PRODUCTION_VIDEO_EMPHASIS_INVALID')
+    path=source(args['source']);require(path.suffix.lower() in ('.mp4','.mov','.mkv','.webm'),'PRODUCTION_VIDEO_FORMAT_UNSUPPORTED')
+    info=media_info(tools,path);streams=info.get('streams',[])
+    require(any(stream.get('codec_type')=='video' for stream in streams),'PRODUCTION_VIDEO_REQUIRED')
+    duration=number(float(info.get('format',{}).get('duration',0)),2,1200)
+    clip_seconds=number(args['clipSeconds'],2,min(30,duration))
+    target_seconds=number(args['targetSeconds'],clip_seconds,min(180,duration))
+    clip_count=round(target_seconds/clip_seconds)
+    require(1<=clip_count<=12 and abs(clip_count*clip_seconds-target_seconds)<0.001,'PRODUCTION_VIDEO_HIGHLIGHT_DURATION_INVALID')
+    has_audio=any(stream.get('codec_type')=='audio' for stream in streams)
+    require(emphasis!='audio' or has_audio,'PRODUCTION_AUDIO_REQUIRED')
+
+    visual=run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error',*input_format(path),'-i',str(path),
+        '-an','-vf','fps=1,scale=32:18,format=gray','-pix_fmt','gray','-f','rawvideo','-'])
+    frame_size=32*18;require(len(visual)>=frame_size,'PRODUCTION_VIDEO_ANALYSIS_FAILED')
+    frames=[visual[offset:offset+frame_size] for offset in range(0,len(visual)-frame_size+1,frame_size)]
+    audio=b''
+    if has_audio:
+        audio=run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error',*input_format(path),'-i',str(path),
+            '-vn','-ac','1','-ar','200','-f','s16le','-'])
+        require(len(audio)>=2 and len(audio)%2==0,'PRODUCTION_VIDEO_ANALYSIS_FAILED')
+    samples=struct.unpack('<'+str(len(audio)//2)+'h',audio) if audio else ()
+
+    stride=max(1.0,clip_seconds/2)
+    starts=[];cursor=0.0;last=max(0.0,duration-clip_seconds)
+    while cursor<=last+0.001 and len(starts)<240:
+        starts.append(round(min(cursor,last),3));cursor+=stride
+    if not starts or abs(starts[-1]-last)>0.001: starts.append(round(last,3))
+    candidates=[]
+    for start in starts:
+        end=start+clip_seconds
+        first=max(1,int(math.floor(start))+1);last_frame=min(len(frames)-1,int(math.ceil(end)))
+        changes=[]
+        for index in range(first,last_frame+1):
+            previous,current=frames[index-1],frames[index]
+            changes.append(sum(abs(a-b) for a,b in zip(previous,current))/(frame_size*255))
+        visual_score=sum(changes)/len(changes) if changes else 0.0
+        audio_start=max(0,int(start*200));audio_end=min(len(samples),int(end*200))
+        window=samples[audio_start:audio_end]
+        audio_score=math.sqrt(sum(value*value for value in window)/len(window))/32768 if window else 0.0
+        candidates.append({'start':start,'end':round(end,3),'visualScore':visual_score,'audioScore':audio_score})
+    require(candidates,'PRODUCTION_VIDEO_ANALYSIS_FAILED')
+    def normalized(key,value):
+        values=[candidate[key] for candidate in candidates];low=min(values);high=max(values)
+        return 0.0 if high-low<1e-12 else (value-low)/(high-low)
+    weights={'balanced':(.55,.45),'visual':(1,0),'audio':(0,1)}[emphasis]
+    for candidate in candidates:
+        candidate['combinedScore']=weights[0]*normalized('visualScore',candidate['visualScore'])+weights[1]*normalized('audioScore',candidate['audioScore'])
+    ranked=sorted(candidates,key=lambda item:(-item['combinedScore'],-item['visualScore'],-item['audioScore'],item['start']))
+    selected=[]
+    for candidate in ranked:
+        if all(candidate['end']<=item['start']+0.001 or candidate['start']>=item['end']-0.001 for item in selected):
+            selected.append(candidate)
+            if len(selected)==clip_count: break
+    require(len(selected)==clip_count,'PRODUCTION_VIDEO_HIGHLIGHT_DURATION_INVALID')
+    selected.sort(key=lambda item:item['start'])
+    for item in selected:
+        for key in ('visualScore','audioScore','combinedScore'): item[key]=round(item[key],6)
+    clips=[{'source':args['source'],'start':item['start'],'end':item['end']} for item in selected]
+    media({'clips':clips,'width':1280,'height':720},'video.edit',tools)
+    output=OUT/'highlights.mp4';(OUT/'video.mp4').rename(output)
+    (OUT/'edit-recipe.json').rename(OUT/'edit-plan.json')
+    output_info=media_info(tools,output);actual=float(output_info.get('format',{}).get('duration',0))
+    output_streams=output_info.get('streams',[])
+    rendered_video=[stream for stream in output_streams if stream.get('codec_type')=='video']
+    require(len(rendered_video)==1 and (rendered_video[0].get('width'),rendered_video[0].get('height'))==(1280,720),'PRODUCTION_OUTPUT_INVALID')
+    require(any(stream.get('codec_type')=='audio' for stream in output_streams)==has_audio,'PRODUCTION_OUTPUT_INVALID')
+    require(abs(actual-target_seconds)<max(0.2,target_seconds*0.005),'PRODUCTION_DURATION_MISMATCH')
+    decode=['-nostdin','-hide_banner','-loglevel','error',*input_format(output),'-i',str(output),'-map','0:v:0']
+    if has_audio: decode+=['-map','0:a:0']
+    run_tool(tools,'ffmpeg',decode+['-f','null','-'])
+    frames_out=[];position=0.0
+    for index,item in enumerate(selected,1):
+        image=OUT/f'highlight-frame-{index:02}.png';at=position+clip_seconds/2
+        run_tool(tools,'ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-n',*input_format(output),'-ss',str(at),'-i',str(output),'-frames:v','1',str(image)])
+        checked,w,h=png(image.read_bytes(),(1280,720));image.write_bytes(checked)
+        frames_out.append({'selection':index,'sourceSeconds':round((item['start']+item['end'])/2,3),'outputSeconds':round(at,3),'file':image.name,'width':w,'height':h})
+        position+=clip_seconds
+    digest=lambda value:hashlib.sha256(value.read_bytes()).hexdigest()
+    manifest={'kind':'video-highlights','emphasis':emphasis,'sourceDurationSeconds':duration,
+        'targetSeconds':target_seconds,'clipSeconds':clip_seconds,'sourceHadAudio':has_audio,
+        'analysis':{'visualSamplesPerSecond':1,'visualSampleSize':[32,18],'audioSamplesPerSecond':200 if has_audio else 0,
+            'candidateCount':len(candidates),'weights':{'visual':weights[0],'audio':weights[1]}},
+        'selections':selected,'sourceSha256':digest(path),'outputSha256':digest(output),'output':output_info,'frames':frames_out,
+        'verification':{'fullVideoDecoded':True,'durationMatched':True,'dimensionsMatched':True,
+            'rangesNonOverlapping':True,'selectionFramesRetained':True,'humanMeaningReviewRequired':True}}
+    (OUT/'highlight-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
+    return manifest
+
+
 def compose_video(args,tools):
     exact(args,('source','image','audio','title','titleSeconds','overlay','audioMode','audioLevel'))
     exact(args['image'],('source',));exact(args['audio'],('source',))
@@ -1322,6 +1414,7 @@ def execute(operation,args,tools):
     if operation=='documents.render': return render(args,tools)
     if operation=='video.frame': return frame(args,tools)
     if operation=='video.package': return package(args,tools)
+    if operation=='video.highlights': return video_highlights(args,tools)
     if operation=='video.compose': return compose_video(args,tools)
     if operation=='interactive.create': return interactive(args)
     raise ValueError('PRODUCTION_OPERATION_UNSUPPORTED')

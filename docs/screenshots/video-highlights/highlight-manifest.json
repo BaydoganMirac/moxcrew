@@ -1,0 +1,86 @@
+{
+  "kind": "video-highlights",
+  "emphasis": "balanced",
+  "sourceDurationSeconds": 15.579938,
+  "targetSeconds": 8,
+  "clipSeconds": 4,
+  "sourceHadAudio": true,
+  "analysis": {
+    "visualSamplesPerSecond": 1,
+    "visualSampleSize": [
+      32,
+      18
+    ],
+    "audioSamplesPerSecond": 200,
+    "candidateCount": 7,
+    "weights": {
+      "visual": 0.55,
+      "audio": 0.45
+    }
+  },
+  "selections": [
+    {
+      "start": 4.0,
+      "end": 8.0,
+      "visualScore": 0.016631,
+      "audioScore": 0.001351,
+      "combinedScore": 1.0
+    },
+    {
+      "start": 8.0,
+      "end": 12.0,
+      "visualScore": 0.011045,
+      "audioScore": 0.001039,
+      "combinedScore": 0.45261
+    }
+  ],
+  "sourceSha256": "6178e65a941a66dce8f74cc2c5cc9f13ff686f58ddeb5e30547b8315ed8886d0",
+  "outputSha256": "178cb9115e019205f7abd7c16a275820b78d5c8036fcfa875df5ead8d23d0bda",
+  "output": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "mpeg4",
+        "codec_type": "video",
+        "width": 1280,
+        "height": 720
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2
+      }
+    ],
+    "format": {
+      "duration": "8.021355"
+    }
+  },
+  "frames": [
+    {
+      "selection": 1,
+      "sourceSeconds": 6.0,
+      "outputSeconds": 2.0,
+      "file": "highlight-frame-01.png",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "selection": 2,
+      "sourceSeconds": 10.0,
+      "outputSeconds": 6.0,
+      "file": "highlight-frame-02.png",
+      "width": 1280,
+      "height": 720
+    }
+  ],
+  "verification": {
+    "fullVideoDecoded": true,
+    "durationMatched": true,
+    "dimensionsMatched": true,
+    "rangesNonOverlapping": true,
+    "selectionFramesRetained": true,
+    "humanMeaningReviewRequired": true
+  }
+}

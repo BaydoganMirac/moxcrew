@@ -26,7 +26,8 @@ fn readiness_profile(id: &str) -> Option<Value> {
             &[],
             &[],
         ),
-        "V2" | "V3" => (
+        "V2" => (&["python", "ffmpeg", "ffprobe"], &[], &[]),
+        "V3" => (
             &["python", "ffmpeg", "ffprobe"],
             &["whisper", "whisperModel"],
             &[],

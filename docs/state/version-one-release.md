@@ -18,7 +18,7 @@ and video paths are core scope. Private launch messaging is accepted separately.
 |---|---|---|
 | Research | R1–R5 | Bounded public-page retrieval with UTC access/hash evidence, frozen sources, owner-criteria comparisons, attributed multi-source synthesis with preserved disagreements, literal-evidence claim reports, and dated source-hashed change reports implemented; live source/provider quality proof pending |
 | Documents | D1–D5 | DOCX creation/paragraph revision, attributed briefs, source-pinned translation/style rewrite, exact template filling, and bounded PDF text/OCR extraction plus source-hashed order-verified merge implemented; broader semantic/layout and live OCR quality proof pending |
-| Presentations | P1–P5 | Editable PPTX creation/slide revision; real LibreOffice open proof; full area pending |
+| Presentations | P1–P5 | P1–P4: theme-aware editable native layouts and bars, exact slide revision, exact-part theme application, notes and all-slide LibreOffice/Poppler renders implemented; P5 narration and live quality proof pending |
 | Video | V1–V5 | Real three-aspect packages, burned captions/covers, frame/range revisions; full area pending |
 | Images | I1–I5 | Fixed local ComfyUI generation/reference/inpaint integration, mask/region edits, checked 2–12 source batch conversion and PNG validation; live model quality/full area pending |
 | Audio | A1–A5 | Real bounded cleanup to WAV; timed whisper.cpp transcription adapter; checked ordered podcast segments to playable M4A plus chapter JSON; voice/translation/full area pending |

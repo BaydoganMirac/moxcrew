@@ -150,6 +150,125 @@ fn pdf_source(resource: &Value) -> bool {
         .to_ascii_lowercase()
         .ends_with(".pdf")
 }
+fn presentation_source(resource: &Value) -> bool {
+    text(resource, "name")
+        .to_ascii_lowercase()
+        .ends_with(".pptx")
+}
+fn presentation_logo_source(resource: &Value) -> bool {
+    let name = text(resource, "name").to_ascii_lowercase();
+    [".png", ".jpg", ".jpeg"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+}
+fn presentation_hex(value: &str) -> Option<String> {
+    let value = value.trim().trim_start_matches('#').to_ascii_uppercase();
+    (value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(value)
+}
+fn presentation_slides(value: &str, chart_source: &str) -> Option<Vec<Value>> {
+    let rows = value
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    if !(1..=12).contains(&rows.len()) {
+        return None;
+    }
+    rows.into_iter()
+        .map(|row| {
+            let mut parts = row.splitn(4, '|').map(str::trim);
+            let layout = parts.next()?;
+            let title = parts.next()?;
+            let content = parts.next().unwrap_or_default();
+            let extra = parts.next().unwrap_or_default();
+            if !valid_input(title, 160) {
+                return None;
+            }
+            match layout {
+                "cover" | "statement" => valid_input(content, 240)
+                    .then(|| json!({"layout":layout,"title":title,"subtitle":content})),
+                "content" => {
+                    let bullets = content
+                        .split(';')
+                        .map(str::trim)
+                        .filter(|item| !item.is_empty())
+                        .collect::<Vec<_>>();
+                    (!bullets.is_empty()
+                        && bullets.len() <= 6
+                        && bullets.iter().all(|item| valid_input(item, 220)))
+                    .then(|| json!({"layout":"content","title":title,"bullets":bullets}))
+                }
+                "bar-chart" => {
+                    let series = content
+                        .split(';')
+                        .map(str::trim)
+                        .filter(|item| !item.is_empty())
+                        .map(|item| {
+                            let (label, value) = item.split_once('=')?;
+                            let value = value.trim().parse::<f64>().ok()?;
+                            (valid_input(label.trim(), 60)
+                                && value.is_finite()
+                                && (0.0..=1e12).contains(&value))
+                            .then(|| json!({"label":label.trim(),"value":value}))
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    if series.is_empty()
+                        || series.len() > 6
+                        || !valid_input(extra, 16)
+                        || !valid_input(chart_source, 240)
+                    {
+                        return None;
+                    }
+                    Some(json!({"layout":"bar-chart","title":title,"chart":{
+                        "series":series,"unit":extra,"sourceLabel":chart_source
+                    }}))
+                }
+                _ => None,
+            }
+        })
+        .collect()
+}
+fn presentation_brand_fields(ui: &mut Ui, draft: &mut CapabilityDraft) -> Option<Value> {
+    for (key, value) in [
+        ("brandName", "Moxcrew"),
+        ("primary", "2854F4"),
+        ("accent", "FF7A2F"),
+        ("background", "F8F7F3"),
+        ("text", "15223D"),
+        ("muted", "56627A"),
+        ("font", "Arial"),
+    ] {
+        if draft.get(key).is_empty() {
+            *draft.value(key) = value.into();
+        }
+    }
+    field(ui, "Brand name", draft.value("brandName"), 80, false);
+    field(ui, "Theme font", draft.value("font"), 80, false);
+    ui.label(t(ui, "Theme colours · hexadecimal"));
+    for (label, key) in [
+        ("Primary", "primary"),
+        ("Accent", "accent"),
+        ("Background", "background"),
+        ("Text", "text"),
+        ("Muted text", "muted"),
+    ] {
+        ui.horizontal(|ui| {
+            ui.label(t(ui, label));
+            studio::input(ui, draft.value(key), 7, "2854F4", false);
+        });
+    }
+    let colors = ["primary", "accent", "background", "text", "muted"]
+        .map(|key| presentation_hex(draft.get(key)))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?;
+    (valid_input(draft.get("brandName"), 80) && valid_input(draft.get("font"), 80)).then(|| {
+        json!({
+            "name":draft.get("brandName"),"font":draft.get("font"),
+            "primary":colors[0],"accent":colors[1],"background":colors[2],
+            "text":colors[3],"muted":colors[4]
+        })
+    })
+}
 fn extraction_source(resource: &Value) -> bool {
     let name = text(resource, "name").to_ascii_lowercase();
     [
@@ -600,6 +719,8 @@ impl Console {
             | "capabilities-research-comparison"
             | "capabilities-web-research"
             | "capabilities-pdf-merge"
+            | "capabilities-presentations"
+            | "capabilities-presentation-brand"
             | "capabilities-source-changes"
             | "capabilities-documents-rewrite"
             | "capabilities-documents-template"
@@ -653,6 +774,8 @@ impl Console {
                 "capabilities-research-comparison" => 18,
                 "capabilities-web-research" => 19,
                 "capabilities-pdf-merge" => 21,
+                "capabilities-presentations" => 22,
+                "capabilities-presentation-brand" => 23,
                 _ => 0,
             };
             if scene == "capabilities-batch-images" {
@@ -686,6 +809,33 @@ impl Console {
                 *draft.value("categoryColumn") = "region".into();
                 *draft.value("valueColumn") = "revenue".into();
                 *draft.value("aggregation") = "sum".into();
+            } else if scene == "capabilities-presentations" {
+                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                draft.record = available
+                    .iter()
+                    .find(|resource| presentation_logo_source(resource))
+                    .map(|resource| text(resource, "resourceId").to_owned())
+                    .unwrap_or_default();
+                *draft.value("brandName") = "Moxcrew".into();
+                *draft.value("primary") = "2854F4".into();
+                *draft.value("accent") = "FF7A2F".into();
+                *draft.value("background") = "F8F7F3".into();
+                *draft.value("text") = "15223D".into();
+                *draft.value("muted") = "56627A".into();
+                *draft.value("font") = "Arial".into();
+                *draft.value("chartSource") = if english {
+                    "Source: checked pilot dataset"
+                } else {
+                    "Kaynak: kontrol edilmiş pilot veri seti"
+                }
+                .into();
+                *draft.value("presentationSlides") = if english {
+                    "cover | Work with a crew you can inspect | One local project, one visible plan\ncontent | What stays under your control | Sources stay local; Preparation remains explicit; Every output keeps its version\nbar-chart | Pilot completion | Before=42; With Mox=78 | %"
+                } else {
+                    "cover | Denetleyebildiğin bir ekiple çalış | Tek yerel proje, görünür bir plan\ncontent | Kontrol sende kalır | Kaynaklar yerelde kalır; Hazırlık açıkça yapılır; Her çıktı sürümünü korur\nbar-chart | Pilot tamamlama oranı | Önce=42; Mox ile=78 | %"
+                }
+                .into();
+                *draft.value("renderSlides") = "true".into();
             } else if scene == "capabilities-data-scenario" {
                 draft.record = csv.unwrap_or_default();
                 let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
@@ -1707,6 +1857,8 @@ impl Console {
             "Web research report",
             "Extract PDF text",
             "Merge PDFs",
+            "Design presentation",
+            "Apply presentation brand",
         ];
         form_combo(
             ui,
@@ -1733,7 +1885,7 @@ impl Console {
         }
 
         let all = resources(snapshot, &self.create.project);
-        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21].contains(&draft.kind) {
+        if ![0, 3, 7, 11, 12, 15, 16, 17, 18, 19, 21, 22, 23].contains(&draft.kind) {
             let kind = draft.kind;
             form_combo(
                 ui,
@@ -3165,6 +3317,137 @@ impl Console {
                         Some(json!({"operation":"pdf.merge","arguments":{"sources":sources}}));
                 }
             }
+            22 => {
+                hint(
+                    ui,
+                    "Build a theme-aware editable deck. Each non-empty line is one slide; renders require LibreOffice and Poppler.",
+                );
+                let mut brand = presentation_brand_fields(ui, draft);
+                let logos = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available"
+                            && presentation_logo_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                form_combo(
+                    ui,
+                    egui::ComboBox::from_id_salt("presentation-logo").selected_text(
+                        logos
+                            .iter()
+                            .find(|resource| text(resource, "resourceId") == draft.record)
+                            .map(|resource| text(resource, "name"))
+                            .unwrap_or(t(ui, "No logo").as_ref()),
+                    ),
+                    |ui| {
+                        ui.selectable_value(&mut draft.record, String::new(), t(ui, "No logo"));
+                        for resource in &logos {
+                            ui.selectable_value(
+                                &mut draft.record,
+                                text(resource, "resourceId").into(),
+                                text(resource, "name"),
+                            );
+                        }
+                    },
+                );
+                multiline(
+                    ui,
+                    "Slides · layout | title | content | unit",
+                    draft.value("presentationSlides"),
+                    12_000,
+                    6,
+                );
+                hint(
+                    ui,
+                    "Layouts: cover or statement use supporting text; content uses semicolon-separated bullets; bar-chart uses Label=Value pairs.",
+                );
+                field(
+                    ui,
+                    "Chart source label (optional)",
+                    draft.value("chartSource"),
+                    240,
+                    false,
+                );
+                let mut render = draft.get("renderSlides") != "false";
+                if ui
+                    .checkbox(&mut render, t(ui, "Render every slide for review"))
+                    .changed()
+                {
+                    *draft.value("renderSlides") = render.to_string();
+                }
+                let slides =
+                    presentation_slides(draft.get("presentationSlides"), draft.get("chartSource"));
+                if let Some(resource) = logos
+                    .iter()
+                    .find(|resource| text(resource, "resourceId") == draft.record)
+                {
+                    if let Some(value) = brand.as_mut() {
+                        value["logo"] = json!({
+                            "source":format!("resource:{}",text(resource,"resourceId").trim_start_matches("resource:")),
+                            "alt":text(resource,"name")
+                        });
+                    }
+                }
+                if let (Some(brand), Some(slides)) = (brand, slides) {
+                    operation = Some(json!({
+                        "operation":"presentations.create",
+                        "arguments":{"brand":brand,"slides":slides,"render":render}
+                    }));
+                }
+            }
+            23 => {
+                hint(
+                    ui,
+                    "Apply a native Office theme while preserving every slide, note, image and relationship part.",
+                );
+                let decks = all
+                    .iter()
+                    .filter(|resource| {
+                        text(resource, "status") == "available" && presentation_source(resource)
+                    })
+                    .collect::<Vec<_>>();
+                form_combo(
+                    ui,
+                    egui::ComboBox::from_id_salt("presentation-brand-source").selected_text(
+                        decks
+                            .iter()
+                            .find(|resource| text(resource, "resourceId") == draft.record)
+                            .map(|resource| text(resource, "name"))
+                            .unwrap_or(t(ui, "Choose a presentation").as_ref()),
+                    ),
+                    |ui| {
+                        for resource in &decks {
+                            ui.selectable_value(
+                                &mut draft.record,
+                                text(resource, "resourceId").into(),
+                                text(resource, "name"),
+                            );
+                        }
+                    },
+                );
+                let brand = presentation_brand_fields(ui, draft);
+                let mut render = draft.get("renderSlides") != "false";
+                if ui
+                    .checkbox(&mut render, t(ui, "Render every slide for review"))
+                    .changed()
+                {
+                    *draft.value("renderSlides") = render.to_string();
+                }
+                if let (Some(source), Some(brand)) = (
+                    decks
+                        .iter()
+                        .find(|resource| text(resource, "resourceId") == draft.record),
+                    brand,
+                ) {
+                    operation = Some(json!({
+                        "operation":"presentations.brand",
+                        "arguments":{
+                            "source":format!("resource:{}",text(source,"resourceId").trim_start_matches("resource:")),
+                            "brand":brand,"render":render
+                        }
+                    }));
+                }
+            }
             _ => {
                 field(
                     ui,
@@ -3204,6 +3487,8 @@ impl Console {
                         19 => "Inspect each requested public URL with browser.inspect before calling browser.research. For every claim, use fact with literal evidence and null note, inference with literal evidence and an explicit review note, or unknown with no evidence and a reason. Cite every requested URL by its exact source value. The typed browser will retrieve the pages again, reject changed or invented quotes, record UTC access times and response/text hashes, and emit research-report.md, sources.csv and research-evidence.json. Do not use private pages, submit forms, invent citations or present classifications as automatic truth.",
                         20 => "Use pdf.extract on this exact Project PDF. Keep the selected text/OCR mode and language. Report page limits or missing Poppler/Tesseract honestly; do not infer text that the tool did not extract.",
                         21 => "Use pdf.merge with the exact source order shown. Do not reorder, omit or duplicate a source. Deliver merged.pdf only after the tool reports the expected page count, verified order, source hashes and first/last render previews.",
+                        22 => "Use presentations.create with these exact slide layouts, chart values, theme fields and optional logo. Keep the slide text editable, preserve the supplied data literally and deliver the PPTX only after every requested slide render succeeds.",
+                        23 => "Use presentations.brand on this exact PPTX and theme. Preserve every slide, note, image and relationship part; report explicit colours that cannot follow the theme and do not claim full visual adaptation until the renders are reviewed.",
                         _ => "Produce these deliverables using the exact Project sources.",
                     },
                     operation,
@@ -3256,7 +3541,7 @@ impl Console {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{click_at_size, render, snapshot};
+    use super::super::tests::{click, click_at_size, render, snapshot};
     use super::*;
     fn fixture() -> Value {
         let mut data = snapshot();
@@ -4804,6 +5089,191 @@ mod tests {
             c.create.capabilities.drafts[&key].get("source"),
             "/tmp/later-owner-edit"
         );
+    }
+    #[test]
+    fn branded_presentation_request_stages_editable_layouts_without_execution() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"brand-logo.png","kind":"image","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"notes.txt","kind":"text","sha256":"b".repeat(64),"bytes":64,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 22;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("brandName") = "Moxcrew".into();
+        *draft.value("primary") = "2854F4".into();
+        *draft.value("accent") = "FF7A2F".into();
+        *draft.value("background") = "F8F7F3".into();
+        *draft.value("text") = "15223D".into();
+        *draft.value("muted") = "56627A".into();
+        *draft.value("font") = "Arial".into();
+        *draft.value("chartSource") = "Source: checked pilot dataset".into();
+        *draft.value("presentationSlides") = "cover | Work with a crew you can inspect | One local project, one visible plan\ncontent | What stays under your control | Sources stay local; Preparation remains explicit; Every output keeps its version\nbar-chart | Pilot completion | Before=42; With Mox=78 | %".into();
+        *draft.value("renderSlides") = "true".into();
+        let size = egui::vec2(800.0, 560.0);
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, size, false, vec![]);
+        }
+        let commands = click(
+            &ctx,
+            &mut c,
+            &data,
+            false,
+            "memory_control",
+            "Add request to Chat",
+        );
+        assert!(commands.is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"presentations.create\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"layout\": \"bar-chart\""));
+        assert!(request.contains("\"value\": 78.0"));
+        assert!(request.contains("\"render\": true"));
+        assert!(request.contains("preserve the supplied data literally"));
+        assert_eq!(c.create.productive_view(), 0);
+    }
+    #[test]
+    fn presentation_slide_rows_reject_unknown_layouts_and_parse_chart_values() {
+        let slides = presentation_slides(
+            "statement | One clear point | Supporting detail\nbar-chart | Adoption | Before=41.5; After=79 | %",
+            "Source: pilot",
+        )
+        .unwrap();
+        assert_eq!(slides[0]["layout"], "statement");
+        assert_eq!(slides[1]["chart"]["series"][0]["value"], 41.5);
+        assert_eq!(slides[1]["chart"]["sourceLabel"], "Source: pilot");
+        assert!(presentation_slides("dashboard | Unsupported | Value", "").is_none());
+    }
+    #[test]
+    fn presentation_form_is_scroll_reachable_at_minimum_size_in_both_languages_and_themes() {
+        for language in ["tr", "en"] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                let ctx = egui::Context::default();
+                studio::install(&ctx);
+                ctx.set_theme(theme);
+                let mut data = fixture();
+                data["desktopPreferences"] = json!({"language":language});
+                let mut c = console();
+                c.create.select_productive_view(3);
+                c.create.capabilities.tab = 5;
+                let draft = c
+                    .create
+                    .capabilities
+                    .drafts
+                    .entry(("project:one".into(), 5))
+                    .or_default();
+                draft.kind = 22;
+                *draft.value("presentationSlides") =
+                    "cover | Visible work | One project, one plan".into();
+                let size = egui::vec2(800.0, 560.0);
+                for _ in 0..3 {
+                    render(&ctx, &mut c, &data, size, false, vec![]);
+                }
+                for _ in 0..5 {
+                    render(
+                        &ctx,
+                        &mut c,
+                        &data,
+                        size,
+                        false,
+                        vec![
+                            egui::Event::PointerMoved(egui::pos2(680.0, 360.0)),
+                            egui::Event::MouseWheel {
+                                unit: egui::MouseWheelUnit::Page,
+                                delta: egui::vec2(0.0, -1.0),
+                                phase: egui::TouchPhase::Move,
+                                modifiers: egui::Modifiers::default(),
+                            },
+                        ],
+                    );
+                }
+                render(&ctx, &mut c, &data, size, false, vec![]);
+                let visibility = ctx.data(|data| {
+                    data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        "test-action-visibility",
+                        "Add request to Chat",
+                    )))
+                    .unwrap()
+                });
+                assert!(
+                    visibility.1,
+                    "{language}/{theme:?}: action must be scroll-reachable"
+                );
+                assert!(click_at_size(
+                    &ctx,
+                    &mut c,
+                    &data,
+                    size,
+                    false,
+                    "memory_control",
+                    "Add request to Chat"
+                )
+                .is_empty());
+                assert!(c
+                    .create
+                    .conversation_input()
+                    .contains("\"operation\": \"presentations.create\""));
+            }
+        }
+    }
+    #[test]
+    fn presentation_brand_request_preserves_the_selected_deck_and_only_stages_chat() {
+        let ctx = egui::Context::default();
+        studio::install(&ctx);
+        let mut data = fixture();
+        data["projectStudio"]["resources"] = json!([
+            {"resourceId":"resource:11111111-1111-4111-8111-111111111111","revision":1,"name":"launch-deck.pptx","kind":"document","sha256":"a".repeat(64),"bytes":4096,"status":"available"},
+            {"resourceId":"resource:22222222-2222-4222-8222-222222222222","revision":1,"name":"wrong-deck.pptx","kind":"document","sha256":"b".repeat(64),"bytes":4096,"status":"available"}
+        ]);
+        let mut c = console();
+        c.create.select_productive_view(3);
+        c.create.capabilities.tab = 5;
+        let draft = c
+            .create
+            .capabilities
+            .drafts
+            .entry(("project:one".into(), 5))
+            .or_default();
+        draft.kind = 23;
+        draft.record = "resource:11111111-1111-4111-8111-111111111111".into();
+        *draft.value("brandName") = "Night Shift".into();
+        *draft.value("primary") = "9BAEFF".into();
+        *draft.value("accent") = "FF9B66".into();
+        *draft.value("background") = "090D18".into();
+        *draft.value("text") = "F2F5FF".into();
+        *draft.value("muted") = "A7B3CC".into();
+        *draft.value("font") = "Arial".into();
+        *draft.value("renderSlides") = "false".into();
+        for _ in 0..3 {
+            render(&ctx, &mut c, &data, egui::vec2(800.0, 560.0), false, vec![]);
+        }
+        assert!(click(
+            &ctx,
+            &mut c,
+            &data,
+            false,
+            "memory_control",
+            "Add request to Chat"
+        )
+        .is_empty());
+        let request = c.create.conversation_input();
+        assert!(request.contains("\"operation\": \"presentations.brand\""));
+        assert!(request.contains("11111111-1111-4111-8111-111111111111"));
+        assert!(!request.contains("22222222-2222-4222-8222-222222222222"));
+        assert!(request.contains("\"render\": false"));
+        assert!(request.contains("Preserve every slide, note, image and relationship part"));
+        assert!(request.contains("do not claim full visual adaptation"));
     }
     #[test]
     fn terminal_quiet_mutations_reload_once_and_read_errors_do_not_loop() {

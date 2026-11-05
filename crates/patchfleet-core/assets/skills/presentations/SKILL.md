@@ -15,11 +15,11 @@ Extract the audience, objective, available evidence and brand from owner inputs.
 
 ## Produce
 
-Create an editable PPTX through an available compatible tool, with speaker notes when requested and actual slide previews. Suggested outline: audience problem, evidence, solution, practical example, next step. HTML or a written outline must be labeled as such rather than called PPTX.
+Create an editable PPTX through the typed presentation tool. Choose a content-shaped layout for every slide: cover or statement for one idea, content for text, split for a supported visual and bar-chart for exact bounded series. Use the Project brand or an explicit readable theme; preserve literal chart values and source labels. Add speaker notes when requested and ask for renders when LibreOffice and Poppler are available. HTML or a written outline must be labeled as such rather than called PPTX.
 
 ## Verify and revise
 
-Reopen the file and render every slide. Inspect overflow, contrast, alignment, source labels and chart values. For a targeted revision change the identified slide while preserving others; report render/tool failures honestly.
+Reopen the file and render every slide. Inspect overflow, contrast, alignment, source labels and chart values at full size. For a targeted revision use `presentations.revise` and change the identified slide while preserving every non-target slide part. Use `presentations.brand` for theme changes; report explicit colours that cannot follow the theme instead of claiming complete adaptation. Report render/tool failures honestly.
 
 ## Access and delivery
 

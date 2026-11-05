@@ -18,6 +18,7 @@ const LIMIT: usize = 25 * 1024 * 1024;
 pub(crate) const OPERATIONS: &[&str] = &[
     "presentations.create",
     "presentations.revise",
+    "presentations.brand",
     "documents.create",
     "documents.revise",
     "documents.brief",
@@ -567,21 +568,70 @@ mod tests {
         }
     }
     #[tokio::test]
-    async fn office_files_are_real_and_targeted_revision_keeps_other_pages() {
+    async fn branded_presentations_keep_editable_layouts_notes_and_exact_revisions() {
         let data = tempfile::tempdir().unwrap();
-        let first=run(data.path(),"presentations.create",&json!({"slides":[{"title":"First","bullets":["Keep me"]},{"title":"Second","bullets":["Change me"]}]}),&[],None).await.unwrap();
+        let first=run(data.path(),"presentations.create",&json!({
+            "brand":{"name":"Northstar","primary":"2648E8","accent":"F06A2A","background":"FAF8F2","text":"17213A","muted":"526079","font":"Arial"},
+            "slides":[
+                {"layout":"cover","eyebrow":"Launch brief","title":"A clearer way to run ambitious work","subtitle":"One local project, one inspectable crew","notes":"Open with the owner problem and keep the promise concrete."},
+                {"layout":"content","title":"What owners need","body":"The work should stay inspectable from request to delivery.","bullets":["Exact sources and versions","Visible preparation before execution","Reviewable output evidence"]},
+                {"layout":"bar-chart","title":"Pilot teams complete more work","chart":{"unit":"%","sourceLabel":"Source: checked pilot dataset","series":[{"label":"Before","value":42},{"label":"With Mox","value":78}]},"notes":"State the sample limits before discussing the difference."}
+            ]
+        }),&[],None).await.unwrap();
         let pptx = first
             .files
             .iter()
             .find(|(n, _)| n.ends_with(".pptx"))
             .unwrap();
         assert_eq!(&pptx.1[..4], b"PK\x03\x04");
-        let revised=run(data.path(),"presentations.revise",&json!({"source":"inputs/deck.pptx","sectionId":"slide:2","title":"Updated","bullets":["Changed"]}),&[("inputs/deck.pptx".into(),pptx.1.clone())],None).await.unwrap();
+        let created_manifest: Value = serde_json::from_slice(
+            &first
+                .files
+                .iter()
+                .find(|(name, _)| name == "presentation-manifest.json")
+                .unwrap()
+                .1,
+        )
+        .unwrap();
+        assert_eq!(created_manifest["slideCount"], 3);
+        assert_eq!(created_manifest["slides"][2]["layout"], "bar-chart");
+        assert_eq!(
+            created_manifest["slides"][2]["chart"]["series"][1]["value"],
+            78
+        );
+        assert_eq!(created_manifest["slides"][0]["notes"], true);
+        let revised = run(
+            data.path(),
+            "presentations.revise",
+            &json!({
+                "source":"inputs/deck.pptx","sectionId":"slide:2","layout":"statement",
+                "eyebrow":"Owner control","title":"The plan stays visible before work starts",
+                "subtitle":"A deliberate handoff replaces hidden execution."
+            }),
+            &[("inputs/deck.pptx".into(), pptx.1.clone())],
+            None,
+        )
+        .await
+        .unwrap();
         let after = revised
             .files
             .iter()
             .find(|(n, _)| n.ends_with(".pptx"))
             .unwrap();
+        let revised_manifest: Value = serde_json::from_slice(
+            &revised
+                .files
+                .iter()
+                .find(|(name, _)| name == "presentation-manifest.json")
+                .unwrap()
+                .1,
+        )
+        .unwrap();
+        assert_eq!(revised_manifest["targetSlide"], 2);
+        assert_eq!(
+            revised_manifest["verification"]["nonTargetSlidesPreserved"],
+            2
+        );
         let view = run(
             data.path(),
             "inspect",
@@ -591,9 +641,49 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(view.value["pages"][0]["title"], "First");
-        assert_eq!(view.value["pages"][0]["text"], "Keep me");
-        assert_eq!(view.value["pages"][1]["title"], "Updated");
+        assert_eq!(
+            view.value["pages"][0]["title"],
+            "A clearer way to run ambitious work"
+        );
+        assert_eq!(
+            view.value["pages"][1]["title"],
+            "The plan stays visible before work starts"
+        );
+        assert!(view.value["pages"][2]["text"]
+            .as_str()
+            .unwrap()
+            .contains("With Mox"));
+        let branded=run(data.path(),"presentations.brand",&json!({
+            "source":"inputs/revised.pptx",
+            "brand":{"name":"Night Shift","primary":"9BAEFF","accent":"FF9B66","background":"090D18","text":"F2F5FF","muted":"A7B3CC","font":"Arial"}
+        }),&[("inputs/revised.pptx".into(),after.1.clone())],None).await.unwrap();
+        let brand_manifest: Value = serde_json::from_slice(
+            &branded
+                .files
+                .iter()
+                .find(|(name, _)| name == "presentation-manifest.json")
+                .unwrap()
+                .1,
+        )
+        .unwrap();
+        assert_eq!(brand_manifest["operation"], "brand");
+        assert_eq!(brand_manifest["theme"]["background"], "090D18");
+        assert!(
+            brand_manifest["coverage"]["schemeAwareElements"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+        assert_eq!(
+            brand_manifest["coverage"]["partialForExplicitColors"],
+            false
+        );
+        assert!(
+            brand_manifest["verification"]["slideNotesAndMediaPartsPreserved"]
+                .as_u64()
+                .unwrap()
+                >= 6
+        );
         let document = run(
             data.path(),
             "documents.create",
@@ -607,6 +697,83 @@ mod tests {
             .files
             .iter()
             .any(|(n, b)| n.ends_with(".docx") && b.starts_with(b"PK")));
+    }
+    #[tokio::test]
+    async fn presentation_density_and_contrast_fail_before_publication() {
+        let data = tempfile::tempdir().unwrap();
+        let low_contrast = run(
+            data.path(),
+            "presentations.create",
+            &json!({
+                "brand":{"background":"FFFFFF","text":"F8F8F8"},
+                "slides":[{"layout":"cover","title":"Unreadable"}]
+            }),
+            &[],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(low_contrast,Err(Error(ref code)) if code=="PRODUCTION_PRESENTATION_CONTRAST")
+        );
+        let crowded = run(
+            data.path(),
+            "presentations.create",
+            &json!({"slides":[{"layout":"content","title":"Crowded","bullets":["word ".repeat(220)]}]}),
+            &[],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(crowded,Err(Error(ref code)) if code=="PRODUCTION_INVALID_INPUT" || code=="PRODUCTION_PRESENTATION_TEXT_OVERFLOW")
+        );
+    }
+    #[tokio::test]
+    #[ignore = "requires real LibreOffice and Poppler paths plus an evidence destination"]
+    async fn branded_presentation_renders_every_slide_with_real_tools() {
+        let libreoffice = std::env::var("MOXCREW_TEST_LIBREOFFICE").unwrap();
+        let pdftoppm = std::env::var("MOXCREW_TEST_PDFTOPPM").unwrap();
+        let logo = std::env::var("MOXCREW_PRESENTATION_TEST_LOGO").unwrap();
+        let evidence = PathBuf::from(std::env::var("MOXCREW_PRESENTATION_EVIDENCE_DIR").unwrap());
+        let data = tempfile::tempdir().unwrap();
+        configure(data.path(), "libreoffice", &libreoffice).unwrap();
+        configure(data.path(), "pdftoppm", &pdftoppm).unwrap();
+        let logo_bytes = fs::read(logo).unwrap();
+        let output = run(
+            data.path(),
+            "presentations.create",
+            &json!({
+                "brand":{"name":"Moxcrew","primary":"2854F4","accent":"FF7A2F","background":"F8F7F3","text":"15223D","muted":"56627A","font":"Arial","logo":{"source":"inputs/mox-master.png","alt":"Moxcrew mascot"}},
+                "slides":[
+                    {"layout":"cover","eyebrow":"Local-first AI crew","title":"Build ambitious work without losing control","subtitle":"One inspectable project. One visible plan. Every output reviewable.","image":{"source":"inputs/mox-master.png","alt":"Moxcrew mascot","fit":"contain"},"notes":"Open with the owner promise: powerful work without hidden execution."},
+                    {"layout":"statement","eyebrow":"The operating principle","title":"Nothing moves before the owner can see what will happen.","subtitle":"Preparation stays separate from execution, and every handoff leaves evidence."},
+                    {"layout":"split","title":"A crew that stays legible","body":"Moxcrew turns a complex request into an owner-visible production loop.","bullets":["Ground work in exact project sources","Prepare actions before execution","Keep versions, notes and evidence together"],"image":{"source":"inputs/mox-master.png","alt":"Moxcrew mascot","fit":"contain"}},
+                    {"layout":"bar-chart","title":"Pilot teams finish more of the work they start","chart":{"unit":"%","sourceLabel":"Illustrative pilot dataset · owner review required","series":[{"label":"Before","value":42},{"label":"With Moxcrew","value":78}]},"notes":"Call out that the values are illustrative and require owner review."}
+                ],
+                "render":true
+            }),
+            &[("inputs/mox-master.png".into(), logo_bytes)],
+            None,
+        )
+        .await
+        .unwrap();
+        fs::create_dir_all(&evidence).unwrap();
+        for (name, bytes) in output.files {
+            fs::write(evidence.join(name), bytes).unwrap();
+        }
+        for name in [
+            "presentation.pptx",
+            "presentation-manifest.json",
+            "slides.pdf",
+            "slide-01.png",
+            "slide-02.png",
+            "slide-03.png",
+            "slide-04.png",
+        ] {
+            assert!(
+                evidence.join(name).is_file(),
+                "missing evidence file {name}"
+            );
+        }
     }
     #[tokio::test]
     async fn csv_analysis_is_deterministic_and_sources_are_strict() {

@@ -115,6 +115,15 @@ fn terminal(v: &Value) -> bool {
 fn hash(prefix: &str, data: &str) -> String {
     format!("{prefix}:{:x}", Sha256::digest(data.as_bytes()))
 }
+pub fn projection_digest(payload: &Value) -> Result<String> {
+    let mut content = payload.clone();
+    content
+        .as_object_mut()
+        .ok_or("CLOUD_PROTOCOL_INVALID")?
+        .remove("revision");
+    let canonical = serde_json::to_string(&content).map_err(|_| "CLOUD_PROTOCOL_INVALID")?;
+    Ok(hash("projection", &canonical))
+}
 pub fn workspace_alias(installation_id: &str, workspace_id: &str) -> String {
     hash(
         "workspace-alias",
@@ -789,7 +798,8 @@ impl Cloud {
         let mut request = self
             .client
             .request(method, url)
-            .header("content-type", "application/json");
+            .header("content-type", "application/json")
+            .header("cache-control", "no-store");
         if let Some(c) = credential {
             request = request.bearer_auth(c);
         }
@@ -806,6 +816,18 @@ impl Cloud {
             .await
             .map_err(|_| RequestError::code("CLOUD_UNAVAILABLE"))?;
         let status = response.status();
+        let no_store = response
+            .headers()
+            .get("cache-control")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| {
+                value
+                    .split(',')
+                    .any(|directive| directive.trim().eq_ignore_ascii_case("no-store"))
+            });
+        if !no_store {
+            return Err(RequestError::code("CLOUD_PROTOCOL_INVALID"));
+        }
         if status == 401 || status == 403 {
             return Err(RequestError::code("CLOUD_AUTH_REJECTED"));
         }
@@ -945,23 +967,46 @@ impl Cloud {
             c["hostId"].as_str().unwrap()
         );
         let credential = c["credential"].as_str().unwrap();
+        let mut heartbeat_payload = json!({"appVersion":env!("CARGO_PKG_VERSION"),"protocolVersion":protocol,"lastLocalSequence":sequence,"health":"ok"});
+        if protocol == 2 {
+            let digest = projection_digest(&payload)?;
+            heartbeat_payload["projectionDigest"] = json!(digest);
+        }
         let heartbeat = envelope(
             &c,
             format!("heartbeat:{}", Uuid::new_v4()),
             at.clone(),
-            json!({"appVersion":env!("CARGO_PKG_VERSION"),"protocolVersion":protocol,"lastLocalSequence":sequence,"health":"ok"}),
+            heartbeat_payload,
         );
-        accepted(
-            &self
-                .request(
+        let heartbeat_response = self
+            .request(
+                Method::POST,
+                format!("{api}/heartbeat"),
+                Some(heartbeat),
+                Some(credential),
+            )
+            .await;
+        let heartbeat_response = match heartbeat_response {
+            Ok(response) => response,
+            Err(error) if protocol == 2 && error.code == "CLOUD_REQUEST_REJECTED" => {
+                let legacy = envelope(
+                    &c,
+                    format!("heartbeat:{}", Uuid::new_v4()),
+                    at.clone(),
+                    json!({"appVersion":env!("CARGO_PKG_VERSION"),"protocolVersion":protocol,"lastLocalSequence":sequence,"health":"ok"}),
+                );
+                self.request(
                     Method::POST,
                     format!("{api}/heartbeat"),
-                    Some(heartbeat),
+                    Some(legacy),
                     Some(credential),
                 )
                 .await
-                .map_err(|e| e.code)?,
-        )?;
+                .map_err(|retry| retry.code)?
+            }
+            Err(error) => return Err(error.code),
+        };
+        let projection_required = heartbeat_ack(&heartbeat_response)?;
         let send = |p: Value, r: u64| {
             envelope(
                 &c,
@@ -973,40 +1018,42 @@ impl Cloud {
                 p,
             )
         };
-        let response = self
-            .request(
-                Method::PUT,
-                format!("{api}/projection"),
-                Some(send(payload.clone(), revision)),
-                Some(credential),
-            )
-            .await;
-        match response {
-            Ok(v) => accepted(&v)?,
-            Err(e)
-                if e.code == "CLOUD_CONFLICT"
-                    && matches!(
-                        e.reason.as_deref(),
-                        Some("conflicting message replay" | "conflicting projection revision")
-                    ) =>
-            {
-                revision += 1;
-                payload["revision"] = json!(revision);
-                accepted(
-                    &self
-                        .request(
-                            Method::PUT,
-                            format!("{api}/projection"),
-                            Some(send(payload, revision)),
-                            Some(credential),
-                        )
-                        .await
-                        .map_err(|e| e.code)?,
-                )?;
-                self.state["connection"]["projectionRevisionOffset"] = json!(offset + 1);
-                self.persist()?;
+        if projection_required {
+            let response = self
+                .request(
+                    Method::PUT,
+                    format!("{api}/projection"),
+                    Some(send(payload.clone(), revision)),
+                    Some(credential),
+                )
+                .await;
+            match response {
+                Ok(v) => accepted(&v)?,
+                Err(e)
+                    if e.code == "CLOUD_CONFLICT"
+                        && matches!(
+                            e.reason.as_deref(),
+                            Some("conflicting message replay" | "conflicting projection revision")
+                        ) =>
+                {
+                    revision += 1;
+                    payload["revision"] = json!(revision);
+                    accepted(
+                        &self
+                            .request(
+                                Method::PUT,
+                                format!("{api}/projection"),
+                                Some(send(payload, revision)),
+                                Some(credential),
+                            )
+                            .await
+                            .map_err(|e| e.code)?,
+                    )?;
+                    self.state["connection"]["projectionRevisionOffset"] = json!(offset + 1);
+                    self.persist()?;
+                }
+                Err(e) => return Err(e.code),
             }
-            Err(e) => return Err(e.code),
         }
         let after = c["cursor"].as_u64().unwrap();
         let page = self
@@ -1121,6 +1168,22 @@ fn accepted(v: &Value) -> Result<()> {
         return invalid();
     }
     Ok(())
+}
+
+fn heartbeat_ack(v: &Value) -> Result<bool> {
+    let fields = if v.get("projectionRequired").is_some() {
+        &["schemaVersion", "accepted", "projectionRequired"][..]
+    } else {
+        &["schemaVersion", "accepted"][..]
+    };
+    exact(v, fields)?;
+    if v["schemaVersion"] != 1 || v["accepted"] != true {
+        return invalid();
+    }
+    match v.get("projectionRequired") {
+        Some(value) => boolean(value),
+        None => Ok(true),
+    }
 }
 fn os_family() -> &'static str {
     if cfg!(target_os = "windows") {

@@ -27,7 +27,7 @@ pub const MAX_OUTPUT: usize = 512 * 1024;
 pub const MCP_MAX_OUTPUT: usize = 192 * 1024;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 const TICKETS: &str = "agent-memory-tickets";
-pub(crate) const TOOLS: [&str; 17] = [
+pub(crate) const TOOLS: [&str; 18] = [
     "project_context",
     "memory_search",
     "decision_read",
@@ -38,6 +38,7 @@ pub(crate) const TOOLS: [&str; 17] = [
     "crew_task_accept",
     "crew_task_deliver",
     "crew_review",
+    "crew_checkpoint",
     "production_run",
     "production_read",
     "project_resources",
@@ -383,7 +384,11 @@ pub fn validate_arguments(tool: &str, args: &Value) -> Result<()> {
     }
     if matches!(
         tool,
-        "crew_task_offer" | "crew_task_accept" | "crew_task_deliver" | "crew_review"
+        "crew_task_offer"
+            | "crew_task_accept"
+            | "crew_task_deliver"
+            | "crew_review"
+            | "crew_checkpoint"
     ) {
         return crate::project_workflows::validate_agent_arguments(tool, args);
     }

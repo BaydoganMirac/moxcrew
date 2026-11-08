@@ -1,12 +1,12 @@
 # Native desktop release
 
-The 0.12 source builds a standalone Rust/egui desktop. Installers use
+The 0.13 source builds a standalone Rust/egui desktop. Installers use
 cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or desktop
 build requirements. npm publication is retired. Pushing a reviewed version tag,
 public signing and Cloud deployment remain explicit owner release actions.
 
 The owner authorized the unsigned
-[0.12.0 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0).
+[0.13.0 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.0).
 It is a GitHub pre-release with native installers and SHA-256 checksums, not a
 claim of Apple notarization or production readiness.
 The first public asset set is macOS/Linux only. Windows remains an experimental
@@ -205,6 +205,11 @@ Task0069 adds V16 bounded owner-review notes while retaining V15 replay. Preserv
 a complete stopped backup before the first noted review mutation. Earlier readers
 reject V16; rollback restores the unchanged pre-upgrade copy. Never strip notes
 or rewrite V16 facts to make an older build open the directory.
+
+Task0103 adds V17 adaptive checkpoint evaluation facts. Preserve a complete
+stopped backup before the first adaptive mission. Readers before 0.13 reject V17;
+rollback restores the unchanged pre-upgrade copy. Never strip evaluations or
+rewrite V17 facts to make an older build open the current data directory.
 
 Task0041 adds V9 owner audit for project_chat_send and desktop_motion. Rollback
 uses the complete stopped pre-upgrade copy, including preferences. Never remove

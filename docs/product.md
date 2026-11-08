@@ -2,7 +2,7 @@
 
 Status: working product contract
 
-Updated: 2026-11-04
+Updated: 2026-11-08
 
 ## One-line promise
 
@@ -27,10 +27,17 @@ context until explicitly accepted. Decisions stay scoped to their project.
 Chat starts with one message box and Send. Mox uses an available local connection
 automatically; provider selection is an optional secondary override. An explicit
 first Send can create its Project through an exact applied receipt. The resolved
-provider plans the work; clarification replies and revisions use the same
-composer while preserving the original goal and bounded prior context. Recipes,
-work modes and roster configuration are optional details. Actual plans remain
-inspectable and require explicit preparation and start before agents execute.
+provider first frames the owner's specific problem, desired outcomes, constraints,
+unknowns and success criteria, then proposes a provisional ability and crew.
+Clarification replies and revisions use the same composer while preserving the
+original goal and bounded prior context. Recipes, work modes and roster
+configuration are optional planning hints, not the primary execution model.
+Actual plans remain inspectable and require explicit preparation and start before
+agents execute. The accepted local runtime then evaluates declared success
+criteria, can append a bounded task-graph revision when evidence changes the
+strategy and stops with a concrete blocker instead of manufacturing success.
+New work remains inside the prepared crew, ability, provider, permission and
+budget boundary; broader authority returns to the owner.
 The bundled-guide recommendation remains available as a labelled alternative.
 Files can be attached in the composer; targeted output selections return to the
 same conversation. Optional Project tools contain brand guidance, taught skills,

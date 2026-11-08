@@ -1,20 +1,25 @@
 use serde_json::Value;
 use std::borrow::Cow;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Language {
-    #[default]
-    Tr,
-    En,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Language {
+    locale: patchfleet_core::locales::DesktopLocale,
 }
 
+#[allow(non_upper_case_globals)]
 impl Language {
+    pub const Tr: Self = Self {
+        locale: patchfleet_core::locales::TURKISH_DESKTOP_LOCALE,
+    };
+    #[cfg(test)]
+    pub const En: Self = Self {
+        locale: patchfleet_core::locales::ENGLISH_DESKTOP_LOCALE,
+    };
+
     pub fn from_code(code: &str) -> Self {
-        if code == "en" {
-            Self::En
-        } else {
-            Self::Tr
-        }
+        patchfleet_core::locales::desktop_locale(code)
+            .map(|locale| Self { locale })
+            .unwrap_or_default()
     }
     pub fn from_snapshot(snapshot: &Value) -> Self {
         Self::from_code(
@@ -24,10 +29,22 @@ impl Language {
         )
     }
     pub fn code(self) -> &'static str {
-        match self {
-            Self::Tr => "tr",
-            Self::En => "en",
-        }
+        self.locale.code
+    }
+    pub fn native_label(self) -> &'static str {
+        self.locale.native_label
+    }
+    pub fn all() -> impl Iterator<Item = Self> {
+        patchfleet_core::locales::DESKTOP_LOCALES
+            .iter()
+            .copied()
+            .map(|locale| Self { locale })
+    }
+}
+
+impl Default for Language {
+    fn default() -> Self {
+        Self::from_code(patchfleet_core::locales::DEFAULT_DESKTOP_LOCALE)
     }
 }
 
@@ -41,14 +58,14 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_' || b == b' ')
     {
         if let Some((en, translated)) = reason(&text.replace(' ', "_")) {
-            return Cow::Borrowed(if language == Language::En {
-                en
-            } else {
+            return Cow::Borrowed(if language.locale.catalog == Some("tr") {
                 translated
+            } else {
+                en
             });
         }
     }
-    if language == Language::En {
+    if language.locale.catalog != Some("tr") {
         return Cow::Borrowed(text);
     }
     let translated = match text {
@@ -1339,7 +1356,10 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Form a local team" => "Yerel takım kur", "Team name" => "Takım adı", "Template" => "Şablon", "Orchestrator" => "Koordinatör",
         "Agent {0}{1}" => "Ajan {0}{1}", " (required)" => " (zorunlu)", "Concurrency" => "Eşzamanlı iş", "Retries" => "Yeniden deneme", "Minutes" => "Dakika",
         "Continue independent tasks after a failure" => "Bir hata sonrasında bağımsız işlere devam et",
-        "Goal and acceptance criteria" => "Hedef ve kabul ölçütleri", "Create team plan" => "Takım planı oluştur",
+        "Goal and acceptance criteria" => "Hedef ve kabul ölçütleri", "Provisional strategy" => "Geçici strateji",
+        "{0} objectives · {1} checkpoints" => "{0} amaç · {1} kontrol noktası",
+        "Current strategy" => "Güncel strateji", "Plan revision {0}" => "Plan revizyonu {0}",
+        "Create team plan" => "Takım planı oluştur",
         "The team is saved as a draft. Review it before starting." => "Takım taslak olarak kaydedilir. Başlatmadan önce inceleyin.",
         "No team yet" => "Henüz takım yok", "Select an orchestrator, worker roles and a bounded template above." => "Yukarıdan koordinatör, çalışan roller ve sınırları belli bir şablon seçin.",
         "{0} · concurrency {1} · {2} retries" => "{0} · {1} eşzamanlı iş · {2} yeniden deneme",
@@ -1475,7 +1495,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
 
 pub fn catalog(language: Language, raw: &str) -> Cow<'_, str> {
     const SUFFIX:&str=" Stay inside the assigned task, repository rules, declared permissions, and acceptance criteria. Do not perform external publication, deployment, billing, or messaging. Return a concise outcome, changed files, checks run, blockers, and handoff evidence.";
-    if language == Language::Tr {
+    if language.locale.catalog == Some("tr") {
         if let Some(description) = raw.strip_suffix(SUFFIX) {
             let translated = tr(language, description);
             if translated != description {
@@ -1895,6 +1915,10 @@ mod tests {
     use super::*;
     #[test]
     fn language_defaults_and_unknown_copy_are_explicit() {
+        let registered: Vec<_> = Language::all()
+            .map(|language| (language.code(), language.native_label()))
+            .collect();
+        assert_eq!(registered, vec![("tr", "Türkçe"), ("en", "English")]);
         assert_eq!(
             Language::from_snapshot(&serde_json::json!({})),
             Language::Tr

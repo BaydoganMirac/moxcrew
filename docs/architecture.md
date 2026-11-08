@@ -2,7 +2,7 @@
 
 Status: Native Rust desktop architecture
 
-Updated: 2026-10-20
+Updated: 2026-11-08
 
 ## System boundary
 
@@ -142,6 +142,17 @@ the first dependent command; availability changes cannot redirect pending work.
 This is desktop orchestration over the same Host contract, not a new model router
 or automatic cross-account retry. See [ADR0049](decisions/0049-automatic-planning-connection.md).
 
+Task0103 implements the compatible local transition from roster-first planning
+to the problem-driven Adaptive Mission Runtime in
+[ADR0056](decisions/0056-adaptive-mission-runtime.md). New provider plans declare
+a bounded problem frame and provisional objective/task/checkpoint graph before
+their ability and roster. Prepare derives the executable DAG while Start remains
+an explicit owner action. Authenticated mission agents may evaluate declared
+criteria through `crew_checkpoint`; the Host alone can accept a bounded V17
+append-only plan revision. Revisions cannot cross Projects or widen prepared
+agents, abilities, providers, tools, credentials or budgets. Older V11 facts and
+recipe-derived plans remain valid. No adaptive field enters Cloud by default.
+
 The native Project conversation submits `project_chat_send` with a current
 project revision and an inspectable recipe; earlier `project_work_enqueue`
 jobs remain readable. The Host creates an exact private
@@ -171,7 +182,11 @@ recovery reuses a proven queue receipt and never repeats filesystem copies.
 Eight bundled skill guides attach to actual job instructions; installed tools
 and output quality remain separate checks. Connection diagnostics are explicit,
 ephemeral, bounded local reads. The desktop language/motion file uses schema2
-and still reads schema1. Conversation, diagnostic and file bodies remain local.
+and still reads schema1. One compile-time locale registry now owns supported
+codes, native labels and source fallback; screens use the catalog lookup rather
+than locale-specific branches. Reviewed English source copy and Turkish
+overrides remain the shipped catalogs. Owner/model/provider text is never
+implicitly translated. Conversation, diagnostic and file bodies remain local.
 See [ADR0043](decisions/0043-local-project-conversation.md) and
 [conversation state](state/connected-project-conversation.md).
 

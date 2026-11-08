@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0"><img alt="Moxcrew 0.12.0 Public Preview" src="https://img.shields.io/badge/download-0.12.0%20Public%20Preview-2854F4"></a>
+  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.0"><img alt="Moxcrew 0.13.0 Public Preview" src="https://img.shields.io/badge/download-0.13.0%20Public%20Preview-2854F4"></a>
   <a href="https://github.com/BaydoganMirac/moxcrew/actions/workflows/desktop.yml"><img alt="Native desktop CI" src="https://github.com/BaydoganMirac/moxcrew/actions/workflows/desktop.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2854F4"></a>
   <img alt="Rust native desktop" src="https://img.shields.io/badge/desktop-native%20Rust-FF7A2F">
@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.12.0"><strong>Download Moxcrew</strong></a>
+  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.0"><strong>Download Moxcrew</strong></a>
   · <a href="docs/roadmap.md">Roadmap</a>
   · <a href="https://github.com/BaydoganMirac/moxcrew/issues/new">Share feedback</a>
 </p>
@@ -121,18 +121,18 @@ Read the full [product boundaries](docs/product.md),
 
 ## Download Moxcrew
 
-Moxcrew 0.12.0 Public Preview ships as native installers—no Rust, Node or source
+Moxcrew 0.13.0 Public Preview ships as native installers—no Rust, Node or source
 build is needed.
 
 | Platform | Download |
 |---|---|
-| macOS Apple Silicon | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_macOS_Apple-Silicon.dmg) |
-| macOS Intel | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_macOS_Intel.dmg) |
-| Linux x64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_x86_64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_x86_64.deb) |
-| Linux ARM64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_aarch64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/Moxcrew_0.12.0_linux_aarch64.deb) |
+| macOS Apple Silicon | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_macOS_Apple-Silicon.dmg) |
+| macOS Intel | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_macOS_Intel.dmg) |
+| Linux x64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_linux_x86_64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_linux_x86_64.deb) |
+| Linux ARM64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_linux_aarch64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_linux_aarch64.deb) |
 
 This is an unsigned public preview. macOS may show a Gatekeeper warning; verify
-the published [SHA-256 checksums](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.12.0/SHA256SUMS.txt)
+the published [SHA-256 checksums](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/SHA256SUMS.txt)
 before opening an installer. Moxcrew never asks you to bypass protection with a
 terminal command. The Windows package is withheld until its native
 private-storage and installer gates pass.
@@ -144,7 +144,7 @@ platform steps, data locations, upgrades and rollback. Contributors can still
 
 ## Current status
 
-Moxcrew 0.12.0 is an active Public Preview for macOS and Linux. CI builds and
+Moxcrew 0.13.0 is an active Public Preview for macOS and Linux. CI builds and
 checks those native artifacts while retaining a visible experimental Windows
 lane. Publisher-signed distribution, a passing Windows private-storage/runtime
 gate, live quality evidence across every provider/capability and moderated

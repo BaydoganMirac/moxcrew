@@ -1627,7 +1627,11 @@ impl Host {
         }
         if matches!(
             tool,
-            "crew_task_offer" | "crew_task_accept" | "crew_task_deliver" | "crew_review"
+            "crew_task_offer"
+                | "crew_task_accept"
+                | "crew_task_deliver"
+                | "crew_review"
+                | "crew_checkpoint"
         ) {
             return self.workflow_agent_call(binding, tool, &arguments).await;
         }

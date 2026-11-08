@@ -1,18 +1,18 @@
-Moxcrew 0.13.0 turns a request into a bounded adaptive mission while keeping
+Moxcrew 0.13.1 turns a request into a bounded adaptive mission while keeping
 Projects, sources, outputs and accepted decisions local by default.
 
-This preview adds problem framing, explicit success criteria, inspectable
-strategy and bounded evaluation/replanning checkpoints. It also avoids
-redundant Cloud projection uploads, rejects cacheable Cloud protocol responses
-and centralizes desktop locale registration so reviewed languages can be added
-without screen-level conditionals. Existing fixed recipes remain available as
-optional planning hints.
+This preview hardens evidence-backed checkpoints and lets an already prepared
+reviewer inspect a failed branch, retire only durably unsuccessful work and
+propose a bounded replacement graph. Failed outputs never become trusted inputs;
+legacy missions and adaptive missions without a viable reviewer still fail
+honestly. Existing fixed recipes remain optional planning hints.
 
 Choose the installer for your machine from the assets below. macOS ships as
 separate Apple Silicon and Intel DMGs. Linux ships as x64 and ARM64 AppImage and
 Deb packages. Compare the downloaded file with `SHA256SUMS.txt` before opening
 it, close any older Moxcrew/Patchfleet process and back up the stopped local data
-directory before upgrading.
+directory before upgrading. V18–V20 adaptive facts are append-only; rollback to
+an older build requires restoring that complete stopped backup.
 
 This is an unsigned Public Preview. Apple Developer ID notarization, publisher
 signing, live-provider quality across every ability and moderated usability

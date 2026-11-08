@@ -1,6 +1,6 @@
 # Install and operate Moxcrew Desktop
 
-Status: 0.13.0 native Rust desktop Public Preview
+Status: 0.13.1 native Rust desktop Public Preview
 
 Updated: 2026-11-08
 
@@ -8,15 +8,15 @@ Updated: 2026-11-08
 
 Download the installer for your platform directly:
 
-- macOS: [Apple Silicon DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_macOS_Apple-Silicon.dmg)
-  or [Intel DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_macOS_Intel.dmg);
-- Linux x64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_linux_x86_64.AppImage)
-  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_linux_x86_64.deb);
-- Linux ARM64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_linux_aarch64.AppImage)
-  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/Moxcrew_0.13.0_linux_aarch64.deb).
+- macOS: [Apple Silicon DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_macOS_Apple-Silicon.dmg)
+  or [Intel DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_macOS_Intel.dmg);
+- Linux x64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_x86_64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_x86_64.deb);
+- Linux ARM64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_aarch64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_aarch64.deb).
 
 No Rust, Node or source checkout is needed. Compare the installer's SHA-256
-digest with the published [SHA256SUMS.txt](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.0/SHA256SUMS.txt)
+digest with the published [SHA256SUMS.txt](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/SHA256SUMS.txt)
 before opening it. Provider CLIs are separate: install and authenticate Codex,
 Claude Code or Gemini CLI according to the provider you intend to use.
 
@@ -25,7 +25,7 @@ Finder's **Open** action or the explicit **Open Anyway** control in Privacy &
 Security after verifying the checksum. Moxcrew does not require a shell command
 that disables an OS security feature.
 
-Windows packages are intentionally withheld from 0.13.0 Public Preview. The
+Windows packages are intentionally withheld from 0.13.1 Public Preview. The
 experimental Windows lane exposed unresolved private-storage ACL/locking and
 native behavior test failures. A configured NSIS/MSI build is not being presented
 as a usable download until those gates pass.
@@ -70,10 +70,16 @@ and motion preferences; pre-Task0041 builds also reject these facts. The same
 complete stopped-backup rollback rule applies. Task0052 adds V14 Project profile,
 skill, trigger, alternative and evidence facts. Preserve the complete stopped
 pre-upgrade copy before first use; builds without V14 support cannot read those
-facts. Adaptive checkpoint evaluation writes V17 facts; builds before 0.13
-reject those facts. Preserve the complete stopped pre-upgrade copy before the
-first adaptive mission and restore that copy for rollback. Never edit log lines
-to downgrade. Uninstalling must not delete the canonical data directory.
+facts. Task0103 originally wrote V17 adaptive checkpoint facts; builds before
+0.13 reject those facts. Preserve the complete stopped pre-upgrade copy before
+the first adaptive mission and restore that copy for rollback. Never edit log
+lines to downgrade. New strict adaptive checkpoints write V18 while retaining
+V17 replay; take the same stopped backup before the first V18 write because
+older builds reject it. Uninstalling must not delete the canonical data
+directory. Adaptive terminal-failure recovery adds V19 reviewer allocations and
+V20 recovery checkpoints. Preserve the stopped pre-upgrade copy before the first
+recovery run; older builds reject those facts and event versions must never be
+rewritten for rollback.
 
 ### macOS opens an entirely white window
 
@@ -84,7 +90,7 @@ production application draws correctly when the old process is closed.
 
 1. Quit all running Moxcrew / older Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Moxcrew.app`. The sidebar should show `0.13.0`
+3. Open `Applications/Moxcrew.app`. The sidebar should show `0.13.1`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut

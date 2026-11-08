@@ -36,6 +36,8 @@ Actual plans remain inspectable and require explicit preparation and start befor
 agents execute. The accepted local runtime then evaluates declared success
 criteria, can append a bounded task-graph revision when evidence changes the
 strategy and stops with a concrete blocker instead of manufacturing success.
+When one branch fails, an already prepared review member may evaluate that
+terminal evidence and propose a bounded replacement before the mission fails.
 New work remains inside the prepared crew, ability, provider, permission and
 budget boundary; broader authority returns to the owner.
 The bundled-guide recommendation remains available as a labelled alternative.

@@ -60,3 +60,5 @@ supersedes the old one.
 | [0054](0054-composed-workflow-recipe-revisions.md) | Accepted; Task0100 | Version the ten J1–J10 bundled recipes as explicit frozen workflow graphs |
 | [0055](0055-single-locale-registry-and-catalog-fallback.md) | Accepted; Task0102 | Use one locale registry and catalog fallback instead of screen-level language branching |
 | [0056](0056-adaptive-mission-runtime.md) | Accepted; Task0103 local runtime delivered | Frame each problem, execute a provisional graph and accept only bounded evidence-driven replanning |
+| [0057](0057-adaptive-checkpoint-integrity.md) | Accepted; Task0103 hardening | Preserve V17 replay and require evidence, verdict consistency and dependency closure in new V18 checkpoints |
+| [0058](0058-adaptive-terminal-failure-recovery.md) | Accepted; Task0104 | Let an already prepared reviewer evaluate terminal adaptive failures through V19 allocation and V20 replan facts |

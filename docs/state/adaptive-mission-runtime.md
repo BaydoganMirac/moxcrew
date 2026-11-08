@@ -21,15 +21,27 @@ bounded by [Task0103](../plans/0103-adaptive-mission-runtime.md).
 - The agent-memory surface now exposes `crew_checkpoint`. An authenticated
   mission agent may evaluate the exact declared criteria and propose a bounded
   task revision; only the Host accepts and events it.
-- V17 `project_workflow.checkpoint_evaluated` facts are append-only, revisioned,
-  nonce-idempotent and replay-safe. Stale, cross-Project, over-budget,
-  permission-widening and history-mutating revisions fail closed.
+- V17 `project_workflow.checkpoint_evaluated` facts remain append-only,
+  revisioned, nonce-idempotent and replay-safe. New strict writes use V18 under
+  ADR0057. Stale, cross-Project, over-budget, permission-widening and
+  history-mutating revisions fail closed.
 - Replan revisions can retire only pending work and add work only for an existing
   prepared agent using that member's approved ability. There is no implicit
   credential, provider, tool, ability or crew expansion.
 - `satisfied` requires all declared criteria to pass after other work completes.
   `blocked` stops work and fails the mission with a durable evidence summary;
   an adaptive mission that omits its checkpoint fails instead of claiming success.
+- Every checkpoint criterion now requires non-blank evidence. `satisfied` is the
+  only verdict that may report every criterion as passed; `replan` and `blocked`
+  must retain at least one explicit unmet criterion.
+- A replan cannot retire a task while leaving pending or queued work dependent
+  on it. Both command materialization and append-only replay validate the
+  resulting schedulable dependency closure.
+- New adaptive planner output is atomic: it must contain both `problemFrame` and
+  `missionPlan`. Older V11 facts retain their accepted replay meaning.
+- Task0104 lets an already prepared reviewer evaluate a terminal failed branch.
+  Recovery allocation and checkpoint facts use V19/V20; failed outputs are not
+  trusted inputs and legacy missions still fail fast.
 - Native plan and mission cards show the problem, provisional/current strategy,
   objectives/checkpoints, latest verdict/summary and plan revision. New UI copy
   uses the central TR catalog and English fallback.
@@ -45,6 +57,10 @@ bounded by [Task0103](../plans/0103-adaptive-mission-runtime.md).
   environment/evidence-only tests remained explicitly ignored
 - full native desktop suite; 293 tests passed
 - focused core validation of legacy/new plan shapes and strict graph fields
+- request-shape cases for blocking clarification and parallel analytics/support
+  evidence followed by review
+- blank evidence, contradictory verdict and orphaned replan-dependency rejection
+- failed producer, prepared reviewer, V19 allocation and V20 recovery replan
 - focused native planner question behavior
 - full fake-peer planner/prepare/start behavior
 - replan, satisfied and blocked checkpoint behavior, permission rejection,

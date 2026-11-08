@@ -148,10 +148,16 @@ to the problem-driven Adaptive Mission Runtime in
 a bounded problem frame and provisional objective/task/checkpoint graph before
 their ability and roster. Prepare derives the executable DAG while Start remains
 an explicit owner action. Authenticated mission agents may evaluate declared
-criteria through `crew_checkpoint`; the Host alone can accept a bounded V17
-append-only plan revision. Revisions cannot cross Projects or widen prepared
+criteria through `crew_checkpoint`; the Host alone can accept a bounded
+append-only plan revision. New strict checkpoint writes use V18 while V17 keeps
+its accepted replay meaning. Revisions cannot cross Projects or widen prepared
 agents, abilities, providers, tools, credentials or budgets. Older V11 facts and
 recipe-derived plans remain valid. No adaptive field enters Cloud by default.
+Task0104 adds terminal failure recovery without widening that authority. A viable
+prepared reviewer may start after a direct failed dependency under a V19
+allocation, receive no failed output as trusted input and append a V20 recovery
+checkpoint that retires the failed branch. Ordinary V11 allocation and V18
+checkpoint semantics remain unchanged.
 
 The native Project conversation submits `project_chat_send` with a current
 project revision and an inspectable recipe; earlier `project_work_enqueue`

@@ -35,7 +35,7 @@ pub(crate) fn workflow_fact(kind: &str, payload: Value) -> Value {
 }
 fn adaptive_fact(kind: &str, payload: Value) -> Value {
     let mut e = event(kind, payload);
-    e["schemaVersion"] = json!(17);
+    e["schemaVersion"] = json!(18);
     e
 }
 pub(crate) fn action_fields(action: &str) -> Option<&'static [&'static str]> {
@@ -122,6 +122,9 @@ pub(crate) fn is_read(action: &str) -> bool {
     matches!(action, "project_crew_plan_read" | "project_workflows_read")
 }
 pub(crate) fn validate_agent_arguments(tool: &str, args: &Value) -> Result<()> {
+    validate_agent_arguments_inner(tool, args, true)
+}
+fn validate_agent_arguments_inner(tool: &str, args: &Value, strict_checkpoint: bool) -> Result<()> {
     let fields = match tool {
         "crew_task_offer" => &[
             "toMissionId",
@@ -218,12 +221,20 @@ pub(crate) fn validate_agent_arguments(tool: &str, args: &Value) -> Result<()> {
                 exact(criterion, &["criterion", "passed", "evidence"], &[])?;
                 bounded(&criterion["criterion"], 1000)?;
                 require(
-                    criterion["passed"].is_boolean()
-                        && criterion["evidence"]
-                            .as_str()
-                            .is_some_and(|value| value.encode_utf16().count() <= 2000),
+                    criterion["passed"].is_boolean(),
                     "WORKFLOW_EVALUATION_INVALID",
                 )?;
+                if strict_checkpoint {
+                    bounded(&criterion["evidence"], 2000)
+                        .map_err(|_| fail("WORKFLOW_EVALUATION_INVALID"))?;
+                } else {
+                    require(
+                        criterion["evidence"]
+                            .as_str()
+                            .is_some_and(|value| value.encode_utf16().count() <= 2000),
+                        "WORKFLOW_EVALUATION_INVALID",
+                    )?;
+                }
             }
             let retired = list(args, "retireTaskIds", 4)?;
             let mut retired_ids = HashSet::new();
@@ -292,6 +303,13 @@ pub(crate) fn validate_agent_arguments(tool: &str, args: &Value) -> Result<()> {
                 require(
                     criteria.iter().all(|criterion| criterion["passed"] == true),
                     "WORKFLOW_CHECKS_FAILED",
+                )?;
+            } else if strict_checkpoint {
+                require(
+                    criteria
+                        .iter()
+                        .any(|criterion| criterion["passed"] == false),
+                    "WORKFLOW_EVALUATION_INVALID",
                 )?;
             }
         }
@@ -776,7 +794,7 @@ fn validate_adaptive_event(e: &Value) -> Result<()> {
     number(&p["expectedMissionRevision"], 1, u64::MAX)?;
     number(&p["expectedPlanRevision"], 1, u64::MAX)?;
     binding_valid(&p["binding"])?;
-    validate_agent_arguments("crew_checkpoint", &p["request"])?;
+    validate_agent_arguments_inner("crew_checkpoint", &p["request"], e["schemaVersion"] != 17)?;
     exact(
         &p["evaluation"],
         &["verdict", "summary", "strategy", "criteria", "createdAt"],
@@ -804,10 +822,14 @@ fn validate_adaptive_event(e: &Value) -> Result<()> {
 }
 
 pub(crate) fn validate_event(e: &Value) -> Result<()> {
-    if e["schemaVersion"] == 17 {
+    if matches!(e["schemaVersion"].as_u64(), Some(17 | 18 | 20)) {
         return validate_adaptive_event(e);
     }
-    require(e["schemaVersion"] == 11, "WORKFLOW_VERSION_INVALID")?;
+    require(
+        e["schemaVersion"] == 11
+            || (e["schemaVersion"] == 19 && e["type"] == "project_workflow.task_allocated"),
+        "WORKFLOW_VERSION_INVALID",
+    )?;
     require(
         serde_json::to_vec(e)?.len() <= 192 * 1024,
         "WORKFLOW_LIMIT_INVALID",
@@ -1910,7 +1932,7 @@ pub(crate) fn apply_crew_event(
             )?;
             require(
                 !events[..index].iter().any(|event| {
-                    event["schemaVersion"] == 17
+                    matches!(event["schemaVersion"].as_u64(), Some(17 | 18 | 20))
                         && event["type"] == "project_workflow.checkpoint_evaluated"
                         && event["payload"]["binding"]["runId"] == p["binding"]["runId"]
                         && event["payload"]["request"]["nonce"] == p["request"]["nonce"]
@@ -1968,7 +1990,9 @@ pub(crate) fn apply_crew_event(
                 let mut expected = old.clone();
                 if retire.contains(&old["taskId"]) {
                     require(
-                        old["status"] == "pending" && old["workItemId"].is_null(),
+                        (old["status"] == "pending" && old["workItemId"].is_null())
+                            || (e["schemaVersion"] == 20
+                                && crews::unsuccessful_before(events, index, &old["workItemId"])),
                         "WORKFLOW_ADAPTIVE_RETIRE_INVALID",
                     )?;
                     expected["status"] = json!("retired");
@@ -2057,6 +2081,12 @@ pub(crate) fn apply_crew_event(
                 require(*actual == expected, "WORKFLOW_ADAPTIVE_TASK_CHANGED")?;
                 known_ids.insert(text(actual, "taskId")?.to_owned());
             }
+            if matches!(e["schemaVersion"].as_u64(), Some(18 | 20)) {
+                require(
+                    dependencies_are_closed(new_tasks),
+                    "WORKFLOW_ADAPTIVE_DEPENDENCY_INVALID",
+                )?;
+            }
             let verdict = p["evaluation"]["verdict"].as_str().unwrap();
             if verdict == "replan" {
                 require(
@@ -2107,13 +2137,31 @@ pub(crate) fn apply_crew_event(
                     && p["workItemId"] == child_id(text(&p["enqueue"], "commandId")?, "work:"),
                 "PROJECT_CREW_ALLOCATION_INVALID",
             )?;
-            require(
-                array(t, "dependsOn").iter().all(|id| {
-                    array(m, "tasks").iter().any(|d| {
-                        d["taskId"] == *id
-                            && crews::completed_before(events, index, &d["workItemId"])
+            let dependencies: Vec<_> = array(t, "dependsOn")
+                .iter()
+                .filter_map(|id| array(m, "tasks").iter().find(|task| task["taskId"] == *id))
+                .collect();
+            let completed = dependencies.iter().all(|dependency| {
+                crews::completed_before(events, index, &dependency["workItemId"])
+            });
+            let recovery = e["schemaVersion"] == 19
+                && dependencies.iter().any(|dependency| {
+                    crews::unsuccessful_before(events, index, &dependency["workItemId"])
+                })
+                && dependencies.iter().all(|dependency| {
+                    crews::completed_before(events, index, &dependency["workItemId"])
+                        || crews::unsuccessful_before(events, index, &dependency["workItemId"])
+                })
+                && rosters
+                    .get(text(m, "crewId")?)
+                    .and_then(|roster| {
+                        array(roster, "members")
+                            .iter()
+                            .find(|member| member["agentId"] == t["agentId"])
                     })
-                }),
+                    .is_some_and(|member| member["role"] == "review");
+            require(
+                dependencies.len() == array(t, "dependsOn").len() && (completed || recovery),
                 "PROJECT_CREW_ALLOCATION_INVALID",
             )?;
             let count = events[..index]
@@ -2313,7 +2361,7 @@ pub(crate) fn project(events: &[Value], crews_state: &Value, work: &Value) -> Re
     let mut evaluations = Vec::new();
     let mut rev = 0u64;
     for (index, e) in events.iter().enumerate().filter(|(_, e)| {
-        matches!(e["schemaVersion"].as_u64(), Some(11 | 17))
+        matches!(e["schemaVersion"].as_u64(), Some(11 | 17 | 18 | 19 | 20))
             && e["type"]
                 .as_str()
                 .is_some_and(|s| s.starts_with("project_workflow."))
@@ -3119,6 +3167,24 @@ fn own_binding(b: &agent_memory::Binding, m: &Value, t: &Value) -> Value {
     json!({"projectId":b.project_id,"missionId":m["missionId"],"agentId":t["agentId"],"workItemId":b.work_item_id,"runId":b.run_id,"ownerEpoch":b.owner_epoch})
 }
 
+fn dependencies_are_closed(tasks: &[Value]) -> bool {
+    let active: HashSet<_> = tasks
+        .iter()
+        .filter(|task| task["status"] != "retired")
+        .filter_map(|task| task["taskId"].as_str())
+        .collect();
+    tasks
+        .iter()
+        .filter(|task| matches!(task["status"].as_str(), Some("pending" | "queued")))
+        .all(|task| {
+            array(task, "dependsOn").iter().all(|dependency| {
+                dependency
+                    .as_str()
+                    .is_some_and(|dependency| active.contains(dependency))
+            })
+        })
+}
+
 fn materialize_checkpoint_tasks(
     mission: &Value,
     roster: &Value,
@@ -3133,7 +3199,11 @@ fn materialize_checkpoint_tasks(
             .find(|task| task["taskId"] == *retired)
             .ok_or_else(|| fail("PROJECT_CREW_TASK_NOT_FOUND"))?;
         require(
-            task["status"] == "pending" && task["workItemId"].is_null(),
+            (task["status"] == "pending" && task["workItemId"].is_null())
+                || matches!(
+                    task["status"].as_str(),
+                    Some("failed" | "blocked" | "interrupted")
+                ),
             "WORKFLOW_PLAN_INVALID",
         )?;
         task["status"] = json!("retired");
@@ -3209,6 +3279,10 @@ fn materialize_checkpoint_tasks(
         ids.push(json!({"key":draft["key"],"taskId":task_id}));
         tasks.as_array_mut().unwrap().push(task);
     }
+    require(
+        dependencies_are_closed(tasks.as_array().unwrap()),
+        "WORKFLOW_ADAPTIVE_DEPENDENCY_INVALID",
+    )?;
     Ok((tasks, json!(ids)))
 }
 
@@ -4106,7 +4180,7 @@ impl Host {
         let state = runtime_state(self)?;
         let nonce = bounded(&args["nonce"], 128)?;
         let prior = self.store.read_events()?.into_iter().find(|e| {
-            matches!(e["schemaVersion"].as_u64(), Some(11 | 17))
+            matches!(e["schemaVersion"].as_u64(), Some(11 | 17 | 18 | 19 | 20))
                 && match tool {
                     "crew_task_offer" => {
                         e["type"] == "project_workflow.offer_created"
@@ -4236,13 +4310,25 @@ impl Host {
                         "WORKFLOW_JOB_BUDGET_EXCEEDED",
                     )?;
                 }
+                let terminal_recovery = array(args, "retireTaskIds").iter().any(|task_id| {
+                    array(m, "tasks").iter().any(|task| {
+                        task["taskId"] == *task_id
+                            && matches!(
+                                task["status"].as_str(),
+                                Some("failed" | "blocked" | "interrupted")
+                            )
+                    })
+                });
                 let (tasks, added) = materialize_checkpoint_tasks(m, roster, args)?;
                 let created = now();
                 let evaluation = json!({"verdict":args["verdict"],"summary":args["summary"],"strategy":args["strategy"],"criteria":args["criteria"],"createdAt":created});
-                let checkpoint = adaptive_fact(
+                let mut checkpoint = adaptive_fact(
                     "project_workflow.checkpoint_evaluated",
                     json!({"projectId":b.project_id,"missionId":m["missionId"],"expectedMissionRevision":m["revision"],"expectedPlanRevision":m["workflow"]["planRevision"],"binding":binding,"request":args,"evaluation":evaluation,"tasks":tasks,"addedTaskIds":added,"at":created}),
                 );
+                if terminal_recovery {
+                    checkpoint["schemaVersion"] = json!(20);
+                }
                 self.store.append(vec![checkpoint])?;
                 Ok(
                     json!({"reasonCode":"WORKFLOW_CHECKPOINT_RECORDED","missionId":m["missionId"],"planRevision":m["workflow"]["planRevision"].as_u64().unwrap_or(0)+1,"verdict":args["verdict"],"addedTaskIds":added}),
@@ -4723,6 +4809,195 @@ mod tests {
             data_schedule["recipe"]["memberDependencies"],
             data["memberDependencies"]
         );
+    }
+
+    #[test]
+    fn adaptive_request_shape_matrix_handles_ambiguity_parallel_evidence_and_review() {
+        let ambiguous = json!({
+            "problemFrame":{
+                "summary":"Diagnose a retention problem whose affected audience is not yet known.",
+                "desiredOutcomes":["A supported explanation and a safe next experiment."],
+                "constraints":["Do not contact customers or change production."],
+                "unknowns":["The affected customer segment is unknown."],
+                "successCriteria":["The diagnosis cites the available evidence and labels uncertainty."]
+            },
+            "missionPlan":{
+                "strategy":"Clarify the affected segment before choosing evidence or interventions.",
+                "objectives":[{"id":"segment","description":"Confirm which customer segment needs diagnosis."}],
+                "hypotheses":[],
+                "tasks":[],
+                "checkpoints":[],
+                "stopConditions":["Ask one blocking question when the segment changes the useful analysis."]
+            },
+            "abilityId":"D3",
+            "members":[],
+            "settings":{"concurrency":1,"retryLimit":1,"timeoutMinutes":20},
+            "questions":[{"id":"segment","question":"Which customer segment should this diagnosis cover?"}]
+        });
+        let parallel = json!({
+            "problemFrame":{
+                "summary":"Explain trial abandonment from analytics and support evidence.",
+                "desiredOutcomes":["Three prioritized causes and one low-cost experiment."],
+                "constraints":["Use only frozen Project inputs.","Do not mutate production or message customers."],
+                "unknowns":["The two evidence sources may disagree."],
+                "successCriteria":["Every cause cites evidence and conflicting signals remain visible."]
+            },
+            "missionPlan":{
+                "strategy":"Inspect analytics and support evidence independently, then reconcile them before recommending action.",
+                "objectives":[{"id":"diagnosis","description":"Produce an evidence-backed retention diagnosis."}],
+                "hypotheses":[{"id":"activation","statement":"Users leave before reaching the first useful outcome.","test":"Compare activation events with support themes."}],
+                "tasks":[
+                    {"memberIndex":0,"objectiveIds":["diagnosis"],"dependsOn":[],"expectedEvidence":["A bounded analytics summary."]},
+                    {"memberIndex":1,"objectiveIds":["diagnosis"],"dependsOn":[],"expectedEvidence":["Attributed support themes."]},
+                    {"memberIndex":2,"objectiveIds":["diagnosis"],"dependsOn":[0,1],"expectedEvidence":["A criterion-by-criterion reconciliation."]}
+                ],
+                "checkpoints":[{"id":"diagnosis-reviewed","afterTaskIndices":[0,1,2],"criteria":["Every cause cites evidence and conflicting signals remain visible."]}],
+                "stopConditions":["Stop with a concrete blocker when either selected source is unavailable."]
+            },
+            "abilityId":"D3",
+            "members":[
+                crews::default_member("data","T2"),
+                crews::default_member("research","R4"),
+                crews::default_member("review","D1")
+            ],
+            "settings":{"concurrency":2,"retryLimit":1,"timeoutMinutes":30},
+            "questions":[]
+        });
+        for (name, plan) in [("ambiguous", ambiguous), ("parallel", parallel.clone())] {
+            validated_generated_plan(&plan).unwrap_or_else(|error| panic!("{name}: {error}"));
+        }
+        let mut partial = parallel;
+        partial.as_object_mut().unwrap().remove("missionPlan");
+        assert!(validated_generated_plan(&partial).is_err());
+    }
+
+    #[test]
+    fn checkpoint_requires_real_evidence_and_a_consistent_verdict() {
+        let mut checkpoint = json!({
+            "verdict":"satisfied",
+            "summary":"The requested outcome is supported.",
+            "strategy":"Stop because every declared criterion passed.",
+            "criteria":[{"criterion":"The diagnosis cites the available evidence.","passed":true,"evidence":"The final report cites the frozen analytics and support summaries."}],
+            "retireTaskIds":[],
+            "addTasks":[],
+            "nonce":"checkpoint-evidence"
+        });
+        validate_agent_arguments("crew_checkpoint", &checkpoint).unwrap();
+
+        checkpoint["criteria"][0]["evidence"] = json!("   ");
+        assert!(validate_agent_arguments("crew_checkpoint", &checkpoint).is_err());
+
+        checkpoint["criteria"][0]["evidence"] = json!("The final report cites both sources.");
+        checkpoint["verdict"] = json!("blocked");
+        assert!(validate_agent_arguments("crew_checkpoint", &checkpoint).is_err());
+
+        checkpoint["criteria"][0]["passed"] = json!(false);
+        validate_agent_arguments("crew_checkpoint", &checkpoint).unwrap();
+    }
+
+    #[test]
+    fn v17_checkpoint_replay_keeps_its_original_meaning_while_v18_is_strict() {
+        let project_id = json!(format!("project:{}", uuid::Uuid::new_v4()));
+        let mission_id = json!(format!("mission:{}", uuid::Uuid::new_v4()));
+        let agent_id = json!(format!("agent:{}", uuid::Uuid::new_v4()));
+        let work_item_id = json!(format!("work:{}", uuid::Uuid::new_v4()));
+        let task_id = json!(format!("task:{}", uuid::Uuid::new_v4()));
+        let request = json!({
+            "verdict":"blocked",
+            "summary":"Legacy checkpoint assertion.",
+            "strategy":"Legacy strategy.",
+            "criteria":[{"criterion":"A supported result exists.","passed":true,"evidence":"   "}],
+            "retireTaskIds":[],
+            "addTasks":[],
+            "nonce":"legacy-v17-checkpoint"
+        });
+        let created_at = json!(now());
+        let evaluation = json!({
+            "verdict":request["verdict"],
+            "summary":request["summary"],
+            "strategy":request["strategy"],
+            "criteria":request["criteria"],
+            "createdAt":created_at
+        });
+        let mut checkpoint = adaptive_fact(
+            "project_workflow.checkpoint_evaluated",
+            json!({
+                "projectId":project_id.clone(),
+                "missionId":mission_id.clone(),
+                "expectedMissionRevision":2,
+                "expectedPlanRevision":1,
+                "binding":{"projectId":project_id,"missionId":mission_id,"agentId":agent_id.clone(),"workItemId":work_item_id.clone(),"runId":"run:legacy","ownerEpoch":"owner-legacy"},
+                "request":request,
+                "evaluation":evaluation,
+                "tasks":[{"taskId":task_id,"agentId":agent_id,"title":"Evaluate legacy evidence","instruction":"Evaluate the declared criterion.","abilityId":"D1","dependsOn":[],"attempt":1,"workItemId":work_item_id,"status":"running","reasonCode":null,"objectiveIds":["result"],"expectedEvidence":["A criterion evaluation."]}],
+                "addedTaskIds":[],
+                "at":created_at
+            }),
+        );
+        assert_eq!(checkpoint["schemaVersion"], 18);
+        assert!(validate_event(&checkpoint).is_err());
+
+        checkpoint["schemaVersion"] = json!(17);
+        validate_agent_arguments_inner("crew_checkpoint", &checkpoint["payload"]["request"], false)
+            .unwrap();
+        for key in ["verdict", "summary", "strategy", "criteria"] {
+            assert_eq!(
+                checkpoint["payload"]["evaluation"][key], checkpoint["payload"]["request"][key],
+                "{key}: {checkpoint}"
+            );
+        }
+        validate_event(&checkpoint).unwrap();
+    }
+
+    #[test]
+    fn replan_cannot_retire_a_dependency_while_keeping_its_dependent_live() {
+        let agent_id = json!(format!("agent:{}", uuid::Uuid::new_v4()));
+        let source_id = json!(format!("task:{}", uuid::Uuid::new_v4()));
+        let dependent_id = json!(format!("task:{}", uuid::Uuid::new_v4()));
+        let mission = json!({
+            "tasks":[
+                {"taskId":source_id,"agentId":agent_id,"dependsOn":[],"status":"pending","workItemId":null},
+                {"taskId":dependent_id,"agentId":agent_id,"dependsOn":[source_id],"status":"pending","workItemId":null}
+            ],
+            "workflow":{"adaptive":{"objectives":[{"id":"diagnosis"}]}}
+        });
+        let roster = json!({"members":[{"agentId":agent_id,"abilityId":"D3"}]});
+        let replacement = json!({
+            "key":"replacement",
+            "agentId":agent_id,
+            "title":"Use the available evidence source",
+            "instruction":"Replace the unavailable source with the already approved bounded input.",
+            "abilityId":"D3",
+            "dependsOn":[],
+            "objectiveIds":["diagnosis"],
+            "expectedEvidence":["A replacement evidence summary."]
+        });
+        let mut request = json!({
+            "verdict":"replan",
+            "summary":"The original evidence source is unavailable.",
+            "strategy":"Use the approved fallback source and evaluate it.",
+            "criteria":[{"criterion":"The diagnosis cites the available evidence.","passed":false,"evidence":"The original source cannot be read."}],
+            "retireTaskIds":[source_id],
+            "addTasks":[replacement],
+            "nonce":"replace-source"
+        });
+        validate_agent_arguments("crew_checkpoint", &request).unwrap();
+        assert!(materialize_checkpoint_tasks(&mission, &roster, &request).is_err());
+
+        request["retireTaskIds"] = json!([source_id, dependent_id]);
+        request["addTasks"].as_array_mut().unwrap().push(json!({
+            "key":"evaluate-replacement",
+            "agentId":agent_id,
+            "title":"Evaluate the replacement evidence",
+            "instruction":"Evaluate the replacement evidence against the declared criterion.",
+            "abilityId":"D3",
+            "dependsOn":["replacement"],
+            "objectiveIds":["diagnosis"],
+            "expectedEvidence":["A criterion-by-criterion evaluation."]
+        }));
+        validate_agent_arguments("crew_checkpoint", &request).unwrap();
+        let (tasks, _) = materialize_checkpoint_tasks(&mission, &roster, &request).unwrap();
+        assert!(dependencies_are_closed(tasks.as_array().unwrap()));
     }
 
     #[cfg(unix)]
@@ -5223,6 +5498,95 @@ mod tests {
             terminal["payload"]["reasonCode"],
             "WORKFLOW_EVALUATION_REQUIRED"
         );
+        host.shutdown().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_branch_waits_for_prepared_reviewer_and_accepts_bounded_replan() {
+        let (_temporary, _peer, host, project_id) = fixture("failreview").await;
+        let job = plan(&host, &project_id).await;
+        let prepared = host
+            .action(
+                "project_crew_plan_accept",
+                command(json!({
+                    "projectId":project_id,
+                    "expectedProjectRevision":project_revision(&host,&project_id),
+                    "planJobId":job["planJobId"],
+                    "expectedPlanRevision":job["revision"],
+                    "settings":{"concurrency":1,"retryLimit":0,"timeoutMinutes":20},
+                    "budgets":{"maxJobs":6,"maxElapsedMinutes":20,"maxReviewRounds":0}
+                })),
+            )
+            .await
+            .unwrap();
+        let mission_id = prepared["missionId"].clone();
+        let before = mission(&host, &mission_id);
+        host.action("project_crew_start", lifecycle(&project_id, &before))
+            .await
+            .unwrap();
+        for _ in 0..60 {
+            host.background_tick(false).await.unwrap();
+            let current = mission(&host, &mission_id);
+            if current["tasks"][0]["status"] == "failed"
+                && current["tasks"][1]["status"] == "running"
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let recovering = mission(&host, &mission_id);
+        assert_eq!(recovering["status"], "active", "{recovering}");
+        assert_eq!(recovering["tasks"][0]["status"], "failed", "{recovering}");
+        assert_eq!(recovering["tasks"][1]["status"], "running", "{recovering}");
+
+        let (_ticket, credentials) = ticket_credentials(&host, &recovering["tasks"][1]).await;
+        let result = rpc(
+            &credentials,
+            "crew_checkpoint",
+            json!({
+                "verdict":"replan",
+                "summary":"The first production branch failed before producing usable evidence.",
+                "strategy":"Retire the failed branch, retry within the prepared writer authority, then evaluate the replacement.",
+                "criteria":[{"criterion":job["plan"]["problemFrame"]["successCriteria"][0],"passed":false,"evidence":"The first writer run ended failed and produced no accepted report evidence."}],
+                "retireTaskIds":[recovering["tasks"][0]["taskId"]],
+                "addTasks":[
+                    {"key":"replacement","agentId":recovering["tasks"][0]["agentId"],"title":"Produce the replacement report","instruction":"Retry the report using only the already approved Project inputs.","abilityId":"D1","dependsOn":[],"objectiveIds":["objective-1"],"expectedEvidence":["A replacement report artifact grounded in available inputs."]},
+                    {"key":"replacement-review","agentId":recovering["tasks"][1]["agentId"],"title":"Evaluate the replacement report","instruction":"Evaluate the replacement against the declared success criterion.","abilityId":"D1","dependsOn":["replacement"],"objectiveIds":["objective-1"],"expectedEvidence":["A truthful criterion-by-criterion evaluation."]}
+                ],
+                "nonce":"recover-failed-branch"
+            }),
+        )
+        .await;
+        assert_eq!(
+            result["reasonCode"], "WORKFLOW_CHECKPOINT_RECORDED",
+            "{result}"
+        );
+        let events = host.store.read_events().unwrap();
+        let recovery_allocation = events
+            .iter()
+            .find(|event| {
+                event["type"] == "project_workflow.task_allocated"
+                    && event["payload"]["taskId"] == recovering["tasks"][1]["taskId"]
+            })
+            .unwrap();
+        assert_eq!(recovery_allocation["schemaVersion"], 19);
+        let recovery_checkpoint = events
+            .iter()
+            .rposition(|event| event["type"] == "project_workflow.checkpoint_evaluated")
+            .unwrap();
+        assert_eq!(events[recovery_checkpoint]["schemaVersion"], 20);
+        let mut downgraded = events.clone();
+        downgraded[recovery_checkpoint]["schemaVersion"] = json!(18);
+        assert!(crate::domain::project_events(&downgraded).is_err());
+        let revised = mission(&host, &mission_id);
+        assert_eq!(revised["status"], "active", "{revised}");
+        assert_eq!(revised["tasks"][0]["status"], "retired", "{revised}");
+        assert_eq!(revised["tasks"][1]["status"], "running", "{revised}");
+        assert_eq!(array(&revised, "tasks").len(), 4);
+        assert_eq!(revised["workflow"]["planRevision"], 2);
+        assert!(dependencies_are_closed(array(&revised, "tasks")));
+        crate::domain::project_events(&events).unwrap();
         host.shutdown().await;
     }
 

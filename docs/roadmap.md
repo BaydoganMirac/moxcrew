@@ -30,8 +30,35 @@ commitments.
   direct-download/watch/feedback path. [Task0095](state/repeatable-public-preview-release.md)
   now makes the next explicitly tagged `v0.x.y` preview reproduce the six
   advertised macOS/Linux assets and checksum manifest after required native
-  checks; `v0.13.0` is the owner-approved preview target. Signed public
-  downloads and a real product website remain separate release work.
+  checks; `v0.13.1` is the owner-approved adaptive-recovery preview target.
+  Signed public downloads and a real product website remain separate release
+  work.
+
+## Next execution order
+
+1. **Ship and stabilize 0.13.1.** Publish the version-matched macOS/Linux
+   preview, verify all six installers and checksums, then collect only concrete
+   install, replay and adaptive-recovery defects.
+2. **Prove request-driven behavior with live providers.** Run a redacted corpus
+   of ambiguous, evidence-heavy, partial-failure and cross-domain user requests
+   through available Codex, Claude and Gemini connections. Score problem framing,
+   clarification, plan usefulness, recovery and success-criterion honesty; do
+   not add canned workflows to make the cases pass.
+3. **Close the 1.0 ability evidence matrix.** For each advertised ability, keep
+   exact provider/tool versions, inputs, outputs, human review and licensing or
+   distribution limits. A protocol peer or catalog entry is not live quality
+   evidence.
+4. **Finish platform release gates.** Resolve Windows private-storage/runtime
+   failures, perform hands-on fresh-install/upgrade/rollback checks, add macOS
+   notarization and publisher signing, and complete keyboard, screen-reader and
+   moderated usability evidence.
+5. **Finish Cloud commercial operations in the private service.** Verify email
+   auth and account recovery, billing lifecycle, PostgreSQL migration/backup/
+   restore drills, rate limits, monitoring and incident rollback without widening
+   the public sanitized protocol or Local execution authority.
+6. **Cut the 1.0 release candidate only after those gates pass.** Freeze the
+   public feature/cost/data promises, rerun the full cross-platform matrix and
+   publish a signed candidate with explicit remaining limits.
 
 - Continue live-model and platform release evidence for the delivered
   [eleven local product capabilities](plans/0052-eleven-product-capabilities.md):
@@ -170,6 +197,10 @@ commitments.
   execution boundary, and model proposals cannot widen local permissions or
   bypass Prepare/Start. Live-provider usefulness and any sanitized optional
   Cloud projection remain separate release work.
+  [Task0104](plans/0104-adaptive-failure-recovery.md) now keeps a partial provider
+  failure open only for an already prepared reviewer, allowing one evidence-backed
+  bounded replacement graph without changing legacy fail-fast behavior or
+  widening the mission's authority.
 
 - Execute the owner-approved [1.0.0 master release](plans/0039-version-one-release.md):
   eight capability areas, forty abilities and ten composed Project workflows

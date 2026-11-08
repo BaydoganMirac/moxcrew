@@ -857,7 +857,7 @@ pub fn validate_event(v: &Value) -> Result<()> {
     if v["schemaVersion"] == 14 {
         return crate::project_capabilities::validate_event(v);
     }
-    if v["schemaVersion"] == 17 {
+    if matches!(v["schemaVersion"].as_u64(), Some(17..=20)) {
         return crate::project_workflows::validate_event(v);
     }
     if v["schemaVersion"] == 15 || v["schemaVersion"] == 16 {

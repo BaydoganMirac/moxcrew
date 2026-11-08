@@ -27,7 +27,7 @@ test("desktop package retires Node publication and keeps native release authorit
   assert.doesNotMatch(packageJson.scripts.build, /next|vite|tauri|sanitize-package/);
   assert.match(packageJson.scripts["legacy:build"], /next build/);
   await assert.rejects(readFile(".github/workflows/publish.yml"), { code: "ENOENT" });
-  const desktopWorkflow = await readFile(".github/workflows/desktop.yml", "utf8");
+  const desktopWorkflow = (await readFile(".github/workflows/desktop.yml", "utf8")).replace(/\r\n/g, "\n");
   for (const target of ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]) {
     assert(desktopWorkflow.includes(target));
   }

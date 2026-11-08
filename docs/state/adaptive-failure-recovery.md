@@ -2,7 +2,8 @@
 
 Updated: 2026-11-08. Task0104.
 
-Status: Local recovery control implemented and verified with a native fake peer.
+Status: Published in the `v0.13.1` public preview after local and release CI
+verification.
 
 ## Delivered
 
@@ -33,6 +34,9 @@ Status: Local recovery control implemented and verified with a native fake peer.
 - legacy Node 24 parity: `153 passed / 0 failed`;
 - `cargo fmt --check`, workspace Clippy with warnings denied and `git diff
   --check` green.
+- general CI run `42504299936`, pre-tag native run `42504300101` and tagged
+  release run `42507226401` completed successfully; the experimental Windows
+  native behavior failure remains a disclosed non-blocking platform gap.
 
 ## Remaining gates
 

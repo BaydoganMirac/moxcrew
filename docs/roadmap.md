@@ -36,9 +36,11 @@ commitments.
 
 ## Next execution order
 
-1. **Ship and stabilize 0.13.1.** Publish the version-matched macOS/Linux
-   preview, verify all six installers and checksums, then collect only concrete
-   install, replay and adaptive-recovery defects.
+1. **Stabilize the published 0.13.1 preview.** The version-matched macOS/Linux
+   release, all six installers and checksum manifest are live. Collect only
+   concrete install, replay and adaptive-recovery defects. Update deprecated
+   Node action pins and cache or reuse validated Rust work so release CI does
+   not repeat avoidable 30-minute Intel builds.
 2. **Prove request-driven behavior with live providers.** Run a redacted corpus
    of ambiguous, evidence-heavy, partial-failure and cross-domain user requests
    through available Codex, Claude and Gemini connections. Score problem framing,

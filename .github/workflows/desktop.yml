@@ -105,7 +105,18 @@ jobs:
           mkdir -p target/release
           cp target/${{ matrix.target }}/release/${{ matrix.executable }} target/release/${{ matrix.executable }}
       - name: Build development installers
-        run: cargo packager --config Packager.toml --target ${{ matrix.target }} --out-dir dist/${{ matrix.target }} --formats ${{ matrix.formats }}
+        run: |
+          for attempt in 1 2 3; do
+            if cargo packager --config Packager.toml --target ${{ matrix.target }} --out-dir dist/${{ matrix.target }} --formats ${{ matrix.formats }}; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 15))
+              echo "Packaging attempt $attempt failed; retrying in ${delay}s."
+              sleep "$delay"
+            fi
+          done
+          exit 1
       - name: Verify package outputs
         run: |
           output="dist/${{ matrix.target }}"

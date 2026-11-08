@@ -109,7 +109,9 @@ prepared mission, dispatch an external write or declare unsupported evidence.
 - Prepare derives the executable crew dependency graph from that plan while
   preserving explicit owner Prepare/Start boundaries.
 - Authenticated agents can call `crew_checkpoint` with `satisfied`, `replan` or
-  `blocked`. Only the local runtime can append the accepted V17 plan revision.
+  `blocked`. Only the local runtime can append an accepted plan revision. V17
+  facts retain their original replay meaning; new strict checkpoint facts use
+  V18 under ADR0057.
 - Replanning can retire pending work and add at most four tasks per checkpoint,
   up to twelve mission tasks and two replan cycles, within the existing job and
   elapsed-time budgets.
@@ -118,6 +120,8 @@ prepared mission, dispatch an external write or declare unsupported evidence.
 - Adaptive completion requires `satisfied` with every declared success criterion
   passed. A missing checkpoint or `blocked` verdict fails honestly instead of
   converting task completion into unsupported success.
+- V18 requires non-blank evidence, a verdict consistent with criterion results
+  and no pending or queued task dependent on retired work after a bounded replan.
 - Restart rebuilds the exact accepted task graph, plan revision and evaluation
   history from append-only events. Existing V11 plans remain replayable.
 - Native plan and mission cards expose the problem frame, provisional/current

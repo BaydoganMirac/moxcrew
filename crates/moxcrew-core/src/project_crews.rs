@@ -601,6 +601,29 @@ pub(crate) fn completed_before(events: &[Value], index: usize, work: &Value) -> 
     })
 }
 
+pub(crate) fn unsuccessful_before(events: &[Value], index: usize, work: &Value) -> bool {
+    events[..index].iter().enumerate().any(|(i, e)| {
+        e["type"] == "run.started"
+            && e["payload"]["run"]["workItemId"] == *work
+            && events[i + 1..index].iter().any(|terminal| {
+                (matches!(
+                    terminal["type"].as_str(),
+                    Some("session.terminal" | "session.observed")
+                ) && terminal["payload"]["providerId"] == e["payload"]["run"]["providerId"]
+                    && terminal["payload"]["providerSessionId"]
+                        == e["payload"]["run"]["providerSessionId"]
+                    && matches!(
+                        terminal["payload"]["status"].as_str(),
+                        Some("failed" | "interrupted")
+                    ))
+                    || (matches!(
+                        terminal["type"].as_str(),
+                        Some("run.interrupted" | "run.session_lost")
+                    ) && terminal["payload"]["runId"] == e["payload"]["run"]["runId"])
+            })
+    })
+}
+
 pub(crate) fn project(events: &[Value], work: &Value) -> Result<Value> {
     let mut crews: BTreeMap<String, Value> = BTreeMap::new();
     let mut missions: BTreeMap<String, Value> = BTreeMap::new();
@@ -611,7 +634,7 @@ pub(crate) fn project(events: &[Value], work: &Value) -> Result<Value> {
             kind.starts_with("project_crew.") || kind.starts_with("project_workflow.")
         })
     }) {
-        if matches!(e["schemaVersion"].as_u64(), Some(11 | 17)) {
+        if matches!(e["schemaVersion"].as_u64(), Some(11 | 17 | 18 | 19 | 20)) {
             if crate::project_workflows::apply_crew_event(
                 events,
                 index,
@@ -943,7 +966,7 @@ pub(crate) fn project(events: &[Value], work: &Value) -> Result<Value> {
     }
     for m in missions.values_mut() {
         for t in m["tasks"].as_array_mut().unwrap() {
-            if t["reasonCode"].is_null() {
+            if t["status"] != "retired" && t["reasonCode"].is_null() {
                 if let Some(item) = array(work, "items")
                     .iter()
                     .find(|w| w["workItemId"] == t["workItemId"])
@@ -1594,6 +1617,57 @@ impl Host {
         Ok(stopped)
     }
 
+    fn crew_task_has_role(state: &Value, mission: &Value, task: &Value, role: &str) -> bool {
+        array(state, "crews")
+            .iter()
+            .find(|crew| crew["crewId"] == mission["crewId"])
+            .and_then(|crew| {
+                array(crew, "members")
+                    .iter()
+                    .find(|member| member["agentId"] == task["agentId"])
+            })
+            .is_some_and(|member| member["role"] == role)
+    }
+
+    fn crew_task_can_evaluate_failure(state: &Value, mission: &Value, task: &Value) -> bool {
+        if !Self::crew_task_has_role(state, mission, task, "review")
+            || !matches!(
+                task["status"].as_str(),
+                Some("pending" | "queued" | "running" | "launching")
+            )
+        {
+            return false;
+        }
+        let dependencies: Vec<_> = array(task, "dependsOn")
+            .iter()
+            .filter_map(|dependency| {
+                array(mission, "tasks")
+                    .iter()
+                    .find(|candidate| candidate["taskId"] == *dependency)
+            })
+            .collect();
+        dependencies.len() == array(task, "dependsOn").len()
+            && dependencies.iter().any(|dependency| {
+                matches!(
+                    dependency["status"].as_str(),
+                    Some("failed" | "blocked" | "interrupted")
+                )
+            })
+            && dependencies.iter().all(|dependency| {
+                matches!(
+                    dependency["status"].as_str(),
+                    Some("completed" | "failed" | "blocked" | "interrupted" | "retired")
+                )
+            })
+    }
+
+    fn can_evaluate_adaptive_failure(state: &Value, mission: &Value) -> bool {
+        !mission["workflow"]["adaptive"].is_null()
+            && array(mission, "tasks")
+                .iter()
+                .any(|task| Self::crew_task_can_evaluate_failure(state, mission, task))
+    }
+
     pub(crate) async fn advance_crews(&self) -> Result<()> {
         if self.closing.load(Ordering::SeqCst) {
             return Ok(());
@@ -1630,7 +1704,13 @@ impl Host {
                             Some("failed" | "blocked" | "interrupted")
                         )
                 });
-            if mission["status"] == "cancelling" || expired || failed || adaptive_blocked {
+            let failure_can_be_evaluated =
+                failed && Self::can_evaluate_adaptive_failure(&current, mission);
+            if mission["status"] == "cancelling"
+                || expired
+                || (failed && !failure_can_be_evaluated)
+                || adaptive_blocked
+            {
                 if self.stop_crew_work(mission, &mut budget).await? {
                     let (kind, code) = if mission["status"] == "cancelling" {
                         ("project_crew.cancelled", "PROJECT_CREW_CANCELLED")
@@ -1699,11 +1779,22 @@ impl Host {
                             .unwrap()
                     })
                     .collect();
-                if !dependencies.iter().all(|t| t["status"] == "completed") {
+                let failure_evaluator = failure_can_be_evaluated
+                    && Self::crew_task_can_evaluate_failure(&current, mission, task);
+                if !dependencies.iter().all(|dependency| {
+                    dependency["status"] == "completed"
+                        || (failure_evaluator
+                            && matches!(
+                                dependency["status"].as_str(),
+                                Some("failed" | "blocked" | "interrupted" | "retired")
+                            ))
+                }) {
                     continue;
                 }
+                let failure_recovery_allocation = failure_evaluator;
                 let mut upstream: Vec<_> = dependencies
                     .iter()
+                    .filter(|task| task["status"] == "completed")
                     .filter_map(|t| t["workItemId"].as_str().map(str::to_owned))
                     .collect();
                 if let Some(previous) = task["previousWorkItemId"].as_str() {
@@ -1786,10 +1877,14 @@ impl Host {
                     self.store.append(vec![if mission["workflow"].is_null() {
                         fact("project_crew.task_allocated", allocation.clone())
                     } else {
-                        crate::project_workflows::workflow_fact(
+                        let mut event = crate::project_workflows::workflow_fact(
                             "project_workflow.task_allocated",
                             allocation.clone(),
-                        )
+                        );
+                        if failure_recovery_allocation {
+                            event["schemaVersion"] = json!(19);
+                        }
+                        event
                     }])?;
                     allocation
                 };
@@ -2099,6 +2194,45 @@ fn main(){let exe=env::current_exe().unwrap();let mode=exe.file_stem().unwrap().
             .to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
         p
     }
+
+    #[test]
+    fn only_a_reviewer_with_a_direct_terminal_dependency_can_hold_failure_open() {
+        let state = json!({
+            "crews":[{
+                "crewId":"crew:one",
+                "members":[
+                    {"agentId":"agent:writer","role":"document"},
+                    {"agentId":"agent:direct-reviewer","role":"review"},
+                    {"agentId":"agent:unrelated-reviewer","role":"review"}
+                ]
+            }]
+        });
+        let mut mission = json!({
+            "crewId":"crew:one",
+            "workflow":{"adaptive":{}},
+            "tasks":[
+                {"taskId":"task:failed","agentId":"agent:writer","status":"failed","dependsOn":[]},
+                {"taskId":"task:completed","agentId":"agent:writer","status":"completed","dependsOn":[]},
+                {"taskId":"task:direct-review","agentId":"agent:direct-reviewer","status":"pending","dependsOn":["task:failed"]},
+                {"taskId":"task:unrelated-review","agentId":"agent:unrelated-reviewer","status":"pending","dependsOn":["task:completed"]}
+            ]
+        });
+        assert!(Host::crew_task_can_evaluate_failure(
+            &state,
+            &mission,
+            &mission["tasks"][2]
+        ));
+        assert!(!Host::crew_task_can_evaluate_failure(
+            &state,
+            &mission,
+            &mission["tasks"][3]
+        ));
+        assert!(Host::can_evaluate_adaptive_failure(&state, &mission));
+
+        mission["tasks"][2]["status"] = json!("retired");
+        assert!(!Host::can_evaluate_adaptive_failure(&state, &mission));
+    }
+
     pub(crate) async fn fixture(
         mode: &str,
     ) -> (tempfile::TempDir, tempfile::TempDir, Arc<Host>, Value) {

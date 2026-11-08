@@ -6,7 +6,7 @@ build requirements. npm publication is retired. Pushing a reviewed version tag,
 public signing and Cloud deployment remain explicit owner release actions.
 
 The owner authorized the unsigned
-[0.13.0 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.0).
+[0.13.1 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.1).
 It is a GitHub pre-release with native installers and SHA-256 checksums, not a
 claim of Apple notarization or production readiness.
 The first public asset set is macOS/Linux only. Windows remains an experimental
@@ -210,6 +210,12 @@ Task0103 adds V17 adaptive checkpoint evaluation facts. Preserve a complete
 stopped backup before the first adaptive mission. Readers before 0.13 reject V17;
 rollback restores the unchanged pre-upgrade copy. Never strip evaluations or
 rewrite V17 facts to make an older build open the current data directory.
+ADR0057 keeps those facts replayable and moves stricter checkpoint integrity to
+V18. Preserve a complete stopped backup before the first V18 checkpoint; readers
+without V18 support reject it. Never rewrite V18 facts as V17 for rollback.
+Task0104 adds V19 reviewer allocations and V20 recovery checkpoints for terminal
+adaptive failures. Preserve the same complete stopped backup before recovery;
+rollback must restore it instead of rewriting V19/V20 facts.
 
 Task0041 adds V9 owner audit for project_chat_send and desktop_motion. Rollback
 uses the complete stopped pre-upgrade copy, including preferences. Never remove

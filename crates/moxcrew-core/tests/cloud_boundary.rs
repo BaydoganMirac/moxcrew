@@ -80,6 +80,13 @@ fn pure_allowlist_has_no_private_data() {
     let mut bad = bundle();
     bad["work"]["runs"][0]["status"] = json!("run_shell");
     assert!(cloud::build_projection(&bad, 1, 1, "install:test").is_err());
+    assert_eq!(
+        cloud::projection_digest(
+            &cloud::build_projection(&bundle(), 2, 1, "install:test").unwrap()
+        )
+        .unwrap(),
+        "projection:a9eef9bbf3ef227d4a1013f07b6737d03d2e95aba82755b22fb5e6776ccd952f"
+    );
 }
 #[test]
 fn strict_schemas_expiry_and_host_scope() {
@@ -133,6 +140,7 @@ struct Server {
     bodies: Arc<Mutex<Vec<(String, Value)>>>,
     fail_receipt: Arc<AtomicBool>,
     revoked: Arc<AtomicBool>,
+    omit_no_store: Arc<AtomicBool>,
     _task: tokio::task::JoinHandle<()>,
 }
 async fn server() -> Server {
@@ -141,15 +149,21 @@ async fn server() -> Server {
     let bodies = Arc::new(Mutex::new(vec![]));
     let fail_receipt = Arc::new(AtomicBool::new(false));
     let revoked = Arc::new(AtomicBool::new(false));
+    let omit_no_store = Arc::new(AtomicBool::new(false));
+    let projection_seen = Arc::new(AtomicBool::new(false));
     let b = bodies.clone();
     let f = fail_receipt.clone();
     let rev = revoked.clone();
+    let omit = omit_no_store.clone();
+    let projected = projection_seen.clone();
     let task = tokio::spawn(async move {
         loop {
             let (mut stream, _) = listener.accept().await.unwrap();
             let b = b.clone();
             let f = f.clone();
             let rev = rev.clone();
+            let omit = omit.clone();
+            let projected = projected.clone();
             tokio::spawn(async move {
                 let mut bytes = vec![];
                 let mut block = [0u8; 1024];
@@ -199,6 +213,19 @@ async fn server() -> Server {
                     )
                 } else if rev.load(Ordering::SeqCst) {
                     (401, json!({"error":"revoked"}))
+                } else if path.ends_with("/heartbeat") {
+                    let digest_aware = body["payload"]["projectionDigest"].is_string();
+                    (
+                        200,
+                        if digest_aware {
+                            json!({"schemaVersion":1,"accepted":true,"projectionRequired":!projected.load(Ordering::SeqCst)})
+                        } else {
+                            json!({"schemaVersion":1,"accepted":true})
+                        },
+                    )
+                } else if path.ends_with("/projection") {
+                    projected.store(true, Ordering::SeqCst);
+                    (200, json!({"schemaVersion":1,"accepted":true}))
                 } else if path.contains("/intents?") {
                     let after = path.split("after=").nth(1).unwrap().parse::<u64>().unwrap();
                     (
@@ -211,7 +238,12 @@ async fn server() -> Server {
                     (200, json!({"schemaVersion":1,"accepted":true}))
                 };
                 let data = response.to_string();
-                let response=format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{data}",data.len());
+                let cache = if omit.load(Ordering::SeqCst) {
+                    ""
+                } else {
+                    "Cache-Control: private, no-store\r\n"
+                };
+                let response=format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\n{cache}Content-Length: {}\r\nConnection: close\r\n\r\n{data}",data.len());
                 stream.write_all(response.as_bytes()).await.unwrap();
             });
         }
@@ -221,6 +253,7 @@ async fn server() -> Server {
         bodies,
         fail_receipt,
         revoked,
+        omit_no_store,
         _task: task,
     }
 }
@@ -254,7 +287,7 @@ async fn receipt_retry_cursor_and_credential_redaction() {
         .filter(|(p, _)| p.ends_with("/projection"))
         .map(|(_, v)| v)
         .collect();
-    assert_eq!(projections[0], projections[1]);
+    assert_eq!(projections.len(), 1);
     for p in projections {
         assert!(!p.to_string().contains("SECRET"));
     }
@@ -267,6 +300,20 @@ async fn receipt_retry_cursor_and_credential_redaction() {
     assert_eq!(receipts[0], receipts[1]);
     drop(requests);
     c.unpair().unwrap();
+    assert_eq!(c.public_status(), json!({"paired":false}));
+}
+#[tokio::test]
+async fn response_without_no_store_fails_closed_before_body_use() {
+    let server = server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = Cloud::open(dir.path()).unwrap();
+    server.omit_no_store.store(true, Ordering::SeqCst);
+    assert_eq!(
+        c.pair(&json!({"cloudUrl":server.url,"pairingCode":"PF-TEST","displayName":"Test host"}))
+            .await
+            .unwrap_err(),
+        "CLOUD_PROTOCOL_INVALID"
+    );
     assert_eq!(c.public_status(), json!({"paired":false}));
 }
 #[tokio::test]

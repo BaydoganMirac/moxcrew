@@ -58,3 +58,5 @@ supersedes the old one.
 | [0052](0052-explicit-recipe-handoffs.md) | Accepted; Task0099 | Preserve bounded, frozen task dependencies in reusable local workflow recipes |
 | [0053](0053-moxcrew-pairing-code-prefix.md) | Accepted | Issue Moxcrew-branded `MX-` pairing codes while accepting the legacy prefix temporarily |
 | [0054](0054-composed-workflow-recipe-revisions.md) | Accepted; Task0100 | Version the ten J1–J10 bundled recipes as explicit frozen workflow graphs |
+| [0055](0055-single-locale-registry-and-catalog-fallback.md) | Accepted; Task0102 | Use one locale registry and catalog fallback instead of screen-level language branching |
+| [0056](0056-adaptive-mission-runtime.md) | Accepted; Task0103 local runtime delivered | Frame each problem, execute a provisional graph and accept only bounded evidence-driven replanning |

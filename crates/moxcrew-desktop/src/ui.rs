@@ -5378,7 +5378,8 @@ fn task_title<'a>(
 fn language_selector(ui: &mut Ui, snapshot: &Value, busy: bool, commands: &mut Vec<Command>) {
     ui.add_enabled_ui(!busy, |ui| {
         ui.horizontal(|ui| {
-            for (choice, label) in [(Language::Tr, "Türkçe"), (Language::En, "English")] {
+            for choice in Language::all() {
+                let label = choice.native_label();
                 let selected = language(ui) == choice;
                 let response = ui.selectable_label(selected, label);
                 #[cfg(test)]

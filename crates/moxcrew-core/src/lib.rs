@@ -11,6 +11,7 @@ mod desktop_preferences;
 pub mod domain;
 pub mod extraction;
 mod host;
+pub mod locales;
 mod production;
 mod project_capabilities;
 mod project_crews;

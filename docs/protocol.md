@@ -258,7 +258,12 @@ unsupported versions, and messages that violate size or schema limits.
 ## Heartbeat and projection
 
 Heartbeat proves liveness and reports only app/protocol versions, last local
-sequence, and coarse health.
+sequence, and coarse health. A V2 host may additionally send a
+`projection:<sha256>` digest calculated only from the already-allowlisted
+projection with its revision omitted. This is not a hash of canonical Local
+state. A digest-aware Cloud returns `projectionRequired`; legacy V2 heartbeat
+and acknowledgement shapes remain valid. When the digest matches, Cloud may
+refresh projection freshness without requiring the identical bounded body.
 
 Projection carries the latest allowed operational view. It is versioned and may
 be replaced by a later projection from the same host. Cloud must not turn a
@@ -266,6 +271,9 @@ projection back into canonical local events.
 
 The host owns monotonically increasing projection revisions. Cloud rejects an
 older revision rather than regressing visible state.
+
+Every protocol response, including errors, carries `cache-control: no-store`.
+Local rejects a response without that directive before reading its body.
 
 ## Command intent
 

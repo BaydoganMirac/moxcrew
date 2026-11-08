@@ -3,10 +3,18 @@ use serde_json::{json, Value};
 use std::io::Read;
 use std::path::Path;
 
+fn default_preferences(error: bool) -> Value {
+    json!({
+        "language": crate::locales::DEFAULT_DESKTOP_LOCALE,
+        "reduceMotion": false,
+        "error": error
+    })
+}
+
 pub(crate) fn load(directory: &Path) -> Value {
     let path = directory.join("desktop-preferences.json");
     if std::fs::symlink_metadata(&path).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
-        return json!({"language":"tr","reduceMotion":false,"error":false});
+        return default_preferences(false);
     }
     let parsed = store::open_private_reader(&path).ok().and_then(|file| {
         let mut bytes = Vec::new();
@@ -22,16 +30,19 @@ pub(crate) fn load(directory: &Path) -> Value {
                 || (value["schemaVersion"] == 2
                     && value["reduceMotion"].is_boolean()
                     && value.as_object().is_some_and(|m| m.len() == 3)))
-                && matches!(value["language"].as_str(), Some("tr" | "en")) =>
+                && value["language"]
+                    .as_str()
+                    .and_then(crate::locales::desktop_locale)
+                    .is_some() =>
         {
             json!({"language":value["language"],"reduceMotion":value["reduceMotion"].as_bool().unwrap_or(false),"error":false})
         }
-        _ => json!({"language":"tr","reduceMotion":false,"error":true}),
+        _ => default_preferences(true),
     }
 }
 
 pub(crate) fn save(directory: &Path, language: &str) -> Result<Value> {
-    if !matches!(language, "tr" | "en") {
+    if crate::locales::desktop_locale(language).is_none() {
         return Err(crate::Error("INVALID_DESKTOP_LANGUAGE".into()));
     }
     persist(
@@ -45,7 +56,9 @@ pub(crate) fn save_motion(directory: &Path, reduce: bool) -> Result<Value> {
     let current = load(directory);
     persist(
         directory,
-        current["language"].as_str().unwrap_or("tr"),
+        current["language"]
+            .as_str()
+            .unwrap_or(crate::locales::DEFAULT_DESKTOP_LOCALE),
         reduce,
     )
 }

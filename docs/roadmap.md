@@ -2,7 +2,7 @@
 
 Status: active
 
-Updated: 2026-11-05
+Updated: 2026-11-08
 
 This roadmap describes public technical direction, not dates or commercial
 commitments.
@@ -30,8 +30,8 @@ commitments.
   direct-download/watch/feedback path. [Task0095](state/repeatable-public-preview-release.md)
   now makes the next explicitly tagged `v0.x.y` preview reproduce the six
   advertised macOS/Linux assets and checksum manifest after required native
-  checks; the current `v0.12.0` release is unchanged. Signed public downloads
-  and a real product website remain separate release work.
+  checks; `v0.13.0` is the owner-approved preview target. Signed public
+  downloads and a real product website remain separate release work.
 
 - Continue live-model and platform release evidence for the delivered
   [eleven local product capabilities](plans/0052-eleven-product-capabilities.md):
@@ -160,6 +160,16 @@ commitments.
   now represents every J1–J10 composition as an explicit reusable graph and
   locally proves its checked handoffs; live-provider content quality and human
   semantic acceptance remain separate evidence.
+
+- Replace workflow-first orchestration with the owner-approved
+  [adaptive mission runtime](plans/0103-adaptive-mission-runtime.md). The local
+  runtime now frames the specific problem, generates an explicit mission graph,
+  derives its executable DAG and accepts bounded, append-only evaluation/replan
+  checkpoints. Satisfied work must pass every declared criterion; blocked work
+  stops honestly. Recipes remain optional planning hints, not the product's
+  execution boundary, and model proposals cannot widen local permissions or
+  bypass Prepare/Start. Live-provider usefulness and any sanitized optional
+  Cloud projection remain separate release work.
 
 - Execute the owner-approved [1.0.0 master release](plans/0039-version-one-release.md):
   eight capability areas, forty abilities and ten composed Project workflows

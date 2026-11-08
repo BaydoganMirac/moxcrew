@@ -3,6 +3,8 @@ use super::*;
 #[derive(Clone, PartialEq, Eq)]
 struct CrewDraft {
     recommended_for: Option<String>,
+    problem_frame: Option<Value>,
+    mission_plan: Option<Value>,
     ability: String,
     name: String,
     members: Vec<Value>,
@@ -105,6 +107,47 @@ fn role_label(role: &str) -> &str {
         "review" => "Review",
         _ => "Agent",
     }
+}
+
+fn problem_frame_summary(ui: &mut Ui, frame: &Value) {
+    ui.label(
+        RichText::new(t(ui, "Goal and acceptance criteria"))
+            .size(12.0)
+            .color(colors(ui).muted)
+            .strong(),
+    );
+    short_copy(ui, text(frame, "summary"), 14.0, colors(ui).text, 3);
+    for criterion in array(&frame["successCriteria"]).iter().take(3) {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("✓").color(colors(ui).success));
+            ui.add(
+                egui::Label::new(RichText::new(criterion.as_str().unwrap_or("")).size(13.0))
+                    .wrap()
+                    .selectable(true),
+            );
+        });
+    }
+}
+
+fn mission_plan_summary(ui: &mut Ui, plan: &Value) {
+    ui.add_space(studio::metrics::GAP);
+    ui.label(
+        RichText::new(t(ui, "Provisional strategy"))
+            .size(12.0)
+            .color(colors(ui).muted)
+            .strong(),
+    );
+    short_copy(ui, text(plan, "strategy"), 14.0, colors(ui).text, 3);
+    let objectives = array(&plan["objectives"]).len().to_string();
+    let checkpoints = array(&plan["checkpoints"]).len().to_string();
+    hint(
+        ui,
+        &tf(
+            ui,
+            "{0} objectives · {1} checkpoints",
+            &[&objectives, &checkpoints],
+        ),
+    );
 }
 
 impl CreateState {
@@ -221,6 +264,8 @@ impl CreateState {
             {
                 let plan = CrewDraft {
                     recommended_for: Some(request.draft.goal.clone()),
+                    problem_frame: None,
+                    mission_plan: None,
                     ability: text(response, "abilityId").into(),
                     name: draft_title(&CreateDraft {
                         title: String::new(),
@@ -632,14 +677,13 @@ impl Console {
     }
 
     fn crew_plan_summary(&mut self, ui: &mut Ui, snapshot: &Value) {
-        let Some(plan) = self.create.crew.plans.get(&self.create.crew_key()) else {
+        let key = self.create.crew_key();
+        let current_goal = self.create.draft().goal.clone();
+        let Some(plan) = self.create.crew.plans.get(&key) else {
             return;
         };
         let count = plan.members.len().to_string();
-        let goal = plan
-            .recommended_for
-            .clone()
-            .unwrap_or_else(|| self.create.draft().goal.clone());
+        let goal = plan.recommended_for.clone().unwrap_or(current_goal);
         ui.horizontal(|ui| {
             crate::motion::mox(
                 ui,
@@ -661,7 +705,14 @@ impl Console {
             });
         });
         ui.add_space(studio::metrics::GAP);
-        short_copy(ui, &goal, 14.0, colors(ui).text, 2);
+        if let Some(frame) = &plan.problem_frame {
+            problem_frame_summary(ui, frame);
+        } else {
+            short_copy(ui, &goal, 14.0, colors(ui).text, 2);
+        }
+        if let Some(mission_plan) = &plan.mission_plan {
+            mission_plan_summary(ui, mission_plan);
+        }
     }
 
     fn crew_prepare_action(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
@@ -723,7 +774,14 @@ impl Console {
             .recommended_for
             .clone()
             .unwrap_or_else(|| self.create.draft().goal.clone());
-        short_copy(ui, &goal, 14.0, colors(ui).text, 2);
+        if let Some(frame) = &plan.problem_frame {
+            problem_frame_summary(ui, frame);
+        } else {
+            short_copy(ui, &goal, 14.0, colors(ui).text, 2);
+        }
+        if let Some(mission_plan) = &plan.mission_plan {
+            mission_plan_summary(ui, mission_plan);
+        }
         let source = if plan.crew_id.is_some() {
             "Saved project crew"
         } else if self.create.crew.workflow.models.contains_key(&key) {
@@ -1080,6 +1138,8 @@ impl Console {
             self.create.crew_key(),
             CrewDraft {
                 recommended_for: None,
+                problem_frame: None,
+                mission_plan: None,
                 ability: text(previous, "abilityId").into(),
                 name: text(crew, "name").into(),
                 members: array(&crew["members"]).to_vec(),
@@ -1219,17 +1279,54 @@ impl Console {
                 #[cfg(not(test))]
                 let _ = goal;
             }
+            let adaptive = &mission["workflow"]["adaptive"];
+            if adaptive.is_object() {
+                ui.add_space(studio::metrics::GAP);
+                ui.label(
+                    RichText::new(t(ui, "Current strategy"))
+                        .size(12.0)
+                        .color(colors(ui).muted)
+                        .strong(),
+                );
+                short_copy(ui, text(adaptive, "strategy"), 13.0, colors(ui).text, 3);
+                let evaluation = &adaptive["latestEvaluation"];
+                if evaluation.is_object() {
+                    ui.horizontal_wrapped(|ui| {
+                        status(ui, text(evaluation, "verdict"));
+                        ui.add(
+                            egui::Label::new(text(evaluation, "summary"))
+                                .wrap()
+                                .selectable(true),
+                        );
+                    });
+                }
+                hint(
+                    ui,
+                    &tf(
+                        ui,
+                        "Plan revision {0}",
+                        &[&mission["workflow"]["planRevision"]
+                            .as_u64()
+                            .unwrap_or(1)
+                            .to_string()],
+                    ),
+                );
+            }
             let tasks = array(&mission["tasks"]);
             let complete = tasks
                 .iter()
                 .filter(|task| text(task, "status") == "completed")
+                .count();
+            let active_tasks = tasks
+                .iter()
+                .filter(|task| text(task, "status") != "retired")
                 .count();
             hint(
                 ui,
                 &tf(
                     ui,
                     "{0} of {1} tasks completed",
-                    &[&complete.to_string(), &tasks.len().to_string()],
+                    &[&complete.to_string(), &active_tasks.to_string()],
                 ),
             );
             if text(mission, "status") == "prepared" {
@@ -1808,6 +1905,14 @@ impl CreateState {
                         .entry(key.clone())
                         .or_insert_with(|| CrewDraft {
                             recommended_for: Some(model.draft.goal.clone()),
+                            problem_frame: full["plan"]
+                                .get("problemFrame")
+                                .filter(|frame| frame.is_object())
+                                .cloned(),
+                            mission_plan: full["plan"]
+                                .get("missionPlan")
+                                .filter(|plan| plan.is_object())
+                                .cloned(),
                             ability: text(&full["plan"], "abilityId").into(),
                             name: draft_title(&CreateDraft {
                                 title: String::new(),
@@ -3093,6 +3198,8 @@ mod tests {
     fn plan() -> CrewDraft {
         CrewDraft {
             recommended_for: Some("Owner goal".into()),
+            problem_frame: None,
+            mission_plan: None,
             ability: "P1".into(),
             name: "Launch crew".into(),
             members: vec![
@@ -3120,7 +3227,17 @@ mod tests {
         let ctx = egui::Context::default();
         studio::install(&ctx);
         ctx.data_mut(|data| data.insert_temp(egui::Id::new("console-language"), Language::En));
-        let data = fixture();
+        let mut data = fixture();
+        data["projectCrews"]["missions"][0]["workflow"] = json!({
+            "planRevision": 2,
+            "adaptive": {
+                "strategy": "Validate the audience need, then build the smallest supported launch story.",
+                "latestEvaluation": {
+                    "verdict": "replan",
+                    "summary": "Audience evidence requires a clearer next action."
+                }
+            }
+        });
         let mission = &data["projectCrews"]["missions"][0];
         let mut console = console();
         for expanded in [false, true] {
@@ -3160,6 +3277,13 @@ mod tests {
             output.drop_without_applying_deltas();
             assert!(!copy.iter().any(|line| line == "You"));
             assert!(copy.iter().any(|line| line == "Goal"));
+            assert!(copy.iter().any(|line| line == "Current strategy"));
+            assert!(copy.iter().any(|line| line
+                == "Validate the audience need, then build the smallest supported launch story."));
+            assert!(copy
+                .iter()
+                .any(|line| line == "Audience evidence requires a clearer next action."));
+            assert!(copy.iter().any(|line| line == "Plan revision 2"));
             assert_eq!(
                 copy.iter()
                     .any(|line| line == "Create a launch presentation"),
@@ -4146,8 +4270,22 @@ mod tests {
             console.create.crew.workflow.models[&key].job["providerId"],
             "claude"
         );
-        data["projectCrewPlanJob"] = json!({"reasonCode":"PROJECT_CREW_PLAN_READ","projectId":"project:one","planJobId":"plan:one","revision":3,"status":"completed","providerId":"claude","plan":{"abilityId":"P1","members":plan().members,"settings":plan().settings}});
+        data["projectCrewPlanJob"] = json!({"reasonCode":"PROJECT_CREW_PLAN_READ","projectId":"project:one","planJobId":"plan:one","revision":3,"status":"completed","providerId":"claude","plan":{"problemFrame":{"summary":"Help a global community understand the launch.","desiredOutcomes":["A clear launch story"],"constraints":["Use the selected source."],"unknowns":[],"successCriteria":["The audience can identify the value and next action."]},"missionPlan":{"strategy":"Learn what the audience needs before drafting.","objectives":[{"id":"launch-story","description":"Produce an evidence-backed launch story."}],"hypotheses":[{"id":"audience-need","statement":"The audience needs a clear next action.","test":"Review the selected source and final story."}],"tasks":[{"memberIndex":0,"objectiveIds":["launch-story"],"dependsOn":[],"expectedEvidence":["A source-backed launch narrative"]},{"memberIndex":1,"objectiveIds":["launch-story"],"dependsOn":[0],"expectedEvidence":["A criterion-by-criterion review"]}],"checkpoints":[{"id":"final-review","afterTaskIndices":[0,1],"criteria":["The audience can identify the value and next action."]}],"stopConditions":["Report a blocker when the selected source is unavailable."]},"abilityId":"P1","members":plan().members,"settings":plan().settings}});
         console.create.sync(&data);
+        assert_eq!(
+            console.create.crew.plans[&key]
+                .problem_frame
+                .as_ref()
+                .unwrap()["summary"],
+            "Help a global community understand the launch."
+        );
+        assert_eq!(
+            console.create.crew.plans[&key]
+                .mission_plan
+                .as_ref()
+                .unwrap()["strategy"],
+            "Learn what the audience needs before drafting."
+        );
         let member = text(&console.create.crew.plans[&key].members[1], "_uiId").to_owned();
         console
             .create
@@ -4166,6 +4304,20 @@ mod tests {
             .get_mut(&key)
             .unwrap()
             .read_revision = Some(3);
+        let copy = render(
+            &ctx,
+            &mut console,
+            &data,
+            egui::vec2(1280.0, 900.0),
+            false,
+            vec![],
+        )
+        .1
+        .join("\n");
+        assert!(copy.contains("Help a global community understand the launch."));
+        assert!(copy.contains("The audience can identify the value and next action."));
+        assert!(copy.contains("Learn what the audience needs before drafting."));
+        assert!(copy.contains("1 objectives · 1 checkpoints"));
         let edited = console.create.crew.plans.get_mut(&key).unwrap();
         edited.name = "Owner edited crew name".into();
         edited.settings = json!({"concurrency":1,"retryLimit":2,"timeoutMinutes":45});

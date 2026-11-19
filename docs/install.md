@@ -1,22 +1,24 @@
 # Install and operate Moxcrew Desktop
 
-Status: 0.13.1 native Rust desktop Public Preview
+Status: 0.13.2 native Rust desktop Public Preview
 
-Updated: 2026-11-08
+Updated: 2026-11-19
 
 ## Download
 
 Download the installer for your platform directly:
 
-- macOS: [Apple Silicon DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_macOS_Apple-Silicon.dmg)
-  or [Intel DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_macOS_Intel.dmg);
-- Linux x64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_x86_64.AppImage)
-  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_x86_64.deb);
-- Linux ARM64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_aarch64.AppImage)
-  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_aarch64.deb).
+- Windows x64: [Setup EXE](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_windows_x64-setup.exe)
+  or [MSI](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_windows_x64.msi).
+- macOS: [Apple Silicon DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_macOS_Apple-Silicon.dmg)
+  or [Intel DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_macOS_Intel.dmg);
+- Linux x64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_linux_x86_64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_linux_x86_64.deb);
+- Linux ARM64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_linux_aarch64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_linux_aarch64.deb).
 
 No Rust, Node or source checkout is needed. Compare the installer's SHA-256
-digest with the published [SHA256SUMS.txt](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/SHA256SUMS.txt)
+digest with the published [SHA256SUMS.txt](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/SHA256SUMS.txt)
 before opening it. Provider CLIs are separate: install and authenticate Codex,
 Claude Code or Gemini CLI according to the provider you intend to use.
 
@@ -25,27 +27,26 @@ Finder's **Open** action or the explicit **Open Anyway** control in Privacy &
 Security after verifying the checksum. Moxcrew does not require a shell command
 that disables an OS security feature.
 
-Windows packages are intentionally withheld from 0.13.1 Public Preview. The
-experimental Windows lane exposed unresolved private-storage ACL/locking and
-native behavior test failures. A configured NSIS/MSI build is not being presented
-as a usable download until those gates pass.
+On Windows, use the setup EXE for a per-user installation or the MSI for a
+machine-wide installation. Both contain the same desktop executable. The
+preview has no publisher signature. In PowerShell,
+`Get-FileHash -Algorithm SHA256 .\Moxcrew_0.13.2_windows_x64-setup.exe`
+prints the digest for the setup download. Substitute the MSI filename if needed.
 
 ## Application requirements
 
-- macOS 11+, or Linux with native X11/Wayland and OpenGL runtime libraries. No
+- Windows x64, macOS 11+, or Linux with native X11/Wayland and OpenGL runtime libraries. No
   WebView runtime is required.
 - Provider CLIs installed separately. Their own Node/model/account requirements
   are independent of the Rust Moxcrew application.
-- Advertised macOS/Linux packages are built by the public release matrix.
-  Publisher signing, Windows readiness and hands-on fresh-install/upgrade
-  evidence remain production-release gates.
+- The public release matrix builds packages on their native platforms.
+  Publisher signing and hands-on upgrade coverage remain production gates.
 - Linux folder selection needs a working XDG desktop portal with a desktop
   backend, or Zenity as the fallback. The Deb declares these runtime packages;
   AppImage users need them supplied by their distribution. GTK is not bundled.
 
-Use the advertised platform installer: macOS DMG/application or Linux
-Deb/AppImage. The public artifacts are produced from the exact tagged source by
-the repository's native CI and published with checksums.
+The release workflow builds all eight installers from the exact tagged source
+and publishes a checksum manifest alongside them.
 
 For development, install Rust 1.99+ and platform compiler/window prerequisites.
 Run `cargo run --locked -p moxcrew-desktop`. Build a production executable with
@@ -53,8 +54,9 @@ Run `cargo run --locked -p moxcrew-desktop`. Build a production executable with
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
 
 New native installs use the `moxcrew-desktop` executable and
-`com.moxcrew.desktop` bundle identifier. The Windows installer uses
-`%LOCALAPPDATA%\Moxcrew`, separate from `%APPDATA%\Moxcrew` canonical data.
+`com.moxcrew.desktop` bundle identifier. The Windows per-user EXE defaults to
+`%LOCALAPPDATA%\Moxcrew`. The MSI installs under 64-bit Program Files.
+Both read local project data from `%APPDATA%\Moxcrew`.
 Close the old application before installing the new one.
 
 For an upgrade to the Moxcrew identity, close the old application and back up
@@ -95,7 +97,7 @@ identifier specified above.
 
 1. Quit all running Moxcrew / older Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Moxcrew.app`. The sidebar should show `0.13.1`
+3. Open `Applications/Moxcrew.app`. The sidebar should show `0.13.2`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut
@@ -133,17 +135,15 @@ job's file panel to inspect its real outputs. Follow up on a completed, failed
 or interrupted job in the same Project; optionally select up to eight files
 (25 MiB total). The new task receives exact copies and a SHA-256 manifest in
 inputs/, preserving the originals. A follow-up still requires explicit start.
-On Windows, file references remain unavailable with the secure result-access
-limitation below; text-only follow-ups remain supported.
 
 The forty recipes guide the agent; they do not install missing renderers, model
 access or tools. Review any unmet requirements in the output. Task completion
 and file presence do not verify content quality. Read the job's actual output
 list, preview supported UTF-8 Markdown/text/CSV up to 256 KiB, or export a file
 up to 100 MiB using the system save dialog. Export refuses existing destinations.
-On Windows this build does not yet support result listing, preview or export.
-On Unix, a failed export publishes no incomplete copy; a complete competing file
-is preserved if the destination appears while Moxcrew is saving.
+To deliver several files together, select the outputs and save a ZIP. Its
+manifest identifies each selected file and its SHA-256 digest. Moxcrew publishes
+completed exports atomically and preserves a destination that appears during a save.
 Canceling the dialog changes nothing. Retries use a fresh job directory and
 retain the original Project and earlier outputs. Unsent text is session-only.
 

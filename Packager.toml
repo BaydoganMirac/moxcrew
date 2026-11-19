@@ -1,7 +1,7 @@
 # cargo-packager 0.11.8; build the Rust executable before running the packager.
 name = "moxcrew-desktop"
 product-name = "Moxcrew"
-version = "0.13.1"
+version = "0.13.2"
 identifier = "com.moxcrew.desktop"
 publisher = "Moxcrew"
 authors = ["Moxcrew contributors"]

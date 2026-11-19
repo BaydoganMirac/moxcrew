@@ -453,8 +453,7 @@ fn v2_cloud_team_receipts_are_linked_to_the_original_sequence_and_intent() {
 }
 
 #[cfg(windows)]
-#[test]
-fn windows_private_storage_has_protected_owner_and_system_acl() {
+fn windows_acl(path: &std::path::Path) -> (u16, String) {
     use std::{os::windows::ffi::OsStrExt, ptr::null_mut};
     use windows_sys::Win32::{
         Foundation::LocalFree,
@@ -464,51 +463,55 @@ fn windows_private_storage_has_protected_owner_and_system_acl() {
         },
         Security::DACL_SECURITY_INFORMATION,
     };
-    fn inspect(path: &std::path::Path) {
-        let name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let mut descriptor = null_mut();
-        let mut dacl = null_mut();
-        let status = unsafe {
-            GetNamedSecurityInfoW(
-                name.as_ptr(),
-                SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION,
-                null_mut(),
-                null_mut(),
-                &mut dacl,
-                null_mut(),
-                &mut descriptor,
-            )
-        };
-        assert_eq!(status, 0);
-        assert!(!dacl.is_null());
-        assert_eq!(
-            unsafe { (*dacl).AceCount },
-            2,
-            "only current owner and SYSTEM grants"
-        );
-        let mut sddl = null_mut();
-        let mut length = 0;
-        assert_ne!(
-            unsafe {
-                ConvertSecurityDescriptorToStringSecurityDescriptorW(
-                    descriptor,
-                    SDDL_REVISION_1,
-                    DACL_SECURITY_INFORMATION,
-                    &mut sddl,
-                    &mut length,
-                )
-            },
-            0
-        );
-        let text = String::from_utf16(unsafe {
-            std::slice::from_raw_parts(sddl, length.saturating_sub(1) as usize)
-        })
-        .unwrap();
+    let name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut descriptor = null_mut();
+    let mut dacl = null_mut();
+    let status = unsafe {
+        GetNamedSecurityInfoW(
+            name.as_ptr(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            &mut dacl,
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    assert_eq!(status, 0);
+    assert!(!dacl.is_null());
+    let count = unsafe { (*dacl).AceCount };
+    let mut sddl = null_mut();
+    let mut length = 0;
+    assert_ne!(
         unsafe {
-            LocalFree(sddl.cast());
-            LocalFree(descriptor);
-        }
+            ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                descriptor,
+                SDDL_REVISION_1,
+                DACL_SECURITY_INFORMATION,
+                &mut sddl,
+                &mut length,
+            )
+        },
+        0
+    );
+    let text = String::from_utf16(unsafe {
+        std::slice::from_raw_parts(sddl, length.saturating_sub(1) as usize)
+    })
+    .unwrap();
+    unsafe {
+        LocalFree(sddl.cast());
+        LocalFree(descriptor);
+    }
+    (count, text)
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_private_storage_has_protected_owner_and_system_acl() {
+    fn inspect(path: &std::path::Path) {
+        let (count, text) = windows_acl(path);
+        assert_eq!(count, 2, "only current owner and SYSTEM grants");
         assert!(text.starts_with("D:P"), "protected ACL: {text}");
         assert!(text.contains(";;;SY)"), "SYSTEM access: {text}");
         assert!(
@@ -740,6 +743,8 @@ fn hard_links_cannot_share_private_state_across_distinct_writer_directories() {
         fs::set_permissions(&outside, fs::Permissions::from_mode(0o644)).unwrap();
     }
     let before = fs::metadata(&outside).unwrap().permissions();
+    #[cfg(windows)]
+    let original_acl = windows_acl(&outside);
     for name in ["events.jsonl", "writer.lock", "work-items.json"] {
         for suffix in ["first", "second"] {
             let data = root
@@ -762,6 +767,7 @@ fn hard_links_cannot_share_private_state_across_distinct_writer_directories() {
             }
             #[cfg(windows)]
             {
+                assert_eq!(windows_acl(&outside), original_acl);
                 assert_eq!(
                     fs::metadata(&outside).unwrap().permissions().readonly(),
                     before.readonly()

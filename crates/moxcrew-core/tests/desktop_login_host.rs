@@ -226,10 +226,15 @@ fn files(path: &std::path::Path) -> BTreeMap<String, Vec<u8>> {
         .map(|e| e.unwrap())
         .filter(|e| e.file_type().unwrap().is_file())
         .map(|e| {
-            (
-                e.file_name().to_string_lossy().into_owned(),
-                std::fs::read(e.path()).unwrap(),
-            )
+            let name = e.file_name().to_string_lossy().into_owned();
+            let bytes = if name == "writer.lock" {
+                // Windows prevents reading an exclusively locked byte range.
+                assert_eq!(e.metadata().unwrap().len(), 0);
+                Vec::new()
+            } else {
+                std::fs::read(e.path()).unwrap()
+            };
+            (name, bytes)
         })
         .collect()
 }

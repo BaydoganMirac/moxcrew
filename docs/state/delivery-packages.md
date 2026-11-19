@@ -40,9 +40,10 @@ remain intact.
 
 Require 1–32 files from one Project, at most 25 MiB per file and 64 MiB total
 source bytes. ZIP uses STORE without compression/ZIP64; packaging needs no
-Python, FFmpeg, dependency or provider process. Windows export remains explicitly
-unsupported pending pinned no-reparse file operations. [Task0060](../plans/0060-atomic-owner-exports.md)
-now stages Unix exports privately and atomically publishes the complete file. An
+Python, FFmpeg, dependency or provider process. Windows now supports the same
+single-file and ZIP delivery flow using checked native file handles.
+[Windows delivery](../plans/0111-windows-file-delivery.md) and
+[Task0060](../plans/0060-atomic-owner-exports.md) describe atomic publication. An
 I/O failure publishes no incomplete destination, and a concurrent owner file is
 preserved. Existing V12 audit/replay behavior is reused; no event schema, Cloud
 contract or external account action was added.

@@ -15,7 +15,7 @@ WiX package is replaced when that format is used.
 Legacy shortcut cleanup is restricted to Patchfleet.lnk in the owned desktop
 and Start Menu locations. NSIS requires existing product registry metadata.
 No appdata path is added and no canonical data directory is deleted. The Rust
-Host migrates the separate previous Roaming AppData profile on first launch.
+Host opens a recognized previous Roaming AppData profile in place on upgrade.
 
 Reconcile this small delta when deliberately upgrading cargo-packager. Runtime
 upgrade/uninstall validation on Windows remains a release gate; macOS cannot

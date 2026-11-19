@@ -785,7 +785,7 @@ impl Console {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{click_at_size, render, snapshot};
+    use super::super::tests::{click_at_size, fixture_path, render, snapshot};
     use super::*;
 
     #[test]
@@ -830,7 +830,7 @@ mod tests {
         let mut c = console();
         c.create.project.clear();
         c.create.draft().goal = "Research these attachments".into();
-        c.create.queue_paths(vec!["/tmp/brief.txt".into()]);
+        c.create.queue_paths(vec![fixture_path("brief.txt")]);
         let mut commands = Vec::new();
         c.send_conversation(&data, &mut commands);
         let create = commands.remove(0);
@@ -1690,7 +1690,7 @@ mod tests {
         c.create.project.clear();
         c.create.draft().goal = "Make a video from the attached sources".into();
         c.create
-            .queue_paths(vec!["/tmp/a.png".into(), "/tmp/b.wav".into()]);
+            .queue_paths(vec![fixture_path("a.png"), fixture_path("b.wav")]);
         let mut commands = Vec::new();
         c.send_conversation(&data, &mut commands);
         assert_eq!(commands[0].action, "project_create");
@@ -1703,7 +1703,7 @@ mod tests {
         assert_eq!(commands[0].action, "project_resource_import_batch");
         assert_eq!(
             commands[0].payload["sourcePaths"],
-            json!(["/tmp/a.png", "/tmp/b.wav"])
+            json!([fixture_path("a.png"), fixture_path("b.wav")])
         );
         assert_eq!(c.create.project, "project:two");
         let import = commands.remove(0);
@@ -1727,7 +1727,7 @@ mod tests {
         for outcome in ["unknown", "rejected", "applied"] {
             let mut data = fixture();
             let mut c = console();
-            c.create.queue_paths(vec!["/tmp/a.txt".into()]);
+            c.create.queue_paths(vec![fixture_path("a.txt")]);
             let mut commands = Vec::new();
             c.send_conversation(&data, &mut commands);
             let import = commands.remove(0);
@@ -1765,11 +1765,11 @@ mod tests {
         let mut c = console();
         c.create.project.clear();
         c.create.draft().goal = "Use this audio source".into();
-        c.create.queue_paths(vec!["/tmp/a.wav".into()]);
+        c.create.queue_paths(vec![fixture_path("a.wav")]);
         let mut commands = Vec::new();
         c.send_conversation(&data, &mut commands);
         let create = commands.remove(0);
-        c.create.queue_paths(vec!["/tmp/new.wav".into()]);
+        c.create.queue_paths(vec![fixture_path("new.wav")]);
         data["projectCreateReceipt"] = json!({"outcome":"applied","commandId":create.payload["commandId"],"projectId":"project:two"});
         c.sync_conversation_project(&data, &mut commands);
         assert!(commands.is_empty());
@@ -1782,7 +1782,7 @@ mod tests {
         data["projectStudio"] = json!({"projectId":"project:one","resources":(0..40).map(|i|json!({"resourceId":format!("resource:old-{i}"),"sha256":"f".repeat(64)})).collect::<Vec<_>>()});
         let mut c = console();
         let original = c.create.draft().goal.clone();
-        c.create.queue_paths(vec!["/tmp/new-source.wav".into()]);
+        c.create.queue_paths(vec![fixture_path("new-source.wav")]);
         let mut commands = Vec::new();
         c.send_conversation(&data, &mut commands);
         let import = commands.remove(0);
@@ -1818,8 +1818,11 @@ mod tests {
                 context_full: false,
             },
         );
-        c.create
-            .queue_paths((0..12).map(|i| format!("/tmp/source-{i}.txt")).collect());
+        c.create.queue_paths(
+            (0..12)
+                .map(|i| fixture_path(&format!("source-{i}.txt")))
+                .collect(),
+        );
         let mut commands = Vec::new();
         c.send_conversation(&data, &mut commands);
         assert_eq!(commands.len(), 1);

@@ -1664,7 +1664,7 @@ impl Console {
                                     if !text(task,"reasonCode").is_empty() {hint(ui,text(task,"reasonCode"));}
                                     if let Some(work)=task["workItemId"].as_str().filter(|work|job_belongs(snapshot,&self.create.project,work)) {
                                         let before=commands.len();
-                                        action(ui,commands,"Agent files","project_results_read",!cfg!(target_os="windows"),||json!({"projectId":self.create.project,"workItemId":work}));
+                                        action(ui,commands,"Agent files","project_results_read",true,||json!({"projectId":self.create.project,"workItemId":work}));
                                         if commands.len()>before {self.create.selected_work.insert(self.create.project.clone(),work.into());self.create.result_path.clear();self.create.crew.tab=2;}
                                     }
                                 }
@@ -5478,7 +5478,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(target_os = "windows"))]
     #[test]
     fn crew_files_never_render_outputs_from_another_mission_in_the_same_project() {
         let ctx = egui::Context::default();

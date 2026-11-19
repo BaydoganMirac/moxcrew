@@ -1255,7 +1255,7 @@ impl Console {
                             ||json!({"runId":run["runId"],"expectedRunRevision":run["revision"]}));
                     }
                     let before=commands.len();
-                    action(ui,commands,"Files","project_results_read",issue.is_none() && !cfg!(target_os="windows"),
+                    action(ui,commands,"Files","project_results_read",issue.is_none(),
                         ||json!({"projectId":self.create.project,"workItemId":work["workItemId"]}));
                     if commands.len()>before {
                         self.create.selected_work.insert(self.create.project.clone(),text(work,"workItemId").into());

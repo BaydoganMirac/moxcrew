@@ -2278,6 +2278,7 @@ fn main(){let exe=env::current_exe().unwrap();let mode=exe.file_stem().unwrap().
             json!({"projectId":project,"missionId":m["missionId"],"expectedMissionRevision":m["revision"]}),
         )
     }
+    #[cfg(unix)]
     async fn rpc(ticket: &Value, tool: &str, arguments: Value) -> Value {
         reqwest::Client::builder()
             .no_proxy()

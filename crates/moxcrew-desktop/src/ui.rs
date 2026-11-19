@@ -4243,7 +4243,7 @@ impl Console {
             ("id", "name"),
             false,
         );
-        for slot in 0..4 {
+        for (slot, worker) in self.team.workers.iter_mut().enumerate() {
             choose_refs(
                 ui,
                 format!("worker-{slot}"),
@@ -4257,7 +4257,7 @@ impl Console {
                         String::new()
                     }
                 ),
-                &mut self.team.workers[slot],
+                worker,
                 &workers,
                 ("id", "name"),
                 true,

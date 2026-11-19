@@ -33,6 +33,9 @@ preview has no publisher signature. In PowerShell,
 `Get-FileHash -Algorithm SHA256 .\Moxcrew_0.13.2_windows_x64-setup.exe`
 prints the digest for the setup download. Substitute the MSI filename if needed.
 
+When saving a project file or ZIP on Windows, choose a folder on a local
+drive. You can copy the finished file to a network share afterward.
+
 ## Application requirements
 
 - Windows x64, macOS 11+, or Linux with native X11/Wayland and OpenGL runtime libraries. No
@@ -56,15 +59,15 @@ cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling
 New native installs use the `moxcrew-desktop` executable and
 `com.moxcrew.desktop` bundle identifier. The Windows per-user EXE defaults to
 `%LOCALAPPDATA%\Moxcrew`. The MSI installs under 64-bit Program Files.
-Both read local project data from `%APPDATA%\Moxcrew`.
+Both use `%APPDATA%\Moxcrew` for a new Windows profile.
 Close the old application before installing the new one.
 
 For an upgrade to the Moxcrew identity, close the old application and back up
 its stopped data profile before using the reviewed installer. The bundle
-identifier and default data location change; first launch moves a single
-recognized old profile to the new location before opening the Host. If both
-locations exist, resolve the collision manually from stopped backups rather
-than combining logs. On Debian, remove the older `patchfleet-desktop` package
+identifier changes. Moxcrew opens a recognized existing profile in its original
+location so earlier jobs can still find their files. If both profile locations
+exist, select the intended profile explicitly with `MOXCREW_DATA_DIR`.
+On Debian, remove the older `patchfleet-desktop` package
 after backing up its data, then install `moxcrew-desktop`; the new package name
 is a separate package identity. Bound agent launches write V6
 context facts requiring the 0.10 reader; rollback after V6 writes requires
@@ -87,6 +90,10 @@ directory. Adaptive terminal-failure recovery adds V19 reviewer allocations and
 V20 recovery checkpoints. Preserve the stopped pre-upgrade copy before the first
 recovery run; older builds reject those facts and event versions must never be
 rewritten for rollback.
+
+Version 0.13.2 records a direct Mox chat answer as a V21 event. Back up the
+stopped profile before the first chat in this release. To return to 0.13.1,
+restore that pre-upgrade profile so its reader can open the log.
 
 ### Historical macOS 0.5 white-window issue
 
@@ -329,9 +336,8 @@ The platform application-data directory is:
 
 An explicitly set absolute `MOXCREW_DATA_DIR` selects an alternate directory;
 `PATCHFLEET_DATA_DIR` remains a legacy alias. Different simultaneous values
-are rejected. A recognized prior default profile is renamed on first launch
-only when the new profile is absent. Collisions, an active writer and an
-unrecognized old folder leave the source untouched and stop startup. Back up
+are rejected. On upgrade, the Host opens a recognized prior default profile
+in place. Multiple candidate profiles require an explicit selection. Back up
 the stopped profile before upgrade. The old Windows Local AppData Patchfleet
 folder is an installer destination, not a canonical data profile.
 One Rust host owns it. Unix modes are 0700/0600; Windows replaces inherited

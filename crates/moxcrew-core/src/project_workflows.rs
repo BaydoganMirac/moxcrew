@@ -4564,7 +4564,9 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::project_crews::tests::{command, fixture, lifecycle, mission, prepare};
+    use crate::project_crews::tests::{command, fixture};
+    #[cfg(unix)]
+    use crate::project_crews::tests::{lifecycle, mission, prepare};
     use std::time::Duration;
     #[test]
     fn mox_response_rejects_untrusted_or_mixed_answer_shapes() {
@@ -4637,6 +4639,7 @@ mod tests {
             .unwrap()["revision"]
             .clone()
     }
+    #[cfg(unix)]
     fn dependency_indices(mission: &Value) -> Vec<Vec<usize>> {
         let tasks = array(mission, "tasks");
         tasks
@@ -4684,6 +4687,7 @@ mod tests {
         }
         panic!("native planner fixture did not finish");
     }
+    #[cfg(unix)]
     async fn configure(host: &Host, p: &Value, id: &Value, max_jobs: u64) {
         let m = mission(host, id);
         let assignments: Vec<_> = array(&m, "tasks")
@@ -6026,6 +6030,7 @@ mod tests {
         host.shutdown().await;
     }
 
+    #[cfg(unix)]
     async fn rpc(ticket: &Value, tool: &str, args: Value) -> Value {
         reqwest::Client::builder()
             .no_proxy()
@@ -6042,6 +6047,7 @@ mod tests {
             .await
             .unwrap()
     }
+    #[cfg(unix)]
     async fn ticket_credentials(host: &Host, task: &Value) -> (agent_memory::Ticket, Value) {
         let bundle = host.snapshot().unwrap();
         let mut work = array(&bundle["work"], "items")
@@ -6549,6 +6555,7 @@ mod tests {
         restored.shutdown().await;
     }
 
+    #[cfg(unix)]
     async fn start_one(host: &Host, p: &Value) -> Value {
         let mut payload = prepare(host, p);
         payload["members"] = json!([crews::default_member("document", "D1")]);

@@ -229,6 +229,9 @@ Task0104 adds V19 reviewer allocations and V20 recovery checkpoints for terminal
 adaptive failures. Preserve the same complete stopped backup before recovery;
 rollback must restore it instead of rewriting V19/V20 facts.
 
+Version 0.13.2 also records a direct chat answer in a V21 planner completion.
+Check rollback with the complete stopped backup from before the upgrade.
+
 Task0041 adds V9 owner audit for project_chat_send and desktop_motion. Rollback
 uses the complete stopped pre-upgrade copy, including preferences. Never remove
 new audit lines or downgrade the preferences file in place.

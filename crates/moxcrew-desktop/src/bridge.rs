@@ -2411,6 +2411,10 @@ mod tests {
         let host = bridge.host.lock().unwrap().as_ref().unwrap().clone();
         assert!(host.snapshot().unwrap().get("cloudLogin").is_none());
         for entry in std::fs::read_dir(directory.path()).unwrap().flatten() {
+            if entry.file_name() == "writer.lock" {
+                assert_eq!(entry.metadata().unwrap().len(), 0);
+                continue;
+            }
             if entry.file_type().unwrap().is_file() {
                 let bytes = std::fs::read(entry.path()).unwrap();
                 let text = String::from_utf8_lossy(&bytes);
@@ -2877,6 +2881,10 @@ mod tests {
             events
         );
         for entry in std::fs::read_dir(directory.path()).unwrap().flatten() {
+            if entry.file_name() == "writer.lock" {
+                assert_eq!(entry.metadata().unwrap().len(), 0);
+                continue;
+            }
             if entry.file_type().unwrap().is_file() {
                 assert!(
                     !String::from_utf8_lossy(&std::fs::read(entry.path()).unwrap())

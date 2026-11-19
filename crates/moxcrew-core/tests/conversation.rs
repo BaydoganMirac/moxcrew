@@ -1,5 +1,6 @@
 use moxcrew_core::{now, Host};
 use serde_json::{json, Value};
+#[cfg(unix)]
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 

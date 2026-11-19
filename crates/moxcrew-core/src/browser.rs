@@ -179,11 +179,11 @@ research=b['run']({'operation':'browser.research','arguments':{
   {'claim':'Publication date is known.','classification':'unknown','evidence':[],'note':'The page does not provide a publication date.'}
  ]},'tools':{'chrome':os.environ['MOXCREW_TEST_CHROME']}})
 assert research['kind']=='web_research' and research['summary']=={'sources':1,'claims':3,'facts':1,'inferences':1,'unknowns':1}
-report=(b['ROOT']/'outputs'/'research-report.md').read_text()
+report=(b['ROOT']/'outputs'/'research-report.md').read_text(encoding='utf-8')
 assert '## Claim 1 · Fact' in report and 'accessed ' in report and 'response `'+('a'*64)+'`' in report
-rows=(b['ROOT']/'outputs'/'sources.csv').read_text()
+rows=(b['ROOT']/'outputs'/'sources.csv').read_text(encoding='utf-8')
 assert rows.startswith('claim,source_url,accessed_at,evidence_location') and 'https://example.com/' in rows
-evidence=__import__('json').loads((b['ROOT']/'outputs'/'research-evidence.json').read_text())
+evidence=__import__('json').loads((b['ROOT']/'outputs'/'research-evidence.json').read_text(encoding='utf-8'))
 assert evidence['claims'][0]['evidence'][0]['line']==1 and evidence['sources'][0]['responseSha256']=='a'*64
 try:
  b['run']({'operation':'browser.research','arguments':{'title':'Bad','question':'Bad evidence?',
@@ -259,11 +259,11 @@ class Peer:
  def close(self):pass
 b['image_campaign'].__globals__['Browser']=Peer
 args={'title':'Ship the work, not the busywork','eyebrow':'MOXCREW CAMPAIGN','subtitle':'One focused local crew turns approved copy into a consistent launch system.','callToAction':'Start local','formats':['square','landscape','portrait','thumbnail'],'brand':{'name':'Moxcrew','primary':'2854F4','accent':'FF7A2F','background':'F8F7F3','text':'15223D','muted':'56627A'},'hero':{'source':'inputs/hero.png','alt':'Checked campaign source'}}
-result=b['run']({'operation':'images.campaign','arguments':args,'tools':{'chrome':'/fake/chrome'}})
+result=b['run']({'operation':'images.campaign','arguments':args,'tools':{'chrome':str(Path('fixture-chrome').resolve())}})
 assert result['kind']=='branded_campaign_assets' and result['assets']==4 and result['humanReviewRequired']
 out=Path('outputs'); files=sorted(path.name for path in out.iterdir())
 assert len(files)==11 and files[0].startswith('campaign-')
-manifest=json.loads((out/'campaign-manifest.json').read_text())
+manifest=json.loads((out/'campaign-manifest.json').read_text(encoding='utf-8'))
 assert manifest['checks']['networkEnabled'] is False and manifest['checks']['pageScriptsEnabled'] is False
 assert manifest['inputs']['hero']['sha256']==hashlib.sha256(png(64,64)).hexdigest()
 assert manifest['inputs']['hero']['alt']=='Checked campaign source'
@@ -274,11 +274,11 @@ for item in manifest['artifacts']:
   assert len(payload)==item[kind]['bytes'] and hashlib.sha256(payload).hexdigest()==item[kind]['sha256']
 assert hashlib.sha256((out/'campaign-manifest.json').read_bytes()).hexdigest()==result['manifestSha256']
 bad=dict(args);bad['formats']=['square','square']
-try:b['run']({'operation':'images.campaign','arguments':bad,'tools':{'chrome':'/fake/chrome'}})
+try:b['run']({'operation':'images.campaign','arguments':bad,'tools':{'chrome':str(Path('fixture-chrome').resolve())}})
 except ValueError as error:assert str(error)=='BROWSER_CAMPAIGN_FORMAT_INVALID'
 else:raise AssertionError('duplicate format accepted')
 bad=dict(args);bad['brand']=dict(args['brand'],text='F8F7F3')
-try:b['run']({'operation':'images.campaign','arguments':bad,'tools':{'chrome':'/fake/chrome'}})
+try:b['run']({'operation':'images.campaign','arguments':bad,'tools':{'chrome':str(Path('fixture-chrome').resolve())}})
 except ValueError as error:assert str(error)=='BROWSER_CAMPAIGN_CONTRAST_INVALID'
 else:raise AssertionError('low contrast accepted')
 "#;

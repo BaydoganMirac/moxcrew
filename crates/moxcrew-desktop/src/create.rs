@@ -1079,8 +1079,6 @@ impl Console {
                 );
                 hint(ui, issue);
             }
-            #[cfg(target_os = "windows")]
-            hint(ui, "PROJECT_RESULTS_UNSUPPORTED_PLATFORM");
             let start_ready = if text(work, "status") == "queued" {
                 job_start_scope(snapshot, text(work, "workItemId"))
                     .filter(|(project, _)| *project == self.create.project)
@@ -1105,7 +1103,7 @@ impl Console {
                         && run["ownerEpoch"] == snapshot["hostEpoch"] && revision(run) > 0,
                         || json!({"runId":run["runId"],"expectedRunRevision":run["revision"]}));
                 }
-                action(ui, commands, "Refresh outputs", "project_results_read", !cfg!(target_os = "windows") && runtime_issue.is_none() && !self.hold_automatic_reads,
+                action(ui, commands, "Refresh outputs", "project_results_read", runtime_issue.is_none() && !self.hold_automatic_reads,
                     || json!({"projectId":self.create.project,"workItemId":work["workItemId"]}));
             });
             if text(work, "status") == "queued" {
@@ -1122,7 +1120,7 @@ impl Console {
                     }
                 }
             }
-            if runtime_issue.is_some() || cfg!(target_os = "windows") {
+            if runtime_issue.is_some() {
                 return;
             }
             ui.add_space(studio::metrics::CONTROL_GAP);
@@ -1230,6 +1228,13 @@ mod tests {
         };
         state.crew.single = true;
         state
+    }
+
+    pub(super) fn fixture_path(name: &str) -> String {
+        std::env::temp_dir()
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
     }
 
     pub(super) fn render(
@@ -1737,7 +1742,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
     #[test]
     fn file_checkbox_prepares_scoped_follow_up_without_mutating_source_or_starting() {
         let ctx = egui::Context::default();
@@ -1807,7 +1811,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(target_os = "windows"))]
     #[test]
     fn manual_skill_change_keeps_follow_up_files_before_and_after_file_selection() {
         for select_files_first in [true, false] {
@@ -2393,49 +2396,6 @@ mod tests {
         }
     }
 
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn windows_build_discloses_unavailable_outputs_and_hides_cached_files() {
-        let ctx = egui::Context::default();
-        studio::install(&ctx);
-        let mut console = Console {
-            tab: Tab::Create,
-            create: state(),
-            ..Default::default()
-        };
-        let mut data = snapshot();
-        data["desktopPreferences"] = json!({"language":"en"});
-        console.create.chat.files_open = true;
-        console
-            .create
-            .selected_work
-            .insert("project:one".into(), "work:one".into());
-        data["projectResults"] = json!({"reasonCode":"PROJECT_RESULTS_READ","projectId":"project:one","workItemId":"work:one",
-            "items":[{"path":"outputs/report.md","name":"CACHED_FILE_CANARY","bytes":12,"textPreview":true}]});
-        let copy = render(
-            &ctx,
-            &mut console,
-            &data,
-            egui::vec2(1280.0, 1200.0),
-            false,
-            vec![],
-        )
-        .1
-        .join("\n");
-        assert!(copy.contains("Output browsing and export are unavailable on Windows"));
-        assert!(!copy.contains("CACHED_FILE_CANARY") && !copy.contains("Export copy…"));
-        assert!(click(
-            &ctx,
-            &mut console,
-            &data,
-            false,
-            "project_results_read",
-            "Refresh outputs"
-        )
-        .is_empty());
-    }
-
-    #[cfg(not(target_os = "windows"))]
     #[test]
     fn text_preview_and_export_controls_only_use_exact_selected_project_job() {
         let ctx = egui::Context::default();
@@ -2588,12 +2548,7 @@ mod tests {
                             )))
                             .unwrap()
                         });
-                        let expected = !busy
-                            && if action == "work_start" {
-                                provider_ready
-                            } else {
-                                !cfg!(target_os = "windows")
-                            };
+                        let expected = !busy && (action != "work_start" || provider_ready);
                         assert_eq!(
                             enabled, expected,
                             "{language} {theme:?} {action} must reflect actual readiness"

@@ -1661,7 +1661,6 @@ fn reason(code: &str) -> Option<(&'static str, &'static str)> {
         "PROJECT_JOB_ID_INVALID" | "PROJECT_JOB_NOT_FOUND" | "PROJECT_JOB_SCOPE_INVALID" => ("This task is unavailable in this project. Refresh and choose the project again.", "Bu iş bu projede kullanılamıyor. Yenileyip projeyi yeniden seçin."),
         "PROJECT_JOB_INSTRUCTION_INVALID" => ("The goal cannot be submitted. Shorten it and remove unsupported characters.", "Hedef gönderilemiyor. Kısaltıp desteklenmeyen karakterleri kaldırın."),
         "PROJECT_RESULTS_UNAVAILABLE" => ("Output files could not be listed. Check the task and refresh outputs.", "Çıktı dosyaları listelenemedi. İşi kontrol edip çıktıları yenileyin."),
-        "PROJECT_RESULTS_UNSUPPORTED_PLATFORM" => ("Output browsing and export are unavailable on Windows in this build. Tasks can still run and retry.", "Bu sürümde Windows’ta çıktı görüntüleme ve dışa aktarma kullanılamıyor. İşler çalıştırılabilir ve yeniden denenebilir."),
         "PROJECT_RESULT_PATH_INVALID" | "PROJECT_RESULT_UNSAFE" => ("This output cannot be opened safely. Refresh the output list.", "Bu çıktı güvenle açılamıyor. Çıktı listesini yenileyin."),
         "PROJECT_RESULT_UNAVAILABLE" => ("This output is no longer available. Refresh the output list.", "Bu çıktı artık kullanılamıyor. Çıktı listesini yenileyin."),
         "PROJECT_RESULT_PREVIEW_UNSUPPORTED" | "PROJECT_RESULT_TOO_LARGE" => ("This file cannot be previewed here. Export a copy to open it in its app.", "Bu dosya burada önizlenemiyor. Uygulamasında açmak için kopyasını dışa aktarın."),

@@ -453,14 +453,17 @@ fn v2_cloud_team_receipts_are_linked_to_the_original_sequence_and_intent() {
 }
 
 #[cfg(windows)]
-fn windows_acl(path: &std::path::Path) -> (u16, String) {
+fn with_windows_acl<T>(
+    path: &std::path::Path,
+    inspect: impl FnOnce(
+        windows_sys::Win32::Security::PSECURITY_DESCRIPTOR,
+        *mut windows_sys::Win32::Security::ACL,
+    ) -> T,
+) -> T {
     use std::{os::windows::ffi::OsStrExt, ptr::null_mut};
     use windows_sys::Win32::{
         Foundation::LocalFree,
-        Security::Authorization::{
-            ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW,
-            SDDL_REVISION_1, SE_FILE_OBJECT,
-        },
+        Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
         Security::DACL_SECURITY_INFORMATION,
     };
     let name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
@@ -480,48 +483,126 @@ fn windows_acl(path: &std::path::Path) -> (u16, String) {
     };
     assert_eq!(status, 0);
     assert!(!dacl.is_null());
-    let count = unsafe { (*dacl).AceCount };
-    let mut sddl = null_mut();
-    let mut length = 0;
-    assert_ne!(
-        unsafe {
-            ConvertSecurityDescriptorToStringSecurityDescriptorW(
-                descriptor,
-                SDDL_REVISION_1,
-                DACL_SECURITY_INFORMATION,
-                &mut sddl,
-                &mut length,
-            )
-        },
-        0
-    );
-    let text = String::from_utf16(unsafe {
-        std::slice::from_raw_parts(sddl, length.saturating_sub(1) as usize)
-    })
-    .unwrap();
+    let result = inspect(descriptor, dacl);
     unsafe {
-        LocalFree(sddl.cast());
         LocalFree(descriptor);
     }
-    (count, text)
+    result
+}
+
+#[cfg(windows)]
+fn windows_acl(path: &std::path::Path) -> String {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::{
+        Foundation::LocalFree,
+        Security::Authorization::{
+            ConvertSecurityDescriptorToStringSecurityDescriptorW, SDDL_REVISION_1,
+        },
+        Security::DACL_SECURITY_INFORMATION,
+    };
+    with_windows_acl(path, |descriptor, _| {
+        let mut sddl = null_mut();
+        let mut length = 0;
+        assert_ne!(
+            unsafe {
+                ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                    descriptor,
+                    SDDL_REVISION_1,
+                    DACL_SECURITY_INFORMATION,
+                    &mut sddl,
+                    &mut length,
+                )
+            },
+            0
+        );
+        let text = String::from_utf16(unsafe {
+            std::slice::from_raw_parts(sddl, length.saturating_sub(1) as usize)
+        })
+        .unwrap();
+        unsafe {
+            LocalFree(sddl.cast());
+        }
+        text
+    })
 }
 
 #[cfg(windows)]
 #[test]
 fn windows_private_storage_has_protected_owner_and_system_acl() {
-    fn inspect(path: &std::path::Path) {
-        let (count, text) = windows_acl(path);
-        assert_eq!(count, 2, "only current owner and SYSTEM grants");
-        assert!(text.starts_with("D:P"), "protected ACL: {text}");
-        assert!(text.contains(";;;SY)"), "SYSTEM access: {text}");
-        assert!(
-            text.contains(";;;S-1-"),
-            "current process SID access: {text}"
-        );
-        for forbidden in [";;;WD)", ";;;BU)", ";;;AU)", ";;;BA)"] {
-            assert!(!text.contains(forbidden), "unexpected grant: {text}");
-        }
+    use std::ptr::{addr_of, null_mut};
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        Security::{
+            EqualSid, GetAce, GetSecurityDescriptorControl, GetTokenInformation, IsWellKnownSid,
+            TokenUser, WinLocalSystemSid, ACCESS_ALLOWED_ACE, ACE_HEADER, SE_DACL_PROTECTED,
+            TOKEN_QUERY, TOKEN_USER,
+        },
+        Storage::FileSystem::FILE_ALL_ACCESS,
+        System::Threading::{GetCurrentProcess, OpenProcessToken},
+    };
+
+    let mut token = null_mut();
+    assert_ne!(
+        unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) },
+        0
+    );
+    let mut needed = 0;
+    unsafe {
+        GetTokenInformation(token, TokenUser, null_mut(), 0, &mut needed);
     }
+    assert!((needed as usize) >= std::mem::size_of::<TOKEN_USER>());
+    // TOKEN_USER includes a pointer into this buffer. Keep its storage aligned
+    // and live until every file's ACEs have been compared with the actual SID.
+    let mut user = vec![0usize; (needed as usize).div_ceil(std::mem::size_of::<usize>())];
+    let read = unsafe {
+        GetTokenInformation(
+            token,
+            TokenUser,
+            user.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        )
+    };
+    unsafe {
+        CloseHandle(token);
+    }
+    assert_ne!(read, 0);
+    let process_sid = unsafe { (*user.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+    let inspect = |path: &std::path::Path| {
+        with_windows_acl(path, |descriptor, dacl| unsafe {
+            let mut control = 0;
+            let mut revision = 0;
+            assert_ne!(
+                GetSecurityDescriptorControl(descriptor, &mut control, &mut revision),
+                0
+            );
+            assert_ne!(control & SE_DACL_PROTECTED, 0, "DACL must be protected");
+            assert_eq!((*dacl).AceCount, 2, "only current owner and SYSTEM grants");
+
+            let [first, second] = [0, 1].map(|index| {
+                let mut ace = null_mut();
+                assert_ne!(GetAce(dacl, index, &mut ace), 0);
+                const ACCESS_ALLOWED_ACE_TYPE: u8 = 0;
+                assert_eq!((*ace.cast::<ACE_HEADER>()).AceType, ACCESS_ALLOWED_ACE_TYPE);
+                let grant = &*ace.cast::<ACCESS_ALLOWED_ACE>();
+                assert_eq!(grant.Mask, FILE_ALL_ACCESS);
+                assert_eq!(
+                    u32::from(grant.Header.AceFlags)
+                        & windows_sys::Win32::Security::INHERIT_ONLY_ACE,
+                    0,
+                    "each grant must apply to the object itself"
+                );
+                addr_of!(grant.SidStart).cast_mut().cast()
+            });
+            let matches = |owner, system| {
+                EqualSid(owner, process_sid) != 0 && IsWellKnownSid(system, WinLocalSystemSid) != 0
+            };
+            assert!(
+                matches(first, second) || matches(second, first),
+                "full-access grants must identify the process user and Local System"
+            );
+        })
+    };
     let dir = tempdir().unwrap();
     let store = Store::open(dir.path().into()).unwrap();
     let request = owner_request("cmd:windows");

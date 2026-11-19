@@ -27,7 +27,7 @@ const GEMINI_ERRORS = Object.freeze({
 const CANARY = "CANARY_SECRET_PAYLOAD";
 
 async function fakeGemini(mode, extensionOutput = "[]") {
-  const directory = await mkdtemp(join(tmpdir(), "patchfleet-gemini-"));
+  const directory = await mkdtemp(join(tmpdir(), "moxcrew-gemini-"));
   const baseCommand = join(directory, "gemini");
   const marker = join(directory, "argv");
   const source = `#!/usr/bin/env node
@@ -77,10 +77,10 @@ test("extension status probe is bounded and uses structured output", async (t) =
   assert.deepEqual(missing, { state: "unavailable", code: "GEMINI_NOT_FOUND" });
 
   for (const [name, mode, output, expected] of [
-    ["active", "valid", JSON.stringify([{ name: "patchfleet-gemini", isActive: true, path: CANARY }]), { state: "active" }],
-    ["active-stderr", "extension-stderr", JSON.stringify([{ name: "patchfleet-gemini", isActive: true, path: CANARY }]), { state: "active" }],
+    ["active", "valid", JSON.stringify([{ name: "moxcrew-gemini", isActive: true, path: CANARY }]), { state: "active" }],
+    ["active-stderr", "extension-stderr", JSON.stringify([{ name: "moxcrew-gemini", isActive: true, path: CANARY }]), { state: "active" }],
     ["missing", "valid", JSON.stringify([{ name: "other", isActive: true }]), { state: "setup-required" }],
-    ["inactive", "valid", JSON.stringify([{ name: "patchfleet-gemini", isActive: false }]), { state: "setup-required" }],
+    ["inactive", "valid", JSON.stringify([{ name: "moxcrew-gemini", isActive: false }]), { state: "setup-required" }],
     ["empty", "valid", "[]", { state: "setup-required" }],
     ["blank", "extension-blank", "", { state: "setup-required" }],
     ["malformed", "extension-malformed", "", { state: "degraded", code: "GEMINI_PROBE_FAILED" }],
@@ -127,7 +127,7 @@ test("observation reports unavailable or explicit hook setup required", async ()
   );
 
   const activeCommand = await fakeGemini("valid", JSON.stringify([
-    { name: "patchfleet-gemini", isActive: true, path: CANARY, settings: CANARY },
+    { name: "moxcrew-gemini", isActive: true, path: CANARY, settings: CANARY },
   ]));
   const active = await observeGemini({ command: activeCommand.command, timeoutMs: 2_000, now: () => NOW });
   assertProviderObservation(active, GEMINI_PROVIDER, GEMINI_ERRORS);

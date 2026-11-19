@@ -1,6 +1,6 @@
 ; Based on cargo-packager 0.11.8; see README.md and LICENSE-cargo-packager-MIT.
 ; SPDX-License-Identifier: MIT
-; Keep installation identity stable across the Moxcrew display rename.
+; New installs use Moxcrew; exact legacy keys are used only during upgrade.
 ; Set the compression algorithm.
 !if "{{compression}}" == ""
   SetCompressor /SOLID lzma
@@ -39,10 +39,14 @@ ${StrLoc}
 !define PLUGINSPATH "{{additional_plugins_path}}"
 !define ALLOWDOWNGRADES "{{allow_downgrades}}"
 !define DISPLAYLANGUAGESELECTOR "{{display_language_selector}}"
-!define INSTALLIDENTITY "Patchfleet"
-!define INSTALLMANUFACTURER "Patchfleet"
+!define INSTALLIDENTITY "Moxcrew"
+!define INSTALLMANUFACTURER "Moxcrew"
+!define LEGACYIDENTITY "Patchfleet"
+!define LEGACYMANUFACTURER "Patchfleet"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${INSTALLIDENTITY}"
 !define MANUPRODUCTKEY "Software\${INSTALLMANUFACTURER}\${INSTALLIDENTITY}"
+!define LEGACYUNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${LEGACYIDENTITY}"
+!define LEGACYMANUPRODUCTKEY "Software\${LEGACYMANUFACTURER}\${LEGACYIDENTITY}"
 !define UNINSTALLERSIGNCOMMAND "{{uninstaller_sign_cmd}}"
 !define ESTIMATEDSIZE "{{estimated_size}}"
 
@@ -136,6 +140,7 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 Var ReinstallPageCheck
 Page custom PageReinstall PageLeaveReinstall
 Function PageReinstall
+  StrCpy $R7 ""
   ; Uninstall previous WiX installation if exists.
   ;
   ; A WiX installer stores the isntallation info in registry
@@ -158,8 +163,8 @@ Function PageReinstall
     ${AndIf} $R1 == "${MANUFACTURER}"
       Goto wix_match
     ${EndIf}
-    ${If} $R0 != "${INSTALLIDENTITY}"
-    ${OrIf} $R1 != "${INSTALLMANUFACTURER}"
+    ${If} $R0 != "${LEGACYIDENTITY}"
+    ${OrIf} $R1 != "${LEGACYMANUFACTURER}"
       Goto wix_loop
     ${EndIf}
     wix_match:
@@ -175,6 +180,19 @@ Function PageReinstall
   ; Check if there is an existing installation, if not, abort the reinstall page
   ReadRegStr $R0 SHCTX "${UNINSTKEY}" ""
   ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
+  ReadRegStr $R2 SHCTX "${LEGACYUNINSTKEY}" "UninstallString"
+  ${If} "$R0$R1" != ""
+  ${AndIf} $R2 != ""
+    MessageBox MB_ICONEXCLAMATION "Both Moxcrew and a previous installation are registered. Remove the previous installation before continuing."
+    Abort
+  ${EndIf}
+  ${If} "$R0$R1" == ""
+    ReadRegStr $R0 SHCTX "${LEGACYUNINSTKEY}" ""
+    ReadRegStr $R1 SHCTX "${LEGACYUNINSTKEY}" "UninstallString"
+    ${If} "$R0$R1" != ""
+      StrCpy $R7 "legacy-nsis"
+    ${EndIf}
+  ${EndIf}
   ${IfThen} "$R0$R1" == "" ${|} Abort ${|}
 
   ; Compare this installar version with the existing installation
@@ -183,6 +201,8 @@ Function PageReinstall
   StrCpy $R4 "$(older)"
   ${If} $R7 == "wix"
     ReadRegStr $R0 HKLM "$R6" "DisplayVersion"
+  ${ElseIf} $R7 == "legacy-nsis"
+    ReadRegStr $R0 SHCTX "${LEGACYUNINSTKEY}" "DisplayVersion"
   ${Else}
     ReadRegStr $R0 SHCTX "${UNINSTKEY}" "DisplayVersion"
   ${EndIf}
@@ -219,6 +239,12 @@ Function PageReinstall
     Abort
   ${EndIf}
 
+  ; A renamed install must remove the old registered product before copying
+  ; the new executable, including when both packages have the same version.
+  ${If} $R7 == "legacy-nsis"
+    StrCpy $R5 "1"
+  ${EndIf}
+
   Call SkipIfPassive
 
   nsDialogs::Create 1018
@@ -238,6 +264,7 @@ Function PageReinstall
   !if "${ALLOWDOWNGRADES}" == "false"
     ${IfThen} $R0 == -1 ${|} EnableWindow $R3 0 ${|}
   !endif
+  ${IfThen} $R7 == "legacy-nsis" ${|} EnableWindow $R3 0 ${|}
   ${NSD_OnClick} $R3 PageReinstallUpdateSelection
 
   ; Check the first radio button if this the first time
@@ -279,6 +306,10 @@ Function PageLeaveReinstall
     ${If} $R7 == "wix"
       ReadRegStr $R1 HKLM "$R6" "UninstallString"
       ExecWait '$R1' $0
+    ${ElseIf} $R7 == "legacy-nsis"
+      ReadRegStr $4 SHCTX "${LEGACYMANUPRODUCTKEY}" ""
+      ReadRegStr $R1 SHCTX "${LEGACYUNINSTKEY}" "UninstallString"
+      ExecWait '$R1 /P _?=$4' $0
     ${Else}
       ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
       ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
@@ -302,7 +333,7 @@ Function PageLeaveReinstall
       StrCpy $0 $R1 1
       ${IfThen} $0 == '"' ${|} StrCpy $R1 $R1 -1 1 ${|} ; Strip quotes from UninstallString
       Delete $R1
-      RMDir $INSTDIR
+      RMDir $4
     ${EndIf}
   reinst_done:
 FunctionEnd
@@ -484,6 +515,14 @@ SectionEnd
 !macroend
 
 Section Install
+  ; Passive installs skip the upgrade page. Refuse a legacy install rather
+  ; than silently leaving two registered applications on the machine.
+  IfSilent 0 legacy_silent_check_done
+  ReadRegStr $R0 SHCTX "${LEGACYUNINSTKEY}" "UninstallString"
+  ${If} $R0 != ""
+    Abort "Upgrade the previous installation interactively before a silent install."
+  ${EndIf}
+  legacy_silent_check_done:
   SetOutPath $INSTDIR
 
   !insertmacro CheckIfAppIsRunning
@@ -689,12 +728,12 @@ FunctionEnd
 
 ; Do not touch shortcuts on a fresh install or any canonical application data.
 Function RemoveLegacyShortcuts
-  ReadRegStr $0 SHCTX "${UNINSTKEY}" "UninstallString"
-  ReadRegStr $1 HKCU "${MANUPRODUCTKEY}" "InstallDir"
+  ReadRegStr $0 SHCTX "${LEGACYUNINSTKEY}" "UninstallString"
+  ReadRegStr $1 HKCU "${LEGACYMANUPRODUCTKEY}" "InstallDir"
   ${If} "$0$1" != ""
-    Delete "$INSTDIR\Uninstall ${INSTALLIDENTITY}.lnk"
-    Delete "$DESKTOP\${INSTALLIDENTITY}.lnk"
-    Delete "$SMPROGRAMS\${INSTALLIDENTITY}\${INSTALLIDENTITY}.lnk"
-    Delete "$SMPROGRAMS\$AppStartMenuFolder\${INSTALLIDENTITY}.lnk"
+    Delete "$INSTDIR\Uninstall ${LEGACYIDENTITY}.lnk"
+    Delete "$DESKTOP\${LEGACYIDENTITY}.lnk"
+    Delete "$SMPROGRAMS\${LEGACYIDENTITY}\${LEGACYIDENTITY}.lnk"
+    Delete "$SMPROGRAMS\$AppStartMenuFolder\${LEGACYIDENTITY}.lnk"
   ${EndIf}
 FunctionEnd

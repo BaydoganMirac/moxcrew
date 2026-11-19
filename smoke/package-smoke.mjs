@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
-const directory = await mkdtemp(join(tmpdir(), "patchfleet-package-smoke-"));
+const directory = await mkdtemp(join(tmpdir(), "moxcrew-package-smoke-"));
 const packDir = join(directory, "pack");
 const prefix = join(directory, "prefix");
 const dataDir = join(directory, "data");
@@ -33,7 +33,7 @@ try {
   assert(names.includes("bin/patchfleet.mjs"));
   assert(names.includes("docs/install.md"));
   assert(names.includes(".next/BUILD_ID"));
-  assert(names.includes("extensions/patchfleet-gemini/hook.mjs"));
+  assert(names.includes("extensions/moxcrew-gemini/hook.mjs"));
   assert.equal(names.some((name) => name.startsWith("tests/") || name.startsWith(".git/") || name.includes(".env")), false);
   assert.equal(names.some((name) => name.endsWith(".map")), false);
   assert.equal(names.some((name) => [
@@ -49,8 +49,8 @@ try {
     maxBuffer: 10 * 1024 * 1024,
   });
   const packageRoot = process.platform === "win32"
-    ? join(prefix, "node_modules", "patchfleet")
-    : join(prefix, "lib", "node_modules", "patchfleet");
+    ? join(prefix, "node_modules", "moxcrew")
+    : join(prefix, "lib", "node_modules", "moxcrew");
   const cli = process.platform === "win32" ? join(prefix, "patchfleet.cmd") : join(prefix, "bin", "patchfleet");
   const serverManifest = JSON.parse(await readFile(join(packageRoot, ".next", "required-server-files.json"), "utf8"));
   assert.equal(serverManifest.appDir, ".");

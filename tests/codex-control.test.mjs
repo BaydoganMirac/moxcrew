@@ -234,7 +234,7 @@ test("start uses one bounded app-server, rejects server requests, and persists o
     const native = await fake.state();
     assert.deepEqual([native.processes, native.threadStarts, native.turnStarts], [1, 1, 1]);
     assert.deepEqual(native.initialize, {
-      clientInfo: { name: "patchfleet", title: "Patchfleet", version: "0.1.0" },
+      clientInfo: { name: "patchfleet", title: "Moxcrew", version: "0.1.0" },
       capabilities: null,
     });
     assert.deepEqual(native.startParams, {

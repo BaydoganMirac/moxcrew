@@ -3,6 +3,87 @@ use eframe::egui::{self, Color32, Pos2, Rect, Response, Sense, Stroke, Ui};
 use std::time::Duration;
 
 pub fn mox(ui: &mut Ui, size: f32, active: bool, reduced: bool) -> Response {
+    draw_mox(ui, size, active, reduced, 0.0)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MoxCue {
+    Thinking,
+    Answer,
+    PlanReady,
+    Idle,
+}
+
+/// Only validated local outcomes choose a reaction. `id` is stable for one
+/// result so repeated egui frames cannot restart its short animation.
+pub fn semantic_mox(ui: &mut Ui, size: f32, cue: MoxCue, reduced: bool, id: egui::Id) -> Response {
+    let time = ui.input(|input| input.time);
+    let (previous, since) = ui
+        .ctx()
+        .data(|data| data.get_temp::<(MoxCue, f64)>(id))
+        .unwrap_or((cue, time));
+    let since = if previous == cue { since } else { time };
+    ui.ctx().data_mut(|data| data.insert_temp(id, (cue, since)));
+    let duration = match cue {
+        MoxCue::Answer => 1.25,
+        MoxCue::PlanReady => 1.55,
+        _ => 0.0,
+    };
+    let elapsed = (time - since).max(0.0) as f32;
+    let reacting = !reduced && ui.is_visible() && elapsed < duration as f32;
+    let progress = if duration > 0.0 {
+        (elapsed / duration as f32).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let lift = if reacting {
+        let wave = (progress * std::f32::consts::PI).sin();
+        match cue {
+            MoxCue::Answer => -size * 0.045 * wave,
+            MoxCue::PlanReady => -size * 0.08 * wave,
+            _ => 0.0,
+        }
+    } else {
+        0.0
+    };
+    let response = draw_mox(ui, size, cue == MoxCue::Thinking, reduced, lift);
+    if reacting && ui.is_rect_visible(response.rect) {
+        let p = studio::palette(ui.ctx());
+        let center = response.rect.center();
+        let fade = 1.0 - progress;
+        match cue {
+            MoxCue::Answer => {
+                for (x, y, radius) in [(-0.40, -0.27, 2.4), (0.43, -0.14, 2.0)] {
+                    ui.painter().circle_filled(
+                        center + egui::vec2(x * size, (y - 0.12 * progress) * size),
+                        radius + progress * 1.5,
+                        p.accent.gamma_multiply(fade),
+                    );
+                }
+            }
+            MoxCue::PlanReady => {
+                let ring = size * (0.32 + 0.16 * progress);
+                ui.painter().circle_stroke(
+                    center,
+                    ring,
+                    Stroke::new(1.5, p.primary.gamma_multiply(fade * 0.65)),
+                );
+                for angle in [-2.2_f32, -0.9, 0.2] {
+                    ui.painter().circle_filled(
+                        center + egui::vec2(angle.cos(), angle.sin()) * ring,
+                        2.4,
+                        p.accent.gamma_multiply(fade),
+                    );
+                }
+            }
+            _ => {}
+        }
+        ui.ctx().request_repaint_after(Duration::from_millis(42));
+    }
+    response
+}
+
+fn draw_mox(ui: &mut Ui, size: f32, active: bool, reduced: bool, lift: f32) -> Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size * 0.8), Sense::hover());
     let time = ui.input(|input| input.time);
     let moving = active && !reduced && ui.is_rect_visible(rect);
@@ -75,7 +156,7 @@ pub fn mox(ui: &mut Ui, size: f32, active: bool, reduced: bool) -> Response {
     }
     let bob = if moving { phase.sin() * 1.5 } else { 0.0 };
     let image = Rect::from_center_size(
-        center + egui::vec2(0.0, bob),
+        center + egui::vec2(0.0, bob + lift),
         egui::vec2(size * 0.82, size * 0.82 * 2.0 / 3.0),
     );
     ui.scope_builder(egui::UiBuilder::new().max_rect(image), |ui| {
@@ -130,6 +211,59 @@ mod tests {
                     delay > Duration::from_millis(42),
                     "idle/reduced motion must not wake rendering"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn semantic_reaction_is_brief_and_respects_reduced_motion() {
+        for (cue, reduced, time, expect_frame) in [
+            (MoxCue::Answer, false, 1.0, true),
+            (MoxCue::PlanReady, false, 1.0, true),
+            (MoxCue::Answer, true, 1.0, false),
+            (MoxCue::Idle, false, 1.0, false),
+        ] {
+            let ctx = egui::Context::default();
+            studio::install(&ctx);
+            let mut delay = Duration::ZERO;
+            for _ in 0..3 {
+                let output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            egui::vec2(400.0, 300.0),
+                        )),
+                        time: Some(time),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        semantic_mox(ui, 48.0, cue, reduced, egui::Id::new("reaction"));
+                    },
+                );
+                delay = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+                output.drop_without_applying_deltas();
+            }
+            assert_eq!(delay <= Duration::from_millis(42), expect_frame);
+            if expect_frame {
+                let output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            egui::vec2(400.0, 300.0),
+                        )),
+                        time: Some(4.0),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        semantic_mox(ui, 48.0, cue, reduced, egui::Id::new("reaction"));
+                    },
+                );
+                assert!(
+                    output.viewport_output[&egui::ViewportId::ROOT].repaint_delay
+                        > Duration::from_millis(42),
+                    "completed reaction must stop repainting"
+                );
+                output.drop_without_applying_deltas();
             }
         }
     }

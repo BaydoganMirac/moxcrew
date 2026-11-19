@@ -11,6 +11,7 @@ const cli = join(process.cwd(), "bin", "patchfleet.mjs");
 
 test("desktop package retires Node publication and keeps native release authority tag-scoped", async () => {
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
+  assert.equal(packageJson.name, "moxcrew");
   assert.equal(packageJson.private, true);
   assert.equal(packageJson.bin, undefined);
   assert.equal(packageJson.publishConfig, undefined);
@@ -21,8 +22,8 @@ test("desktop package retires Node publication and keeps native release authorit
   assert.equal(packageJson.bugs, "https://github.com/BaydoganMirac/moxcrew/issues");
   assert.equal(packageJson.dependencies.next, undefined);
   assert.equal(packageJson.devDependencies.next, "15.5.19");
-  assert.equal(packageJson.scripts["desktop:build"], "cargo build --locked --release -p patchfleet-desktop");
-  assert.equal(packageJson.scripts.start, "cargo run -p patchfleet-desktop");
+  assert.equal(packageJson.scripts["desktop:build"], "cargo build --locked --release -p moxcrew-desktop");
+  assert.equal(packageJson.scripts.start, "cargo run -p moxcrew-desktop");
   assert.match(packageJson.scripts.build, /cargo build/);
   assert.doesNotMatch(packageJson.scripts.build, /next|vite|tauri|sanitize-package/);
   assert.match(packageJson.scripts["legacy:build"], /next build/);

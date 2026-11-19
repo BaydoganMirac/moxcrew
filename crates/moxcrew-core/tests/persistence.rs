@@ -1,4 +1,4 @@
-use patchfleet_core::{
+use moxcrew_core::{
     domain::{project_events, validate_event, validate_workspace},
     event,
     store::{atomic_write, Store},
@@ -315,8 +315,8 @@ fn one_os_writer_lock_excludes_a_second_process_and_releases_on_drop() {
     let run = |expected: &str| {
         Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "writer_lock_child", "--nocapture"])
-            .env("PATCHFLEET_TEST_LOCK_DIR", dir.path())
-            .env("PATCHFLEET_TEST_LOCK_EXPECT", expected)
+            .env("MOXCREW_TEST_LOCK_DIR", dir.path())
+            .env("MOXCREW_TEST_LOCK_EXPECT", expected)
             .output()
             .unwrap()
     };
@@ -336,13 +336,13 @@ fn one_os_writer_lock_excludes_a_second_process_and_releases_on_drop() {
 }
 #[test]
 fn writer_lock_child() {
-    let Ok(dir) = std::env::var("PATCHFLEET_TEST_LOCK_DIR") else {
+    let Ok(dir) = std::env::var("MOXCREW_TEST_LOCK_DIR") else {
         return;
     };
     let available = Store::open(dir.into()).is_ok();
     assert_eq!(
         available,
-        std::env::var("PATCHFLEET_TEST_LOCK_EXPECT").unwrap() == "available"
+        std::env::var("MOXCREW_TEST_LOCK_EXPECT").unwrap() == "available"
     );
 }
 
@@ -663,7 +663,7 @@ fn private_storage_rejects_links_without_changing_outside_files() {
     }
     let linked_file = root.path().join("private-link.json");
     symlink(&outside, &linked_file).unwrap();
-    assert!(patchfleet_core::store::read_private_file(&linked_file).is_err());
+    assert!(moxcrew_core::store::read_private_file(&linked_file).is_err());
     assert!(atomic_write(&linked_file, b"overwrite").is_err());
     let outside_dir = root.path().join("outside-dir");
     fs::create_dir(&outside_dir).unwrap();
@@ -771,7 +771,7 @@ fn hard_links_cannot_share_private_state_across_distinct_writer_directories() {
     }
     let linked = root.path().join("hard-linked-private.json");
     fs::hard_link(&outside, &linked).unwrap();
-    assert!(patchfleet_core::store::read_private_file(&linked).is_err());
+    assert!(moxcrew_core::store::read_private_file(&linked).is_err());
     assert!(atomic_write(&linked, b"must not write").is_err());
     assert_eq!(fs::read(&outside).unwrap(), b"");
 }

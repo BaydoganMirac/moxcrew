@@ -35,7 +35,7 @@ fn main(){
  if mode.contains("malformed"){println!("SECRET_NOT_JSON");flush();return}
  if mode.contains("huge"){println!("{}","x".repeat(300000));flush();return}
  let id=if mode.contains("foreign"){String::from("foreign-session")}else{session.clone()};
- if claude{println!("{{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"{id}\",\"mcp_servers\":[{{\"name\":\"patchfleet_memory\",\"status\":\"{}\"}}]}}",if mode.contains("broken-memory"){"failed"}else{"connected"});}
+ if claude{println!("{{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"{id}\",\"mcp_servers\":[{{\"name\":\"moxcrew_memory\",\"status\":\"{}\"}}]}}",if mode.contains("broken-memory"){"failed"}else{"connected"});}
  else{println!("{{\"type\":\"init\",\"session_id\":\"{id}\",\"model\":\"fixture-only\"}}");}
  flush();
  if mode.contains("hang")&&!mode.contains("terminal-hang"){
@@ -106,7 +106,7 @@ fn work(provider: &str, directory: &Path) -> (Value, Value) {
 }
 fn memory() -> MemoryConfig {
     MemoryConfig {
-        config: json!({"mcp_servers":{"patchfleet_memory":{"command":"scoped-mcp-fixture","args":["--memory-mcp","PRIVATE_TICKET_PATH"],"enabled_tools":crate::agent_memory::TOOLS}}}),
+        config: json!({"mcp_servers":{"moxcrew_memory":{"command":"scoped-mcp-fixture","args":["--memory-mcp","PRIVATE_TICKET_PATH"],"enabled_tools":crate::agent_memory::TOOLS}}}),
         active: Arc::new(AtomicBool::new(true)),
     }
 }

@@ -345,7 +345,7 @@ impl Server {
         );
         self.state.changed.notify_one();
         Ok(Ticket {
-            config: json!({"mcp_servers":{"patchfleet_memory":{"command":self.executable,"args":["--memory-mcp",path],"required":true,"enabled_tools":TOOLS,"startup_timeout_sec":5,"tool_timeout_sec":5}}}),
+            config: json!({"mcp_servers":{"moxcrew_memory":{"command":self.executable,"args":["--memory-mcp",path],"required":true,"enabled_tools":TOOLS,"startup_timeout_sec":5,"tool_timeout_sec":5}}}),
             active,
             path,
         })
@@ -874,7 +874,7 @@ pub async fn serve_stdio(ticket: &Path) -> Result<()> {
                     "2025-11-25"
                 };
                 Some(
-                    json!({"jsonrpc":"2.0","id":id,"result":{"protocolVersion":version,"capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"patchfleet-memory","version":env!("CARGO_PKG_VERSION")}}}),
+                    json!({"jsonrpc":"2.0","id":id,"result":{"protocolVersion":version,"capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"moxcrew-memory","version":env!("CARGO_PKG_VERSION")}}}),
                 )
             }
         } else if method == "ping" && exact(&params, &[], &["_meta"]).is_ok() {

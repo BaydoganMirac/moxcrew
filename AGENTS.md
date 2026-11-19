@@ -29,6 +29,11 @@ state and does not execute local work.
 7. The relevant file under [docs/state/](docs/state/)
 8. Applicable records under [docs/decisions/](docs/decisions/)
 
+Keep internal product decisions, commercial plans and their supporting evidence
+in the private Moxcrew Cloud repository. This repository records public local
+behavior and published technical contracts. Tests here use synthetic data or
+already-public technical records.
+
 For any UI/UX change or review, also read the
 [Moxcrew UX rules](design/moxcrew/UX-RULES.md) and
 [implemented UI kit](design/moxcrew/UI-KIT.md) before proposing or editing screens.

@@ -1,4 +1,4 @@
-use patchfleet_core::{decisions, domain, extraction as ex, project_memory as memory};
+use moxcrew_core::{decisions, domain, extraction as ex, project_memory as memory};
 use serde_json::{json, Value};
 
 fn command(mut value: Value) -> Value {
@@ -571,19 +571,19 @@ fn a_full_legacy_source_that_exceeds_json_input_budget_fails_visibly_without_tru
     configure(&mut events, &project, 0, true);
     let work_id = "work:synthetic-large-source";
     events.push(memory::bind(&project, "work", work_id));
-    let at = patchfleet_core::now();
+    let at = moxcrew_core::now();
     let cmd = format!("cmd:{}", uuid::Uuid::new_v4());
     let work = json!({"schemaVersion":1,"workItemId":work_id,"title":"Legacy owner task","instruction":"\u{0001}".repeat(50_000),"providerId":"codex","workingDirectory":"/fixture/project","status":"queued","createdAt":at,"revision":1});
     let intent = json!({"schemaVersion":1,"intentId":cmd,"idempotencyKey":cmd,"type":"enqueue_work","actorId":"local-owner","createdAt":at,"expiresAt":(chrono::Utc::now()+chrono::Duration::minutes(5)).to_rfc3339_opts(chrono::SecondsFormat::Millis,true),"payload":{"workItem":work}});
-    events.push(patchfleet_core::event(
+    events.push(moxcrew_core::event(
         "command.requested",
         json!({"intent":intent}),
     ));
-    events.push(patchfleet_core::event(
+    events.push(moxcrew_core::event(
         "work.enqueued",
         json!({"intentId":cmd,"workItem":work}),
     ));
-    events.push(patchfleet_core::event("command.receipted",json!({"receipt":{"schemaVersion":1,"intentId":cmd,"idempotencyKey":cmd,"commandType":"enqueue_work","outcome":"applied","reasonCode":"WORK_ENQUEUED","completedAt":at,"workProjectionRevision":1,"workItemId":work_id}})));
+    events.push(moxcrew_core::event("command.receipted",json!({"receipt":{"schemaVersion":1,"intentId":cmd,"idempotencyKey":cmd,"commandType":"enqueue_work","outcome":"applied","reasonCode":"WORK_ENQUEUED","completedAt":at,"workProjectionRevision":1,"workItemId":work_id}})));
     domain::project_events(&events).unwrap();
     reconcile(&mut events);
     let projection = projection(&events);

@@ -1,4 +1,4 @@
-use patchfleet_core::desktop_login::{self as login, Callback};
+use moxcrew_core::desktop_login::{self as login, Callback};
 use serde_json::{json, Value};
 
 fn authorization() -> String {

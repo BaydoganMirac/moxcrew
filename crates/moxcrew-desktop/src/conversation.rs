@@ -31,6 +31,12 @@ fn pack_context(previous: &[Value], questions: &str, input: &str) -> Option<Vec<
     transcript.push_str(input);
     chunk_context(&transcript)
 }
+fn append_mox_context(previous: &[Value], reply: &str) -> Option<Vec<Value>> {
+    let mut transcript = context_text(previous);
+    transcript.push_str("\nMox:\n");
+    transcript.push_str(reply);
+    chunk_context(&transcript)
+}
 fn source_context(previous: &[Value], sources: &[Value]) -> Option<Vec<Value>> {
     if sources.is_empty() {
         return Some(previous.to_vec());
@@ -74,6 +80,8 @@ struct Session {
     input: String,
     answers: Vec<Value>,
     turns: Vec<Turn>,
+    answered_jobs: HashSet<String>,
+    context_full: bool,
 }
 
 struct ProjectRequest {
@@ -185,8 +193,39 @@ impl CreateState {
                 .conversation
                 .sessions
                 .get(&self.conversation_key())
-                .is_none_or(|session| pack_context(&session.answers, "", &session.input).is_some())
+                .is_none_or(|session| {
+                    !session.context_full
+                        && pack_context(&session.answers, "", &session.input).is_some()
+                })
             && self.resolved_planner_provider(snapshot).is_some()
+    }
+
+    pub(super) fn record_mox_answer(&mut self, job: &Value) {
+        if text(job, "status") != "answered" || text(job, "projectId") != self.conversation_key().0
+        {
+            return;
+        }
+        let Some(reply) = job["answer"].as_str() else {
+            return;
+        };
+        let key = self.conversation_key();
+        let Some(session) = self.chat.conversation.sessions.get_mut(&key) else {
+            return;
+        };
+        if !session.answered_jobs.insert(text(job, "planJobId").into()) {
+            return;
+        }
+        session.turns.push(Turn {
+            speaker: "Mox",
+            body: reply.into(),
+        });
+        if let Some(updated) = append_mox_context(&session.answers, reply) {
+            session.answers = updated;
+        } else {
+            session.context_full = true;
+            self.chat.conversation.error =
+                Some("Planning context is full. Your message is preserved; start a new request.");
+        }
     }
 }
 
@@ -215,7 +254,7 @@ impl Console {
         if input.is_empty() {
             *self.create.draft() = original.clone();
         }
-        let answers = array(&full["answers"]).to_vec();
+        let mut answers = array(&full["answers"]).to_vec();
         let mut turns = vec![Turn {
             speaker: "You",
             body: original.goal.clone(),
@@ -225,6 +264,22 @@ impl Console {
                 speaker: "Planning context",
                 body: context_text(&answers),
             });
+        }
+        let mut answered_jobs = HashSet::new();
+        let mut context_full = false;
+        if text(full, "status") == "answered" {
+            if let Some(reply) = full["answer"].as_str() {
+                turns.push(Turn {
+                    speaker: "Mox",
+                    body: reply.into(),
+                });
+                answered_jobs.insert(text(full, "planJobId").into());
+                if let Some(updated) = append_mox_context(&answers, reply) {
+                    answers = updated;
+                } else {
+                    context_full = true;
+                }
+            }
         }
         let reply = full["replyToWorkItemId"].as_str().map(|parent| ReplyDraft {
             parent: parent.into(),
@@ -245,6 +300,8 @@ impl Console {
                 input,
                 answers,
                 turns,
+                answered_jobs,
+                context_full,
             },
         );
     }
@@ -265,8 +322,34 @@ impl Console {
                     original: draft,
                     input: String::new(),
                     answers: Vec::new(),
+                    answered_jobs: HashSet::new(),
+                    context_full: false,
                 },
             );
+        } else if scene == "conversation-answer" {
+            self.create_smoke(snapshot, false);
+            let key = self.create.conversation_key();
+            let original = self.create.draft().clone();
+            self.create.chat.conversation.sessions.insert(
+                key.clone(),
+                Session {
+                    turns: vec![Turn {
+                        speaker: "You",
+                        body: "Sen kimsin?".into(),
+                    }],
+                    original,
+                    input: String::new(),
+                    answers: chunk_context("Owner:\nSen kimsin?").unwrap(),
+                    answered_jobs: HashSet::new(),
+                    context_full: false,
+                },
+            );
+            self.create.record_mox_answer(&json!({
+                "projectId": key.0,
+                "planJobId": "plan:answer-rendering-fixture",
+                "status": "answered",
+                "answer": "Ben Mox. Sorularını yanıtlar, bir iş verdiğinde planı sana gösteririm. İşe başlamadan önce kararı sen verirsin."
+            }));
         } else {
             self.create_smoke(snapshot, false);
             if scene == "conversation-empty" {
@@ -523,6 +606,11 @@ impl Console {
             })
             .unwrap_or_default();
         let existing = self.create.chat.conversation.sessions.get(&key);
+        if existing.is_some_and(|session| session.context_full) {
+            self.create.chat.conversation.error =
+                Some("Planning context is full. Your message is preserved; start a new request.");
+            return;
+        }
         let reply = self.create.chat.replies.get(&key).cloned();
         let (draft, answers) = if let Some(session) = existing {
             if !valid_input(&input, 2000) {
@@ -571,6 +659,8 @@ impl Console {
                 input: String::new(),
                 answers: Vec::new(),
                 turns: Vec::new(),
+                answered_jobs: HashSet::new(),
+                context_full: false,
             });
         if !questions.is_empty() {
             session.turns.push(Turn {
@@ -586,7 +676,7 @@ impl Console {
         session.answers = answers;
     }
 
-    pub(super) fn conversation_turns(&self, ui: &mut Ui) {
+    pub(super) fn conversation_turns(&self, ui: &mut Ui, reduced_motion: bool) {
         let Some(session) = self
             .create
             .chat
@@ -596,17 +686,66 @@ impl Console {
         else {
             return;
         };
-        for turn in &session.turns {
-            studio::card(ui)
-                .fill(if turn.speaker == "You" {
-                    colors(ui).info_surface
+        for (index, turn) in session.turns.iter().enumerate() {
+            let is_owner = turn.speaker == "You";
+            let width =
+                (if is_owner { 580.0_f32 } else { 680.0_f32 }).min(ui.available_width() * 0.88);
+            ui.with_layout(
+                egui::Layout::top_down(if is_owner {
+                    egui::Align::Max
                 } else {
-                    colors(ui).surface
-                })
-                .show(ui, |ui| {
-                    hint(ui, turn.speaker);
-                    ui.add(egui::Label::new(&turn.body).wrap().selectable(true));
-                });
+                    egui::Align::Min
+                }),
+                |ui| {
+                    ui.set_max_width(width);
+                    if is_owner {
+                        egui::Frame::new()
+                            .fill(colors(ui).info_surface)
+                            .corner_radius(studio::metrics::CARD_RADIUS)
+                            .inner_margin(12)
+                            .show(ui, |ui| {
+                                ui.set_max_width(width - 24.0);
+                                ui.label(
+                                    RichText::new(t(ui, "You"))
+                                        .size(12.0)
+                                        .color(colors(ui).muted),
+                                );
+                                ui.add(egui::Label::new(&turn.body).wrap().selectable(true));
+                            });
+                    } else {
+                        ui.horizontal_top(|ui| {
+                            if turn.speaker == "Mox" {
+                                crate::motion::semantic_mox(
+                                    ui,
+                                    44.0,
+                                    crate::motion::MoxCue::Answer,
+                                    reduced_motion,
+                                    egui::Id::new(("mox-chat-answer", &self.create.project, index)),
+                                );
+                            } else {
+                                ui.add_space(44.0);
+                            }
+                            ui.vertical(|ui| {
+                                ui.set_max_width((width - 56.0).max(100.0));
+                                ui.label(
+                                    RichText::new(t(
+                                        ui,
+                                        if turn.speaker == "Mox planner" {
+                                            "Mox"
+                                        } else {
+                                            turn.speaker
+                                        },
+                                    ))
+                                    .size(12.0)
+                                    .strong()
+                                    .color(colors(ui).primary),
+                                );
+                                ui.add(egui::Label::new(&turn.body).wrap().selectable(true));
+                            });
+                        });
+                    }
+                },
+            );
             ui.add_space(studio::metrics::CONTROL_GAP);
         }
     }
@@ -650,6 +789,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn direct_mox_reply_is_one_conversation_turn_and_followup_context() {
+        let mut console = console();
+        let key = console.create.conversation_key();
+        let original = console.create.draft().clone();
+        console.create.chat.conversation.sessions.insert(
+            key,
+            Session {
+                original,
+                input: String::new(),
+                answers: chunk_context("Owner:\nWho are you?").unwrap(),
+                turns: vec![Turn {
+                    speaker: "You",
+                    body: "Who are you?".into(),
+                }],
+                answered_jobs: HashSet::new(),
+                context_full: false,
+            },
+        );
+        let job = json!({"projectId":"project:one","planJobId":"plan:one","status":"answered","answer":"I am Mox, your local AI assistant."});
+        console.create.record_mox_answer(&job);
+        console.create.record_mox_answer(&job);
+        let session = console
+            .create
+            .chat
+            .conversation
+            .sessions
+            .get(&console.create.conversation_key())
+            .unwrap();
+        assert_eq!(session.turns.len(), 2);
+        assert_eq!(session.turns[1].speaker, "Mox");
+        let followup = pack_context(&session.answers, "", "Help me write a report.").unwrap();
+        assert!(context_text(&followup).contains("Mox:\nI am Mox"));
+        assert!(context_text(&followup).contains("Owner:\nHelp me write a report."));
+    }
+
+    #[test]
     fn busy_bridge_defers_receipt_chains_without_consuming_frozen_requests() {
         let mut data = fixture();
         let mut c = console();
@@ -683,7 +858,7 @@ mod tests {
 
     fn fixture() -> Value {
         let mut data = snapshot();
-        data["abilities"] = patchfleet_core::abilities::catalog();
+        data["abilities"] = moxcrew_core::abilities::catalog();
         data["providerConnections"] = json!({"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[
             {"id":"codex","installed":true,"version":"0.163.0","authentication":"present","controlSupported":true},
             {"id":"claude","installed":true,"version":"2.1.170","authentication":"present","controlSupported":true},
@@ -1639,6 +1814,8 @@ mod tests {
                 input: "Continue with these sources".into(),
                 answers: previous.clone(),
                 turns: vec![],
+                answered_jobs: HashSet::new(),
+                context_full: false,
             },
         );
         c.create

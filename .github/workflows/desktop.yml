@@ -22,13 +22,13 @@ jobs:
             experimental: false
             target: aarch64-apple-darwin
             formats: app,dmg
-            executable: patchfleet-desktop
+            executable: moxcrew-desktop
             archive_paths: Moxcrew.app *.dmg
           - os: macos-15-intel
             experimental: false
             target: x86_64-apple-darwin
             formats: app,dmg
-            executable: patchfleet-desktop
+            executable: moxcrew-desktop
             archive_paths: Moxcrew.app *.dmg
           - os: windows-2025
             # Keep Windows evidence visible, but do not publish an installer
@@ -36,19 +36,19 @@ jobs:
             experimental: true
             target: x86_64-pc-windows-msvc
             formats: nsis,wix
-            executable: patchfleet-desktop.exe
+            executable: moxcrew-desktop.exe
             archive_paths: '*-setup.exe *.msi'
           - os: ubuntu-24.04
             experimental: false
             target: x86_64-unknown-linux-gnu
             formats: deb,appimage
-            executable: patchfleet-desktop
+            executable: moxcrew-desktop
             archive_paths: '*.deb *.AppImage'
           - os: ubuntu-24.04-arm
             experimental: false
             target: aarch64-unknown-linux-gnu
             formats: deb,appimage
-            executable: patchfleet-desktop
+            executable: moxcrew-desktop
             archive_paths: '*.deb *.AppImage'
     runs-on: ${{ matrix.os }}
     defaults:
@@ -87,10 +87,10 @@ jobs:
       - name: Native lint checks
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
       - name: Build standalone Rust desktop
-        run: cargo build --locked --release -p patchfleet-desktop --target ${{ matrix.target }}
+        run: cargo build --locked --release -p moxcrew-desktop --target ${{ matrix.target }}
       - name: Reject browser-engine runtime dependencies
         run: |
-          cargo tree --locked -p patchfleet-desktop --target ${{ matrix.target }} --prefix none | while read -r dependency remainder; do
+          cargo tree --locked -p moxcrew-desktop --target ${{ matrix.target }} --prefix none | while read -r dependency remainder; do
             case "$dependency" in
               tauri*|wry|webkit2gtk*|webview2*|javascriptcore*)
                 echo "Unexpected browser-engine dependency: $dependency"
@@ -123,9 +123,9 @@ jobs:
           case "$RUNNER_OS" in
             macOS)
               expected_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Packager.toml | head -n 1)"
-              test -x "$output/Moxcrew.app/Contents/MacOS/patchfleet-desktop"
+              test -x "$output/Moxcrew.app/Contents/MacOS/moxcrew-desktop"
               test -f "$output"/*.dmg
-              test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$output/Moxcrew.app/Contents/Info.plist")" = com.patchfleet.desktop
+              test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$output/Moxcrew.app/Contents/Info.plist")" = com.moxcrew.desktop
               test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$output/Moxcrew.app/Contents/Info.plist")" = "$expected_version"
               /usr/libexec/PlistBuddy -c 'Print NSDocumentsFolderUsageDescription' "$output/Moxcrew.app/Contents/Info.plist"
               codesign --verify --deep --strict "$output/Moxcrew.app"
@@ -185,12 +185,12 @@ jobs:
       - name: Archive installers with executable permissions preserved
         run: |
           cd dist/${{ matrix.target }}
-          tar -czf ../../patchfleet-${{ matrix.target }}.tar.gz ${{ matrix.archive_paths }}
+          tar -czf ../../moxcrew-${{ matrix.target }}.tar.gz ${{ matrix.archive_paths }}
       - name: Preserve development artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: patchfleet-native-${{ matrix.target }}
-          path: patchfleet-${{ matrix.target }}.tar.gz
+          name: moxcrew-native-${{ matrix.target }}
+          path: moxcrew-${{ matrix.target }}.tar.gz
           if-no-files-found: error
           retention-days: 14
 

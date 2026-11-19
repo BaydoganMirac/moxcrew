@@ -1,4 +1,4 @@
-use patchfleet_core::{now, Host};
+use moxcrew_core::{now, Host};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -42,7 +42,7 @@ fn directory(host: &Host, work: &Value) -> PathBuf {
     )
 }
 fn complete(data: &Path, work: &Value, status: &str) {
-    let store = patchfleet_core::store::Store::open(data.to_owned()).unwrap();
+    let store = moxcrew_core::store::Store::open(data.to_owned()).unwrap();
     let request = command(json!({}));
     let id = &request["commandId"];
     let epoch = uuid::Uuid::new_v4().to_string();
@@ -54,13 +54,13 @@ fn complete(data: &Path, work: &Value, status: &str) {
     prepared["providerId"] = json!("codex");
     prepared["providerSessionId"] = json!(session);
     store.append(vec![
-        patchfleet_core::event("command.requested",json!({"intent":intent})),
-        patchfleet_core::event("run.launching",launching),
-        patchfleet_core::event("run.prepared",prepared),
-        patchfleet_core::event("turn.requested",json!({"intentId":id,"providerSessionId":session,"ownerEpoch":epoch})),
-        patchfleet_core::event("run.started",json!({"intentId":id,"expectedItemRevision":1,"ownerEpoch":epoch,"run":{"schemaVersion":1,"runId":format!("run:{}",id.as_str().unwrap()),"workItemId":work,"providerId":"codex","ownerEpoch":epoch,"providerSessionId":session,"providerTurnId":"fixture-turn","status":"running","startedAt":now(),"terminalAt":null,"revision":1}})),
-        patchfleet_core::event("session.observed",json!({"providerId":"codex","providerSessionId":session,"status":status,"createdAt":null,"lastObservedAt":now()})),
-        patchfleet_core::event("session.terminal",json!({"providerId":"codex","providerSessionId":session,"status":status,"lastObservedAt":now()})),
+        moxcrew_core::event("command.requested",json!({"intent":intent})),
+        moxcrew_core::event("run.launching",launching),
+        moxcrew_core::event("run.prepared",prepared),
+        moxcrew_core::event("turn.requested",json!({"intentId":id,"providerSessionId":session,"ownerEpoch":epoch})),
+        moxcrew_core::event("run.started",json!({"intentId":id,"expectedItemRevision":1,"ownerEpoch":epoch,"run":{"schemaVersion":1,"runId":format!("run:{}",id.as_str().unwrap()),"workItemId":work,"providerId":"codex","ownerEpoch":epoch,"providerSessionId":session,"providerTurnId":"fixture-turn","status":"running","startedAt":now(),"terminalAt":null,"revision":1}})),
+        moxcrew_core::event("session.observed",json!({"providerId":"codex","providerSessionId":session,"status":status,"createdAt":null,"lastObservedAt":now()})),
+        moxcrew_core::event("session.terminal",json!({"providerId":"codex","providerSessionId":session,"status":status,"lastObservedAt":now()})),
     ]).unwrap();
 }
 async fn terminal_fixture() -> (
@@ -189,10 +189,9 @@ async fn history_keeps_exact_v8_v9_goals_scoped_paged_and_durable() {
         snapshot["sequence"] = json!(1);
         snapshot["recordedAt"] = json!(now());
         snapshot["agentPacks"] = snapshot["packs"].clone();
-        let outgoing =
-            patchfleet_core::cloud::build_projection(&snapshot, version, 1, "install:test")
-                .unwrap()
-                .to_string();
+        let outgoing = moxcrew_core::cloud::build_projection(&snapshot, version, 1, "install:test")
+            .unwrap()
+            .to_string();
         assert!(!outgoing.contains("PRIVATE_CHAT_CANARY"));
         assert!(!outgoing.contains("projectChat"));
     }

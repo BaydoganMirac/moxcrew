@@ -1,5 +1,5 @@
 //! Runs against a disposable service through the public HTTP contract.
-use patchfleet_core::Host;
+use moxcrew_core::Host;
 use serde_json::{json, Value};
 
 fn command(mut value: Value) -> Value {
@@ -97,12 +97,12 @@ fn assert_absent(directory: &std::path::Path, canary: &str) {
 #[tokio::test]
 #[ignore = "requires the isolated private desktop-auth-rust-smoke PostgreSQL/HTTP fixture"]
 async fn native_browser_approval_account_restart_and_sign_out_use_real_postgres() {
-    let base = env("PATCHFLEET_DESKTOP_E2E_URL");
+    let base = env("MOXCREW_DESKTOP_E2E_URL");
     let origin = reqwest::Url::parse(&base).unwrap();
     assert_eq!(origin.scheme(), "http");
     assert_eq!(origin.host_str(), Some("127.0.0.1"));
     assert_eq!(origin.path(), "/");
-    let token = env("PATCHFLEET_DESKTOP_E2E_TOKEN");
+    let token = env("MOXCREW_DESKTOP_E2E_TOKEN");
     let directory = tempfile::tempdir().unwrap();
     let mut host = Host::open(directory.path().to_owned()).unwrap();
     let waiting = begin(&host, &base).await;

@@ -954,7 +954,7 @@ impl Console {
                 _ => 0,
             };
             if scene == "capabilities-image-campaign" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = available
                     .iter()
                     .find(|resource| campaign_image_source(resource))
@@ -1002,7 +1002,7 @@ impl Console {
                 *draft.value("text") = "15223D".into();
                 *draft.value("muted") = "56627A".into();
             } else if scene == "capabilities-presentation-revise" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = available
                     .iter()
                     .find(|resource| presentation_source(resource))
@@ -1036,7 +1036,7 @@ impl Console {
                 .into();
                 *draft.value("presentationEditRender") = "true".into();
             } else if scene == "capabilities-document-create" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("documentLanguage") = if english { "en" } else { "tr" }.into();
                 *draft.value("documentTitle") = if english {
                     "Moxcrew · 2027 Working Plan"
@@ -1057,7 +1057,7 @@ impl Console {
                 }
                 .into();
             } else if scene == "capabilities-site" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("siteLanguage") = if english { "en" } else { "tr" }.into();
                 *draft.value("siteTitle") = "Moxcrew".into();
                 *draft.value("siteEyebrow") = if english {
@@ -1097,7 +1097,7 @@ impl Console {
                 *draft.value("height") = "1600".into();
             } else if scene == "capabilities-podcast" {
                 draft.record = audio.unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Signal & Craft · Episode 04"
                 } else {
@@ -1112,7 +1112,7 @@ impl Console {
                 .into();
             } else if scene == "capabilities-data-chart" {
                 draft.record = csv.unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Revenue by region"
                 } else {
@@ -1123,7 +1123,7 @@ impl Console {
                 *draft.value("valueColumn") = "revenue".into();
                 *draft.value("aggregation") = "sum".into();
             } else if scene == "capabilities-presentations" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = available
                     .iter()
                     .find(|resource| presentation_logo_source(resource))
@@ -1163,7 +1163,7 @@ impl Console {
                 );
                 *draft.value("presentationFps") = "30".into();
             } else if scene == "capabilities-video-compose" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = available
                     .iter()
                     .find(|resource| video_source(resource))
@@ -1201,7 +1201,7 @@ impl Console {
                 *draft.value("highlightClipSeconds") = "4".into();
                 *draft.value("highlightEmphasis") = "balanced".into();
             } else if scene == "capabilities-video-motion" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("motionTitle") = if english {
                     "Mox keeps work visible"
                 } else {
@@ -1224,7 +1224,7 @@ impl Console {
                     .unwrap_or_default();
                 *draft.value("language") = "tr".into();
             } else if scene == "capabilities-local-speech" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("speechTitle") = if english {
                     "Owner control, spoken locally"
                 } else {
@@ -1239,7 +1239,7 @@ impl Console {
                 .into();
                 *draft.value("speechLanguage") = if english { "en_US" } else { "tr_TR" }.into();
             } else if scene == "capabilities-translated-audio" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = audio.clone().unwrap_or_default();
                 *draft.value("dubTitle") = if english {
                     "Approved English audio version"
@@ -1273,7 +1273,7 @@ impl Console {
                 *draft.value("dataOutput") = "xlsx".into();
             } else if scene == "capabilities-data-scenario" {
                 draft.record = csv.unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "2027 operating plan"
                 } else {
@@ -1290,7 +1290,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Vendor renewal review"
                 } else {
@@ -1310,7 +1310,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Pilot decision brief"
                 } else {
@@ -1323,7 +1323,7 @@ impl Console {
                     .find(|resource| template_source(resource))
                     .map(|resource| text(resource, "resourceId").to_owned())
                     .unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("templateFields") = if english {
                     "client_name | Atlas Cloud\napproval_date |\ncontact_email | ops@atlas.example"
                 } else {
@@ -1336,7 +1336,7 @@ impl Console {
                     .find(|resource| rewrite_source(resource))
                     .map(|resource| text(resource, "resourceId").to_owned())
                     .unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("rewriteMode") = "translate".into();
                 *draft.value("rewriteTarget") =
                     if english { "Turkish" } else { "İngilizce" }.into();
@@ -1344,7 +1344,7 @@ impl Console {
             } else if scene == "capabilities-source-changes" {
                 draft.record = change_sources.first().cloned().unwrap_or_default();
                 *draft.value("afterSource") = change_sources.get(1).cloned().unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Launch source changes"
                 } else {
@@ -1360,7 +1360,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Launch claim check"
                 } else {
@@ -1380,7 +1380,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Launch source synthesis"
                 } else {
@@ -1400,7 +1400,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Vendor comparison"
                 } else {
@@ -1421,7 +1421,7 @@ impl Console {
                 .into();
                 *draft.value("comparisonOptions") = "Atlas | Boreal".into();
             } else if scene == "capabilities-web-research" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Launch market research"
                 } else {

@@ -1,0 +1,5 @@
+{
+  "name": "moxcrew-gemini",
+  "version": "0.1.0",
+  "description": "Sends sanitized Gemini CLI lifecycle signals to Moxcrew."
+}

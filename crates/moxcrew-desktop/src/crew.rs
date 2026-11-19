@@ -34,6 +34,19 @@ fn recipe_copy<'a>(ui: &Ui, recipe: &Value, value: &'a str) -> std::borrow::Cow<
     }
 }
 
+fn planner_failure_copy(code: &str) -> &str {
+    match code {
+        "EXTRACTION_INVALID_OUTPUT" => "WORKFLOW_PLANNER_INVALID_OUTPUT",
+        "EXTRACTION_PROVIDER_FAILED" => "WORKFLOW_PLANNER_PROVIDER_FAILED",
+        "EXTRACTION_TIMEOUT" => "WORKFLOW_PLANNER_TIMEOUT",
+        "EXTRACTION_PROVIDER_UNAVAILABLE" => "WORKFLOW_PLANNER_PROVIDER_UNAVAILABLE",
+        "EXTRACTION_PROVIDER_UNSUPPORTED" => "WORKFLOW_PLANNER_PROVIDER_UNSUPPORTED",
+        "EXTRACTION_INVALID_INPUT" => "WORKFLOW_PLANNER_INVALID_INPUT",
+        "EXTRACTION_CANCELLED" => "WORKFLOW_PLANNER_CANCELLED",
+        _ => code,
+    }
+}
+
 #[derive(Default)]
 pub(super) struct CrewState {
     pub(super) single: bool,
@@ -632,7 +645,7 @@ impl Console {
             commands.push(command);
             self.create.select_productive_view(1);
         }
-        if view_control(ui, "Mox planner", true, false).clicked() {
+        if view_control(ui, "View team", true, false).clicked() {
             self.create.select_productive_view(1);
             self.create.crew.workflow.tab = 0;
         }
@@ -645,7 +658,7 @@ impl Console {
         commands: &mut Vec<Command>,
     ) {
         let project = self.create.project.clone();
-        self.conversation_turns(ui);
+        self.conversation_turns(ui, snapshot["desktopPreferences"]["reduceMotion"] == true);
         for mission in ordered_missions(snapshot, &project)
             .into_iter()
             .rev()
@@ -658,9 +671,21 @@ impl Console {
                 self.crew_mission_card(ui, snapshot, mission, commands, true)
             });
         }
-        self.model_plan_card(ui, snapshot, commands);
-        if self.create.has_conversation() && self.create.crew.workflow.request.is_some() {
-            hint(ui, "Waiting for planner confirmation…");
+        if self.create.has_conversation() && !self.create.crew.workflow.open {
+            self.chat_model_status(ui, snapshot, commands);
+        } else {
+            self.model_plan_card(ui, snapshot, commands);
+        }
+        if self.create.has_conversation()
+            && self.create.crew.workflow.request.is_some()
+            && !self
+                .create
+                .crew
+                .workflow
+                .models
+                .contains_key(&self.create.crew_key())
+        {
+            hint(ui, "Mox is responding. You can write your next message.");
         }
         if self.create.crew.plans.contains_key(&self.create.crew_key()) {
             if self.create.productive_view() == 1 {
@@ -674,6 +699,89 @@ impl Console {
     fn crew_plan_chat_summary(&mut self, ui: &mut Ui, snapshot: &Value) {
         let accent = colors(ui).primary;
         studio::accent_surface(ui, accent, |ui| self.crew_plan_summary(ui, snapshot));
+    }
+
+    fn chat_model_status(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
+        let key = self.create.crew_key();
+        let Some(model) = self.create.crew.workflow.models.get(&key).cloned() else {
+            return;
+        };
+        let job = &model.job;
+        let latest = workflow_values(snapshot, &key.0, "plans")
+            .into_iter()
+            .find(|plan| plan["planJobId"] == job["planJobId"])
+            .map(revision)
+            .unwrap_or(revision(job));
+        if !self.hold_automatic_reads
+            && ui.is_enabled()
+            && model.read_revision != Some(latest)
+            && studio::commands_ready(ui)
+            && commands.is_empty()
+        {
+            self.create
+                .crew
+                .workflow
+                .models
+                .get_mut(&key)
+                .unwrap()
+                .read_revision = Some(latest);
+            commands.push(Command::new(
+                "project_crew_plan_read",
+                json!({"projectId":key.0,"planJobId":job["planJobId"]}),
+            ));
+        }
+        if text(job, "status") == "answered" || text(job, "status") == "completed" {
+            return;
+        }
+        let cue = if matches!(text(job, "status"), "queued" | "running") {
+            crate::motion::MoxCue::Thinking
+        } else {
+            crate::motion::MoxCue::Idle
+        };
+        ui.horizontal_top(|ui| {
+            crate::motion::semantic_mox(
+                ui,
+                34.0,
+                cue,
+                snapshot["desktopPreferences"]["reduceMotion"] == true,
+                egui::Id::new(("mox-chat-status", text(job, "planJobId"))),
+            );
+            ui.vertical(|ui| {
+                ui.label(
+                    RichText::new("Mox")
+                        .size(12.0)
+                        .strong()
+                        .color(colors(ui).primary),
+                );
+                let copy = match text(job, "status") {
+                    "needs_input" => "A few details first",
+                    "queued" | "running" => "Mox is responding. You can write your next message.",
+                    _ => "Mox could not finish this request.",
+                };
+                ui.label(t(ui, copy));
+                for question in array(&job["questions"]) {
+                    ui.add(
+                        egui::Label::new(text(question, "question"))
+                            .wrap()
+                            .selectable(true),
+                    );
+                }
+                if !text(job, "failureReasonCode").is_empty() {
+                    hint(ui, planner_failure_copy(text(job, "failureReasonCode")));
+                }
+                if matches!(text(job, "status"), "failed" | "cancelled" | "timed_out") {
+                    quiet_action(
+                        ui,
+                        commands,
+                        "Refresh status",
+                        "project_crew_plan_read",
+                        true,
+                        || json!({"projectId":key.0,"planJobId":job["planJobId"]}),
+                    );
+                }
+            });
+        });
+        ui.add_space(studio::metrics::SECTION_GAP);
     }
 
     fn crew_plan_summary(&mut self, ui: &mut Ui, snapshot: &Value) {
@@ -908,32 +1016,84 @@ impl Console {
     fn crew_plan_card(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         ui.add_space(studio::metrics::GAP);
         let accent = colors(ui).primary;
-        let proposal = studio::accent_surface(ui, accent, |ui| {
-            if self.create.has_conversation() {
-                self.crew_plan_summary(ui, snapshot);
-                if let Some(plan) = self.create.crew.plans.get(&self.create.crew_key()) {
-                    ui.add_space(studio::metrics::GAP);
-                    ui.horizontal_wrapped(|ui| {
-                        for (index, member) in plan.members.iter().enumerate() {
-                            if index > 0 {
-                                ui.label(RichText::new(",").color(colors(ui).muted));
-                            }
-                            ui.label(RichText::new(text(member, "name")).size(13.0));
-                        }
+        let plan_job_id = self
+            .create
+            .crew
+            .workflow
+            .models
+            .get(&self.create.crew_key())
+            .map(|model| text(&model.job, "planJobId").to_owned())
+            .unwrap_or_default();
+        if self.create.has_conversation() {
+            let count = self
+                .create
+                .crew
+                .plans
+                .get(&self.create.crew_key())
+                .map(|plan| plan.members.len())
+                .unwrap_or(0)
+                .to_string();
+            let proposal = studio::card(ui).show(ui, |ui| {
+                ui.set_max_width(680.0);
+                ui.horizontal_top(|ui| {
+                    crate::motion::semantic_mox(
+                        ui,
+                        44.0,
+                        crate::motion::MoxCue::PlanReady,
+                        snapshot["desktopPreferences"]["reduceMotion"] == true,
+                        egui::Id::new(("mox-chat-plan", &self.create.project, &plan_job_id)),
+                    );
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new("Mox")
+                                .size(12.0)
+                                .strong()
+                                .color(colors(ui).primary),
+                        );
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(
+                                RichText::new(t(ui, "Your crew is ready"))
+                                    .size(15.0)
+                                    .strong(),
+                            );
+                            ui.label(
+                                RichText::new(tf(ui, "{0} agents", &[&count]))
+                                    .size(12.0)
+                                    .color(colors(ui).muted),
+                            );
+                        });
                     });
-                }
-            } else {
-                self.crew_roster_summary(ui, snapshot, true);
-            }
+                });
+                ui.add_space(studio::metrics::CONTROL_GAP);
+                ui.horizontal_wrapped(|ui| {
+                    self.crew_prepare_action(ui, snapshot, commands);
+                    if view_control(ui, "Review crew", true, false).clicked() {
+                        self.create.select_productive_view(1);
+                    }
+                });
+                hint(
+                    ui,
+                    "Preparing saves the mission. Agents start only when you choose Start crew.",
+                );
+            });
+            #[cfg(test)]
+            ui.data_mut(|data| {
+                data.insert_temp(
+                    egui::Id::new("crew-proposal-card"),
+                    (proposal.response.rect, ui.clip_rect()),
+                )
+            });
+            #[cfg(not(test))]
+            let _ = proposal;
+            return;
+        }
+        let proposal = studio::accent_surface(ui, accent, |ui| {
+            self.crew_roster_summary(ui, snapshot, true);
             ui.add_space(studio::metrics::CONTROL_GAP);
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     self.crew_prepare_action(ui, snapshot, commands);
-                    if self.create.has_conversation() {
-                        if view_control(ui, "Review crew", true, false).clicked() {
-                            self.create.select_productive_view(1);
-                        }
-                    } else if view_control(ui, "Edit roster", true, false).clicked() {
+                    if view_control(ui, "Edit roster", true, false).clicked() {
                         self.create.crew.roster_open = true;
                     }
                 });
@@ -1935,6 +2095,16 @@ impl CreateState {
                 }
             }
         }
+        if text(full, "status") == "answered"
+            && self
+                .crew
+                .workflow
+                .models
+                .get(&self.crew_key())
+                .is_some_and(|model| model.job["planJobId"] == full["planJobId"])
+        {
+            self.record_mox_answer(full);
+        }
     }
 }
 impl Console {
@@ -2057,19 +2227,22 @@ impl Console {
                 json!({"projectId":key.0,"planJobId":job["planJobId"]}),
             ));
         }
+        if text(job, "status") == "answered" {
+            return;
+        }
         if self.create.has_conversation() && !self.create.crew.workflow.open {
             if text(job, "status") == "completed" {
                 self.model_use_goal(ui, &key, &model);
             } else {
                 studio::card(ui).show(ui,|ui| {
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new(t(ui,"Mox planner")).strong());
+                        ui.label(RichText::new(t(ui,"Team plan")).strong());
                         status(ui,text(job,"status"));
                     });
                     for question in array(&job["questions"]) {
                         ui.add(egui::Label::new(text(question,"question")).wrap().selectable(true));
                     }
-                    if !text(job,"failureReasonCode").is_empty() {hint(ui,text(job,"failureReasonCode"));}
+                    if !text(job,"failureReasonCode").is_empty() {hint(ui,planner_failure_copy(text(job,"failureReasonCode")));}
                     ui.horizontal_wrapped(|ui| {
                         quiet_action(ui,commands,"Refresh plan","project_crew_plan_read",true,||json!({"projectId":key.0,"planJobId":job["planJobId"]}));
                         if matches!(text(job,"status"),"queued"|"running") {
@@ -2096,7 +2269,7 @@ impl Console {
                     if text(job, "status") == "needs_input" {
                         "A few details first"
                     } else {
-                        "Mox planner"
+                        "Team plan"
                     },
                 ),
                 20.0,
@@ -2104,7 +2277,7 @@ impl Console {
             status(ui, text(job, "status"));
         });
         if !text(job, "failureReasonCode").is_empty() {
-            hint(ui, text(job, "failureReasonCode"));
+            hint(ui, planner_failure_copy(text(job, "failureReasonCode")));
         }
         self.model_use_goal(ui, &key, &model);
         if text(job, "status") == "needs_input" {
@@ -3171,7 +3344,7 @@ mod tests {
     fn fixture() -> Value {
         let mut data = snapshot();
         data["desktopPreferences"] = json!({"language":"en"});
-        data["abilities"] = patchfleet_core::abilities::catalog();
+        data["abilities"] = moxcrew_core::abilities::catalog();
         data["providerConnections"] = json!({"reasonCode":"PROVIDER_CONNECTIONS_READ","providers":[{"id":"codex","installed":true,"version":"0.155.1","authentication":"present","controlSupported":true}]});
         data["projectCrews"] = json!({"revision":9,"crews":[{"crewId":"crew:one","projectId":"project:one","name":"Saved launch crew","members":[
             {"agentId":"agent:builder","name":"Builder","role":"presentation","abilityId":"P1","instruction":"Prepare the requested files."},

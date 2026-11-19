@@ -14,7 +14,7 @@ import {
 } from "../lib/runtime/observation-store.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const HOOK = join(ROOT, "extensions", "patchfleet-gemini", "hook.mjs");
+const HOOK = join(ROOT, "extensions", "moxcrew-gemini", "hook.mjs");
 const NOW = "2026-07-16T12:00:00.000Z";
 const CANARY = "CANARY_PROMPT_RESPONSE_CWD_TRANSCRIPT_TOOL_TOKEN_ENV_CREDENTIAL_PATH";
 
@@ -22,7 +22,7 @@ function runHook(input, dataDir) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [HOOK], {
       cwd: ROOT,
-      env: { ...process.env, PATCHFLEET_DATA_DIR: dataDir },
+      env: { ...process.env, MOXCREW_DATA_DIR: dataDir },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -38,9 +38,9 @@ function runHook(input, dataDir) {
 test("native extension registers three bounded lifecycle hooks", async () => {
   const manifest = JSON.parse(await readFile(join(dirname(HOOK), "gemini-extension.json"), "utf8"));
   assert.deepEqual(manifest, {
-    name: "patchfleet-gemini",
+    name: "moxcrew-gemini",
     version: "0.1.0",
-    description: "Sends sanitized Gemini CLI lifecycle signals to Patchfleet.",
+    description: "Sends sanitized Gemini CLI lifecycle signals to Moxcrew.",
   });
 
   const config = JSON.parse(await readFile(join(dirname(HOOK), "hooks", "hooks.json"), "utf8"));

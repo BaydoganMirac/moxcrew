@@ -4,16 +4,18 @@ These are the cargo-packager **0.11.8** NSIS and WiX templates, vendored under
 its MIT license (included alongside them). Upstream:
 https://github.com/crabnebula-dev/cargo-packager/tree/9e88b74ffb5531acf59c8bc371189a5e82b927d2/crates/packager/src/package
 
-The intentional delta separates Moxcrew display labels from the existing
-Patchfleet install directories, registry identities and Start Menu directory.
-NSIS recognizes both old and new WiX display-name/publisher pairs. The same
-uninstall registry key remains authoritative; shortcut AppUserModel.ID and
-main executable identities remain configuration inputs.
+The current package uses Moxcrew for its install directory, registry identity,
+Start Menu directory, executable and AppUserModel.ID. NSIS recognizes the exact
+previous Patchfleet key and removes a recognized old install before copying the
+new executable. A silent install with a legacy registration stops because it
+cannot display the upgrade choice. WiX retains exact legacy lookups only for
+shortcut cleanup and uses the previous MSI upgrade family GUID, so an old
+WiX package is replaced when that format is used.
 
 Legacy shortcut cleanup is restricted to Patchfleet.lnk in the owned desktop
 and Start Menu locations. NSIS requires existing product registry metadata.
-WiX uses the same stable component registry keys as the previous installation.
-No appdata path is added and no canonical data directory is deleted.
+No appdata path is added and no canonical data directory is deleted. The Rust
+Host migrates the separate previous Roaming AppData profile on first launch.
 
 Reconcile this small delta when deliberately upgrading cargo-packager. Runtime
 upgrade/uninstall validation on Windows remains a release gate; macOS cannot

@@ -1983,6 +1983,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "moxcrew-core"
+version = "0.13.1"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "fs2",
+ "libc",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "moxcrew-desktop"
+version = "0.13.1"
+dependencies = [
+ "chrono",
+ "eframe",
+ "image",
+ "moxcrew-core",
+ "rfd",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "naga"
 version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2425,41 +2460,6 @@ dependencies = [
  "redox_syscall 0.5.18",
  "smallvec",
  "windows-link",
-]
-
-[[package]]
-name = "patchfleet-core"
-version = "0.13.1"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "fs2",
- "libc",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "uuid",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "patchfleet-desktop"
-version = "0.13.1"
-dependencies = [
- "chrono",
- "eframe",
- "image",
- "patchfleet-core",
- "rfd",
- "serde_json",
- "tempfile",
- "tokio",
- "uuid",
 ]
 
 [[package]]

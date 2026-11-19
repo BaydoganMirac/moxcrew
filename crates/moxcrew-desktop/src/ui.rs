@@ -994,6 +994,7 @@ impl Console {
         self.navigation_tab = Some(self.tab);
         let compact_navigation = matches!(self.tab, Tab::Create | Tab::Teams)
             && ui.ctx().viewport_rect().width() < 1000.0;
+        let navigation_colors = navigation_palette(ui);
         egui::Panel::left("console-navigation")
             .resizable(false)
             .exact_size(if compact_navigation {
@@ -1001,14 +1002,25 @@ impl Console {
             } else {
                 studio::metrics::NAV_WIDTH
             })
-            .frame(egui::Frame::new().fill(colors(ui).surface).inner_margin(
-                if compact_navigation {
-                    8
-                } else {
-                    studio::metrics::PADDING
-                },
-            ))
+            .frame(
+                egui::Frame::new()
+                    .fill(navigation_colors.background)
+                    .stroke(egui::Stroke::new(1.0, navigation_colors.border))
+                    .inner_margin(if compact_navigation {
+                        8
+                    } else {
+                        studio::metrics::PADDING
+                    }),
+            )
             .show(ui, |ui| {
+                let nav = navigation_palette(ui);
+                let visuals = ui.visuals_mut();
+                visuals.override_text_color = Some(nav.text);
+                visuals.weak_text_color = Some(nav.muted);
+                visuals.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+                visuals.widgets.hovered.bg_fill = nav.surface;
+                visuals.widgets.active.bg_fill = nav.surface;
+                visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, nav.border);
                 if compact_navigation {
                     self.compact_sidebar(ui, snapshot, busy, &mut commands, reveal_navigation);
                     return;
@@ -1019,11 +1031,11 @@ impl Console {
                         ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
                     studio::mark(ui.painter(), rect);
                     ui.vertical(|ui| {
-                        ui.label(studio::title("Moxcrew", 18.0));
+                        ui.label(studio::title("Moxcrew", 18.0).color(nav.text));
                         ui.label(
                             RichText::new(t(ui, "Local workspace"))
                                 .size(12.0)
-                                .color(colors(ui).muted),
+                                .color(nav.muted),
                         );
                     });
                 });
@@ -1086,12 +1098,11 @@ impl Console {
                         ui.horizontal(|ui| {
                             let (dot, _) =
                                 ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                            ui.painter()
-                                .circle_filled(dot.center(), 2.5, colors(ui).primary);
+                            ui.painter().circle_filled(dot.center(), 2.5, nav.primary);
                             ui.label(
                                 RichText::new(t(ui, "Local engine"))
                                     .size(12.0)
-                                    .color(colors(ui).muted),
+                                    .color(nav.muted),
                             );
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
@@ -1100,7 +1111,7 @@ impl Console {
                                         RichText::new(text(snapshot, "appVersion"))
                                             .size(12.0)
                                             .monospace()
-                                            .color(colors(ui).muted),
+                                            .color(nav.muted),
                                     );
                                 },
                             );
@@ -1114,31 +1125,34 @@ impl Console {
                             verified_account(snapshot).and_then(|a| a["email"].as_str())
                         {
                             ui.add(
-                                egui::Label::new(
-                                    RichText::new(email).size(12.0).color(colors(ui).muted),
-                                )
-                                .truncate(),
+                                egui::Label::new(RichText::new(email).size(12.0).color(nav.muted))
+                                    .truncate(),
                             );
                         }
-                        if ui
-                            .scope(|ui| {
-                                ui.style_mut().text_styles.insert(
-                                    egui::TextStyle::Button,
-                                    egui::FontId::proportional(12.0),
-                                );
-                                control(
-                                    ui,
-                                    if snapshot["cloud"]["paired"] == true {
-                                        "Your account"
-                                    } else {
-                                        "Optional sign-in"
-                                    },
-                                    true,
-                                )
-                                .clicked()
-                            })
-                            .inner
-                        {
+                        let account_label = if snapshot["cloud"]["paired"] == true {
+                            "Your account"
+                        } else {
+                            "Optional sign-in"
+                        };
+                        let account = ui.add(
+                            egui::Button::new(
+                                RichText::new(t(ui, account_label))
+                                    .size(12.0)
+                                    .color(nav.text),
+                            )
+                            .fill(nav.surface)
+                            .stroke(egui::Stroke::new(1.0, nav.border))
+                            .corner_radius(studio::metrics::CONTROL_RADIUS)
+                            .min_size(egui::vec2(0.0, studio::metrics::COMPACT_HEIGHT)),
+                        );
+                        #[cfg(test)]
+                        ui.data_mut(|data| {
+                            data.insert_temp(
+                                egui::Id::new(("test-action", "memory_control", account_label)),
+                                account.rect,
+                            )
+                        });
+                        if account.clicked() {
                             self.tab = Tab::Cloud;
                         }
                     },
@@ -1416,11 +1430,20 @@ impl Console {
                 }
             });
         ui.add_space(8.0);
-        ui.add_enabled_ui(!busy, |ui| {
+        let language_control = ui.add_enabled_ui(!busy, |ui| {
             ui.menu_button(language(ui).code().to_uppercase(), |ui| {
                 language_selector(ui, snapshot, busy, commands);
             });
         });
+        #[cfg(test)]
+        ui.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new("compact-language-bounds"),
+                language_control.response.rect,
+            )
+        });
+        #[cfg(not(test))]
+        let _ = language_control;
     }
 
     fn sidebar_route(&mut self, ui: &mut Ui, snapshot: &Value, tab: Tab, reveal: bool) {
@@ -4876,7 +4899,7 @@ impl Console {
                         || json!({}),
                     );
                     if control(ui, "Subscription and billing", true).clicked() {
-                        if let Ok(origin) = patchfleet_core::desktop_login::validate_cloud_origin(
+                        if let Ok(origin) = moxcrew_core::desktop_login::validate_cloud_origin(
                             text(cloud, "cloudUrl"),
                         ) {
                             ui.ctx().open_url(egui::OpenUrl::new_tab(format!(
@@ -4914,7 +4937,7 @@ impl Console {
                 .clicked()
                 {
                     if let Ok(origin) =
-                        patchfleet_core::desktop_login::validate_cloud_origin(self.cloud_url.trim())
+                        moxcrew_core::desktop_login::validate_cloud_origin(self.cloud_url.trim())
                     {
                         let name = if self.host_name.trim().is_empty() {
                             "Moxcrew desktop"
@@ -5013,12 +5036,12 @@ fn array(value: &Value) -> &[Value] {
 }
 fn verified_account(snapshot: &Value) -> Option<&Value> {
     let account = &snapshot["cloudAccount"];
-    patchfleet_core::desktop_login::validate_account_response(account, &snapshot["cloud"])
+    moxcrew_core::desktop_login::validate_account_response(account, &snapshot["cloud"])
         .is_ok()
         .then_some(account)
 }
 fn valid_login_url(snapshot: &Value) -> bool {
-    patchfleet_core::desktop_login::validate_authorization_url(
+    moxcrew_core::desktop_login::validate_authorization_url(
         text(&snapshot["cloudLogin"], "authorizationUrl"),
         text(&snapshot["cloudAccountUi"], "loginCloudUrl"),
     )
@@ -5376,12 +5399,38 @@ fn task_title<'a>(
     std::borrow::Cow::Borrowed(raw)
 }
 fn language_selector(ui: &mut Ui, snapshot: &Value, busy: bool, commands: &mut Vec<Command>) {
+    let nav = navigation_palette(ui);
     ui.add_enabled_ui(!busy, |ui| {
         ui.horizontal(|ui| {
             for choice in Language::all() {
                 let label = choice.native_label();
                 let selected = language(ui) == choice;
-                let response = ui.selectable_label(selected, label);
+                let response = ui.add(
+                    egui::Button::new(RichText::new(label).size(13.0).color(if selected {
+                        nav.background
+                    } else {
+                        nav.text
+                    }))
+                    .fill(if selected {
+                        nav.text
+                    } else {
+                        Color32::TRANSPARENT
+                    })
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if selected { nav.text } else { nav.border },
+                    ))
+                    .corner_radius(studio::metrics::CONTROL_RADIUS)
+                    .min_size(egui::vec2(60.0, studio::metrics::COMPACT_HEIGHT)),
+                );
+                response.widget_info(|| {
+                    egui::WidgetInfo::selected(
+                        egui::WidgetType::SelectableLabel,
+                        response.enabled(),
+                        selected,
+                        label,
+                    )
+                });
                 #[cfg(test)]
                 ui.data_mut(|data| {
                     data.insert_temp(
@@ -5444,7 +5493,7 @@ fn parse_manifest(input: &str) -> Result<Value, &'static str> {
 fn codex_ready(snapshot: &Value) -> bool {
     array(&snapshot["observation"]["observations"])
         .iter()
-        .any(patchfleet_core::providers::supports_codex_control)
+        .any(moxcrew_core::providers::supports_codex_control)
 }
 fn quick_codex_ready(snapshot: &Value) -> bool {
     array(&snapshot["observation"]["observations"])
@@ -5458,7 +5507,7 @@ fn quick_codex_ready(snapshot: &Value) -> bool {
                 .split('.')
                 .filter_map(|part| part.parse().ok())
                 .collect();
-            patchfleet_core::providers::supports_codex_control(observation)
+            moxcrew_core::providers::supports_codex_control(observation)
                 && version.len() == 3
                 && version.as_slice() >= [0, 155, 1].as_slice()
         })
@@ -5976,11 +6025,47 @@ fn source_kind_label(kind: &str) -> &'static str {
         _ => "Source context",
     }
 }
+#[derive(Clone, Copy)]
+struct NavigationPalette {
+    background: Color32,
+    surface: Color32,
+    text: Color32,
+    muted: Color32,
+    border: Color32,
+    primary: Color32,
+    accent: Color32,
+}
+
+fn navigation_palette(ui: &Ui) -> NavigationPalette {
+    if ui.ctx().theme() == egui::Theme::Dark {
+        NavigationPalette {
+            background: Color32::from_rgb(10, 16, 26),
+            surface: Color32::from_rgb(29, 42, 63),
+            text: Color32::from_rgb(245, 244, 239),
+            muted: Color32::from_rgb(170, 184, 205),
+            border: Color32::from_rgb(38, 54, 76),
+            primary: Color32::from_rgb(169, 188, 255),
+            accent: Color32::from_rgb(255, 155, 102),
+        }
+    } else {
+        NavigationPalette {
+            background: Color32::from_rgb(23, 35, 60),
+            surface: Color32::from_rgb(38, 54, 83),
+            text: Color32::from_rgb(247, 248, 252),
+            muted: Color32::from_rgb(183, 194, 212),
+            border: Color32::from_rgb(50, 65, 93),
+            primary: Color32::from_rgb(196, 210, 255),
+            accent: Color32::from_rgb(255, 155, 102),
+        }
+    }
+}
+
 fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool) -> bool {
+    let nav = navigation_palette(ui);
     let label = t(
         ui,
         if tab == Tab::Create {
-            "Your studio"
+            "Mox"
         } else if tab == Tab::Providers {
             "System check"
         } else {
@@ -6019,7 +6104,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         response.scroll_to_me(Some(egui::Align::Center));
     }
     let background = if selected || response.hovered() {
-        colors(ui).raised
+        nav.surface
     } else {
         Color32::TRANSPARENT
     };
@@ -6028,7 +6113,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         ui.painter().rect_stroke(
             rect,
             7,
-            egui::Stroke::new(1.0, colors(ui).primary),
+            egui::Stroke::new(1.0, nav.primary),
             egui::StrokeKind::Inside,
         );
     }
@@ -6039,14 +6124,10 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
                 egui::vec2(3.0, 14.0),
             ),
             2,
-            colors(ui).accent,
+            nav.accent,
         );
     }
-    let color = if selected {
-        colors(ui).text
-    } else {
-        colors(ui).muted
-    };
+    let color = if selected { nav.text } else { nav.muted };
     let compact = rect.width() < 80.0;
     draw_icon(
         ui.painter(),
@@ -6059,11 +6140,7 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
             egui::vec2(18.0, 18.0),
         ),
         tab,
-        if selected {
-            colors(ui).primary
-        } else {
-            colors(ui).muted
-        },
+        if selected { nav.primary } else { nav.muted },
     );
     if !compact {
         ui.painter().text(
@@ -6078,14 +6155,14 @@ fn navigation(ui: &mut Ui, tab: Tab, selected: bool, count: usize, reveal: bool)
         ui.painter().circle_filled(
             egui::pos2(rect.max.x - 17.0, rect.center().y),
             11.0,
-            colors(ui).raised,
+            nav.surface,
         );
         ui.painter().text(
             egui::pos2(rect.max.x - 17.0, rect.center().y),
             egui::Align2::CENTER_CENTER,
             count.to_string(),
             egui::FontId::proportional(10.0),
-            colors(ui).muted,
+            nav.muted,
         );
     }
     let response = response.on_hover_text(label.as_ref());
@@ -8669,6 +8746,43 @@ mod tests {
     }
 
     #[test]
+    fn ink_navigation_text_meets_readability_contrast_in_both_themes() {
+        fn luminance(color: Color32) -> f32 {
+            fn linear(channel: u8) -> f32 {
+                let value = channel as f32 / 255.0;
+                if value <= 0.04045 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            }
+            0.2126 * linear(color.r()) + 0.7152 * linear(color.g()) + 0.0722 * linear(color.b())
+        }
+        fn contrast(a: Color32, b: Color32) -> f32 {
+            let a = luminance(a);
+            let b = luminance(b);
+            (a.max(b) + 0.05) / (a.min(b) + 0.05)
+        }
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            let ctx = test_context();
+            ctx.set_theme(theme);
+            let mut palette = None;
+            ctx.run_ui(RawInput::default(), |ui| {
+                palette = Some(navigation_palette(ui));
+            })
+            .drop_without_applying_deltas();
+            let palette = palette.unwrap();
+            for foreground in [palette.text, palette.muted, palette.primary] {
+                assert!(
+                    contrast(foreground, palette.background) >= 4.5,
+                    "{theme:?} navigation text contrast must remain readable"
+                );
+            }
+            assert!(contrast(palette.background, palette.text) >= 4.5);
+        }
+    }
+
+    #[test]
     fn minimum_sidebar_navigation_never_overlaps_language_controls() {
         for code in ["tr", "en"] {
             let ctx = test_context();
@@ -9567,7 +9681,7 @@ mod tests {
         let mut data = snapshot();
         data["projectMemory"] = json!({"projects":[{"projectId":"project:fixture","name":"Media project","revision":2}]});
         data["projectJobs"] = json!([{"projectId":"project:fixture","workItemId":"work:fixture","abilityId":"V1","runtimeIssue":null}]);
-        data["abilities"] = patchfleet_core::abilities::catalog();
+        data["abilities"] = moxcrew_core::abilities::catalog();
         data["projectStudio"] = json!({
             "reasonCode":"PROJECT_STUDIO_READ","projectId":"project:fixture","revision":2,
             "tools":[{"id":"python","available":true},{"id":"ffmpeg","available":true},{"id":"ffprobe","available":false}],

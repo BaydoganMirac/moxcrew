@@ -1,4 +1,4 @@
-use patchfleet_core::Host;
+use moxcrew_core::Host;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
@@ -70,7 +70,7 @@ async fn project_job_needs_no_git_and_replays_exact_scope_after_restart() {
     assert!(path.join("outputs").is_dir());
     assert!(!path.join(".git").exists());
     assert!(
-        patchfleet_core::providers::validate_workspace(path.to_str().unwrap())
+        moxcrew_core::providers::validate_workspace(path.to_str().unwrap())
             .await
             .is_err()
     );
@@ -118,12 +118,11 @@ async fn project_job_needs_no_git_and_replays_exact_scope_after_restart() {
     for version in [1, 2] {
         let mut snapshot = host.snapshot().unwrap();
         snapshot["sequence"] = json!(1);
-        snapshot["recordedAt"] = json!(patchfleet_core::now());
+        snapshot["recordedAt"] = json!(moxcrew_core::now());
         snapshot["agentPacks"] = snapshot["packs"].clone();
-        let outgoing =
-            patchfleet_core::cloud::build_projection(&snapshot, version, 1, "install:test")
-                .unwrap()
-                .to_string();
+        let outgoing = moxcrew_core::cloud::build_projection(&snapshot, version, 1, "install:test")
+            .unwrap()
+            .to_string();
         assert!(!outgoing.contains("PRIVATE_CREATION_CANARY"));
         assert!(!outgoing.contains("projectJobs"));
         assert!(!outgoing.contains(path.to_str().unwrap()));
@@ -442,15 +441,15 @@ async fn managed_retry_gets_a_new_folder_and_preserves_original_results() {
 }
 
 fn append_unknown_start(data: &Path, work: &Value) {
-    let store = patchfleet_core::store::Store::open(data.to_owned()).unwrap();
+    let store = moxcrew_core::store::Store::open(data.to_owned()).unwrap();
     let args = command(json!({}));
     let intent = json!({"schemaVersion":1,"intentId":args["commandId"],"idempotencyKey":args["commandId"],"type":"start_work","actorId":"local-owner","createdAt":args["createdAt"],"expiresAt":args["expiresAt"],"payload":{"workItemId":work,"expectedItemRevision":1}});
     let payload = json!({"intentId":args["commandId"],"workItemId":work,"expectedItemRevision":1,"ownerEpoch":uuid::Uuid::new_v4().to_string()});
     store
         .append(vec![
-            patchfleet_core::event("command.requested", json!({"intent":intent})),
-            patchfleet_core::event("run.launching", payload.clone()),
-            patchfleet_core::event("run.start_unknown", payload),
+            moxcrew_core::event("command.requested", json!({"intent":intent})),
+            moxcrew_core::event("run.launching", payload.clone()),
+            moxcrew_core::event("run.start_unknown", payload),
         ])
         .unwrap();
 }

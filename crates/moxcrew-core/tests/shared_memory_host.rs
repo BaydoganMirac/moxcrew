@@ -1,4 +1,4 @@
-use patchfleet_core::{shared_memory as shared, Host};
+use moxcrew_core::{shared_memory as shared, Host};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
@@ -126,13 +126,13 @@ async fn server() -> Server {
                                 "link_reader" => "MEMORY_READER_LINKED",
                                 "publish" => {
                                     let revision = s.revision.fetch_add(1, Ordering::SeqCst) + 1;
-                                    s.records.lock().unwrap().push(json!({"schemaVersion":1,"sharedProjectId":shared,"manifestRevision":revision,"current":true,"publishedAt":patchfleet_core::now(),"decision":p["decision"]}));
+                                    s.records.lock().unwrap().push(json!({"schemaVersion":1,"sharedProjectId":shared,"manifestRevision":revision,"current":true,"publishedAt":moxcrew_core::now(),"decision":p["decision"]}));
                                     "MEMORY_PUBLISHED"
                                 }
                                 _ => "MEMORY_SHARING_UPDATED",
                             }
                         };
-                        let r = json!({"schemaVersion":1,"operationId":body["operationId"],"operationType":p["type"],"requestHash":shared::request_hash(&body).unwrap(),"outcome":if rejection {"rejected"}else{"applied"},"reasonCode":reason,"sharedProjectId":shared,"revision":s.revision.load(Ordering::SeqCst),"role":"publisher","enabled":true,"completedAt":patchfleet_core::now()});
+                        let r = json!({"schemaVersion":1,"operationId":body["operationId"],"operationType":p["type"],"requestHash":shared::request_hash(&body).unwrap(),"outcome":if rejection {"rejected"}else{"applied"},"reasonCode":reason,"sharedProjectId":shared,"revision":s.revision.load(Ordering::SeqCst),"role":"publisher","enabled":true,"completedAt":moxcrew_core::now()});
                         receipts.insert(key, r.clone());
                         r
                     };
@@ -352,7 +352,7 @@ async fn complete_twenty_one_head_manifest_is_committed_only_after_bounded_ticks
         let mut d = dto.clone();
         d["decisionId"] = json!(format!("decision:{}", uuid::Uuid::new_v4()));
         shared::validate_dto(&d).unwrap();
-        records.push(json!({"schemaVersion":1,"sharedProjectId":server.state.shared.lock().unwrap().clone(),"manifestRevision":1,"current":true,"publishedAt":patchfleet_core::now(),"decision":d}));
+        records.push(json!({"schemaVersion":1,"sharedProjectId":server.state.shared.lock().unwrap().clone(),"manifestRevision":1,"current":true,"publishedAt":moxcrew_core::now(),"decision":d}));
     }
     *server.state.records.lock().unwrap() = records;
     server.state.revision.store(1, Ordering::SeqCst);
@@ -440,8 +440,8 @@ async fn disconnected_old_mapping_does_not_starve_background_sync_of_current_con
     let (dir, host, current, _) = fixture(&server).await;
     host.shutdown().await;
     drop(host);
-    let store = patchfleet_core::store::Store::open(dir.path().into()).unwrap();
-    let old=store.transaction(|events|patchfleet_core::project_memory::apply(events,"project_create",&json!({"commandId":"cmd:00000000-0000-4000-8000-000000000001","name":"Old connection project"}))).unwrap()["projectId"].clone();
+    let store = moxcrew_core::store::Store::open(dir.path().into()).unwrap();
+    let old=store.transaction(|events|moxcrew_core::project_memory::apply(events,"project_create",&json!({"commandId":"cmd:00000000-0000-4000-8000-000000000001","name":"Old connection project"}))).unwrap()["projectId"].clone();
     let bound = json!({"cloudUrl":server.url,"workspaceId":"workspace:old","hostId":"host:old"});
     store.transaction(|events|shared::apply(events,"memory_cloud_create",&command(json!({"projectId":old,"expectedProjectRevision":1,"name":"Old shared project"})),&bound)).unwrap();
     drop(store);

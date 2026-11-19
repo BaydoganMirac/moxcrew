@@ -36,7 +36,7 @@ pub mod metrics {
     pub const PADDING: i8 = 16;
     pub const PAGE_PADDING: i8 = 24;
     pub const NAV_WIDTH: f32 = 184.0;
-    pub const NAV_RAIL_WIDTH: f32 = 56.0;
+    pub const NAV_RAIL_WIDTH: f32 = 64.0;
     pub const CONTROL_RADIUS: u8 = 8;
     pub const CARD_RADIUS: u8 = 12;
     pub const INPUT_MARGIN: egui::Margin = egui::Margin::symmetric(12, 8);
@@ -64,14 +64,14 @@ pub fn compact_button(
 }
 
 pub fn shortcut_button(ui: &mut egui::Ui, label: &str, width: f32) -> egui::Response {
-    let response = kit_button(ui, label, ButtonKind::Secondary, 44.0, width, true);
-    let stripe = egui::Rect::from_min_max(
-        response.rect.left_top() + egui::vec2(0.0, 9.0),
-        response.rect.left_bottom() + egui::vec2(3.0, -9.0),
-    );
-    ui.painter()
-        .rect_filled(stripe, 2, palette(ui.ctx()).accent);
-    response
+    kit_button(
+        ui,
+        label,
+        ButtonKind::Secondary,
+        metrics::CONTROL_HEIGHT,
+        width,
+        true,
+    )
 }
 
 /// A collection entry with one reading axis and a semantic source/state marker.

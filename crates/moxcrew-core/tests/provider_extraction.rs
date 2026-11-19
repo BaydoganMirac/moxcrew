@@ -1,4 +1,4 @@
-use patchfleet_core::providers::{Controller, Programs};
+use moxcrew_core::providers::{Controller, Programs};
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
@@ -66,6 +66,8 @@ fn main(){
   thread::sleep(Duration::from_secs(10));fs::write(exe.with_extension("side-effect"),"should-be-killed").unwrap();return
  }
  println!("{}",r#"{"type":"thread.started","thread_id":"thread-1"}"#);
+ if mode=="transient-error" || mode=="error-only" {println!("{}",r#"{"type":"item.completed","item":{"id":"error-1","type":"error","message":"SECRET_TRANSIENT_ERROR"}}"#);flush();}
+ if mode=="error-only" {println!("{}",r#"{"type":"turn.completed"}"#);flush();return}
  println!("{}",r#"{"type":"turn.started"}"#);
  println!("{}",r#"{"type":"item.completed","item":{"id":"reason-1","type":"reasoning","text":"SECRET_REASONING"}}"#);
  if mode=="progress"{message("I will inspect the source.");}
@@ -119,7 +121,7 @@ const PROMPT: &str = "SOURCE_BODY_CANARY Türkçe / English $(touch UNSAFE) `ech
 
 #[tokio::test]
 async fn structured_messages_use_isolated_read_only_stdin_without_native_output_leakage() {
-    for mode in ["valid", "progress", "empty"] {
+    for mode in ["valid", "progress", "empty", "transient-error"] {
         let (_fixture, p) = programs(mode);
         let c = Controller::with_programs(p.clone());
         let scratch = tempfile::tempdir().unwrap();
@@ -175,6 +177,7 @@ async fn structured_messages_use_isolated_read_only_stdin_without_native_output_
 async fn malformed_oversize_or_side_effect_output_is_killed_and_safely_normalized() {
     for mode in [
         "malformed",
+        "error-only",
         "unknown",
         "bad-thread",
         "array",

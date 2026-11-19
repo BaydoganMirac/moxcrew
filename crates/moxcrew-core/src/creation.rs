@@ -14,6 +14,12 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+#[cfg(windows)]
+#[path = "windows_results.rs"]
+mod windows_results;
+#[cfg(windows)]
+pub(crate) use windows_results::{open_result, publish_outputs, ExportDestination};
+
 const PREVIEW_BYTES: u64 = 256 * 1024;
 const EXPORT_BYTES: u64 = 100 * 1024 * 1024;
 const RESULT_ITEMS: usize = 200;
@@ -493,7 +499,7 @@ pub(crate) fn open_result(root: &Path, relative: &Path) -> Result<File> {
     Err(invalid("PROJECT_RESULT_PATH_INVALID"))
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub(crate) fn open_result(_root: &Path, _relative: &Path) -> Result<File> {
     // shortcut: enable after native pinned no-reparse Windows handles are verified.
     Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"))
@@ -558,7 +564,7 @@ pub(crate) fn publish_outputs(
     parent.sync_all()?;
     Ok(())
 }
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub(crate) fn publish_outputs(
     _root: &Path,
     _folder: &str,
@@ -576,6 +582,10 @@ fn text_preview(path: &Path) -> bool {
 }
 
 fn export_destination(parent: &Path, name: &std::ffi::OsStr) -> Result<File> {
+    #[cfg(windows)]
+    {
+        windows_results::export_destination(parent, name)
+    }
     #[cfg(unix)]
     {
         use std::{
@@ -607,7 +617,7 @@ fn export_destination(parent: &Path, name: &std::ffi::OsStr) -> Result<File> {
         }
         Ok(unsafe { File::from_raw_fd(descriptor) })
     }
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (parent, name);
         Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"))
@@ -743,10 +753,10 @@ fn staged_export_destination(parent: &Path, name: &std::ffi::OsStr) -> Result<Ex
     Err(invalid("PROJECT_RESULT_EXPORT_FAILED"))
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub(crate) struct ExportDestination;
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 impl Write for ExportDestination {
     fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
         Err(std::io::Error::new(
@@ -763,14 +773,14 @@ impl Write for ExportDestination {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 impl ExportDestination {
     pub(crate) fn commit(self) -> Result<()> {
         Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"))
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn staged_export_destination(_parent: &Path, _name: &std::ffi::OsStr) -> Result<ExportDestination> {
     Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"))
 }
@@ -797,18 +807,24 @@ impl Host {
         {
             return Err(invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"));
         }
-        let parent = fs::canonicalize(
-            target
-                .parent()
-                .ok_or_else(|| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?,
-        )?;
-        if parent.starts_with(fs::canonicalize(self.creation_data_dir())?) {
-            return Err(invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"));
-        }
+        let parent = target
+            .parent()
+            .ok_or_else(|| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?;
         let name = target
             .file_name()
             .ok_or_else(|| invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"))?;
-        staged_export_destination(&parent, name)
+        #[cfg(windows)]
+        {
+            windows_results::stage_for_owner(parent, name, self.creation_data_dir())
+        }
+        #[cfg(not(windows))]
+        {
+            let parent = fs::canonicalize(parent)?;
+            if parent.starts_with(fs::canonicalize(self.creation_data_dir())?) {
+                return Err(invalid("PROJECT_RESULT_EXPORT_PATH_INVALID"));
+            }
+            staged_export_destination(&parent, name)
+        }
     }
 
     pub(crate) fn crew_prepare_inputs(&self, mission_id: &str, payload: &Value) -> Result<Value> {
@@ -1077,7 +1093,7 @@ impl Host {
         if action == "project_work_enqueue" {
             return self.creation_enqueue(payload);
         }
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         if matches!(
             action,
             "project_results_read" | "project_result_read" | "project_result_export"
@@ -1096,21 +1112,29 @@ impl Host {
                 if checked_directory(&folder).is_err() {
                     continue;
                 }
-                let entries =
-                    fs::read_dir(&folder).map_err(|_| invalid("PROJECT_RESULTS_UNAVAILABLE"))?;
+                #[cfg(windows)]
+                let entries = windows_results::entries(&folder, SCAN_ITEMS - scanned + 1)?
+                    .into_iter()
+                    .map(Ok::<_, crate::Error>);
+                #[cfg(not(windows))]
+                let entries = fs::read_dir(&folder)
+                    .map_err(|_| invalid("PROJECT_RESULTS_UNAVAILABLE"))?
+                    .map(|entry| {
+                        let path = entry?.path();
+                        let metadata = fs::symlink_metadata(&path)?;
+                        Ok::<_, crate::Error>((path, metadata.is_dir(), linked(&metadata)))
+                    });
                 for entry in entries {
                     scanned += 1;
                     if scanned > SCAN_ITEMS || items.len() == RESULT_ITEMS {
                         truncated = true;
                         break;
                     }
-                    let entry = entry.map_err(|_| invalid("PROJECT_RESULTS_UNAVAILABLE"))?;
-                    let path = entry.path();
-                    let metadata = fs::symlink_metadata(&path)?;
-                    if linked(&metadata) {
+                    let (path, is_directory, is_link) = entry?;
+                    if is_link {
                         continue;
                     }
-                    if metadata.is_dir() {
+                    if is_directory {
                         if depth + 1 < RESULT_DEPTH {
                             pending.push((path, depth + 1));
                         } else {
@@ -1133,7 +1157,7 @@ impl Host {
                         continue;
                     };
                     let metadata = file.metadata()?;
-                    items.push(json!({"path":relative,"name":entry.file_name().to_string_lossy(),"bytes":metadata.len(),"textPreview":text_preview(&relative_path) && metadata.len() <= PREVIEW_BYTES}));
+                    items.push(json!({"path":relative,"name":relative_path.file_name().unwrap().to_string_lossy(),"bytes":metadata.len(),"textPreview":text_preview(&relative_path) && metadata.len() <= PREVIEW_BYTES}));
                 }
                 if scanned > SCAN_ITEMS || items.len() == RESULT_ITEMS {
                     break;
@@ -1330,6 +1354,7 @@ fn write_input_bytes(
         std::ffi::OsStr::new("manifest.json"),
         manifest,
     )?;
+    #[cfg(unix)]
     File::open(&input_directory)?.sync_all()?;
     Ok(())
 }

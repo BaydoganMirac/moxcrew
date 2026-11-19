@@ -1,6 +1,6 @@
 # Windows x64 file delivery
 
-Moxcrew 0.13.2 brings the native desktop preview to Windows x64. Open a job’s
+Moxcrew 0.13.3 brings the native desktop preview to Windows x64. Open a job’s
 outputs to preview a text file, save an individual file, or select several
 outputs and deliver them in a ZIP with a SHA-256 manifest. Saving preserves
 existing files at the destination.
@@ -16,4 +16,4 @@ and back up its stopped data directory. A rollback to an older reader requires
 the complete pre-upgrade backup.
 
 Platform requirements, data locations and recovery steps are in the
-[installation guide](https://github.com/BaydoganMirac/moxcrew/blob/v0.13.2/docs/install.md).
+[installation guide](https://github.com/BaydoganMirac/moxcrew/blob/v0.13.3/docs/install.md).

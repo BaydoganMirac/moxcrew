@@ -111,6 +111,27 @@ jobs:
             fi
           done
           exit 1
+      - name: Check out previous Windows installer templates
+        if: runner.os == 'Windows'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: BaydoganMirac/moxcrew
+          ref: 029195074f13577c1463ada7eebcad9674ad325c # v0.13.1
+          path: previous-preview
+          sparse-checkout: |
+            /Packager.toml
+            /LICENSE
+            /crates/moxcrew-desktop/assets/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Build previous Patchfleet installer fixture
+        if: runner.os == 'Windows'
+        working-directory: previous-preview
+        run: |
+          mkdir -p target/release
+          echo 'fn main() {}' > installer_fixture.rs
+          rustc --target x86_64-pc-windows-msvc installer_fixture.rs -o target/release/patchfleet-desktop.exe
+          cargo-packager --config Packager.toml --target x86_64-pc-windows-msvc --formats nsis
       - name: Verify Windows installers contain the release executable
         if: runner.os == 'Windows'
         shell: pwsh
@@ -139,18 +160,14 @@ jobs:
             throw 'Desktop requires an external Visual C++ runtime or its imports could not be inspected'
           }
           $expected = (Get-FileHash $binary.FullName).Hash
-          $setupDir = Join-Path $env:RUNNER_TEMP 'moxcrew-nsis-inspect'
           $msiDir = Join-Path $env:RUNNER_TEMP 'moxcrew-msi-inspect'
-          $setupRun = Start-Process -FilePath $setup.FullName -ArgumentList @('/S', '/NS', "/D=$setupDir") -WindowStyle Hidden -Wait -PassThru
-          if ($setupRun.ExitCode -ne 0) { throw "NSIS install failed: $($setupRun.ExitCode)" }
           $msiRun = Start-Process msiexec.exe -ArgumentList @('/a', ('"{0}"' -f $msi.FullName), '/qn', ('TARGETDIR="{0}"' -f $msiDir)) -WindowStyle Hidden -Wait -PassThru
           if ($msiRun.ExitCode -ne 0) { throw "MSI extraction failed: $($msiRun.ExitCode)" }
-          foreach ($root in @($setupDir, $msiDir)) {
-            $payload = @(Get-ChildItem -LiteralPath $root -File -Recurse -Filter moxcrew-desktop.exe)
-            if ($payload.Count -ne 1 -or (Get-FileHash $payload[0].FullName).Hash -ne $expected) {
-              throw 'Installer payload differs from the release build'
-            }
+          $payload = @(Get-ChildItem -LiteralPath $msiDir -File -Recurse -Filter moxcrew-desktop.exe)
+          if ($payload.Count -ne 1 -or (Get-FileHash $payload[0].FullName).Hash -ne $expected) {
+            throw 'MSI administrative image differs from the release build'
           }
+          ./scripts/verify-windows-install.ps1 -Setup $setup.FullName -Msi $msi.FullName -ExpectedHash $expected
       - name: Verify package outputs
         run: |
           output="dist/${{ matrix.target }}"

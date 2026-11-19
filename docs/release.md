@@ -5,12 +5,11 @@ cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or deskt
 build requirements. npm publication is retired. Pushing a reviewed version tag,
 public signing and Cloud deployment remain explicit owner release actions.
 
-The owner authorized the unsigned
-[0.13.1 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.1).
-It is a GitHub pre-release with native installers and SHA-256 checksums, not a
-claim of Apple notarization or production readiness.
-The first public asset set is macOS/Linux only. Windows remains an experimental
-CI lane and is withheld after its private-storage and native behavior gates failed.
+The 0.13.2 Public Preview targets Windows x64, macOS ARM64/Intel and Linux
+x64/ARM64. Its tag-gated workflow creates an unsigned GitHub pre-release after
+all five native jobs pass. The
+[previous release](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.1)
+contains the original six macOS and Linux installers.
 
 The owner-approved [1.0.0 master plan](plans/0039-version-one-release.md) is the
 next broad release target. Its [state](state/version-one-release.md) and ability
@@ -39,14 +38,27 @@ cargo build --locked --release -p moxcrew-desktop
 cargo packager --config Packager.toml --formats app,dmg
 ```
 
-Local output is `dist/native`. Windows formats are `nsis,wix`; Linux uses
-`deb,appimage`. CI stages one target executable for the pinned packager's
-configured binaries directory, archives only installer outputs, and preserves
-executable permissions. Ordinary main/pull-request runs publish no release. An
-explicit exact `v0.MINOR.PATCH` preview tag must match both workspace and packager
-versions; after every required macOS/Linux native job passes, CI publishes a
-GitHub pre-release with two DMGs, four Linux installers and a verified checksum
-manifest. Windows remains excluded and no signing secret is used.
+Local output is `dist/native`. On Linux use `--formats deb,appimage`. For
+Windows x64, build with the static Visual C++ runtime and stage the executable
+in the configured binaries directory using PowerShell.
+
+```powershell
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = '-C target-feature=+crt-static'
+cargo build --locked --release -p moxcrew-desktop --target x86_64-pc-windows-msvc
+New-Item -ItemType Directory -Force target/release | Out-Null
+Copy-Item -LiteralPath target/x86_64-pc-windows-msvc/release/moxcrew-desktop.exe -Destination target/release/
+cargo packager --config Packager.toml --target x86_64-pc-windows-msvc --formats nsis,wix
+```
+
+The Windows runner checks the binary's imported runtime libraries, installs the
+NSIS package in a disposable location and extracts the MSI. It compares both
+payloads with the SHA-256 of the release build.
+
+Only an exact `v0.MINOR.PATCH` tag matching both the workspace and packager
+versions enables publication. The manifest covers one Windows EXE, one Windows
+MSI, two macOS DMGs, and an AppImage and Deb for each Linux architecture.
+The publisher checks the exact filenames, rejects empty or unexpected files
+and verifies the checksum manifest before creating the GitHub pre-release.
 
 The native folder picker is pinned to RFD 0.17.2: AppKit on macOS, Shell on
 Windows, and XDG portal/Zenity fallback on Linux. Verify the macOS bundle's

@@ -124,17 +124,17 @@ pub fn default_data_directory() -> Result<std::path::PathBuf> {
             )
         }
     };
-    migrate_default_data_directory(current, &legacy)
+    select_default_data_directory(current, &legacy)
 }
 
-fn migrate_default_data_directory(
+fn select_default_data_directory(
     current: std::path::PathBuf,
     legacy: &[std::path::PathBuf],
 ) -> Result<std::path::PathBuf> {
     use std::io::ErrorKind;
     fn directory_exists(path: &std::path::Path) -> Result<bool> {
         match std::fs::symlink_metadata(path) {
-            Ok(metadata) if metadata.file_type().is_dir() => Ok(true),
+            Ok(metadata) if metadata.is_dir() && !store::linked(&metadata) => Ok(true),
             Ok(_) => Err(Error("UNSAFE_DATA_DIRECTORY".into())),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
             Err(_) => Err(Error("DATA_DIRECTORY_ACCESS_FAILED".into())),
@@ -151,31 +151,34 @@ fn migrate_default_data_directory(
         return Err(Error("DATA_DIRECTORY_COLLISION".into()));
     }
     if let Some(old) = found.pop() {
-        let events = old.join("events.jsonl");
-        let writer_lock = old.join("writer.lock");
-        if !events.is_file() && !writer_lock.is_file() {
-            return Err(Error("UNRECOGNIZED_LEGACY_DATA_DIRECTORY".into()));
+        for marker in ["events.jsonl", "writer.lock"] {
+            match std::fs::symlink_metadata(old.join(marker)) {
+                Ok(metadata) if metadata.is_file() && !store::linked(&metadata) => {
+                    // Persisted work items name absolute directories under this
+                    // profile. Reopen it in place under the Store's writer lock.
+                    return Ok(old);
+                }
+                Ok(_) => return Err(Error("UNSAFE_DATA_DIRECTORY".into())),
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(_) => return Err(Error("DATA_DIRECTORY_ACCESS_FAILED".into())),
+            }
         }
-        if writer_lock.is_file() {
-            let file = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&writer_lock)
-                .map_err(|_| Error("DATA_DIRECTORY_MIGRATION_FAILED".into()))?;
-            fs2::FileExt::try_lock_exclusive(&file)
-                .map_err(|_| Error("DATA_DIRECTORY_IN_USE".into()))?;
-            fs2::FileExt::unlock(&file)
-                .map_err(|_| Error("DATA_DIRECTORY_MIGRATION_FAILED".into()))?;
-        }
-        let parent = current
-            .parent()
-            .ok_or_else(|| Error("INVALID_DATA_DIRECTORY".into()))?;
-        std::fs::create_dir_all(parent)
-            .map_err(|_| Error("DATA_DIRECTORY_MIGRATION_FAILED".into()))?;
-        std::fs::rename(old, &current)
-            .map_err(|_| Error("DATA_DIRECTORY_MIGRATION_FAILED".into()))?;
+        return Err(Error("UNRECOGNIZED_LEGACY_DATA_DIRECTORY".into()));
     }
     Ok(current)
+}
+
+pub fn gemini_hook() -> Result<()> {
+    use std::io::Read;
+    let mut input = String::new();
+    std::io::stdin().take(131_073).read_to_string(&mut input)?;
+    if input.len() > 131_072 {
+        return Err(Error("HOOK_PAYLOAD_TOO_LARGE".into()));
+    }
+    if let Some(signal) = providers::decode_gemini_hook(&input).map_err(Error)? {
+        providers::write_gemini_inbox(&default_data_directory()?, &signal).map_err(Error)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -183,7 +186,7 @@ mod data_directory_tests {
     use super::*;
 
     #[test]
-    fn legacy_directory_moves_once_with_event_and_credential_bytes_intact() {
+    fn existing_profile_stays_at_its_original_absolute_path() {
         let root = tempfile::tempdir().unwrap();
         let old = root.path().join("Patchfleet");
         let new = root.path().join("Moxcrew");
@@ -191,22 +194,33 @@ mod data_directory_tests {
         std::fs::write(old.join("events.jsonl"), b"event-byte-canary\n").unwrap();
         std::fs::write(old.join("paired-host.json"), b"credential-byte-canary").unwrap();
         assert_eq!(
-            migrate_default_data_directory(new.clone(), &[old.clone()]).unwrap(),
-            new
+            select_default_data_directory(new.clone(), std::slice::from_ref(&old)).unwrap(),
+            old
         );
-        assert!(!old.exists());
+        assert!(!new.exists());
         assert_eq!(
-            std::fs::read(new.join("events.jsonl")).unwrap(),
+            std::fs::read(old.join("events.jsonl")).unwrap(),
             b"event-byte-canary\n"
         );
         assert_eq!(
-            std::fs::read(new.join("paired-host.json")).unwrap(),
+            std::fs::read(old.join("paired-host.json")).unwrap(),
             b"credential-byte-canary"
         );
+    }
+
+    #[test]
+    fn fresh_install_uses_the_current_name() {
+        let root = tempfile::tempdir().unwrap();
+        let current = root.path().join("Moxcrew");
         assert_eq!(
-            migrate_default_data_directory(new.clone(), &[old]).unwrap(),
-            new
+            select_default_data_directory(
+                current.clone(),
+                &[root.path().join("com.patchfleet.desktop")]
+            )
+            .unwrap(),
+            current
         );
+        assert!(!current.exists());
     }
 
     #[test]
@@ -224,7 +238,7 @@ mod data_directory_tests {
             .unwrap();
         }
         assert_eq!(
-            migrate_default_data_directory(new.clone(), &[old.clone(), older.clone()])
+            select_default_data_directory(new.clone(), &[old.clone(), older.clone()])
                 .unwrap_err()
                 .0,
             "DATA_DIRECTORY_COLLISION"
@@ -235,14 +249,14 @@ mod data_directory_tests {
     }
 
     #[test]
-    fn unrecognized_legacy_folder_is_never_moved_as_a_profile() {
+    fn unrecognized_legacy_folder_is_rejected() {
         let root = tempfile::tempdir().unwrap();
         let old = root.path().join("Patchfleet");
         let new = root.path().join("Moxcrew");
         std::fs::create_dir(&old).unwrap();
         std::fs::write(old.join("moxcrew-desktop.exe"), b"installer-canary").unwrap();
         assert_eq!(
-            migrate_default_data_directory(new.clone(), &[old.clone()])
+            select_default_data_directory(new.clone(), std::slice::from_ref(&old))
                 .unwrap_err()
                 .0,
             "UNRECOGNIZED_LEGACY_DATA_DIRECTORY"
@@ -252,7 +266,7 @@ mod data_directory_tests {
     }
 
     #[test]
-    fn active_legacy_writer_blocks_migration_without_moving_bytes() {
+    fn an_active_legacy_writer_keeps_exclusive_ownership() {
         let root = tempfile::tempdir().unwrap();
         let old = root.path().join("com.patchfleet.desktop");
         let new = root.path().join("Moxcrew");
@@ -260,11 +274,12 @@ mod data_directory_tests {
         std::fs::write(old.join("events.jsonl"), b"preserve-me\n").unwrap();
         let lock = std::fs::File::create(old.join("writer.lock")).unwrap();
         fs2::FileExt::lock_exclusive(&lock).unwrap();
+        let selected =
+            select_default_data_directory(new.clone(), std::slice::from_ref(&old)).unwrap();
+        assert_eq!(selected, old);
         assert_eq!(
-            migrate_default_data_directory(new.clone(), &[old.clone()])
-                .unwrap_err()
-                .0,
-            "DATA_DIRECTORY_IN_USE"
+            store::Store::open(selected).err().unwrap().0,
+            "LOCAL_WRITER_ALREADY_RUNNING"
         );
         assert_eq!(
             std::fs::read(old.join("events.jsonl")).unwrap(),
@@ -273,17 +288,4 @@ mod data_directory_tests {
         assert!(!new.exists());
         fs2::FileExt::unlock(&lock).unwrap();
     }
-}
-
-pub fn gemini_hook() -> Result<()> {
-    use std::io::Read;
-    let mut input = String::new();
-    std::io::stdin().take(131_073).read_to_string(&mut input)?;
-    if input.len() > 131_072 {
-        return Err(Error("HOOK_PAYLOAD_TOO_LARGE".into()));
-    }
-    if let Some(signal) = providers::decode_gemini_hook(&input).map_err(Error)? {
-        providers::write_gemini_inbox(&default_data_directory()?, &signal).map_err(Error)?;
-    }
-    Ok(())
 }

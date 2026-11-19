@@ -103,7 +103,7 @@ async fn project_job_needs_no_git_and_replays_exact_scope_after_restart() {
             json!({"projectId":p,"workItemId":work}),
         )
         .await;
-    if cfg!(unix) {
+    if cfg!(any(unix, windows)) {
         let empty = empty.unwrap();
         assert_eq!(empty["workStatus"], "queued");
         assert_eq!(empty["items"], json!([]));
@@ -138,7 +138,7 @@ async fn project_job_needs_no_git_and_replays_exact_scope_after_restart() {
     host.shutdown().await;
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
 async fn actual_results_export_without_overwrite_and_stay_project_scoped() {
     let temporary = tempfile::tempdir().unwrap();
@@ -223,7 +223,7 @@ async fn actual_results_export_without_overwrite_and_stay_project_scoped() {
     host.shutdown().await;
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
 async fn results_reject_traversal_unsupported_and_oversize_files() {
     let temporary = tempfile::tempdir().unwrap();
@@ -631,7 +631,7 @@ async fn requested_only_owner_prefix_does_not_invent_a_committed_job() {
     host.shutdown().await;
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 #[tokio::test]
 async fn unsupported_result_operations_fail_before_any_file_mutation() {
     let temporary = tempfile::tempdir().unwrap();

@@ -1,22 +1,22 @@
 //! Explicit same-Project, hash-pinned ZIP delivery; no new persisted artifact entity.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use super::digest;
 use super::{bounded, exact, hash, id};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use crate::{conversation, work::text};
 use crate::{creation, Error, Host, Result};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use serde_json::json;
 use serde_json::Value;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::io::Write;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const FILE_BYTES: u64 = 25 * 1024 * 1024;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const TOTAL_BYTES: u64 = 64 * 1024 * 1024;
 const FILE_COUNT: usize = 32;
 
@@ -49,12 +49,12 @@ pub(super) fn validate_request(p: &Value) -> Result<()> {
 
 pub(super) fn export(host: &Host, p: &Value) -> Result<Value> {
     validate_request(p)?;
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = host;
         Err(invalid("PROJECT_RESULTS_UNSUPPORTED_PLATFORM"))
     }
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
         let studio = super::project(&host.store.read_events()?)?;
         let mut entries = Vec::new();
@@ -129,7 +129,7 @@ pub(super) fn export(host: &Host, p: &Value) -> Result<Value> {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn zip_size(entries: &[(String, Vec<u8>)]) -> Result<u64> {
     if entries.len() > u16::MAX as usize {
         return Err(limit());
@@ -149,7 +149,7 @@ fn zip_size(entries: &[(String, Vec<u8>)]) -> Result<u64> {
     Ok(size)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const fn crc_table() -> [u32; 256] {
     let mut table = [0; 256];
     let mut index = 0;
@@ -169,23 +169,23 @@ const fn crc_table() -> [u32; 256] {
     }
     table
 }
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn crc32(bytes: &[u8]) -> u32 {
     const TABLE: [u32; 256] = crc_table();
     !bytes.iter().fold(!0u32, |crc, byte| {
         (crc >> 8) ^ TABLE[((crc ^ *byte as u32) & 255) as usize]
     })
 }
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn u16le(bytes: &mut Vec<u8>, value: u16) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn u32le(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn write_zip(mut destination: impl Write, entries: &[(String, Vec<u8>)]) -> Result<(u64, String)> {
     zip_size(entries)?;
     let mut offset = 0u32;
@@ -244,7 +244,7 @@ fn write_zip(mut destination: impl Write, entries: &[(String, Vec<u8>)]) -> Resu
     ))
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(unix, windows)))]
 mod tests {
     use super::*;
     use std::{fs, path::PathBuf, sync::Arc};
@@ -353,7 +353,6 @@ mod tests {
         assert!(write_zip(&mut output, &invalid).is_err());
         assert!(output.is_empty());
     }
-    #[cfg(unix)]
     #[tokio::test]
     async fn host_exports_real_collision_free_bytes_manifest_and_replays_exact_receipt() {
         let (tmp, host, project, work, root) = fixture().await;
@@ -662,7 +661,6 @@ mod tests {
         assert!(!target.exists());
         host.shutdown().await;
     }
-    #[cfg(unix)]
     #[tokio::test]
     async fn export_crash_without_receipt_is_unknown_and_never_repeated() {
         let (tmp, host, project, work, root) = fixture().await;
@@ -702,7 +700,6 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap(), bytes);
         reopened.shutdown().await;
     }
-    #[cfg(unix)]
     #[tokio::test]
     #[ignore = "writes a retained local ZIP for independent external-reader inspection"]
     async fn write_delivery_archive_fixture() {

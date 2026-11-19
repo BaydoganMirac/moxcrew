@@ -1,6 +1,6 @@
 # Install and operate Moxcrew Desktop
 
-Status: 0.13.2 native Rust desktop Public Preview
+Status: 0.13.3 native Rust desktop Public Preview
 
 Updated: 2026-11-19
 
@@ -8,17 +8,17 @@ Updated: 2026-11-19
 
 Download the installer for your platform directly:
 
-- Windows x64: [Setup EXE](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_windows_x64-setup.exe)
-  or [MSI](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_windows_x64.msi).
-- macOS: [Apple Silicon DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_macOS_Apple-Silicon.dmg)
-  or [Intel DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_macOS_Intel.dmg);
-- Linux x64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_linux_x86_64.AppImage)
-  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_linux_x86_64.deb);
-- Linux ARM64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_linux_aarch64.AppImage)
-  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/Moxcrew_0.13.2_linux_aarch64.deb).
+- Windows x64: [Setup EXE](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_windows_x64-setup.exe)
+  or [MSI](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_windows_x64.msi).
+- macOS: [Apple Silicon DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_macOS_Apple-Silicon.dmg)
+  or [Intel DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_macOS_Intel.dmg);
+- Linux x64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_x86_64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_x86_64.deb);
+- Linux ARM64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_aarch64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_aarch64.deb).
 
 No Rust, Node or source checkout is needed. Compare the installer's SHA-256
-digest with the published [SHA256SUMS.txt](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.2/SHA256SUMS.txt)
+digest with the published [SHA256SUMS.txt](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/SHA256SUMS.txt)
 before opening it. Provider CLIs are separate: install and authenticate Codex,
 Claude Code or Gemini CLI according to the provider you intend to use.
 
@@ -30,7 +30,7 @@ that disables an OS security feature.
 On Windows, use the setup EXE for a per-user installation or the MSI for a
 machine-wide installation. Both contain the same desktop executable. The
 preview has no publisher signature. In PowerShell,
-`Get-FileHash -Algorithm SHA256 .\Moxcrew_0.13.2_windows_x64-setup.exe`
+`Get-FileHash -Algorithm SHA256 .\Moxcrew_0.13.3_windows_x64-setup.exe`
 prints the digest for the setup download. Substitute the MSI filename if needed.
 
 When saving a project file or ZIP on Windows, choose a folder on a local
@@ -91,7 +91,7 @@ V20 recovery checkpoints. Preserve the stopped pre-upgrade copy before the first
 recovery run; older builds reject those facts and event versions must never be
 rewritten for rollback.
 
-Version 0.13.2 records a direct Mox chat answer as a V21 event. Back up the
+Version 0.13.3 records a direct Mox chat answer as a V21 event. Back up the
 stopped profile before the first chat in this release. To return to 0.13.1,
 restore that pre-upgrade profile so its reader can open the log.
 
@@ -104,7 +104,7 @@ identifier specified above.
 
 1. Quit all running Moxcrew / older Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Moxcrew.app`. The sidebar should show `0.13.2`
+3. Open `Applications/Moxcrew.app`. The sidebar should show `0.13.3`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut

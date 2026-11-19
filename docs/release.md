@@ -5,7 +5,7 @@ cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or deskt
 build requirements. npm publication is retired. Pushing a reviewed version tag,
 public signing and Cloud deployment remain explicit owner release actions.
 
-The 0.13.2 Public Preview targets Windows x64, macOS ARM64/Intel and Linux
+The 0.13.3 Public Preview targets Windows x64, macOS ARM64/Intel and Linux
 x64/ARM64. Its tag-gated workflow creates an unsigned GitHub pre-release after
 all five native jobs pass. The
 [previous release](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.1)
@@ -229,7 +229,7 @@ Task0104 adds V19 reviewer allocations and V20 recovery checkpoints for terminal
 adaptive failures. Preserve the same complete stopped backup before recovery;
 rollback must restore it instead of rewriting V19/V20 facts.
 
-Version 0.13.2 also records a direct chat answer in a V21 planner completion.
+Version 0.13.3 also records a direct chat answer in a V21 planner completion.
 Check rollback with the complete stopped backup from before the upgrade.
 
 Task0041 adds V9 owner audit for project_chat_send and desktop_motion. Rollback

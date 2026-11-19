@@ -1,4 +1,4 @@
-use patchfleet_core::{desktop_login, Host};
+use moxcrew_core::{desktop_login, Host};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
@@ -116,7 +116,7 @@ async fn make_server() -> Server {
                         status = 403;
                         json!({"error":"DESKTOP_ACCESS_DENIED"})
                     } else {
-                        json!({"schemaVersion":1,"hostId":if mode==1 {"host:foreign"}else{"host:login"},"workspaceId":"workspace:login","accountId":"10000000-0000-4000-8000-000000000001","email":"owner@example.test","subscription":{"status":if mode==6 {"inactive"}else{"active"},"memoryAccess":mode!=6,"periodEndsAt":null,"checkedAt":patchfleet_core::now()}})
+                        json!({"schemaVersion":1,"hostId":if mode==1 {"host:foreign"}else{"host:login"},"workspaceId":"workspace:login","accountId":"10000000-0000-4000-8000-000000000001","email":"owner@example.test","subscription":{"status":if mode==6 {"inactive"}else{"active"},"memoryAccess":mode!=6,"periodEndsAt":null,"checkedAt":moxcrew_core::now()}})
                     }
                 } else if path.ends_with("/logout") {
                     assert_eq!(body, json!({"schemaVersion":1}));

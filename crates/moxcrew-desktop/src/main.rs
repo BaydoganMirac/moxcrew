@@ -16,7 +16,7 @@ use std::path::PathBuf;
 #[cfg(feature = "ui-smoke")]
 use std::time::{Duration, Instant};
 
-struct Patchfleet {
+struct Moxcrew {
     console: ui::Console,
     bridge: Bridge,
     directory: PathBuf,
@@ -29,12 +29,12 @@ struct Patchfleet {
     smoke_capture_requested: bool,
 }
 
-impl Patchfleet {
+impl Moxcrew {
     fn new(cc: &eframe::CreationContext<'_>, directory: PathBuf, observe: bool) -> Self {
         studio::install(&cc.egui_ctx);
         #[cfg(feature = "ui-smoke")]
         if !observe {
-            match std::env::var("PATCHFLEET_SMOKE_THEME").as_deref() {
+            match std::env::var("MOXCREW_SMOKE_THEME").as_deref() {
                 Ok("dark") => cc.egui_ctx.set_theme(egui::Theme::Dark),
                 Ok("light") => cc.egui_ctx.set_theme(egui::Theme::Light),
                 _ => {}
@@ -61,7 +61,7 @@ impl Patchfleet {
         let console = {
             let mut console = console;
             if !observe {
-                if let Ok(scene) = std::env::var("PATCHFLEET_SMOKE_SCENE") {
+                if let Ok(scene) = std::env::var("MOXCREW_SMOKE_SCENE") {
                     if scene.starts_with("quick-") {
                         console.quick_start_smoke();
                         if matches!(scene.as_str(), "quick-task" | "quick-failed") {
@@ -136,12 +136,12 @@ impl Patchfleet {
                 }
             }
             if !observe
-                && std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("account-"))
+                && std::env::var("MOXCREW_SMOKE_SCENE").is_ok_and(|s| s.starts_with("account-"))
             {
                 let waiting =
-                    std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("account-waiting");
+                    std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("account-waiting");
                 let origin = waiting.then(|| {
-                    std::env::var("PATCHFLEET_SMOKE_ACCOUNT_URL")
+                    std::env::var("MOXCREW_SMOKE_ACCOUNT_URL")
                         .expect("Disposable account fixture required")
                 });
                 if let Some(origin) = &origin {
@@ -151,7 +151,7 @@ impl Patchfleet {
                 bridge.account_smoke(origin.as_deref());
             }
             if !observe
-                && std::env::var("PATCHFLEET_SMOKE_SCENE")
+                && std::env::var("MOXCREW_SMOKE_SCENE")
                     .as_deref()
                     .is_ok_and(|s| matches!(s, "memory" | "extraction-memory"))
             {
@@ -159,7 +159,7 @@ impl Patchfleet {
                 bridge.memory_smoke();
             }
             if !observe
-                && std::env::var("PATCHFLEET_SMOKE_SCENE")
+                && std::env::var("MOXCREW_SMOKE_SCENE")
                     .as_deref()
                     .is_ok_and(|s| matches!(s, "decisions" | "extraction-decisions"))
             {
@@ -168,12 +168,11 @@ impl Patchfleet {
             }
             if !observe
                 && matches!(
-                    std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                    std::env::var("MOXCREW_SMOKE_SCENE").as_deref(),
                     Ok("local-search" | "cloud-search")
                 )
             {
-                let shared =
-                    std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("cloud-search");
+                let shared = std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("cloud-search");
                 let query = if shared {
                     "How do we avoid invoice rounding errors?"
                 } else {
@@ -182,23 +181,19 @@ impl Patchfleet {
                 console.search_smoke(shared, query);
                 bridge.search_smoke(shared, query);
             }
-            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("shared-reader")
-            {
+            if !observe && std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("shared-reader") {
                 console.shared_smoke();
                 bridge.shared_smoke();
             }
-            if !observe
-                && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("shared-publisher")
+            if !observe && std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("shared-publisher")
             {
                 console.publication_smoke();
                 bridge.decision_smoke();
             }
-            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("folder-picker")
-            {
+            if !observe && std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("folder-picker") {
                 console.folder_smoke(&directory.join("preview-repository"));
             }
-            if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("folder-error")
-            {
+            if !observe && std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("folder-error") {
                 bridge.choose_folder(
                     cc.egui_ctx.clone(),
                     folder::Target::Registration,
@@ -225,14 +220,14 @@ impl Patchfleet {
             directory,
             observe,
             #[cfg(feature = "ui-smoke")]
-            smoke_deadline: std::env::var("PATCHFLEET_SMOKE_SECONDS")
+            smoke_deadline: std::env::var("MOXCREW_SMOKE_SECONDS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
                 .filter(|seconds| (1..=120).contains(seconds))
                 .map(|seconds| Instant::now() + Duration::from_secs(seconds)),
             #[cfg(feature = "ui-smoke")]
             smoke_capture: (!observe)
-                .then(|| std::env::var_os("PATCHFLEET_SMOKE_SCREENSHOT_TO").map(PathBuf::from))
+                .then(|| std::env::var_os("MOXCREW_SMOKE_SCREENSHOT_TO").map(PathBuf::from))
                 .flatten(),
             #[cfg(feature = "ui-smoke")]
             smoke_capture_requested: false,
@@ -247,8 +242,8 @@ fn seed_quick_start_scene(directory: &std::path::Path, scene: &str) {
         .build()
         .unwrap();
     runtime.block_on(async {
-        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
-        if std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en") {
+        let host = moxcrew_core::Host::open(directory.to_owned()).unwrap();
+        if std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en") {
             host.action("desktop_language", command::Command::new("desktop_language", serde_json::json!({"language":"en"})).payload).await.unwrap();
         }
         if scene != "quick-project" {
@@ -280,65 +275,65 @@ fn seed_create_scene(directory: &std::path::Path) {
         .build()
         .unwrap();
     runtime.block_on(async {
-        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
-        if std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en") {
+        let host = moxcrew_core::Host::open(directory.to_owned()).unwrap();
+        if std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en") {
             host.action("desktop_language", command::Command::new("desktop_language", serde_json::json!({"language":"en"})).payload).await.unwrap();
         }
-        if matches!(std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(), Ok("create-empty" | "chat-empty" | "conversation-empty")) {
+        if matches!(std::env::var("MOXCREW_SMOKE_SCENE").as_deref(), Ok("create-empty" | "chat-empty" | "conversation-empty")) {
             assert_eq!(host.snapshot().unwrap()["projectMemory"]["projects"], serde_json::json!([]));
             host.shutdown().await;
             return;
         }
-        let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
-        let scenario = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
+        let scenario = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-data-scenario");
-        let extraction = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let extraction = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-data-extract");
-        let brief = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let brief = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-documents-brief");
-        let template = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let template = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-documents-template");
-        let rewrite = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let rewrite = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-documents-rewrite");
-        let source_changes = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let source_changes = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-source-changes");
-        let claim_check = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let claim_check = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-claim-check");
-        let research_synthesis = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let research_synthesis = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-research-synthesis");
-        let research_comparison = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let research_comparison = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-research-comparison");
-        let web_research = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let web_research = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-web-research");
-        let pdf_merge = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let pdf_merge = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-pdf-merge");
-        let presentations = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let presentations = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-presentations");
-        let presentation_narration = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let presentation_narration = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-presentation-narration");
-        let video_composition = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let video_composition = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-video-compose");
-        let video_highlights = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let video_highlights = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-video-highlights");
-        let video_motion = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let video_motion = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-video-motion");
-        let audio_cleanup = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let audio_cleanup = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-audio-cleanup");
-        let transcription = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let transcription = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-transcription");
-        let local_speech = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let local_speech = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-local-speech");
-        let translated_audio = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let translated_audio = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-translated-audio");
-        let data_profile = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let data_profile = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-data-profile");
-        let website = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let website = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-site");
-        let document_create = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let document_create = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-document-create");
-        let presentation_revise = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let presentation_revise = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-presentation-revise");
-        let image_campaign = std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()
+        let image_campaign = std::env::var("MOXCREW_SMOKE_SCENE").as_deref()
             == Ok("capabilities-image-campaign");
         let project_name = if scenario {
             if english { "Operating plan" } else { "Faaliyet planı" }
@@ -396,11 +391,11 @@ fn seed_create_scene(directory: &std::path::Path) {
             "Ürün lansmanı"
         };
         let created = host.action("project_create", command::Command::new("project_create",serde_json::json!({"name":project_name})).payload).await.unwrap();
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| scene.starts_with("conversation-")) {
+        if std::env::var("MOXCREW_SMOKE_SCENE").is_ok_and(|scene| scene.starts_with("conversation-")) {
             host.shutdown().await;
             return;
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|scene| (scene.starts_with("crew-") || scene.starts_with("productive-")) && !matches!(scene.as_str(),"productive-output"|"productive-compare"|"productive-review"|"productive-resources"|"productive-apps"|"productive-delivery"|"productive-delivery-review")) {
+        if std::env::var("MOXCREW_SMOKE_SCENE").is_ok_and(|scene| (scene.starts_with("crew-") || scene.starts_with("productive-")) && !matches!(scene.as_str(),"productive-output"|"productive-compare"|"productive-review"|"productive-resources"|"productive-apps"|"productive-delivery"|"productive-delivery-review")) {
             let goal = if english { "Research the audience and create a launch presentation backed by sources." } else { "Hedef kitleyi araştır ve kaynaklarla desteklenen bir lansman sunumu hazırla." };
             let plan = host.action("project_crew_plan", serde_json::json!({"projectId":created["projectId"],"instruction":goal,"abilityId":"P1"})).await.unwrap();
             let prepared = host.action("project_crew_prepare", command::Command::new("project_crew_prepare", serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":1,"title":if english {"Launch crew"} else {"Lansman ekibi"},"instruction":goal,"abilityId":"P1","members":plan["members"],"settings":plan["settings"]})).payload).await.unwrap();
@@ -408,19 +403,19 @@ fn seed_create_scene(directory: &std::path::Path) {
             host.shutdown().await;
             return;
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("chat-compose") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("chat-compose") {
             host.shutdown().await;
             return;
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("chat-reduced") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("chat-reduced") {
             host.action("desktop_motion", command::Command::new("desktop_motion", serde_json::json!({"reduceMotion":true})).payload).await.unwrap();
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("productive-resources") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("productive-resources") {
             let source=directory.join("rendering-input.txt");std::fs::write(&source,"Project brief · disposable UI resource. No provider was run.").unwrap();
             let snapshot=host.snapshot().unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":snapshot["projectMemory"]["projects"][0]["revision"],"sourcePath":source})).payload).await.unwrap();
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images") {
             for (name, bytes) in [("campaign-cover.png", b"disposable image fixture one".as_slice()), ("product-photo.jpg", b"disposable image fixture two".as_slice())] {
                 let source=directory.join(name);std::fs::write(&source,bytes).unwrap();
                 let snapshot=host.snapshot().unwrap();
@@ -495,13 +490,13 @@ fn seed_create_scene(directory: &std::path::Path) {
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-podcast") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-podcast") {
             let source=directory.join("raw-episode.wav");std::fs::write(&source,b"disposable audio fixture").unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-chart") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-data-chart") {
             let source=directory.join("regional-revenue.csv");std::fs::write(&source,b"region,revenue\nNorth,42000\nSouth,31500\nWest,38750\nEast,46200\n").unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
@@ -513,13 +508,13 @@ fn seed_create_scene(directory: &std::path::Path) {
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-scenario") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-data-scenario") {
             let source=directory.join("operating-plan.csv");std::fs::write(&source,b"line_item,base_plan,growth_case,lean_case\nPlatform,950000,1200000,780000\nGrowth,620000,860000,410000\nOperations,440000,510000,390000\nPeople,1350000,1580000,1180000\n").unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-extract") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-data-extract") {
             for (name, body) in [
                 ("atlas-renewal.txt", "Vendor: Atlas Cloud\nRenewal: 30 April 2027\nSeats: 120\n"),
                 ("northwind-notes.md", "Vendor: Northwind AI\nRenewal: late Q2, date uncertain\nSeats were not stated.\n"),
@@ -530,7 +525,7 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-brief") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-brief") {
             for (name, body) in [
                 ("pilot-notes.md", "Decision: Launch the pilot in May.\nOwner: Ece\nBudget approval is pending.\n"),
                 ("security-review.txt", "Risk: Security review has not started.\nNext step: Schedule the review.\nOwner and date are not stated.\n"),
@@ -541,19 +536,19 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-template") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-template") {
             let source=directory.join("partner-onboarding-template.docx");std::fs::write(&source,b"Disposable DOCX UI resource. No provider or template worker was run.").unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-rewrite") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-rewrite") {
             let source=directory.join("launch-brief.txt");std::fs::write(&source,"Moxcrew Launch OS 2027-03-15 tarihinde başlıyor.\nBütçe: 1,250 USD.\nDetaylar: https://mox.example/launch\n").unwrap();
             let snapshot=host.snapshot().unwrap();
             let project=snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|project|project["projectId"]==created["projectId"]).unwrap();
             host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-source-changes") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-source-changes") {
             for (name, body) in [
                 ("launch-page-may.md", "Plan: Private beta\nPrice: 100 TRY\nRegions: Türkiye\n"),
                 ("launch-page-june.md", "Plan: Public launch\nPrice: 120 TRY\nRegions: Türkiye, Europe\n"),
@@ -564,7 +559,7 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-claim-check") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-claim-check") {
             for (name, body) in [
                 ("launch-survey.md", "Survey results\nİstanbul adoption reached 72%.\nThe sample included 50 teams.\n"),
                 ("independent-audit.txt", "Independent audit\nThe 72% figure was not reproducible.\nNo retention data was collected.\n"),
@@ -575,7 +570,7 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-synthesis") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-research-synthesis") {
             for (name, body) in [
                 ("market-study.md", "Market study\nIstanbul teams request weekly summaries.\nPreferred price: below 100 TRY.\n"),
                 ("support-notes.txt", "Support notes\nCustomers repeatedly request weekly summaries.\nCurrent price feels high at 120 TRY.\n"),
@@ -587,7 +582,7 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-comparison") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-research-comparison") {
             for (name, body) in [
                 ("atlas-proposal.md", "Atlas proposal\nMonthly price: 120 TRY.\nSetup time: 2 days.\nOffline export is supported.\n"),
                 ("boreal-proposal.txt", "Boreal proposal\nMonthly price: 90 TRY.\nSetup time: 5 days.\nOffline export is not available.\n"),
@@ -598,7 +593,7 @@ fn seed_create_scene(directory: &std::path::Path) {
                 host.action("project_resource_import",command::Command::new("project_resource_import",serde_json::json!({"projectId":created["projectId"],"expectedProjectRevision":project["revision"],"sourcePath":source})).payload).await.unwrap();
             }
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-pdf-merge") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-pdf-merge") {
             for name in ["01-executive-summary.pdf", "02-financial-appendix.pdf"] {
                 let source=directory.join(name);std::fs::write(&source,b"%PDF-1.4\n% disposable UI resource\n%%EOF\n").unwrap();
                 let snapshot=host.snapshot().unwrap();
@@ -608,33 +603,33 @@ fn seed_create_scene(directory: &std::path::Path) {
         }
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"].as_array().unwrap().iter().find(|p|p["projectId"]==created["projectId"]).unwrap();
-        let batch_images=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images");
-        let podcast=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-podcast");
-        let data_chart=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-chart");
-        let data_scenario=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-scenario");
-        let data_extract=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-extract");
-        let documents_brief=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-brief");
-        let documents_template=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-template");
-        let documents_rewrite=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-rewrite");
-        let claim_check=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-claim-check");
-        let research_synthesis=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-synthesis");
-        let research_comparison=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-research-comparison");
-        let web_research=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-web-research");
-        let pdf_merge=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-pdf-merge");
-        let presentations=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-presentations");
-        let presentation_narration=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-presentation-narration");
-        let video_composition=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-compose");
-        let video_highlights=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-highlights");
-        let video_motion=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-video-motion");
-        let audio_cleanup=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-audio-cleanup");
-        let transcription=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-transcription");
-        let local_speech=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-local-speech");
-        let translated_audio=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-translated-audio");
-        let data_profile=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-data-profile");
-        let website=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-site");
-        let document_create=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-document-create");
-        let presentation_revise=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-presentation-revise");
-        let image_campaign=std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-image-campaign");
+        let batch_images=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-batch-images");
+        let podcast=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-podcast");
+        let data_chart=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-data-chart");
+        let data_scenario=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-data-scenario");
+        let data_extract=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-data-extract");
+        let documents_brief=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-brief");
+        let documents_template=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-template");
+        let documents_rewrite=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-documents-rewrite");
+        let claim_check=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-claim-check");
+        let research_synthesis=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-research-synthesis");
+        let research_comparison=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-research-comparison");
+        let web_research=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-web-research");
+        let pdf_merge=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-pdf-merge");
+        let presentations=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-presentations");
+        let presentation_narration=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-presentation-narration");
+        let video_composition=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-video-compose");
+        let video_highlights=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-video-highlights");
+        let video_motion=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-video-motion");
+        let audio_cleanup=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-audio-cleanup");
+        let transcription=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-transcription");
+        let local_speech=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-local-speech");
+        let translated_audio=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-translated-audio");
+        let data_profile=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-data-profile");
+        let website=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-site");
+        let document_create=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-document-create");
+        let presentation_revise=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-presentation-revise");
+        let image_campaign=std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-image-campaign");
         let (ability,title,instruction)=if translated_audio {
             ("A5",if english{"Approved translated audio"}else{"Onaylı çevrilmiş ses"},if english{"Fit an exact owner-approved translation to the source recording with local speech and explicit timing evidence."}else{"Kesin onaylı çeviriyi yerel ses ve açık zamanlama kanıtıyla kaynak kayda oturt."})
         } else if local_speech {
@@ -699,15 +694,15 @@ fn seed_create_scene(directory: &std::path::Path) {
         let snapshot = host.snapshot().unwrap();
         let work = snapshot["work"]["items"].as_array().unwrap().iter().find(|w|w["workItemId"]==queued["workItemId"]).unwrap();
         let output = std::path::Path::new(work["workingDirectory"].as_str().unwrap()).join("outputs");
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("capabilities-canvas") {
-            let source=PathBuf::from(std::env::var("PATCHFLEET_SMOKE_ARTIFACT_FROM").expect("An actual PNG rendering fixture is required"));
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("capabilities-canvas") {
+            let source=PathBuf::from(std::env::var("MOXCREW_SMOKE_ARTIFACT_FROM").expect("An actual PNG rendering fixture is required"));
             assert!(source.is_absolute());let bytes=std::fs::read(source).unwrap();
             assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n")&&bytes.len()<=2*1024*1024);
             std::fs::write(output.join("canvas.png"),bytes).unwrap();
         }
         std::fs::write(output.join("brief.md"), "# Launch presentation brief\n\nA real text file in this disposable project's output folder.\n\nThe job is queued. No model or presentation renderer was run for this interface fixture.\n\n## Requested deliverables\n\n- Source-backed research\n- Editable presentation\n- Short launch video\n\nOwner review remains explicit.\n").unwrap();
         std::fs::write(output.join("outline.csv"), "slide,topic\n1,The idea\n2,The audience\n3,The evidence\n").unwrap();
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("productive-delivery-review") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("productive-delivery-review") {
             let page=host.action("project_studio_read",serde_json::json!({"projectId":created["projectId"]})).await.unwrap();
             for (path,status) in [("outputs/brief.md","reviewed"),("outputs/outline.csv","needs_changes")] {
                 let artifact=page["artifacts"].as_array().unwrap().iter().find(|artifact|artifact["path"]==path).unwrap();
@@ -715,13 +710,13 @@ fn seed_create_scene(directory: &std::path::Path) {
                 assert_eq!(result["status"],status);
             }
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("productive-review") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("productive-review") {
             let page=host.action("project_studio_read",serde_json::json!({"projectId":created["projectId"]})).await.unwrap();
             let artifact=&page["artifacts"][0];
             let reviewed=host.action("project_artifact_review_set",command::Command::new("project_artifact_review_set",serde_json::json!({"projectId":created["projectId"],"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"],"status":"reviewed","note":"Kaynak kapsamını ve çıktı yapısını kontrol ettim."})).payload).await.unwrap();
             assert_eq!(reviewed["status"],"reviewed");
         }
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref()==Ok("productive-compare") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref()==Ok("productive-compare") {
             let page=host.action("project_studio_read",serde_json::json!({"projectId":created["projectId"]})).await.unwrap();
             let artifact=page["artifacts"].as_array().unwrap().iter().find(|artifact|artifact["path"]=="outputs/brief.md").unwrap();
             let current=host.snapshot().unwrap();
@@ -743,8 +738,8 @@ fn seed_memory_scene(directory: &std::path::Path) {
         .build()
         .unwrap();
     runtime.block_on(async {
-        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
-        if std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en") {
+        let host = moxcrew_core::Host::open(directory.to_owned()).unwrap();
+        if std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en") {
             host.action("desktop_language", command::Command::new("desktop_language", serde_json::json!({"language":"en"})).payload).await.unwrap();
         }
         let created = host.action("project_create", command::Command::new("project_create", serde_json::json!({"name":"Billing sandbox"})).payload).await.unwrap();
@@ -769,7 +764,7 @@ fn seed_studio_scene(directory: &std::path::Path) {
         .build()
         .unwrap();
     runtime.block_on(async {
-        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        let host = moxcrew_core::Host::open(directory.to_owned()).unwrap();
         for (index, name) in ["Billing sandbox", "Interface lab · demo", "Developer docs · demo"].iter().enumerate() {
             let project_id = if index == 0 {
                 host.snapshot().unwrap()["projectMemory"]["projects"][0]["projectId"].clone()
@@ -804,7 +799,7 @@ fn seed_extraction_scene(directory: &std::path::Path) {
         .build()
         .unwrap();
     let (project, source) = runtime.block_on(async {
-        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        let host = moxcrew_core::Host::open(directory.to_owned()).unwrap();
         let snapshot = host.snapshot().unwrap();
         let project = snapshot["projectMemory"]["projects"][0]["projectId"].clone();
         let enabled = host.action("project_extraction_configure", command::Command::new("project_extraction_configure", serde_json::json!({"projectId":project,"expectedPolicyRevision":0,"enabled":true,"consent":true})).payload).await.unwrap();
@@ -814,17 +809,17 @@ fn seed_extraction_scene(directory: &std::path::Path) {
         host.shutdown().await;
         (project, source)
     });
-    let store = patchfleet_core::store::Store::open(directory.to_owned()).unwrap();
+    let store = moxcrew_core::store::Store::open(directory.to_owned()).unwrap();
     let events = store.read_events().unwrap();
-    let projection = patchfleet_core::extraction::project_validated(&events).unwrap();
+    let projection = moxcrew_core::extraction::project_validated(&events).unwrap();
     let job = projection["jobs"][0]["jobId"].as_str().unwrap();
     store
-        .transaction(|events| patchfleet_core::extraction::start(events, job, "native-preview"))
+        .transaction(|events| moxcrew_core::extraction::start(events, job, "native-preview"))
         .unwrap();
     let result = serde_json::json!({"proposals":[{"title":"Para tutarlarının saklanması","context":"Fatura ve ödeme hesapları.","decision":"Tutarları tam sayı kuruş olarak sakla ve para birimi kodunu yanında tut.","rationale":"","consequences":"","evidence":[{"sourceId":source,"revision":1,"excerpt":"Para tutarlarını tam sayı kuruş olarak sakla. Para birimi kodunu tutarın yanında tut."}],"relation":"new","relatedDecisionIds":[]}]});
     let finished = store
         .transaction(|events| {
-            patchfleet_core::extraction::finish(events, job, 1, "native-preview", Ok(result))
+            moxcrew_core::extraction::finish(events, job, 1, "native-preview", Ok(result))
         })
         .unwrap();
     assert_eq!(finished["job"]["projectId"], project);
@@ -838,7 +833,7 @@ fn seed_decision_scene(directory: &std::path::Path) {
         .build()
         .unwrap();
     runtime.block_on(async {
-        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        let host = moxcrew_core::Host::open(directory.to_owned()).unwrap();
         let snapshot = host.snapshot().unwrap();
         let project = &snapshot["projectMemory"]["projects"][0];
         let sources = host.action("project_memory_read", serde_json::json!({"projectId":project["projectId"]})).await.unwrap();
@@ -872,20 +867,20 @@ fn seed_decision_scene(directory: &std::path::Path) {
 
 #[cfg(feature = "ui-smoke")]
 fn seed_shared_scene(directory: &std::path::Path, publisher: bool) {
-    let url = std::env::var("PATCHFLEET_SMOKE_MEMORY_URL")
-        .expect("Disposable memory fixture URL required");
+    let url =
+        std::env::var("MOXCREW_SMOKE_MEMORY_URL").expect("Disposable memory fixture URL required");
     let parsed = fixture_loopback_url(&url);
     assert!(
         parsed,
         "Native memory smoke accepts only a literal loopback fixture"
     );
-    let code = std::env::var("PATCHFLEET_SMOKE_MEMORY_PAIR").expect("Disposable pairing required");
+    let code = std::env::var("MOXCREW_SMOKE_MEMORY_PAIR").expect("Disposable pairing required");
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     runtime.block_on(async {
-        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        let host = moxcrew_core::Host::open(directory.to_owned()).unwrap();
         let project = host.snapshot().unwrap()["projectMemory"]["projects"][0].clone();
         host.action("cloud_pair",command::Command::new("cloud_pair",serde_json::json!({"cloudUrl":url,"displayName":"Disposable memory preview","pairingCode":code})).payload).await.unwrap();
         if publisher {
@@ -896,7 +891,7 @@ fn seed_shared_scene(directory: &std::path::Path, publisher: bool) {
             host.action("project_decision_accept",command::Command::new("project_decision_accept",serde_json::json!({"projectId":project["projectId"],"decisionId":draft["decisionId"],"expectedDecisionRevision":1})).payload).await.unwrap();
             host.action("memory_cloud_create",command::Command::new("memory_cloud_create",serde_json::json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],"name":"Publication preview fixture"})).payload).await.unwrap();
         } else {
-            let shared=std::env::var("PATCHFLEET_SMOKE_MEMORY_PROJECT").expect("Disposable shared project required");
+            let shared=std::env::var("MOXCREW_SMOKE_MEMORY_PROJECT").expect("Disposable shared project required");
             host.action("memory_cloud_link",command::Command::new("memory_cloud_link",serde_json::json!({"projectId":project["projectId"],"expectedProjectRevision":project["revision"],"sharedProjectId":shared})).payload).await.unwrap();
         }
         host.action("memory_cloud_sync",command::Command::new("memory_cloud_sync",serde_json::json!({"projectId":project["projectId"]})).payload).await.unwrap();
@@ -917,17 +912,17 @@ fn fixture_loopback_url(value: &str) -> bool {
 #[cfg(feature = "ui-smoke")]
 fn seed_account_scene(directory: &std::path::Path) {
     let url =
-        std::env::var("PATCHFLEET_SMOKE_ACCOUNT_URL").expect("Disposable account fixture required");
+        std::env::var("MOXCREW_SMOKE_ACCOUNT_URL").expect("Disposable account fixture required");
     assert!(fixture_loopback_url(&url));
-    let code = std::env::var("PATCHFLEET_SMOKE_ACCOUNT_PAIR").expect("Disposable pairing required");
+    let code = std::env::var("MOXCREW_SMOKE_ACCOUNT_PAIR").expect("Disposable pairing required");
     tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
-        let host = patchfleet_core::Host::open(directory.to_owned()).unwrap();
+        let host = moxcrew_core::Host::open(directory.to_owned()).unwrap();
         host.action("cloud_pair", command::Command::new("cloud_pair", serde_json::json!({"cloudUrl":url,"displayName":"Native account preview","pairingCode":code})).payload).await.unwrap();
         host.shutdown().await;
     });
 }
 
-impl eframe::App for Patchfleet {
+impl eframe::App for Moxcrew {
     #[cfg(feature = "ui-smoke")]
     fn raw_input_hook(&mut self, _ctx: &egui::Context, input: &mut egui::RawInput) {
         for event in &input.events {
@@ -1008,7 +1003,7 @@ impl eframe::App for Patchfleet {
             .unwrap_or(i18n::Language::Tr);
         let ctx = ui.ctx().clone();
         #[cfg(feature = "ui-smoke")]
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("ui-kit") {
+        if std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("ui-kit") {
             ui_kit::show(ui);
             return;
         }
@@ -1053,7 +1048,7 @@ impl eframe::App for Patchfleet {
                 self.bridge.busy || self.bridge.closing || self.bridge.picking_folder;
             #[cfg(feature = "ui-smoke")]
             let command_busy = command_busy
-                || std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("conversation-busy");
+                || std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("conversation-busy");
             let commands = self.console.show(
                 ui,
                 snapshot,
@@ -1213,7 +1208,7 @@ fn main() {
                 .build();
             let result = runtime.map_err(|_| ()).and_then(|runtime| {
                 runtime
-                    .block_on(patchfleet_core::agent_memory::serve_stdio(&ticket.unwrap()))
+                    .block_on(moxcrew_core::agent_memory::serve_stdio(&ticket.unwrap()))
                     .map_err(|_| ())
             });
             if result.is_err() {
@@ -1223,7 +1218,7 @@ fn main() {
             return;
         }
         if argument == "--gemini-hook" && args.next().is_none() {
-            if patchfleet_core::gemini_hook().is_err() {
+            if moxcrew_core::gemini_hook().is_err() {
                 eprintln!("GEMINI_HOOK_FAILED");
                 std::process::exit(1);
             }
@@ -1232,9 +1227,14 @@ fn main() {
         eprintln!("INVALID_ARGUMENTS");
         std::process::exit(2);
     }
-    let directory = patchfleet_core::default_data_directory().unwrap_or_default();
-    let observe =
-        !cfg!(feature = "ui-smoke") || std::env::var_os("PATCHFLEET_NATIVE_SMOKE").is_none();
+    let directory = match moxcrew_core::default_data_directory() {
+        Ok(directory) => directory,
+        Err(error) => {
+            eprintln!("Moxcrew could not select a safe data directory: {error}");
+            std::process::exit(1);
+        }
+    };
+    let observe = !cfg!(feature = "ui-smoke") || std::env::var_os("MOXCREW_NATIVE_SMOKE").is_none();
     if !observe {
         // Test-only builds cannot accidentally probe providers or touch an installation.
         assert!(
@@ -1242,7 +1242,7 @@ fn main() {
             "Native smoke requires an empty test directory"
         );
         #[cfg(feature = "ui-smoke")]
-        if let Ok(scene) = std::env::var("PATCHFLEET_SMOKE_SCENE") {
+        if let Ok(scene) = std::env::var("MOXCREW_SMOKE_SCENE") {
             if scene.starts_with("create-")
                 || scene.starts_with("conversation-")
                 || scene.starts_with("chat-")
@@ -1257,16 +1257,16 @@ fn main() {
             }
         }
         #[cfg(feature = "ui-smoke")]
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("studio-")) {
+        if std::env::var("MOXCREW_SMOKE_SCENE").is_ok_and(|s| s.starts_with("studio-")) {
             seed_memory_scene(&directory);
             seed_decision_scene(&directory);
             seed_studio_scene(&directory);
         }
         #[cfg(feature = "ui-smoke")]
-        if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("account-")) {
+        if std::env::var("MOXCREW_SMOKE_SCENE").is_ok_and(|s| s.starts_with("account-")) {
             seed_memory_scene(&directory);
             if matches!(
-                std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                std::env::var("MOXCREW_SMOKE_SCENE").as_deref(),
                 Ok("account-free" | "account-paid")
             ) {
                 seed_account_scene(&directory);
@@ -1274,7 +1274,7 @@ fn main() {
         }
         #[cfg(feature = "ui-smoke")]
         if matches!(
-            std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+            std::env::var("MOXCREW_SMOKE_SCENE").as_deref(),
             Ok("memory"
                 | "extraction-memory"
                 | "extraction-decisions"
@@ -1288,26 +1288,26 @@ fn main() {
                 | "folder-error")
         ) {
             seed_memory_scene(&directory);
-            if std::env::var("PATCHFLEET_SMOKE_SCENE").is_ok_and(|s| s.starts_with("extraction-")) {
+            if std::env::var("MOXCREW_SMOKE_SCENE").is_ok_and(|s| s.starts_with("extraction-")) {
                 seed_extraction_scene(&directory);
             }
             if matches!(
-                std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                std::env::var("MOXCREW_SMOKE_SCENE").as_deref(),
                 Ok("decisions" | "local-search")
             ) {
                 seed_decision_scene(&directory);
             }
             if matches!(
-                std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                std::env::var("MOXCREW_SMOKE_SCENE").as_deref(),
                 Ok("shared-reader" | "shared-publisher" | "cloud-search")
             ) {
                 seed_shared_scene(
                     &directory,
-                    std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("shared-publisher"),
+                    std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("shared-publisher"),
                 );
             }
             if matches!(
-                std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref(),
+                std::env::var("MOXCREW_SMOKE_SCENE").as_deref(),
                 Ok("projects" | "folder-picker" | "folder-error")
             ) {
                 let path = directory.join("preview-repository");
@@ -1324,7 +1324,7 @@ fn main() {
                 )
                 .unwrap();
                 #[cfg(unix)]
-                if std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("folder-error") {
+                if std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("folder-error") {
                     use std::os::unix::fs::PermissionsExt;
                     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500))
                         .unwrap();
@@ -1334,18 +1334,18 @@ fn main() {
     }
     let window_size = [1280.0, 880.0];
     #[cfg(feature = "ui-smoke")]
-    let window_size =
-        if !observe && std::env::var("PATCHFLEET_SMOKE_SCENE").as_deref() == Ok("ui-kit") {
-            [1280.0, 1040.0]
-        } else if !observe && std::env::var_os("PATCHFLEET_SMOKE_MIN_WINDOW").is_some() {
-            [800.0, 560.0]
-        } else {
-            window_size
-        };
+    let window_size = if !observe && std::env::var("MOXCREW_SMOKE_SCENE").as_deref() == Ok("ui-kit")
+    {
+        [1280.0, 1040.0]
+    } else if !observe && std::env::var_os("MOXCREW_SMOKE_MIN_WINDOW").is_some() {
+        [800.0, 560.0]
+    } else {
+        window_size
+    };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Moxcrew")
-            .with_app_id("com.patchfleet.desktop")
+            .with_app_id("com.moxcrew.desktop")
             .with_inner_size(window_size)
             .with_min_inner_size([800.0, 560.0])
             .with_icon(
@@ -1359,7 +1359,7 @@ fn main() {
     if let Err(error) = eframe::run_native(
         "Moxcrew",
         options,
-        Box::new(move |cc| Ok(Box::new(Patchfleet::new(cc, directory, observe)))),
+        Box::new(move |cc| Ok(Box::new(Moxcrew::new(cc, directory, observe)))),
     ) {
         eprintln!("{}", command::safe_error(error));
         std::process::exit(1);

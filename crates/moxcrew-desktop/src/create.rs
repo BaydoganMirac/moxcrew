@@ -728,7 +728,7 @@ impl Console {
     pub fn chat_smoke(&mut self, snapshot: &Value, show_files: bool, show_connections: bool) {
         self.create_smoke(snapshot, show_files);
         self.create.chat.connections_open = show_connections;
-        let scene = std::env::var("PATCHFLEET_SMOKE_SCENE").unwrap_or_default();
+        let scene = std::env::var("MOXCREW_SMOKE_SCENE").unwrap_or_default();
         self.create.catalog_open = matches!(scene.as_str(), "chat-catalog" | "chat-readiness");
         if scene == "chat-readiness" {
             self.create.search = "A1".into();
@@ -1358,7 +1358,7 @@ mod tests {
                     console.create.crew.single = false;
                     let mut data = snapshot();
                     data["desktopPreferences"] = json!({"language":language});
-                    data["abilities"] = patchfleet_core::abilities::catalog();
+                    data["abilities"] = moxcrew_core::abilities::catalog();
                     let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
                     assert!(commands.is_empty());
                     assert!(!copy.join("\n").contains("Search abilities"));
@@ -1461,7 +1461,7 @@ mod tests {
     fn ability_readiness_distinguishes_blockers_optional_tools_and_access() {
         let ctx = egui::Context::default();
         studio::install(&ctx);
-        let catalog = patchfleet_core::abilities::catalog();
+        let catalog = moxcrew_core::abilities::catalog();
         let find = |id: &str| {
             array(&catalog)
                 .iter()
@@ -1513,7 +1513,7 @@ mod tests {
         let ctx = egui::Context::default();
         studio::install(&ctx);
         let mut data = snapshot();
-        data["abilities"] = patchfleet_core::abilities::catalog();
+        data["abilities"] = moxcrew_core::abilities::catalog();
         data["projectJobs"][0]["abilityId"] = json!("V1");
         data["work"]["items"][0]["instruction"] = json!("Edit the selected video.");
         let mut console = Console {
@@ -1603,7 +1603,7 @@ mod tests {
             console.create.search = ability.into();
             let mut data = snapshot();
             data["desktopPreferences"] = json!({"language":"en"});
-            data["abilities"] = patchfleet_core::abilities::catalog();
+            data["abilities"] = moxcrew_core::abilities::catalog();
             data["projectStudio"] = json!({
                 "reasonCode":"PROJECT_STUDIO_READ",
                 "projectId":"project:one",
@@ -1962,7 +1962,7 @@ mod tests {
             studio::install(&ctx);
             let mut data = snapshot();
             data["desktopPreferences"] = json!({"language":language});
-            data["abilities"] = patchfleet_core::abilities::catalog();
+            data["abilities"] = moxcrew_core::abilities::catalog();
             data["projectStudio"] = json!({
                 "reasonCode":"PROJECT_STUDIO_READ",
                 "projectId":"project:one",
@@ -2277,7 +2277,7 @@ mod tests {
         );
         assert!(copy
             .join("\n")
-            .contains("Name the outcome.\nWatch the crew take shape."));
+            .contains("Ask a question.\nGive Mox a goal."));
         let commands = click(
             &ctx,
             &mut console,
@@ -2672,7 +2672,7 @@ mod tests {
                 };
                 let mut data = snapshot();
                 data["desktopPreferences"] = json!({"language":language});
-                data["abilities"] = patchfleet_core::abilities::catalog();
+                data["abilities"] = moxcrew_core::abilities::catalog();
                 let (commands, copy) = render(&ctx, &mut console, &data, size, false, vec![]);
                 assert!(commands.is_empty());
                 assert!(
@@ -2762,9 +2762,9 @@ mod tests {
                 assert!(console.folder_request.is_none());
                 assert!(!copy.join("\n").contains("Git"));
                 assert!(copy.join("\n").contains(if language == "tr" {
-                    "Sonucu söyle.\nEkibin şekillenişini izle."
+                    "Sorunu sor.\nİşini anlat."
                 } else {
-                    "Name the outcome.\nWatch the crew take shape."
+                    "Ask a question.\nGive Mox a goal."
                 }));
                 let action = ctx.data(|data| {
                     data.get_temp::<egui::Rect>(egui::Id::new((
@@ -2777,6 +2777,16 @@ mod tests {
                 assert!(
                     egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 560.0))
                         .contains_rect(action)
+                );
+                let language_control = ctx.data(|data| {
+                    data.get_temp::<egui::Rect>(egui::Id::new("compact-language-bounds"))
+                        .unwrap()
+                });
+                assert!(
+                    egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 560.0))
+                        .contains_rect(language_control)
+                        && language_control.height() <= 40.0,
+                    "compact language control must remain one line and visible: {language_control:?}"
                 );
                 assert!(click(
                     &ctx,

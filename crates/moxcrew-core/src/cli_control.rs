@@ -68,7 +68,7 @@ fn invocation(
         if !memory.active.load(Ordering::Acquire) {
             return Err("MEMORY_CONNECTION_FAILED".into());
         }
-        let source = &memory.config["mcp_servers"]["patchfleet_memory"];
+        let source = &memory.config["mcp_servers"]["moxcrew_memory"];
         let executable = source["command"]
             .as_str()
             .filter(|v| !v.is_empty())
@@ -86,13 +86,13 @@ fn invocation(
                 .as_str()
                 .filter(|v| opaque(v) && !v.contains(['.', ':', '-']))
                 .ok_or("MEMORY_CONNECTION_FAILED")?;
-            allowed.push(format!("mcp__patchfleet_memory__{tool}"));
+            allowed.push(format!("mcp__moxcrew_memory__{tool}"));
         }
-        servers["patchfleet_memory"] = json!({"command":executable,"args":args});
+        servers["moxcrew_memory"] = json!({"command":executable,"args":args});
         if provider == "gemini" {
-            servers["patchfleet_memory"]["trust"] = json!(true);
-            servers["patchfleet_memory"]["includeTools"] = json!(tools);
-            servers["patchfleet_memory"]["timeout"] = json!(5000);
+            servers["moxcrew_memory"]["trust"] = json!(true);
+            servers["moxcrew_memory"]["includeTools"] = json!(tools);
+            servers["moxcrew_memory"]["timeout"] = json!(5000);
         }
     }
     let mut cmd = if provider == "claude" {
@@ -164,7 +164,7 @@ fn invocation(
             ])
         };
         let settings = configuration.write("gemini.json", &json!({
-            "mcpServers":servers,"mcp":{"serverCommand":"","allowed":if memory.is_some(){vec!["patchfleet_memory"]}else{vec![]}},
+            "mcpServers":servers,"mcp":{"serverCommand":"","allowed":if memory.is_some(){vec!["moxcrew_memory"]}else{vec![]}},
             "admin":{"mcp":{"enabled":memory.is_some()},"extensions":{"enabled":false},"skills":{"enabled":false}},
             "tools":{"core":core,"discoveryCommand":"","callCommand":"","exclude":["run_shell_command","web_fetch","google_web_search","delegate_to_agent","activate_skill"]},
             "hooksConfig":{"enabled":false},"skills":{"enabled":false},
@@ -184,7 +184,7 @@ fn invocation(
                 "none",
                 "--allowed-mcp-server-names",
                 if memory.is_some() {
-                    "patchfleet_memory"
+                    "moxcrew_memory"
                 } else {
                     "moxcrew_no_servers"
                 },
@@ -248,7 +248,7 @@ impl Transcript {
             if memory && provider == "claude" {
                 let connected = event["mcp_servers"].as_array().is_some_and(|v| {
                     v.iter()
-                        .any(|v| v["name"] == "patchfleet_memory" && v["status"] == "connected")
+                        .any(|v| v["name"] == "moxcrew_memory" && v["status"] == "connected")
                 });
                 let errors = event["mcp_server_errors"]
                     .as_array()
@@ -698,14 +698,14 @@ pub(super) async fn generate(
         return Err("EXTRACTION_CANCELLED".into());
     }
     let executable = program(programs, provider).map_err(|_| "EXTRACTION_PROVIDER_UNSUPPORTED")?;
-    let deadline = tokio::time::Instant::now() + EXTRACTION_TIMEOUT;
+    let deadline = tokio::time::Instant::now() + PLANNING_TIMEOUT;
     let probe =
         command(executable, &["--version"]).map_err(|_| "EXTRACTION_PROVIDER_UNAVAILABLE")?;
     let version = extraction_process(
         probe,
         &[],
         &active,
-        programs.timeout.min(EXTRACTION_TIMEOUT),
+        programs.timeout.min(PLANNING_TIMEOUT),
         1024,
         |mut stdout, budget| async move {
             let mut bytes = Vec::new();

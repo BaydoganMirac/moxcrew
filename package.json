@@ -1,5 +1,5 @@
 {
-  "name": "patchfleet",
+  "name": "moxcrew",
   "version": "0.13.1",
   "description": "Local-first native desktop for inspectable AI crews, projects and decisions.",
   "license": "Apache-2.0",
@@ -20,11 +20,11 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "dev": "cargo run -p patchfleet-desktop",
-    "build": "cargo build --locked --release -p patchfleet-desktop",
-    "start": "cargo run -p patchfleet-desktop",
-    "desktop:dev": "cargo run -p patchfleet-desktop",
-    "desktop:build": "cargo build --locked --release -p patchfleet-desktop",
+    "dev": "cargo run -p moxcrew-desktop",
+    "build": "cargo build --locked --release -p moxcrew-desktop",
+    "start": "cargo run -p moxcrew-desktop",
+    "desktop:dev": "cargo run -p moxcrew-desktop",
+    "desktop:build": "cargo build --locked --release -p moxcrew-desktop",
     "desktop:package": "cargo packager --config Packager.toml",
     "test": "cargo test --locked --workspace",
     "legacy:dev": "node scripts/local-next.mjs dev",

@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "name": "patchfleet-lifecycle",
+            "name": "moxcrew-lifecycle",
             "type": "command",
             "command": "node \"${extensionPath}${/}hook.mjs\"",
             "timeout": 5000
@@ -16,7 +16,7 @@
       {
         "hooks": [
           {
-            "name": "patchfleet-lifecycle",
+            "name": "moxcrew-lifecycle",
             "type": "command",
             "command": "node \"${extensionPath}${/}hook.mjs\"",
             "timeout": 5000
@@ -28,7 +28,7 @@
       {
         "hooks": [
           {
-            "name": "patchfleet-lifecycle",
+            "name": "moxcrew-lifecycle",
             "type": "command",
             "command": "node \"${extensionPath}${/}hook.mjs\"",
             "timeout": 5000

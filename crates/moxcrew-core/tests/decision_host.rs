@@ -1,4 +1,4 @@
-use patchfleet_core::{now, Host};
+use moxcrew_core::{now, Host};
 use serde_json::{json, Value};
 
 fn command(mut args: Value) -> Value {
@@ -36,6 +36,87 @@ async fn propose(host: &Host, project: &Value, source: &Value, title: &str) -> V
         receipt
     );
     receipt
+}
+
+#[tokio::test]
+async fn checked_in_technical_decision_needs_project_acceptance_and_survives_restart() {
+    let record = include_str!("../../../docs/decisions/0031-versioned-local-decision-events.md")
+        .replace("\r\n", "\n");
+    let (_, body) = record.split_once("\n## Decision\n").unwrap();
+    let (choice, _) = body.split_once("\n## Consequences\n").unwrap();
+    let choice = choice.trim();
+    let directory = tempfile::tempdir().unwrap();
+    let host = Host::open(directory.path().to_owned()).unwrap();
+    let project = host
+        .action(
+            "project_create",
+            command(json!({"name":"Technical decision example"})),
+        )
+        .await
+        .unwrap()["projectId"]
+        .clone();
+    let message = command(json!({
+        "projectId":project, "expectedProjectRevision":1,
+        "title":"ADR 0031", "text":record.trim()
+    }));
+    let receipt = host.action("project_message", message).await.unwrap();
+    assert_eq!(receipt["outcome"], "applied", "{receipt}");
+    let page = host
+        .action("project_memory_read", json!({"projectId":project}))
+        .await
+        .unwrap();
+    let source = &page["sources"][0];
+    let proposal = command(json!({
+        "projectId":project, "expectedProjectRevision":project_revision(&host, &project),
+        "title":"ADR 0031: Versioned local decision events",
+        "decision":choice, "context":"Public technical decision",
+        "rationale":"Retain the exact source revision",
+        "consequences":"Accepted decisions are readable after restart",
+        "sources":[{"sourceId":source["sourceId"], "revision":source["revision"]}]
+    }));
+    let draft = host
+        .action("project_decision_propose", proposal)
+        .await
+        .unwrap();
+    assert_eq!(draft["outcome"], "applied", "{draft}");
+    let accepted = json!({"projectId":project,"status":"accepted","query":"ADR 0031"});
+    let before = host
+        .action("project_decisions_read", accepted.clone())
+        .await
+        .unwrap();
+    assert_eq!(before["total"], 0);
+    let decision = &draft["decisionId"];
+    let acceptance = command(json!({
+        "projectId":project, "decisionId":decision, "expectedDecisionRevision":1
+    }));
+    let receipt = host
+        .action("project_decision_accept", acceptance)
+        .await
+        .unwrap();
+    assert_eq!(receipt["outcome"], "applied", "{receipt}");
+    host.shutdown().await;
+    drop(host);
+
+    let restarted = Host::open(directory.path().to_owned()).unwrap();
+    let after = restarted
+        .action("project_decisions_read", accepted)
+        .await
+        .unwrap();
+    assert_eq!(after["total"], 1);
+    assert_eq!(&after["decisions"][0]["decisionId"], decision);
+    let detail = restarted
+        .action(
+            "project_decision_read",
+            json!({"projectId":project,"decisionId":decision}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(detail["decision"]["decision"], choice);
+    assert_eq!(detail["decision"]["status"], "accepted");
+    assert_eq!(detail["sources"][0]["sourceId"], source["sourceId"]);
+    assert_eq!(detail["sources"][0]["revision"], source["revision"]);
+    assert_eq!(detail["sources"][0]["text"], record.trim());
+    restarted.shutdown().await;
 }
 
 #[tokio::test]
@@ -147,7 +228,7 @@ async fn local_owner_decisions_survive_restart_with_original_evidence_and_no_clo
         input["agentPacks"] = input["packs"].clone();
         input["projectDecisions"] = detail.clone();
         input["decisionPage"] = active.clone();
-        let outgoing = patchfleet_core::cloud::build_projection(&input, version, 1, "install:test")
+        let outgoing = moxcrew_core::cloud::build_projection(&input, version, 1, "install:test")
             .unwrap()
             .to_string();
         for denied in [

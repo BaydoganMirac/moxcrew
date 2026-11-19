@@ -75,7 +75,12 @@ pub fn event(kind: &str, payload: serde_json::Value) -> serde_json::Value {
 
 pub fn default_data_directory() -> Result<std::path::PathBuf> {
     use std::path::PathBuf;
-    if let Some(value) = std::env::var_os("PATCHFLEET_DATA_DIR") {
+    let configured = std::env::var_os("MOXCREW_DATA_DIR");
+    let previous = std::env::var_os("PATCHFLEET_DATA_DIR");
+    if configured.is_some() && previous.is_some() && configured != previous {
+        return Err(Error("CONFLICTING_DATA_DIRECTORIES".into()));
+    }
+    if let Some(value) = configured.or(previous) {
         if value.is_empty() {
             return Err(Error("INVALID_DATA_DIRECTORY".into()));
         }
@@ -85,24 +90,189 @@ pub fn default_data_directory() -> Result<std::path::PathBuf> {
         }
         return Ok(path);
     }
-    let base = if cfg!(target_os = "windows") {
-        PathBuf::from(
+    let (current, legacy) = if cfg!(target_os = "windows") {
+        // LocalAppData/Patchfleet is the former installer directory, not a
+        // canonical data profile. Keep writable state outside the install tree.
+        let roaming = PathBuf::from(
             std::env::var_os("APPDATA").ok_or_else(|| Error("APPDATA_UNAVAILABLE".into()))?,
+        );
+        (
+            roaming.join("Moxcrew"),
+            vec![
+                roaming.join("com.patchfleet.desktop"),
+                roaming.join("Patchfleet"),
+            ],
         )
     } else {
         let home = PathBuf::from(
             std::env::var_os("HOME").ok_or_else(|| Error("HOME_UNAVAILABLE".into()))?,
         );
         if cfg!(target_os = "macos") {
-            home.join("Library/Application Support")
+            let base = home.join("Library/Application Support");
+            (
+                base.join("Moxcrew"),
+                vec![base.join("com.patchfleet.desktop"), base.join("Patchfleet")],
+            )
         } else {
-            std::env::var_os("XDG_DATA_HOME")
+            let base = std::env::var_os("XDG_DATA_HOME")
                 .map(PathBuf::from)
                 .filter(|p| p.is_absolute())
-                .unwrap_or_else(|| home.join(".local/share"))
+                .unwrap_or_else(|| home.join(".local/share"));
+            (
+                base.join("moxcrew"),
+                vec![base.join("com.patchfleet.desktop")],
+            )
         }
     };
-    Ok(base.join("com.patchfleet.desktop"))
+    migrate_default_data_directory(current, &legacy)
+}
+
+fn migrate_default_data_directory(
+    current: std::path::PathBuf,
+    legacy: &[std::path::PathBuf],
+) -> Result<std::path::PathBuf> {
+    use std::io::ErrorKind;
+    fn directory_exists(path: &std::path::Path) -> Result<bool> {
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_dir() => Ok(true),
+            Ok(_) => Err(Error("UNSAFE_DATA_DIRECTORY".into())),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+            Err(_) => Err(Error("DATA_DIRECTORY_ACCESS_FAILED".into())),
+        }
+    }
+    let new_exists = directory_exists(&current)?;
+    let mut found = Vec::new();
+    for path in legacy {
+        if path != &current && !found.contains(path) && directory_exists(path)? {
+            found.push(path.clone());
+        }
+    }
+    if found.len() > 1 || (new_exists && !found.is_empty()) {
+        return Err(Error("DATA_DIRECTORY_COLLISION".into()));
+    }
+    if let Some(old) = found.pop() {
+        let events = old.join("events.jsonl");
+        let writer_lock = old.join("writer.lock");
+        if !events.is_file() && !writer_lock.is_file() {
+            return Err(Error("UNRECOGNIZED_LEGACY_DATA_DIRECTORY".into()));
+        }
+        if writer_lock.is_file() {
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&writer_lock)
+                .map_err(|_| Error("DATA_DIRECTORY_MIGRATION_FAILED".into()))?;
+            fs2::FileExt::try_lock_exclusive(&file)
+                .map_err(|_| Error("DATA_DIRECTORY_IN_USE".into()))?;
+            fs2::FileExt::unlock(&file)
+                .map_err(|_| Error("DATA_DIRECTORY_MIGRATION_FAILED".into()))?;
+        }
+        let parent = current
+            .parent()
+            .ok_or_else(|| Error("INVALID_DATA_DIRECTORY".into()))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|_| Error("DATA_DIRECTORY_MIGRATION_FAILED".into()))?;
+        std::fs::rename(old, &current)
+            .map_err(|_| Error("DATA_DIRECTORY_MIGRATION_FAILED".into()))?;
+    }
+    Ok(current)
+}
+
+#[cfg(test)]
+mod data_directory_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_directory_moves_once_with_event_and_credential_bytes_intact() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("Patchfleet");
+        let new = root.path().join("Moxcrew");
+        std::fs::create_dir(&old).unwrap();
+        std::fs::write(old.join("events.jsonl"), b"event-byte-canary\n").unwrap();
+        std::fs::write(old.join("paired-host.json"), b"credential-byte-canary").unwrap();
+        assert_eq!(
+            migrate_default_data_directory(new.clone(), &[old.clone()]).unwrap(),
+            new
+        );
+        assert!(!old.exists());
+        assert_eq!(
+            std::fs::read(new.join("events.jsonl")).unwrap(),
+            b"event-byte-canary\n"
+        );
+        assert_eq!(
+            std::fs::read(new.join("paired-host.json")).unwrap(),
+            b"credential-byte-canary"
+        );
+        assert_eq!(
+            migrate_default_data_directory(new.clone(), &[old]).unwrap(),
+            new
+        );
+    }
+
+    #[test]
+    fn collisions_leave_all_directories_untouched() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("Patchfleet");
+        let older = root.path().join("com.patchfleet.desktop");
+        let new = root.path().join("Moxcrew");
+        for path in [&old, &older, &new] {
+            std::fs::create_dir(path).unwrap();
+            std::fs::write(
+                path.join("marker"),
+                path.file_name().unwrap().as_encoded_bytes(),
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            migrate_default_data_directory(new.clone(), &[old.clone(), older.clone()])
+                .unwrap_err()
+                .0,
+            "DATA_DIRECTORY_COLLISION"
+        );
+        for path in [&old, &older, &new] {
+            assert!(path.join("marker").exists());
+        }
+    }
+
+    #[test]
+    fn unrecognized_legacy_folder_is_never_moved_as_a_profile() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("Patchfleet");
+        let new = root.path().join("Moxcrew");
+        std::fs::create_dir(&old).unwrap();
+        std::fs::write(old.join("moxcrew-desktop.exe"), b"installer-canary").unwrap();
+        assert_eq!(
+            migrate_default_data_directory(new.clone(), &[old.clone()])
+                .unwrap_err()
+                .0,
+            "UNRECOGNIZED_LEGACY_DATA_DIRECTORY"
+        );
+        assert!(old.join("moxcrew-desktop.exe").exists());
+        assert!(!new.exists());
+    }
+
+    #[test]
+    fn active_legacy_writer_blocks_migration_without_moving_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("com.patchfleet.desktop");
+        let new = root.path().join("Moxcrew");
+        std::fs::create_dir(&old).unwrap();
+        std::fs::write(old.join("events.jsonl"), b"preserve-me\n").unwrap();
+        let lock = std::fs::File::create(old.join("writer.lock")).unwrap();
+        fs2::FileExt::lock_exclusive(&lock).unwrap();
+        assert_eq!(
+            migrate_default_data_directory(new.clone(), &[old.clone()])
+                .unwrap_err()
+                .0,
+            "DATA_DIRECTORY_IN_USE"
+        );
+        assert_eq!(
+            std::fs::read(old.join("events.jsonl")).unwrap(),
+            b"preserve-me\n"
+        );
+        assert!(!new.exists());
+        fs2::FileExt::unlock(&lock).unwrap();
+    }
 }
 
 pub fn gemini_hook() -> Result<()> {

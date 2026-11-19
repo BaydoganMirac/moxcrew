@@ -434,12 +434,12 @@ impl Login {
                 .and_then(|bytes| parse_callback(&bytes, port, &nonce).ok());
                 let valid = result.is_some();
                 let text = if valid {
-                    "Patchfleet sign-in received. You may return to the application."
+                    "Moxcrew sign-in received. You may return to the application."
                 } else {
-                    "Invalid Patchfleet sign-in callback."
+                    "Invalid Moxcrew sign-in callback."
                 };
                 let html = format!(
-                    "<!doctype html><meta charset=utf-8><title>Patchfleet</title><p>{text}</p>"
+                    "<!doctype html><meta charset=utf-8><title>Moxcrew</title><p>{text}</p>"
                 );
                 let response=format!("HTTP/1.1 {}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}",if valid {"200 OK"}else{"400 Bad Request"},html.len());
                 let _ = tokio::time::timeout(

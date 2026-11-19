@@ -19,7 +19,7 @@ pub async fn check(path: PathBuf) -> Selection {
             problem: Some("WORKSPACE_PATH_INVALID".into()),
         };
     };
-    match patchfleet_core::providers::validate_workspace_for_registration(path).await {
+    match moxcrew_core::providers::validate_workspace_for_registration(path).await {
         Ok(canonical) => Selection {
             path: canonical,
             problem: None,

@@ -1,4 +1,4 @@
-use patchfleet_core::{retrieval, shared_memory, Host};
+use moxcrew_core::{retrieval, shared_memory, Host};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
@@ -102,7 +102,7 @@ async fn server() -> Server {
                             .unwrap()
                     ));
                     *shared.lock().unwrap() = id.clone();
-                    json!({"schemaVersion":1,"operationId":body["operationId"],"operationType":"create_project","requestHash":shared_memory::request_hash(&body).unwrap(),"outcome":"applied","reasonCode":"MEMORY_PROJECT_CREATED","sharedProjectId":id,"revision":0,"role":"publisher","enabled":true,"completedAt":patchfleet_core::now()})
+                    json!({"schemaVersion":1,"operationId":body["operationId"],"operationType":"create_project","requestHash":shared_memory::request_hash(&body).unwrap(),"outcome":"applied","reasonCode":"MEMORY_PROJECT_CREATED","sharedProjectId":id,"revision":0,"role":"publisher","enabled":true,"completedAt":moxcrew_core::now()})
                 } else if path.ends_with("/manifest") {
                     json!({"schemaVersion":1,"sharedProjectId":shared.lock().unwrap().clone(),"revision":0,"enabled":true,"offset":0,"limit":20,"total":0,"decisions":[]})
                 } else if path.ends_with("/search") {
@@ -185,7 +185,7 @@ fn files(dir: &std::path::Path) -> BTreeMap<String, Vec<u8>> {
         })
         .collect()
 }
-async fn search(host: &Host, project: &Value) -> patchfleet_core::Result<Value> {
+async fn search(host: &Host, project: &Value) -> moxcrew_core::Result<Value> {
     host.action(
         "memory_cloud_search",
         json!({"projectId":project,"query":"  RETRIEVAL_QUERY_CANARY neden rust?  "}),
@@ -219,7 +219,7 @@ async fn explicit_local_and_cloud_reads_leave_no_query_in_durable_or_operational
     let snapshot = host.snapshot().unwrap();
     let snapshot_text = serde_json::to_string(&snapshot).unwrap();
     let operational =
-        patchfleet_core::cloud::build_projection(&snapshot, 2, 1, "install:retrieval-fixture")
+        moxcrew_core::cloud::build_projection(&snapshot, 2, 1, "install:retrieval-fixture")
             .unwrap();
     assert!(!snapshot_text.contains("RETRIEVAL_QUERY_CANARY"));
     assert!(!serde_json::to_string(&operational)

@@ -38,6 +38,9 @@
 !fixtures/**/*.example.keystore
 
 secrets/
+/.moxcrew/
+/moxcrew-data/
+# Legacy local profiles remain ignored.
 /.patchfleet/
 /patchfleet-data/
 

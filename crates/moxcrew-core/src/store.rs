@@ -58,7 +58,7 @@ struct Fingerprint {
     #[cfg(windows)]
     created: u64,
 }
-fn linked(metadata: &fs::Metadata) -> bool {
+pub(crate) fn linked(metadata: &fs::Metadata) -> bool {
     if metadata.file_type().is_symlink() {
         return true;
     }

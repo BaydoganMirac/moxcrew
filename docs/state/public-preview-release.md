@@ -1,10 +1,10 @@
 # Public preview release
 
-Status: Windows x64 verified locally for the 0.13.2 preview
+Status: Windows x64 file delivery verified locally
 
 Updated: 2026-11-19
 
-## Windows 0.13.2 verification
+## Windows file delivery verification
 
 The checked-in [Windows delivery contract](../plans/0111-windows-file-delivery.md)
 covers project output listing, text preview, individual export and ZIP delivery.

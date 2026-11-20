@@ -1,6 +1,6 @@
 <!-- Based on cargo-packager 0.11.8; see README.md and LICENSE-cargo-packager-MIT.
      SPDX-License-Identifier: MIT
-     Registry keys and directory identities survive the Moxcrew display rename. -->
+     Legacy registry and shortcut names are read only for upgrade cleanup. -->
 <?if $(sys.BUILDARCH)="x86"?>
     <?define Win64 = "no" ?>
     <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
@@ -15,7 +15,7 @@
     <Product
             Id="*"
             Name="{{product_name}}"
-            UpgradeCode="{{upgrade_code}}"
+            UpgradeCode="c1c93449-0cd9-535c-908c-ce6cf4d9d365"
             Language="!(loc.CargoPackagerLanguage)"
             Manufacturer="{{manufacturer}}"
             Version="{{version}}">
@@ -63,12 +63,12 @@
 
         <!-- initialize with previous InstallDir -->
         <Property Id="INSTALLDIR">
-            <RegistrySearch Id="PrevInstallDirReg" Root="HKCU" Key="Software\\Patchfleet\\Patchfleet" Name="InstallDir" Type="raw"/>
+            <RegistrySearch Id="PrevInstallDirReg" Root="HKCU" Key="Software\Moxcrew\Moxcrew" Name="InstallDir" Type="raw"/>
         </Property>
 
         <!-- Only an existing product registry entry permits legacy shortcut cleanup. -->
         <Property Id="LEGACYINSTALLDIR" Secure="yes">
-            <RegistrySearch Id="LegacyShortcutInstallReg" Root="HKCU" Key="Software\\Patchfleet\\Patchfleet" Name="InstallDir" Type="raw"/>
+            <RegistrySearch Id="LegacyShortcutInstallReg" Root="HKCU" Key="Software\Patchfleet\Patchfleet" Name="InstallDir" Type="raw"/>
         </Property>
         <SetProperty Id="LEGACYDESKTOPDIR" Value="[DesktopFolder]" After="CostFinalize" Sequence="execute">LEGACYINSTALLDIR</SetProperty>
         <SetProperty Id="LEGACYAPPDIR" Value="[INSTALLDIR]" After="CostFinalize" Sequence="execute">LEGACYINSTALLDIR</SetProperty>
@@ -109,25 +109,25 @@
                     <Shortcut Id="ApplicationDesktopShortcut" Name="{{product_name}}" Description="Runs {{product_name}}" Target="[!Path]" WorkingDirectory="INSTALLDIR" />
                     <RemoveFile Id="LegacyDesktopShortcut" Name="Patchfleet.lnk" Property="LEGACYDESKTOPDIR" On="install" />
                     <RemoveFolder Id="DesktopFolder" On="uninstall" />
-                    <RegistryValue Root="HKCU" Key="Software\\Patchfleet\\Patchfleet" Name="Desktop Shortcut" Type="integer" Value="1" KeyPath="yes" />
+                    <RegistryValue Root="HKCU" Key="Software\Moxcrew\Moxcrew" Name="Desktop Shortcut" Type="integer" Value="1" KeyPath="yes" />
                 </Component>
             </Directory>
             <Directory Id="$(var.PlatformProgramFilesFolder)" Name="PFiles">
-                <Directory Id="INSTALLDIR" Name="Patchfleet"/>
+                <Directory Id="INSTALLDIR" Name="Moxcrew"/>
             </Directory>
             <Directory Id="ProgramMenuFolder">
-                <Directory Id="ApplicationProgramsFolder" Name="Patchfleet"/>
+                <Directory Id="ApplicationProgramsFolder" Name="Moxcrew"/>
             </Directory>
         </Directory>
 
         <DirectoryRef Id="INSTALLDIR">
             <Component Id="RegistryEntries" Guid="*">
-                <RegistryKey Root="HKCU" Key="Software\\Patchfleet\\Patchfleet">
+                <RegistryKey Root="HKCU" Key="Software\Moxcrew\Moxcrew">
                     <RegistryValue Name="InstallDir" Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
                 </RegistryKey>
                 <!-- Change the Root to HKCU for perUser installations -->
                 {{#each deep_link_protocols as |protocol| ~}}
-                <RegistryKey Root="HKLM" Key="Software\Classes\\{{protocol}}">
+                <RegistryKey Root="HKLM" Key="Software\Classes\{{protocol}}">
                     <RegistryValue Type="string" Name="URL Protocol" Value=""/>
                     <RegistryValue Type="string" Value="URL:{{bundle_id}} protocol"/>
                     <RegistryKey Key="DefaultIcon">
@@ -170,7 +170,7 @@
 							  On="uninstall" />
 
 				<RegistryValue Root="HKCU"
-							   Key="Software\\Patchfleet\\Patchfleet"
+							   Key="Software\Moxcrew\Moxcrew"
 							   Name="Uninstaller Shortcut"
 							   Type="integer"
 							   Value="1"
@@ -192,7 +192,7 @@
                 </Shortcut>
                 <RemoveFile Id="LegacyStartMenuShortcut" Name="Patchfleet.lnk" Property="LEGACYMENUDIR" On="install" />
                 <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
-                <RegistryValue Root="HKCU" Key="Software\\Patchfleet\\Patchfleet" Name="Start Menu Shortcut" Type="integer" Value="1" KeyPath="yes"/>
+                <RegistryValue Root="HKCU" Key="Software\Moxcrew\Moxcrew" Name="Start Menu Shortcut" Type="integer" Value="1" KeyPath="yes"/>
            </Component>
         </DirectoryRef>
 

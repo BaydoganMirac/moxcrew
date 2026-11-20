@@ -1,5 +1,5 @@
 //! Manual synthetic benchmark. Input is JSON on stdin, never a Host directory.
-use patchfleet_core::retrieval;
+use moxcrew_core::retrieval;
 use serde_json::{json, Value};
 use std::{io::Read, time::Instant};
 

@@ -11,6 +11,7 @@ const cli = join(process.cwd(), "bin", "patchfleet.mjs");
 
 test("desktop package retires Node publication and keeps native release authority tag-scoped", async () => {
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
+  assert.equal(packageJson.name, "moxcrew");
   assert.equal(packageJson.private, true);
   assert.equal(packageJson.bin, undefined);
   assert.equal(packageJson.publishConfig, undefined);
@@ -21,8 +22,8 @@ test("desktop package retires Node publication and keeps native release authorit
   assert.equal(packageJson.bugs, "https://github.com/BaydoganMirac/moxcrew/issues");
   assert.equal(packageJson.dependencies.next, undefined);
   assert.equal(packageJson.devDependencies.next, "15.5.19");
-  assert.equal(packageJson.scripts["desktop:build"], "cargo build --locked --release -p patchfleet-desktop");
-  assert.equal(packageJson.scripts.start, "cargo run -p patchfleet-desktop");
+  assert.equal(packageJson.scripts["desktop:build"], "cargo build --locked --release -p moxcrew-desktop");
+  assert.equal(packageJson.scripts.start, "cargo run -p moxcrew-desktop");
   assert.match(packageJson.scripts.build, /cargo build/);
   assert.doesNotMatch(packageJson.scripts.build, /next|vite|tauri|sanitize-package/);
   assert.match(packageJson.scripts["legacy:build"], /next build/);
@@ -35,8 +36,16 @@ test("desktop package retires Node publication and keeps native release authorit
   assert.match(desktopWorkflow, /tags: \['v0\.\[0-9\]\*\.\[0-9\]\*'\]/);
   assert.equal(desktopWorkflow.match(/contents: write/g)?.length, 1);
   assert.match(desktopWorkflow, /release:\n    if: startsWith\(github\.ref, 'refs\/tags\/'\)/);
-  assert.match(desktopWorkflow, /runner\.os != 'Windows'/);
-  assert.match(desktopWorkflow, /test "\$\{#installers\[@\]\}" -eq 6/);
+  assert.doesNotMatch(desktopWorkflow, /continue-on-error|runner\.os != 'Windows'/);
+  assert.match(desktopWorkflow, /needs\.native\.result == 'success'/);
+  const installerNames = desktopWorkflow.match(/installers=\(\n([\s\S]*?)\n          \)/)[1]
+    .trim().split(/\s+/).map(name => name.replaceAll('"', "").replace("${version}", packageJson.version));
+  const downloads = await readFile("README.md", "utf8");
+  assert.equal(new Set(installerNames).size, 8);
+  for (const name of installerNames) {
+    assert(downloads.includes(`/releases/download/v${packageJson.version}/${name}`), name);
+  }
+  assert.match(desktopWorkflow, /sha256sum --check SHA256SUMS\.txt/);
   assert.match(desktopWorkflow, /gh release create[\s\S]*--verify-tag[\s\S]*--fail-on-no-commits[\s\S]*--prerelease/);
 });
 

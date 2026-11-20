@@ -1,5 +1,5 @@
 //! Run only through the private disposable PostgreSQL/HTTP fixture driver.
-use patchfleet_core::Host;
+use moxcrew_core::Host;
 use serde_json::{json, Value};
 
 fn command(mut value: Value) -> Value {
@@ -38,7 +38,7 @@ async fn local_project(host: &Host, name: &str) -> Value {
         .unwrap()["projectId"]
         .clone()
 }
-async fn sync(host: &Host, project: &Value) -> patchfleet_core::Result<Value> {
+async fn sync(host: &Host, project: &Value) -> moxcrew_core::Result<Value> {
     host.action("memory_cloud_sync", command(json!({"projectId":project})))
         .await
 }
@@ -97,13 +97,13 @@ async fn draft(host: &Host, project: &Value, source: &Value, title: &str) -> Val
 #[tokio::test]
 #[ignore = "requires the isolated private memory-rust-smoke PostgreSQL/HTTP fixture"]
 async fn two_installations_share_exact_decisions_through_postgres_and_recover_lost_ack() {
-    let base = env("PATCHFLEET_MEMORY_E2E_URL");
+    let base = env("MOXCREW_MEMORY_E2E_URL");
     let parsed = reqwest::Url::parse(&base).unwrap();
     assert_eq!(parsed.scheme(), "http");
     assert_eq!(parsed.host_str(), Some("127.0.0.1"));
     assert_eq!(parsed.path(), "/");
-    let token = env("PATCHFLEET_MEMORY_E2E_TOKEN");
-    let retrieval = std::env::var("PATCHFLEET_MEMORY_RETRIEVAL_SMOKE").as_deref() == Ok("1");
+    let token = env("MOXCREW_MEMORY_E2E_TOKEN");
+    let retrieval = std::env::var("MOXCREW_MEMORY_RETRIEVAL_SMOKE").as_deref() == Ok("1");
     let data_a = tempfile::tempdir().unwrap();
     let data_b = tempfile::tempdir().unwrap();
     let mut a = Host::open(data_a.path().to_owned()).unwrap();
@@ -111,8 +111,8 @@ async fn two_installations_share_exact_decisions_through_postgres_and_recover_lo
     let project_a = local_project(&a, "Publisher local project").await;
     let project_b = local_project(&b, "Reader private project").await;
     for (host, code, name) in [
-        (&a, env("PATCHFLEET_MEMORY_E2E_PAIR_A"), "Publisher fixture"),
-        (&b, env("PATCHFLEET_MEMORY_E2E_PAIR_B"), "Reader fixture"),
+        (&a, env("MOXCREW_MEMORY_E2E_PAIR_A"), "Publisher fixture"),
+        (&b, env("MOXCREW_MEMORY_E2E_PAIR_B"), "Reader fixture"),
     ] {
         host.action(
             "cloud_pair",

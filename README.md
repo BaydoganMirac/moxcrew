@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.1"><img alt="Moxcrew 0.13.1 Public Preview" src="https://img.shields.io/badge/download-0.13.1%20Public%20Preview-2854F4"></a>
+  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.3"><img alt="Moxcrew 0.13.3 Public Preview" src="https://img.shields.io/badge/download-0.13.3%20Public%20Preview-2854F4"></a>
   <a href="https://github.com/BaydoganMirac/moxcrew/actions/workflows/desktop.yml"><img alt="Native desktop CI" src="https://github.com/BaydoganMirac/moxcrew/actions/workflows/desktop.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2854F4"></a>
   <img alt="Rust native desktop" src="https://img.shields.io/badge/desktop-native%20Rust-FF7A2F">
@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.1"><strong>Download Moxcrew</strong></a>
+  <a href="https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.3"><strong>Download Moxcrew</strong></a>
   · <a href="docs/roadmap.md">Roadmap</a>
   · <a href="https://github.com/BaydoganMirac/moxcrew/issues/new">Share feedback</a>
 </p>
@@ -123,21 +123,20 @@ Read the full [product boundaries](docs/product.md),
 
 ## Download Moxcrew
 
-Moxcrew 0.13.1 Public Preview ships as native installers—no Rust, Node or source
+Moxcrew 0.13.3 Public Preview ships as native installers—no Rust, Node or source
 build is needed.
 
 | Platform | Download |
 |---|---|
-| macOS Apple Silicon | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_macOS_Apple-Silicon.dmg) |
-| macOS Intel | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_macOS_Intel.dmg) |
-| Linux x64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_x86_64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_x86_64.deb) |
-| Linux ARM64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_aarch64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_aarch64.deb) |
+| Windows x64 | [Setup EXE](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_windows_x64-setup.exe) / [MSI](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_windows_x64.msi) |
+| macOS Apple Silicon | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_macOS_Apple-Silicon.dmg) |
+| macOS Intel | [Download DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_macOS_Intel.dmg) |
+| Linux x64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_x86_64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_x86_64.deb) |
+| Linux ARM64 | [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_aarch64.AppImage) / [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_aarch64.deb) |
 
-This is an unsigned public preview. macOS may show a Gatekeeper warning; verify
-the published [SHA-256 checksums](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/SHA256SUMS.txt)
-before opening an installer. Moxcrew never asks you to bypass protection with a
-terminal command. The Windows package is withheld until its native
-private-storage and installer gates pass.
+The preview installers are unsigned. Windows SmartScreen or macOS Gatekeeper may
+show a warning. Before opening a download, compare its SHA-256 digest with the
+[release checksums](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/SHA256SUMS.txt).
 
 For real planning or execution, install and authenticate at least one supported
 provider CLI separately. See [installation and recovery](docs/install.md) for
@@ -146,11 +145,11 @@ platform steps, data locations, upgrades and rollback. Contributors can still
 
 ## Current status
 
-Moxcrew 0.13.1 is an active Public Preview for macOS and Linux. CI builds and
-checks those native artifacts while retaining a visible experimental Windows
-lane. Publisher-signed distribution, a passing Windows private-storage/runtime
-gate, live quality evidence across every provider/capability and moderated
-usability testing remain production-release gates.
+The 0.13.3 preview targets Windows x64, macOS on Apple Silicon and Intel, and
+Linux on x64 and ARM64. Each native target runs behavior and packaging checks
+before the tagged workflow publishes any installer. Publisher signing, live
+quality evidence across providers and moderated usability testing remain
+production-release gates.
 
 The repository intentionally separates implemented behavior from future scope:
 

@@ -1,23 +1,19 @@
-Moxcrew 0.13.1 turns a request into a bounded adaptive mission while keeping
-Projects, sources, outputs and accepted decisions local by default.
+# Windows x64 file delivery
 
-This preview hardens evidence-backed checkpoints and lets an already prepared
-reviewer inspect a failed branch, retire only durably unsuccessful work and
-propose a bounded replacement graph. Failed outputs never become trusted inputs;
-legacy missions and adaptive missions without a viable reviewer still fail
-honestly. Existing fixed recipes remain optional planning hints.
+Moxcrew 0.13.3 brings the native desktop preview to Windows x64. Open a job’s
+outputs to preview a text file, save an individual file, or select several
+outputs and deliver them in a ZIP with a SHA-256 manifest. Saving preserves
+existing files at the destination.
 
-Choose the installer for your machine from the assets below. macOS ships as
-separate Apple Silicon and Intel DMGs. Linux ships as x64 and ARM64 AppImage and
-Deb packages. Compare the downloaded file with `SHA256SUMS.txt` before opening
-it, close any older Moxcrew/Patchfleet process and back up the stopped local data
-directory before upgrading. V18–V20 adaptive facts are append-only; rollback to
-an older build requires restoring that complete stopped backup.
+Choose the setup EXE for a per-user Windows install or the MSI for a
+machine-wide install. Both packages contain the same desktop executable.
+macOS has separate Apple Silicon and Intel DMGs. Linux x64 and ARM64 each have
+an AppImage and a Deb.
 
-This is an unsigned Public Preview. Apple Developer ID notarization, publisher
-signing, live-provider quality across every ability and moderated usability
-testing remain production-release gates. Windows is intentionally withheld until
-its native private-storage, upgrade and installer checks pass.
+The preview is unsigned. Compare the downloaded installer with its entry in
+`SHA256SUMS.txt` before opening it. To upgrade, close Moxcrew or Patchfleet
+and back up its stopped data directory. A rollback to an older reader requires
+the complete pre-upgrade backup.
 
-See the [installation and recovery guide](https://github.com/BaydoganMirac/moxcrew/blob/main/docs/install.md)
-for platform requirements, upgrade safety and rollback instructions.
+Platform requirements, data locations and recovery steps are in the
+[installation guide](https://github.com/BaydoganMirac/moxcrew/blob/v0.13.3/docs/install.md).

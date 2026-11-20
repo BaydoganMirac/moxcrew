@@ -3,21 +3,21 @@ use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Language {
-    locale: patchfleet_core::locales::DesktopLocale,
+    locale: moxcrew_core::locales::DesktopLocale,
 }
 
 #[allow(non_upper_case_globals)]
 impl Language {
     pub const Tr: Self = Self {
-        locale: patchfleet_core::locales::TURKISH_DESKTOP_LOCALE,
+        locale: moxcrew_core::locales::TURKISH_DESKTOP_LOCALE,
     };
     #[cfg(test)]
     pub const En: Self = Self {
-        locale: patchfleet_core::locales::ENGLISH_DESKTOP_LOCALE,
+        locale: moxcrew_core::locales::ENGLISH_DESKTOP_LOCALE,
     };
 
     pub fn from_code(code: &str) -> Self {
-        patchfleet_core::locales::desktop_locale(code)
+        moxcrew_core::locales::desktop_locale(code)
             .map(|locale| Self { locale })
             .unwrap_or_default()
     }
@@ -35,7 +35,7 @@ impl Language {
         self.locale.native_label
     }
     pub fn all() -> impl Iterator<Item = Self> {
-        patchfleet_core::locales::DESKTOP_LOCALES
+        moxcrew_core::locales::DESKTOP_LOCALES
             .iter()
             .copied()
             .map(|locale| Self { locale })
@@ -44,7 +44,7 @@ impl Language {
 
 impl Default for Language {
     fn default() -> Self {
-        Self::from_code(patchfleet_core::locales::DEFAULT_DESKTOP_LOCALE)
+        Self::from_code(moxcrew_core::locales::DEFAULT_DESKTOP_LOCALE)
     }
 }
 
@@ -140,7 +140,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Single task. Prepare, then start." => "Tek görev. Önce hazırla, sonra başlat.",
         "Describe the change for this selection." => "Bu seçimde neyi değiştireceğini yaz.",
         "An action is in progress. You can keep editing your message." => "Bir işlem sürüyor. Mesajını düzenlemeye devam edebilirsin.",
-        "Mox is planning. You can write your next message." => "Mox planlıyor. Sonraki mesajını yazabilirsin.",
+        "Mox is responding. You can write your next message." => "Mox yanıt hazırlıyor. Sonraki mesajını yazabilirsin.",
         "Cmd+Enter to send" => "Cmd+Enter ile gönder",
         "Ctrl+Enter to send" => "Ctrl+Enter ile gönder",
         "Cmd+Enter to prepare" => "Cmd+Enter ile hazırla",
@@ -506,7 +506,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Clear the output selection to send attachments, or remove attachments to prepare this revision." => "Dosyaları göndermek için çıktı seçimini temizle; bu düzenlemeyi hazırlamak için dosya eklerini kaldır.",
         "Send" => "Gönder",
         "Automatic" => "Otomatik",
-        "Planning with {0}" => "{0} ile planlanıyor",
+        "Selected provider: {0}" => "Seçili sağlayıcı: {0}",
         "Connect one provider to send your request." => "İsteğini göndermek için bir sağlayıcı bağla.",
         "New conversation" => "Yeni sohbet",
         "Selected provider is unavailable. Check connections, then send again." => "Seçtiğiniz sağlayıcı kullanılamıyor. Bağlantıyı kontrol edip tekrar gönderin.",
@@ -686,7 +686,10 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "End (RFC 3339)" => "Bitiş (RFC 3339)",
         "Time zone" => "Saat dilimi",
         "Drive file ID" => "Drive dosya kimliği",
-        "Mox planner" => "Mox planlayıcı",
+        "Team plan" => "Takım planı",
+        "View team" => "Takımı gör",
+        "Mox could not finish this request." => "Mox bu isteği tamamlayamadı.",
+        "Refresh status" => "Durumu yenile",
         "Provider-generated plan" => "Sağlayıcı tarafından oluşturulan plan",
         "Recipes & controls" => "Tarifler ve kontroller",
         "Maximum jobs" => "En fazla iş",
@@ -947,8 +950,8 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "What are we making today?" => "Bugün ne yapıyoruz?",
         "Describe the result you need. Mox will propose the crew." => "İhtiyacın olan sonucu anlat. Ekibi Mox önersin.",
         "Mox is ready" => "Mox hazır",
-        "Name the outcome.\nWatch the crew take shape." => "Sonucu söyle.\nEkibin şekillenişini izle.",
-        "Mox shapes the plan and proposes the right roles. You stay in control." => "Mox planı şekillendirir, doğru rolleri önerir. Kontrol sende kalır.",
+        "Ask a question.\nGive Mox a goal." => "Sorunu sor.\nİşini anlat.",
+        "Mox answers questions and plans work. You stay in control." => "Mox sorularını yanıtlar, işlerini planlar. Kontrol sende kalır.",
         "Tell Mox what you want to do." => "Ne yapmak istediğini Mox’a anlat.",
         "Mox · Your project crew" => "Mox · Proje ekibin",
         "Connections" => "Bağlantılar",
@@ -1444,7 +1447,7 @@ pub fn tr(language: Language, text: &str) -> Cow<'_, str> {
         "Operational status is separate from optional memory publication. Task instructions, paths and transcripts stay local." => "Çalışma durumu, isteğe bağlı hafıza yayınından ayrıdır. İş talimatları, yollar ve konuşmalar yerelde kalır.",
         "Language preference could not be read. Select a language to replace it." => "Dil tercihi okunamadı. Yeniden kaydetmek için bir dil seçin.",
         "prepared" => "hazır",
-        "available" => "hazır", "completed" => "tamamlandı", "applied" => "uygulandı", "failed" => "başarısız", "rejected" => "reddedildi", "timed_out" => "süre doldu",
+        "available" => "hazır", "completed" => "tamamlandı", "answered" => "yanıtlandı", "applied" => "uygulandı", "failed" => "başarısız", "rejected" => "reddedildi", "timed_out" => "süre doldu",
         "queued" => "kuyrukta", "running" => "çalışıyor", "launching" => "başlatılıyor", "cancelling" => "iptal ediliyor", "cancelled" => "iptal edildi", "interrupted" => "kesildi",
         "blocked" => "engellendi", "draft" => "taslak", "active" => "aktif", "waiting" => "bekliyor", "waiting_question" => "yanıt bekliyor", "waiting_approval" => "onay bekliyor",
         "ready" => "hazır", "planned" => "planlandı", "pending" => "bekliyor", "idle" => "boşta", "unknown" => "bilinmiyor", "degraded" => "kısıtlı", "approved" => "onaylandı",
@@ -1627,6 +1630,13 @@ fn reason(code: &str) -> Option<(&'static str, &'static str)> {
         "WORKFLOW_SCHEDULE_UPDATED" => ("Schedule setting saved.","Zamanlama ayarı kaydedildi."),
         "WORKFLOW_INPUT_CHANGED" => ("The referenced input changed after planning. Select the current files and create a new plan. Your draft is preserved.","Referans dosyası planlamadan sonra değişti. Güncel dosyaları seçip yeni bir plan oluştur. Taslağın korundu."),
         "WORKFLOW_PLAN_UNAVAILABLE" => ("This plan is unavailable for that action. Refresh its current status.","Bu plan söz konusu işlem için kullanılamıyor. Güncel durumunu yenile."),
+        "WORKFLOW_PLANNER_INVALID_OUTPUT" => ("The provider response could not be read as a plan. No plan was saved; retry planning.","Sağlayıcı yanıtı plan olarak okunamadı. Plan kaydedilmedi; planlamayı yeniden dene."),
+        "WORKFLOW_PLANNER_PROVIDER_FAILED" => ("Planning failed at the provider. Check its connection, then retry planning.","Planlama sağlayıcıda başarısız oldu. Bağlantısını kontrol edip yeniden dene."),
+        "WORKFLOW_PLANNER_TIMEOUT" => ("Planning reached its time limit. Retry planning.","Planlama süre sınırına ulaştı. Yeniden dene."),
+        "WORKFLOW_PLANNER_PROVIDER_UNAVAILABLE" => ("The selected planning provider is unavailable. Check Providers, then retry.","Seçili planlama sağlayıcısı kullanılamıyor. Sağlayıcılar'ı kontrol edip yeniden dene."),
+        "WORKFLOW_PLANNER_PROVIDER_UNSUPPORTED" => ("The selected provider version cannot plan here. Update it, then retry.","Seçili sağlayıcı sürümü burada planlama yapamıyor. Güncelleyip yeniden dene."),
+        "WORKFLOW_PLANNER_INVALID_INPUT" => ("The planning request could not be prepared safely. Review the request and retry.","Planlama isteği güvenle hazırlanamadı. İsteği inceleyip yeniden dene."),
+        "WORKFLOW_PLANNER_CANCELLED" => ("Planning was cancelled. Your request is saved.","Planlama iptal edildi. İsteğin kayıtlı."),
         "WORKFLOW_DIRECTION_UNAVAILABLE" => ("Direction is available for an active mission. Start the prepared crew first.","Yönlendirme, çalışan bir takım görevinde kullanılabilir. Önce hazırlanmış takımı başlat."),
         "PROJECT_CREW_OUTPUT_REQUIRED" => ("Choose a clear output type or select a skill, then plan the crew again.","Net bir çıktı türü belirt veya bir yetenek seç, ardından takımı yeniden planla."),
         "PROJECT_CREW_MEMBERS_INVALID" | "PROJECT_CREW_ROLE_INVALID" => ("Review the roster. Choose one to six agents with valid skills, names and instructions.","Kadroyu incele. Geçerli yetenek, ad ve yönergeleri olan bir ila altı ajan seç."),
@@ -1651,7 +1661,6 @@ fn reason(code: &str) -> Option<(&'static str, &'static str)> {
         "PROJECT_JOB_ID_INVALID" | "PROJECT_JOB_NOT_FOUND" | "PROJECT_JOB_SCOPE_INVALID" => ("This task is unavailable in this project. Refresh and choose the project again.", "Bu iş bu projede kullanılamıyor. Yenileyip projeyi yeniden seçin."),
         "PROJECT_JOB_INSTRUCTION_INVALID" => ("The goal cannot be submitted. Shorten it and remove unsupported characters.", "Hedef gönderilemiyor. Kısaltıp desteklenmeyen karakterleri kaldırın."),
         "PROJECT_RESULTS_UNAVAILABLE" => ("Output files could not be listed. Check the task and refresh outputs.", "Çıktı dosyaları listelenemedi. İşi kontrol edip çıktıları yenileyin."),
-        "PROJECT_RESULTS_UNSUPPORTED_PLATFORM" => ("Output browsing and export are unavailable on Windows in this build. Tasks can still run and retry.", "Bu sürümde Windows’ta çıktı görüntüleme ve dışa aktarma kullanılamıyor. İşler çalıştırılabilir ve yeniden denenebilir."),
         "PROJECT_RESULT_PATH_INVALID" | "PROJECT_RESULT_UNSAFE" => ("This output cannot be opened safely. Refresh the output list.", "Bu çıktı güvenle açılamıyor. Çıktı listesini yenileyin."),
         "PROJECT_RESULT_UNAVAILABLE" => ("This output is no longer available. Refresh the output list.", "Bu çıktı artık kullanılamıyor. Çıktı listesini yenileyin."),
         "PROJECT_RESULT_PREVIEW_UNSUPPORTED" | "PROJECT_RESULT_TOO_LARGE" => ("This file cannot be previewed here. Export a copy to open it in its app.", "Bu dosya burada önizlenemiyor. Uygulamasında açmak için kopyasını dışa aktarın."),

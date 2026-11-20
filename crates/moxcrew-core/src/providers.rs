@@ -32,6 +32,7 @@ type Result<T> = std::result::Result<T, String>;
 const LIMIT: usize = 256 * 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(60);
+const PLANNING_TIMEOUT: Duration = Duration::from_secs(180);
 const EXTRACTION_OUTPUT: usize = 1024 * 1024;
 const EXTRACTION_JSON: usize = 128 * 1024;
 const EXTRACTION_ARGS: &[&str] = &[
@@ -414,6 +415,12 @@ impl ExtractionTranscript {
                 }
                 match item["type"].as_str() {
                     Some("reasoning") => Ok(()),
+                    // Codex may report a recoverable request error and still finish
+                    // the turn with a valid structured response. A terminal failure
+                    // or missing final response remains an error in finish().
+                    Some("error") if item["message"].as_str().is_some_and(|v| v.len() <= LIMIT) => {
+                        Ok(())
+                    }
                     Some("agent_message") => {
                         if event["type"] == "item.completed" {
                             let text = item["text"]
@@ -1261,7 +1268,7 @@ impl AppServer {
             memory: HashMap::new(),
             leases,
         };
-        let init=server.request("initialize",json!({"clientInfo":{"name":"patchfleet","title":"Patchfleet","version":env!("CARGO_PKG_VERSION")},"capabilities":null})).await;
+        let init=server.request("initialize",json!({"clientInfo":{"name":"moxcrew","title":"Moxcrew","version":env!("CARGO_PKG_VERSION")},"capabilities":null})).await;
         if !matches!(init,Ok(ref v) if v.is_object()) {
             server.close().await;
             return Err(init.err().unwrap_or("CODEX_PROTOCOL_MALFORMED".into()));
@@ -1433,7 +1440,7 @@ impl AppServer {
         lease_guard(&self.leases).remove(thread);
     }
     async fn memory_ready(&mut self, thread: &str) -> Result<()> {
-        timeout(self.bound, async {
+        let server_name = timeout(self.bound, async {
             loop {
                 let mut cursor = Value::Null;
                 loop {
@@ -1441,7 +1448,9 @@ impl AppServer {
                         .request("mcpServerStatus/list", json!({"threadId":thread,"detail":"toolsAndAuthOnly","limit":100,"cursor":cursor}))
                         .await?;
                     let entries = status["data"].as_array().ok_or("MEMORY_CONNECTION_FAILED")?;
-                    if let Some(server) = entries.iter().find(|v| v["name"] == "patchfleet_memory") {
+                    if let Some(server) = entries.iter().find(|v| {
+                        v["name"] == "moxcrew_memory" || v["name"] == "patchfleet_memory"
+                    }) {
                         if server["runtimeStatus"] == "connected" {
                             let tools = server["tools"].as_object().ok_or("MEMORY_CONNECTION_FAILED")?;
                             let names = crate::agent_memory::TOOLS;
@@ -1449,7 +1458,11 @@ impl AppServer {
                                 && tools.len() == names.len()
                                 && names.iter().all(|name| tools.get(*name).is_some_and(|v| v["name"] == *name))
                             {
-                                Ok(())
+                                Ok(if server["name"] == "moxcrew_memory" {
+                                    "moxcrew_memory"
+                                } else {
+                                    "patchfleet_memory"
+                                })
                             } else {
                                 Err("MEMORY_CONNECTION_FAILED".into())
                             };
@@ -1474,7 +1487,7 @@ impl AppServer {
         .map_err(|_| "MEMORY_CONNECTION_FAILED".to_string())?
         .map_err(|_: String| "MEMORY_CONNECTION_FAILED".to_string())?;
         let context = self
-            .request("mcpServer/tool/call", json!({"threadId":thread,"server":"patchfleet_memory","tool":"project_context","arguments":{"limit":20}}))
+            .request("mcpServer/tool/call", json!({"threadId":thread,"server":server_name,"tool":"project_context","arguments":{"limit":20}}))
             .await
             .map_err(|_| "MEMORY_CONNECTION_FAILED".to_string())?;
         if context["isError"] == false && context["structuredContent"].is_object() {
@@ -1657,7 +1670,9 @@ async fn observe_gemini(p: &Programs) -> Value {
     let parsed = serde_json::from_str::<Value>(&extensions);
     match parsed.ok().and_then(|v| v.as_array().cloned()) {
         Some(items) => {
-            let ext = items.iter().find(|e| e["name"] == "patchfleet-gemini");
+            let ext = items
+                .iter()
+                .find(|e| e["name"] == "moxcrew-gemini" || e["name"] == "patchfleet-gemini");
             match ext.map(|e| e["isActive"].as_bool()) {
                 Some(Some(true)) => available("gemini", &v, vec![], &now()),
                 Some(None) => failed("gemini", "GEMINI_PROBE_FAILED", Some(&v)),
@@ -1738,7 +1753,7 @@ impl Controller {
     ) -> Result<Value> {
         if provider == "codex" {
             return self
-                .extract_decisions(scratch, prompt, schema, active)
+                .extract_decisions_with_timeout(scratch, prompt, schema, active, PLANNING_TIMEOUT)
                 .await;
         }
         let mut cancellation = ExtractionCancellation(Some(active.clone()));
@@ -1775,6 +1790,17 @@ impl Controller {
         schema: &Value,
         active: Arc<AtomicBool>,
     ) -> Result<Value> {
+        self.extract_decisions_with_timeout(scratch, prompt, schema, active, EXTRACTION_TIMEOUT)
+            .await
+    }
+    async fn extract_decisions_with_timeout(
+        &self,
+        scratch: &Path,
+        prompt: &str,
+        schema: &Value,
+        active: Arc<AtomicBool>,
+        bound: Duration,
+    ) -> Result<Value> {
         let mut cancellation = ExtractionCancellation(Some(active.clone()));
         let result = async {
             if prompt.is_empty() || prompt.len() > LIMIT {
@@ -1786,7 +1812,7 @@ impl Controller {
                 prompt.to_owned(),
                 schema.clone(),
                 active,
-                EXTRACTION_TIMEOUT,
+                bound,
             ))
             .await
             .map_err(|_| "EXTRACTION_PROVIDER_FAILED".to_owned())?
@@ -1879,7 +1905,7 @@ impl Controller {
                 .await?,
             );
         }
-        let source = format!("patchfleet:{intent}");
+        let source = format!("moxcrew:{intent}");
         let s = guard.as_mut().unwrap();
         if let Some(memory) = memory.as_ref() {
             lease_guard(&s.leases).pending(memory.active.clone());

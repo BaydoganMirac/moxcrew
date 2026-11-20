@@ -1,4 +1,4 @@
-use patchfleet_core::{
+use moxcrew_core::{
     domain::{project_events, validate_event, validate_workspace},
     event,
     store::{atomic_write, Store},
@@ -315,8 +315,8 @@ fn one_os_writer_lock_excludes_a_second_process_and_releases_on_drop() {
     let run = |expected: &str| {
         Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "writer_lock_child", "--nocapture"])
-            .env("PATCHFLEET_TEST_LOCK_DIR", dir.path())
-            .env("PATCHFLEET_TEST_LOCK_EXPECT", expected)
+            .env("MOXCREW_TEST_LOCK_DIR", dir.path())
+            .env("MOXCREW_TEST_LOCK_EXPECT", expected)
             .output()
             .unwrap()
     };
@@ -336,13 +336,13 @@ fn one_os_writer_lock_excludes_a_second_process_and_releases_on_drop() {
 }
 #[test]
 fn writer_lock_child() {
-    let Ok(dir) = std::env::var("PATCHFLEET_TEST_LOCK_DIR") else {
+    let Ok(dir) = std::env::var("MOXCREW_TEST_LOCK_DIR") else {
         return;
     };
     let available = Store::open(dir.into()).is_ok();
     assert_eq!(
         available,
-        std::env::var("PATCHFLEET_TEST_LOCK_EXPECT").unwrap() == "available"
+        std::env::var("MOXCREW_TEST_LOCK_EXPECT").unwrap() == "available"
     );
 }
 
@@ -453,40 +453,54 @@ fn v2_cloud_team_receipts_are_linked_to_the_original_sequence_and_intent() {
 }
 
 #[cfg(windows)]
-#[test]
-fn windows_private_storage_has_protected_owner_and_system_acl() {
+fn with_windows_acl<T>(
+    path: &std::path::Path,
+    inspect: impl FnOnce(
+        windows_sys::Win32::Security::PSECURITY_DESCRIPTOR,
+        *mut windows_sys::Win32::Security::ACL,
+    ) -> T,
+) -> T {
     use std::{os::windows::ffi::OsStrExt, ptr::null_mut};
     use windows_sys::Win32::{
         Foundation::LocalFree,
+        Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
+        Security::DACL_SECURITY_INFORMATION,
+    };
+    let name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut descriptor = null_mut();
+    let mut dacl = null_mut();
+    let status = unsafe {
+        GetNamedSecurityInfoW(
+            name.as_ptr(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            &mut dacl,
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    assert_eq!(status, 0);
+    assert!(!dacl.is_null());
+    let result = inspect(descriptor, dacl);
+    unsafe {
+        LocalFree(descriptor);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn windows_acl(path: &std::path::Path) -> String {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::{
+        Foundation::LocalFree,
         Security::Authorization::{
-            ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW,
-            SDDL_REVISION_1, SE_FILE_OBJECT,
+            ConvertSecurityDescriptorToStringSecurityDescriptorW, SDDL_REVISION_1,
         },
         Security::DACL_SECURITY_INFORMATION,
     };
-    fn inspect(path: &std::path::Path) {
-        let name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let mut descriptor = null_mut();
-        let mut dacl = null_mut();
-        let status = unsafe {
-            GetNamedSecurityInfoW(
-                name.as_ptr(),
-                SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION,
-                null_mut(),
-                null_mut(),
-                &mut dacl,
-                null_mut(),
-                &mut descriptor,
-            )
-        };
-        assert_eq!(status, 0);
-        assert!(!dacl.is_null());
-        assert_eq!(
-            unsafe { (*dacl).AceCount },
-            2,
-            "only current owner and SYSTEM grants"
-        );
+    with_windows_acl(path, |descriptor, _| {
         let mut sddl = null_mut();
         let mut length = 0;
         assert_ne!(
@@ -507,18 +521,88 @@ fn windows_private_storage_has_protected_owner_and_system_acl() {
         .unwrap();
         unsafe {
             LocalFree(sddl.cast());
-            LocalFree(descriptor);
         }
-        assert!(text.starts_with("D:P"), "protected ACL: {text}");
-        assert!(text.contains(";;;SY)"), "SYSTEM access: {text}");
-        assert!(
-            text.contains(";;;S-1-"),
-            "current process SID access: {text}"
-        );
-        for forbidden in [";;;WD)", ";;;BU)", ";;;AU)", ";;;BA)"] {
-            assert!(!text.contains(forbidden), "unexpected grant: {text}");
-        }
+        text
+    })
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_private_storage_has_protected_owner_and_system_acl() {
+    use std::ptr::{addr_of, null_mut};
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        Security::{
+            EqualSid, GetAce, GetSecurityDescriptorControl, GetTokenInformation, IsWellKnownSid,
+            TokenUser, WinLocalSystemSid, ACCESS_ALLOWED_ACE, ACE_HEADER, SE_DACL_PROTECTED,
+            TOKEN_QUERY, TOKEN_USER,
+        },
+        Storage::FileSystem::FILE_ALL_ACCESS,
+        System::Threading::{GetCurrentProcess, OpenProcessToken},
+    };
+
+    let mut token = null_mut();
+    assert_ne!(
+        unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) },
+        0
+    );
+    let mut needed = 0;
+    unsafe {
+        GetTokenInformation(token, TokenUser, null_mut(), 0, &mut needed);
     }
+    assert!((needed as usize) >= std::mem::size_of::<TOKEN_USER>());
+    // TOKEN_USER includes a pointer into this buffer. Keep its storage aligned
+    // and live until every file's ACEs have been compared with the actual SID.
+    let mut user = vec![0usize; (needed as usize).div_ceil(std::mem::size_of::<usize>())];
+    let read = unsafe {
+        GetTokenInformation(
+            token,
+            TokenUser,
+            user.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        )
+    };
+    unsafe {
+        CloseHandle(token);
+    }
+    assert_ne!(read, 0);
+    let process_sid = unsafe { (*user.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+    let inspect = |path: &std::path::Path| {
+        with_windows_acl(path, |descriptor, dacl| unsafe {
+            let mut control = 0;
+            let mut revision = 0;
+            assert_ne!(
+                GetSecurityDescriptorControl(descriptor, &mut control, &mut revision),
+                0
+            );
+            assert_ne!(control & SE_DACL_PROTECTED, 0, "DACL must be protected");
+            assert_eq!((*dacl).AceCount, 2, "only current owner and SYSTEM grants");
+
+            let [first, second] = [0, 1].map(|index| {
+                let mut ace = null_mut();
+                assert_ne!(GetAce(dacl, index, &mut ace), 0);
+                const ACCESS_ALLOWED_ACE_TYPE: u8 = 0;
+                assert_eq!((*ace.cast::<ACE_HEADER>()).AceType, ACCESS_ALLOWED_ACE_TYPE);
+                let grant = &*ace.cast::<ACCESS_ALLOWED_ACE>();
+                assert_eq!(grant.Mask, FILE_ALL_ACCESS);
+                assert_eq!(
+                    u32::from(grant.Header.AceFlags)
+                        & windows_sys::Win32::Security::INHERIT_ONLY_ACE,
+                    0,
+                    "each grant must apply to the object itself"
+                );
+                addr_of!(grant.SidStart).cast_mut().cast()
+            });
+            let matches = |owner, system| {
+                EqualSid(owner, process_sid) != 0 && IsWellKnownSid(system, WinLocalSystemSid) != 0
+            };
+            assert!(
+                matches(first, second) || matches(second, first),
+                "full-access grants must identify the process user and Local System"
+            );
+        })
+    };
     let dir = tempdir().unwrap();
     let store = Store::open(dir.path().into()).unwrap();
     let request = owner_request("cmd:windows");
@@ -663,7 +747,7 @@ fn private_storage_rejects_links_without_changing_outside_files() {
     }
     let linked_file = root.path().join("private-link.json");
     symlink(&outside, &linked_file).unwrap();
-    assert!(patchfleet_core::store::read_private_file(&linked_file).is_err());
+    assert!(moxcrew_core::store::read_private_file(&linked_file).is_err());
     assert!(atomic_write(&linked_file, b"overwrite").is_err());
     let outside_dir = root.path().join("outside-dir");
     fs::create_dir(&outside_dir).unwrap();
@@ -740,6 +824,8 @@ fn hard_links_cannot_share_private_state_across_distinct_writer_directories() {
         fs::set_permissions(&outside, fs::Permissions::from_mode(0o644)).unwrap();
     }
     let before = fs::metadata(&outside).unwrap().permissions();
+    #[cfg(windows)]
+    let original_acl = windows_acl(&outside);
     for name in ["events.jsonl", "writer.lock", "work-items.json"] {
         for suffix in ["first", "second"] {
             let data = root
@@ -762,6 +848,7 @@ fn hard_links_cannot_share_private_state_across_distinct_writer_directories() {
             }
             #[cfg(windows)]
             {
+                assert_eq!(windows_acl(&outside), original_acl);
                 assert_eq!(
                     fs::metadata(&outside).unwrap().permissions().readonly(),
                     before.readonly()
@@ -771,7 +858,7 @@ fn hard_links_cannot_share_private_state_across_distinct_writer_directories() {
     }
     let linked = root.path().join("hard-linked-private.json");
     fs::hard_link(&outside, &linked).unwrap();
-    assert!(patchfleet_core::store::read_private_file(&linked).is_err());
+    assert!(moxcrew_core::store::read_private_file(&linked).is_err());
     assert!(atomic_write(&linked, b"must not write").is_err());
     assert_eq!(fs::read(&outside).unwrap(), b"");
 }

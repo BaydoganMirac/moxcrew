@@ -1,4 +1,4 @@
-use patchfleet_core::Host;
+use moxcrew_core::Host;
 use serde_json::{json, Value};
 use std::process::Command;
 
@@ -324,9 +324,9 @@ async fn removed_workspaces_block_draft_start_without_changing_receipt_replay() 
     drop(host);
 
     // Recover a state produced by the previous start-before-validation behavior.
-    let store = patchfleet_core::store::Store::open(data.clone()).unwrap();
+    let store = moxcrew_core::store::Store::open(data.clone()).unwrap();
     store
-        .append(vec![patchfleet_core::event(
+        .append(vec![moxcrew_core::event(
             "team.started",
             json!({"teamId":created["teamId"]}),
         )])

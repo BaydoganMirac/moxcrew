@@ -1,4 +1,4 @@
-use patchfleet_core::{
+use moxcrew_core::{
     decisions, domain, project_memory as memory, shared_memory as shared, store::Store,
 };
 use serde_json::{json, Value};
@@ -79,7 +79,7 @@ fn fake_receipt(op: &Value, revision: u64, role: &str, enabled: bool) -> Value {
         "publish" => "MEMORY_PUBLISHED",
         _ => "MEMORY_SHARING_UPDATED",
     };
-    json!({"schemaVersion":1,"operationId":op["operationId"],"operationType":p["type"],"requestHash":shared::request_hash(op).unwrap(),"outcome":"applied","reasonCode":reason,"sharedProjectId":shared,"revision":revision,"role":role,"enabled":enabled,"completedAt":patchfleet_core::now()})
+    json!({"schemaVersion":1,"operationId":op["operationId"],"operationType":p["type"],"requestHash":shared::request_hash(op).unwrap(),"outcome":"applied","reasonCode":reason,"sharedProjectId":shared,"revision":revision,"role":role,"enabled":enabled,"completedAt":moxcrew_core::now()})
 }
 fn deliver(
     events: &mut Vec<Value>,
@@ -449,7 +449,7 @@ fn reader_cache_is_complete_scoped_immutable_bounded_and_never_local_authority()
     let projection = projected(&events);
     let shared_id = projection["mappings"][0]["sharedProjectId"].clone();
     let dto = op["payload"]["decision"].clone();
-    let at = patchfleet_core::now();
+    let at = moxcrew_core::now();
     let head = json!({"decisionId":decision,"revision":2,"title":dto["title"],"publishedAt":at});
     let manifest = json!({"revision":1,"decisions":[head]});
     let record = json!({"schemaVersion":1,"sharedProjectId":shared_id,"manifestRevision":1,"current":true,"publishedAt":at,"decision":dto});
@@ -673,7 +673,7 @@ fn reader_cache_rejects_bad_pagination_extra_records_and_wrong_current_labels() 
     let op = deliver(&mut events, &project, &c, 1, "publisher", true);
     let projection = projected(&events);
     let shared_id = projection["mappings"][0]["sharedProjectId"].clone();
-    let at = patchfleet_core::now();
+    let at = moxcrew_core::now();
     let row = json!({"decisionId":decision,"revision":2,"title":op["payload"]["decision"]["title"],"publishedAt":at});
     let manifest = json!({"schemaVersion":1,"sharedProjectId":shared_id,"revision":1,"enabled":true,"offset":0,"limit":20,"total":1,"decisions":[row]});
     shared::validate_manifest(&manifest, &shared_id, 0, None).unwrap();
@@ -779,7 +779,7 @@ fn reader_budget_evicts_history_while_preserving_all_sixty_four_current_heads() 
         dto[key] = json!("界".repeat(10_000));
     }
     shared::validate_dto(&dto).unwrap();
-    let at = patchfleet_core::now();
+    let at = moxcrew_core::now();
     let record = |current: bool| {
         let mut d = dto.clone();
         d["decisionId"] = json!(format!("decision:{}", uuid::Uuid::new_v4()));

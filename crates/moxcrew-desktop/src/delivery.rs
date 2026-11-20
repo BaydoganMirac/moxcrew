@@ -596,7 +596,7 @@ impl Console {
                     "Export package",
                     selected.is_some()
                         && studio::commands_ready(ui)
-                        && !cfg!(target_os = "windows"),
+                       ,
                     true,
                 )
                 .clicked()
@@ -806,7 +806,7 @@ mod tests {
                 )))
                 .unwrap()
             });
-            assert_eq!(enabled, !cfg!(target_os = "windows"));
+            assert!(enabled);
 
             data["projectStudio"]["reviews"][1]["sha256"] = json!("c".repeat(64));
             assert_eq!(
@@ -1097,7 +1097,7 @@ mod tests {
                         });
                         assert!(footer.contains_rect(rect) && clip.contains_rect(rect));
                         if label == "Export package" {
-                            assert_eq!(enabled, !invalid && !cfg!(target_os = "windows"));
+                            assert_eq!(enabled, !invalid);
                         }
                     }
                     if invalid {

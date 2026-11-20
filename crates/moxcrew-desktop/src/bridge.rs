@@ -1,7 +1,7 @@
 use crate::command::{account_action, safe_error, Command, Notice, NoticeKind};
 use crate::folder;
 use eframe::egui;
-use patchfleet_core::Host;
+use moxcrew_core::Host;
 use serde_json::Value;
 use std::{
     path::PathBuf,
@@ -1180,7 +1180,7 @@ impl Bridge {
                     self.cloud_login = Some(value);
                 }
                 "cloud_account_read" => {
-                    if patchfleet_core::desktop_login::validate_account_response(
+                    if moxcrew_core::desktop_login::validate_account_response(
                         &value,
                         &self.snapshot.as_ref().unwrap()["cloud"],
                     )
@@ -2203,7 +2203,7 @@ mod tests {
                         let released=release.notified();
                         seen.store(true,Ordering::SeqCst);
                         released.await;
-                        json!({"schemaVersion":1,"hostId":"host:bridge-race","workspaceId":"workspace:bridge-race","accountId":"10000000-0000-4000-8000-000000000001","email":"owner@bridge.test","subscription":{"status":"active","memoryAccess":true,"periodEndsAt":null,"checkedAt":patchfleet_core::now()}})
+                        json!({"schemaVersion":1,"hostId":"host:bridge-race","workspaceId":"workspace:bridge-race","accountId":"10000000-0000-4000-8000-000000000001","email":"owner@bridge.test","subscription":{"status":"active","memoryAccess":true,"periodEndsAt":null,"checkedAt":moxcrew_core::now()}})
                     } else if path.ends_with("/logout") {
                         assert_eq!(serde_json::from_slice::<Value>(&bytes[start..start+length]).unwrap(),json!({"schemaVersion":1}));
                         json!({"schemaVersion":1,"revoked":true})
@@ -2390,7 +2390,7 @@ mod tests {
         );
         let login = bridge.cloud_login.as_ref().unwrap().clone();
         assert_eq!(login["status"], "waiting");
-        assert!(patchfleet_core::desktop_login::validate_authorization_url(
+        assert!(moxcrew_core::desktop_login::validate_authorization_url(
             login["authorizationUrl"].as_str().unwrap(),
             "https://cloud.example.invalid"
         )
@@ -2411,6 +2411,10 @@ mod tests {
         let host = bridge.host.lock().unwrap().as_ref().unwrap().clone();
         assert!(host.snapshot().unwrap().get("cloudLogin").is_none());
         for entry in std::fs::read_dir(directory.path()).unwrap().flatten() {
+            if entry.file_name() == "writer.lock" {
+                assert_eq!(entry.metadata().unwrap().len(), 0);
+                continue;
+            }
             if entry.file_type().unwrap().is_file() {
                 let bytes = std::fs::read(entry.path()).unwrap();
                 let text = String::from_utf8_lossy(&bytes);
@@ -2877,6 +2881,10 @@ mod tests {
             events
         );
         for entry in std::fs::read_dir(directory.path()).unwrap().flatten() {
+            if entry.file_name() == "writer.lock" {
+                assert_eq!(entry.metadata().unwrap().len(), 0);
+                continue;
+            }
             if entry.file_type().unwrap().is_file() {
                 assert!(
                     !String::from_utf8_lossy(&std::fs::read(entry.path()).unwrap())

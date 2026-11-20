@@ -1,8 +1,22 @@
 # Public preview release
 
-Status: Windows x64 file delivery verified locally
+Status: 0.13.3 public preview published for Windows, macOS and Linux
 
-Updated: 2026-11-19
+Updated: 2026-11-20
+
+## Published 0.13.3 preview
+
+The [0.13.3 release](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.3)
+ships unsigned Windows x64 EXE and MSI installers, two macOS DMGs, and AppImage
+and Deb packages for Linux x64 and ARM64. The tag points to
+`0731e341b15b2a0fabd3cb7c1d9a71a655790166`.
+
+All five platform jobs and the publication job passed in the
+[tagged workflow](https://github.com/BaydoganMirac/moxcrew/actions/runs/44771741853).
+The Windows job checked both installer payloads against the built executable and
+tested upgrade and uninstall with existing profiles. After publication, all
+eight installers downloaded anonymously and their SHA-256 digests matched the
+[published manifest](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/SHA256SUMS.txt).
 
 ## Windows file delivery verification
 

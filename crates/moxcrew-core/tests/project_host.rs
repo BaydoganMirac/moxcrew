@@ -1,4 +1,4 @@
-use patchfleet_core::{now, Host};
+use moxcrew_core::{now, Host};
 use serde_json::{json, Value};
 
 fn command(mut args: Value) -> Value {
@@ -150,7 +150,7 @@ async fn owner_sources_keep_scope_across_relink_and_restart() {
         cloud_input["agentPacks"] = cloud_input["packs"].clone();
         cloud_input["projectMemory"] = sources_a.clone();
         let outgoing =
-            patchfleet_core::cloud::build_projection(&cloud_input, version, 1, "install:test")
+            moxcrew_core::cloud::build_projection(&cloud_input, version, 1, "install:test")
                 .unwrap()
                 .to_string();
         assert!(!outgoing.contains("PRIVATE_"));
@@ -180,15 +180,15 @@ async fn owner_sources_keep_scope_across_relink_and_restart() {
 }
 
 fn append_unknown_start(data: &std::path::Path, work: &Value) {
-    let store = patchfleet_core::store::Store::open(data.to_owned()).unwrap();
+    let store = moxcrew_core::store::Store::open(data.to_owned()).unwrap();
     let args = command(json!({}));
     let intent = json!({"schemaVersion":1,"intentId":args["commandId"],"idempotencyKey":args["commandId"],"type":"start_work","actorId":"local-owner","createdAt":args["createdAt"],"expiresAt":args["expiresAt"],"payload":{"workItemId":work,"expectedItemRevision":1}});
     let payload = json!({"intentId":args["commandId"],"workItemId":work,"expectedItemRevision":1,"ownerEpoch":uuid::Uuid::new_v4().to_string()});
     store
         .append(vec![
-            patchfleet_core::event("command.requested", json!({"intent":intent})),
-            patchfleet_core::event("run.launching", payload.clone()),
-            patchfleet_core::event("run.start_unknown", payload),
+            moxcrew_core::event("command.requested", json!({"intent":intent})),
+            moxcrew_core::event("run.launching", payload.clone()),
+            moxcrew_core::event("run.start_unknown", payload),
         ])
         .unwrap();
 }
@@ -327,7 +327,7 @@ async fn language_preferences_persist_without_changing_sources_or_cloud() {
     input["recordedAt"] = json!(now());
     for version in [1, 2] {
         assert!(
-            !patchfleet_core::cloud::build_projection(&input, version, 1, "install:test")
+            !moxcrew_core::cloud::build_projection(&input, version, 1, "install:test")
                 .unwrap()
                 .to_string()
                 .contains("desktopPreferences")

@@ -954,7 +954,7 @@ impl Console {
                 _ => 0,
             };
             if scene == "capabilities-image-campaign" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = available
                     .iter()
                     .find(|resource| campaign_image_source(resource))
@@ -1002,7 +1002,7 @@ impl Console {
                 *draft.value("text") = "15223D".into();
                 *draft.value("muted") = "56627A".into();
             } else if scene == "capabilities-presentation-revise" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = available
                     .iter()
                     .find(|resource| presentation_source(resource))
@@ -1036,7 +1036,7 @@ impl Console {
                 .into();
                 *draft.value("presentationEditRender") = "true".into();
             } else if scene == "capabilities-document-create" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("documentLanguage") = if english { "en" } else { "tr" }.into();
                 *draft.value("documentTitle") = if english {
                     "Moxcrew · 2027 Working Plan"
@@ -1057,7 +1057,7 @@ impl Console {
                 }
                 .into();
             } else if scene == "capabilities-site" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("siteLanguage") = if english { "en" } else { "tr" }.into();
                 *draft.value("siteTitle") = "Moxcrew".into();
                 *draft.value("siteEyebrow") = if english {
@@ -1097,7 +1097,7 @@ impl Console {
                 *draft.value("height") = "1600".into();
             } else if scene == "capabilities-podcast" {
                 draft.record = audio.unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Signal & Craft · Episode 04"
                 } else {
@@ -1112,7 +1112,7 @@ impl Console {
                 .into();
             } else if scene == "capabilities-data-chart" {
                 draft.record = csv.unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Revenue by region"
                 } else {
@@ -1123,7 +1123,7 @@ impl Console {
                 *draft.value("valueColumn") = "revenue".into();
                 *draft.value("aggregation") = "sum".into();
             } else if scene == "capabilities-presentations" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = available
                     .iter()
                     .find(|resource| presentation_logo_source(resource))
@@ -1163,7 +1163,7 @@ impl Console {
                 );
                 *draft.value("presentationFps") = "30".into();
             } else if scene == "capabilities-video-compose" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = available
                     .iter()
                     .find(|resource| video_source(resource))
@@ -1201,7 +1201,7 @@ impl Console {
                 *draft.value("highlightClipSeconds") = "4".into();
                 *draft.value("highlightEmphasis") = "balanced".into();
             } else if scene == "capabilities-video-motion" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("motionTitle") = if english {
                     "Mox keeps work visible"
                 } else {
@@ -1224,7 +1224,7 @@ impl Console {
                     .unwrap_or_default();
                 *draft.value("language") = "tr".into();
             } else if scene == "capabilities-local-speech" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("speechTitle") = if english {
                     "Owner control, spoken locally"
                 } else {
@@ -1239,7 +1239,7 @@ impl Console {
                 .into();
                 *draft.value("speechLanguage") = if english { "en_US" } else { "tr_TR" }.into();
             } else if scene == "capabilities-translated-audio" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 draft.record = audio.clone().unwrap_or_default();
                 *draft.value("dubTitle") = if english {
                     "Approved English audio version"
@@ -1273,7 +1273,7 @@ impl Console {
                 *draft.value("dataOutput") = "xlsx".into();
             } else if scene == "capabilities-data-scenario" {
                 draft.record = csv.unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "2027 operating plan"
                 } else {
@@ -1290,7 +1290,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Vendor renewal review"
                 } else {
@@ -1310,7 +1310,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Pilot decision brief"
                 } else {
@@ -1323,7 +1323,7 @@ impl Console {
                     .find(|resource| template_source(resource))
                     .map(|resource| text(resource, "resourceId").to_owned())
                     .unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("templateFields") = if english {
                     "client_name | Atlas Cloud\napproval_date |\ncontact_email | ops@atlas.example"
                 } else {
@@ -1336,7 +1336,7 @@ impl Console {
                     .find(|resource| rewrite_source(resource))
                     .map(|resource| text(resource, "resourceId").to_owned())
                     .unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("rewriteMode") = "translate".into();
                 *draft.value("rewriteTarget") =
                     if english { "Turkish" } else { "İngilizce" }.into();
@@ -1344,7 +1344,7 @@ impl Console {
             } else if scene == "capabilities-source-changes" {
                 draft.record = change_sources.first().cloned().unwrap_or_default();
                 *draft.value("afterSource") = change_sources.get(1).cloned().unwrap_or_default();
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Launch source changes"
                 } else {
@@ -1360,7 +1360,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Launch claim check"
                 } else {
@@ -1380,7 +1380,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Launch source synthesis"
                 } else {
@@ -1400,7 +1400,7 @@ impl Console {
                         .filter(|resource| extraction_source(resource))
                         .map(|resource| text(resource, "resourceId").to_owned()),
                 );
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Vendor comparison"
                 } else {
@@ -1421,7 +1421,7 @@ impl Console {
                 .into();
                 *draft.value("comparisonOptions") = "Atlas | Boreal".into();
             } else if scene == "capabilities-web-research" {
-                let english = std::env::var("PATCHFLEET_SMOKE_LANGUAGE").as_deref() == Ok("en");
+                let english = std::env::var("MOXCREW_SMOKE_LANGUAGE").as_deref() == Ok("en");
                 *draft.value("title") = if english {
                     "Launch market research"
                 } else {
@@ -5181,7 +5181,7 @@ impl Console {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{click, click_at_size, render, snapshot};
+    use super::super::tests::{click, click_at_size, fixture_path, render, snapshot};
     use super::*;
     fn fixture() -> Value {
         let mut data = snapshot();
@@ -5245,12 +5245,12 @@ mod tests {
             data["desktopPreferences"] = json!({"language":language});
             let mut c = console();
             c.create
-                .queue_paths(vec!["/tmp/one.pdf".into(), "/tmp/two.pdf".into()]);
+                .queue_paths(vec![fixture_path("one.pdf"), fixture_path("two.pdf")]);
             let foreign = ("project:two".into(), c.create.ability.clone());
             c.create
                 .capabilities
                 .attachments
-                .insert(foreign.clone(), vec!["/tmp/private.pdf".into()]);
+                .insert(foreign.clone(), vec![fixture_path("private.pdf")]);
             let size = egui::vec2(800.0, 560.0);
             for _ in 0..3 {
                 assert!(render(&ctx, &mut c, &data, size, true, vec![]).0.is_empty());
@@ -5258,7 +5258,7 @@ mod tests {
             let (rect, id, clip) = ctx.data(|data| {
                 data.get_temp::<(egui::Rect, egui::Id, egui::Rect)>(egui::Id::new((
                     "composer-remove-attachment",
-                    "/tmp/one.pdf",
+                    fixture_path("one.pdf"),
                 )))
                 .unwrap()
             });
@@ -5266,7 +5266,7 @@ mod tests {
             let second_id = ctx.data(|data| {
                 data.get_temp::<(egui::Rect, egui::Id, egui::Rect)>(egui::Id::new((
                     "composer-remove-attachment",
-                    "/tmp/two.pdf",
+                    fixture_path("two.pdf"),
                 )))
                 .unwrap()
                 .1
@@ -5288,12 +5288,12 @@ mod tests {
             )
             .0;
             assert!(commands.is_empty());
-            assert_eq!(c.create.attachment_paths(), vec!["/tmp/two.pdf"]);
+            assert_eq!(c.create.attachment_paths(), vec![fixture_path("two.pdf")]);
             render(&ctx, &mut c, &data, size, true, vec![]);
             let current_id = ctx.data(|data| {
                 data.get_temp::<(egui::Rect, egui::Id, egui::Rect)>(egui::Id::new((
                     "composer-remove-attachment",
-                    "/tmp/two.pdf",
+                    fixture_path("two.pdf"),
                 )))
                 .unwrap()
                 .1
@@ -5304,7 +5304,7 @@ mod tests {
             );
             assert_eq!(
                 c.create.capabilities.attachments[&foreign],
-                vec!["/tmp/private.pdf"]
+                vec![fixture_path("private.pdf")]
             );
             assert_eq!(c.create.conversation_input(), "Keep my unsent request");
             assert!(c.create.capabilities.pending.is_none());
@@ -5316,8 +5316,11 @@ mod tests {
         studio::install(&ctx);
         let data = fixture();
         let mut c = console();
-        c.create
-            .queue_paths((0..12).map(|i| format!("/tmp/source-{i:02}.pdf")).collect());
+        c.create.queue_paths(
+            (0..12)
+                .map(|i| fixture_path(&format!("source-{i:02}.pdf")))
+                .collect(),
+        );
         let size = egui::vec2(800.0, 560.0);
         for _ in 0..3 {
             render(&ctx, &mut c, &data, size, false, vec![]);
@@ -5334,7 +5337,7 @@ mod tests {
         let (remove, _, clip) = ctx.data(|d| {
             d.get_temp::<(egui::Rect, egui::Id, egui::Rect)>(egui::Id::new((
                 "composer-remove-attachment",
-                "/tmp/source-02.pdf",
+                fixture_path("source-02.pdf"),
             )))
             .unwrap()
         });
@@ -5347,7 +5350,7 @@ mod tests {
         assert!(!c
             .create
             .attachment_paths()
-            .contains(&"/tmp/source-02.pdf".into()));
+            .contains(&fixture_path("source-02.pdf")));
         assert_eq!(c.create.conversation_input(), "Keep my unsent request");
     }
     #[test]
@@ -5504,26 +5507,26 @@ mod tests {
         let request = c.take_capability_path_request().unwrap();
         let mut foreign = request.clone();
         foreign.request_id = "cmd:other".into();
-        c.complete_capability_paths(foreign, Some(vec!["/tmp/foreign".into()]));
+        c.complete_capability_paths(foreign, Some(vec![fixture_path("foreign")]));
         assert!(c.create.attachment_paths().is_empty());
         c.complete_capability_paths(
             request,
             Some(vec![
-                "/tmp/a.png".into(),
+                fixture_path("a.png"),
                 "relative".into(),
-                "/tmp/a.png".into(),
-                "/tmp/b.wav".into(),
+                fixture_path("a.png"),
+                fixture_path("b.wav"),
             ]),
         );
         assert_eq!(
             c.create.attachment_paths(),
-            vec!["/tmp/a.png", "/tmp/b.wav"]
+            vec![fixture_path("a.png"), fixture_path("b.wav")]
         );
         c.create
             .request_capability_paths(CapabilityPathKind::Resources);
         let late = c.take_capability_path_request().unwrap();
         c.create.project = "project:two".into();
-        c.complete_capability_paths(late, Some(vec!["/tmp/private".into()]));
+        c.complete_capability_paths(late, Some(vec![fixture_path("private")]));
         assert!(c.create.attachment_paths().is_empty());
         c.create.project = "project:one".into();
         assert_eq!(c.create.attachment_paths().len(), 2);
@@ -5531,7 +5534,7 @@ mod tests {
             .request_capability_paths(CapabilityPathKind::Resources);
         let late = c.take_capability_path_request().unwrap();
         c.create.host_epoch = Some(json!(3));
-        c.complete_capability_paths(late, Some(vec!["/tmp/private".into()]));
+        c.complete_capability_paths(late, Some(vec![fixture_path("private")]));
         assert_eq!(c.create.attachment_paths().len(), 2);
     }
     #[test]
@@ -6697,19 +6700,19 @@ mod tests {
         let mut c = console();
         let key = ("project:one".into(), 2);
         let mut active = CapabilityDraft::default();
-        *active.value("source") = "/tmp/old-folder".into();
+        *active.value("source") = fixture_path("old-folder");
         // Rendering temporarily owns the active draft outside the map.
         c.create.request_capability_paths_from(
             CapabilityPathKind::TriggerFolder,
             active.get("source").to_owned(),
         );
         let request = c.take_capability_path_request().unwrap();
-        assert_eq!(request.source_before, "/tmp/old-folder");
+        assert_eq!(request.source_before, fixture_path("old-folder"));
         c.create.capabilities.drafts.insert(key.clone(), active);
-        c.complete_capability_paths(request, Some(vec!["/tmp/replacement".into()]));
+        c.complete_capability_paths(request, Some(vec![fixture_path("replacement")]));
         assert_eq!(
             c.create.capabilities.drafts[&key].get("source"),
-            "/tmp/replacement"
+            fixture_path("replacement")
         );
         let active = c.create.capabilities.drafts.remove(&key).unwrap();
         c.create.request_capability_paths_from(
@@ -6723,11 +6726,11 @@ mod tests {
             .drafts
             .get_mut(&key)
             .unwrap()
-            .value("source") = "/tmp/later-owner-edit".into();
-        c.complete_capability_paths(request, Some(vec!["/tmp/stale-picker-choice".into()]));
+            .value("source") = fixture_path("later-owner-edit");
+        c.complete_capability_paths(request, Some(vec![fixture_path("stale-picker-choice")]));
         assert_eq!(
             c.create.capabilities.drafts[&key].get("source"),
-            "/tmp/later-owner-edit"
+            fixture_path("later-owner-edit")
         );
     }
     #[test]
@@ -8591,8 +8594,11 @@ mod tests {
                 data["projectChat"]["items"] =
                     json!([{"workItemId":"work:one","goal":"Earlier request"}]);
                 let mut c = console();
-                c.create
-                    .queue_paths((0..12).map(|i| format!("/tmp/source-{i:02}.wav")).collect());
+                c.create.queue_paths(
+                    (0..12)
+                        .map(|i| fixture_path(&format!("source-{i:02}.wav")))
+                        .collect(),
+                );
                 c.create.capabilities.selection.insert(
                     (c.create.project.clone(), c.create.ability.clone()),
                     VisualSelection {

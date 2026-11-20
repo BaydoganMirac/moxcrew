@@ -30,10 +30,11 @@ success receipt remain backward-compatible and do not gain review fields.
 
 Single-file and package exports share the checked destination helper: absolute
 owner-selected target, existing parent, outside the canonical data directory,
-pinned no-follow access and atomic no-replace publication. Windows remains
-explicitly unsupported until pinned no-reparse result operations are verified.
-On Unix, an I/O failure publishes no partial target; a destination that appears
-concurrently is preserved. See [Task0060](../plans/0060-atomic-owner-exports.md)
+pinned no-follow access and atomic no-replace publication. Windows uses checked
+native file handles for reads, ZIP generation and publication. Verified Windows
+deliveries retain their SHA-256 and original receipt after reopening the Host.
+See [Windows delivery](../plans/0111-windows-file-delivery.md),
+[Task0060](../plans/0060-atomic-owner-exports.md)
 and [ADR0051](../decisions/0051-atomic-owner-export-publication.md).
 
 Success returns `PROJECT_DELIVERY_EXPORTED`, Project ID, file count, archive byte
@@ -52,6 +53,5 @@ no destination creation on source failures. A separate ignored fixture test
 produces a retained real Host ZIP for an independent standard-reader check.
 
 No provider process, inference, network call, external tool, new dependency or
-Cloud change is needed. Native Windows execution and deliberate disk-full
-injection were not performed; success is acknowledged only after staged bytes
-are flushed, synced and published.
+Cloud change is needed. Deliberate disk-full injection remains unverified.
+The Host acknowledges success after it flushes, syncs and publishes staged bytes.

@@ -32,3 +32,9 @@ The current single-writer command and durable receipt contracts remain
 unchanged. An export crash after publication but before its outer receipt is
 still an uncertain side effect and is never automatically repeated. Windows
 result access remains unsupported pending native implementation and testing.
+
+## Windows implementation
+
+The Windows Host stages the file in the selected directory, flushes it and
+renames it through an open handle with replacement disabled. Both single-file
+and ZIP delivery use this operation. [Windows delivery](../plans/0111-windows-file-delivery.md)

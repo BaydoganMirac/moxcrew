@@ -155,7 +155,7 @@ const WORK_FEEDBACK: Record<string, Feedback> = {
   WORK_STARTED: {
     tone: "success",
     title: "Codex is working",
-    detail: "The run is owned by this Patchfleet session and can be cancelled below.",
+    detail: "The run is owned by this Moxcrew session and can be cancelled below.",
   },
   RUN_CANCELLED: {
     tone: "success",
@@ -210,7 +210,7 @@ const WORK_FEEDBACK: Record<string, Feedback> = {
   WORK_ITEM_EXISTS: {
     tone: "warning",
     title: "That task already exists",
-    detail: "Patchfleet did not add a duplicate.",
+    detail: "Moxcrew did not add a duplicate.",
   },
   WORK_ITEM_NOT_FOUND: {
     tone: "warning",
@@ -225,7 +225,7 @@ const WORK_FEEDBACK: Record<string, Feedback> = {
   STALE_ITEM_REVISION: {
     tone: "warning",
     title: "The task changed",
-    detail: "Patchfleet rejected the stale action. Use the current action shown below.",
+    detail: "Moxcrew rejected the stale action. Use the current action shown below.",
   },
   RUN_NOT_FOUND: {
     tone: "warning",
@@ -235,22 +235,22 @@ const WORK_FEEDBACK: Record<string, Feedback> = {
   RUN_NOT_ACTIVE: {
     tone: "warning",
     title: "That run is no longer active",
-    detail: "Patchfleet did not send another cancellation.",
+    detail: "Moxcrew did not send another cancellation.",
   },
   STALE_RUN_REVISION: {
     tone: "warning",
     title: "The run changed",
-    detail: "Patchfleet rejected the stale action. Use the current action shown below.",
+    detail: "Moxcrew rejected the stale action. Use the current action shown below.",
   },
   START_OUTCOME_UNKNOWN: {
     tone: "error",
     title: "Start outcome could not be proven",
-    detail: "Patchfleet blocked the task instead of risking duplicate provider work.",
+    detail: "Moxcrew blocked the task instead of risking duplicate provider work.",
   },
   RUN_SESSION_LOST: {
     tone: "error",
     title: "Run control session was lost",
-    detail: "Patchfleet stopped claiming control and preserved the failure as a durable receipt.",
+    detail: "Moxcrew stopped claiming control and preserved the failure as a durable receipt.",
   },
   PROVIDER_CONTROL_FAILED: {
     tone: "error",
@@ -323,9 +323,9 @@ export default async function Home({ searchParams }: {
   return (
     <main className="app-shell">
       <header className="app-header">
-        <a className="brand" href="/" aria-label="Patchfleet home">
+        <a className="brand" href="/" aria-label="Moxcrew home">
           <span className="brand-mark" aria-hidden="true">P</span>
-          <span>Patchfleet</span>
+          <span>Moxcrew</span>
           <span className="local-label">Local</span>
         </a>
         <span className="privacy-pill"><span aria-hidden="true">●</span> Local data stays local</span>
@@ -567,7 +567,7 @@ function ReadinessOverview({ projection, cloud }: {
         </div>
         <div className={`readiness-card ${cloudReady ? "ready" : "waiting"}`}>
           <span className="status-dot" aria-hidden="true" />
-          <div><span>Patchfleet Cloud</span><strong>{cloudReady ? "Connected" : cloud.paired ? "Retrying" : "Optional"}</strong></div>
+          <div><span>Moxcrew Cloud</span><strong>{cloudReady ? "Connected" : cloud.paired ? "Retrying" : "Optional"}</strong></div>
           <small>{cloud.paired ? "Sanitized outbound sync" : "Local product stays complete"}</small>
         </div>
       </div>
@@ -589,7 +589,7 @@ function ActivationPath({ projection, work, workspaces }: {
         <h2 id="activation-title">Three steps to controlled work</h2>
       </div>
       <ol className="activation-steps">
-        <li className={projection ? "done" : "active"}><span>1</span><div><strong>Refresh providers</strong><small>Confirm what Patchfleet can observe and control.</small></div></li>
+        <li className={projection ? "done" : "active"}><span>1</span><div><strong>Refresh providers</strong><small>Confirm what Moxcrew can observe and control.</small></div></li>
         <li className={hasWork ? "done" : projection ? "active" : ""}><span>2</span><div><strong>Queue a task</strong><small>{workspaces.items.length ? "Choose a registered project and give one clear instruction." : "Register a project once, then give one clear instruction."}</small></div></li>
         <li className={hasStarted ? "done" : hasWork ? "active" : ""}><span>3</span><div><strong>Start and monitor</strong><small>Codex runs locally; every action ends with a receipt.</small></div></li>
       </ol>
@@ -604,14 +604,14 @@ function CloudPanel({ status }: { status: CloudStatus }) {
       CLOUD_AUTH_REJECTED: "This host no longer has Cloud access. Disconnect it here, then pair it again from Cloud.",
       CLOUD_CONFLICT: "Cloud has a newer or different snapshot. Upgrade recovery is automatic; genuinely older local state stays blocked.",
       CLOUD_PROTOCOL_INVALID: "Cloud returned an incompatible response. Local work remains safe while sync retries.",
-    } as Record<string, string>)[status.lastErrorCode] ?? "Cloud sync could not finish. Local work remains available and Patchfleet will retry."
+    } as Record<string, string>)[status.lastErrorCode] ?? "Cloud sync could not finish. Local work remains available and Moxcrew will retry."
     : null;
   return (
     <section className="panel cloud-panel" aria-labelledby="cloud-title">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Optional remote view</p>
-          <h2 id="cloud-title">Patchfleet Cloud</h2>
+          <h2 id="cloud-title">Moxcrew Cloud</h2>
         </div>
         <span className={`badge ${status.paired && !status.lastErrorCode ? "available" : "unavailable"}`}>
           {status.paired ? (status.lastErrorCode ? "Sync unavailable" : "Paired") : "Local only"}

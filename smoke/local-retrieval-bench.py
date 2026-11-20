@@ -129,7 +129,7 @@ def main():
                "HOME": temp, "TMPDIR": temp, "CARGO_HOME": str(root / ".tooling/cargo"),
                "RUSTUP_HOME": str(root / ".tooling/rustup")}
         cargo = root / ".tooling/cargo/bin/cargo"
-        subprocess.run([str(cargo), "build", "--release", "--locked", "--offline", "-p", "patchfleet-core", "--example", "retrieval_bench"], cwd=root, env=env, check=True, timeout=300)
+        subprocess.run([str(cargo), "build", "--release", "--locked", "--offline", "-p", "moxcrew-core", "--example", "retrieval_bench"], cwd=root, env=env, check=True, timeout=300)
         rust = root / "target/release/examples/retrieval_bench"
         rust_version = subprocess.run([str(root / ".tooling/cargo/bin/rustc"), "--version"], env=env, capture_output=True, text=True, check=True, timeout=30).stdout.strip()
         output = {"hardware": {"platform": platform.platform(), "machine": platform.machine(), "cpuCount": os.cpu_count(),

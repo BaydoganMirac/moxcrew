@@ -749,7 +749,7 @@ impl Console {
                 commands,
                 "Compare with previous version",
                 "project_artifact_read",
-                studio::commands_ready(ui) && !cfg!(target_os = "windows"),
+                studio::commands_ready(ui),
                 || json!({"projectId":project,"workItemId":parent["workItemId"],"path":parent["path"],"expectedSha256":parent["sha256"]}),
             );
             if commands.len() > before {
@@ -1206,14 +1206,14 @@ impl Console {
                                 self.use_visual_in_chat(&artifact, section);
                             }
                         } else {
-                            let response = view_control(ui, "Preview", studio::commands_ready(ui) && !cfg!(target_os = "windows"), true);
+                            let response = view_control(ui, "Preview", studio::commands_ready(ui), true);
                             #[cfg(test)]
                             ui.data_mut(|data| data.insert_temp(egui::Id::new(("test-action", "project_artifact_read", "Preview")), response.rect));
                             if response.clicked() && studio::commands_ready(ui) && commands.is_empty() {
                                 commands.push(Command::new("project_artifact_read", json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]})));
                             }
                         }
-                        if view_control(ui, "Export copy", studio::commands_ready(ui) && !cfg!(target_os = "windows"), false).clicked() {
+                        if view_control(ui, "Export copy", studio::commands_ready(ui), false).clicked() {
                             self.create.export_request = Some(CreateExportRequest {
                                 project_id: self.create.project.clone(),
                                 work_item_id: text(&artifact, "workItemId").into(),
@@ -1367,7 +1367,7 @@ impl Console {
                 commands,
                 "Open interactive output",
                 "project_artifact_open",
-                !cfg!(target_os = "windows"),
+                true,
                 || json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"]}),
             );
         }
@@ -1627,7 +1627,7 @@ impl Console {
                     commands,
                     "Render this page",
                     "project_artifact_visual_read",
-                    !cfg!(target_os = "windows"),
+                    true,
                     || json!({"projectId":self.create.project,"workItemId":artifact["workItemId"],"path":artifact["path"],"expectedSha256":artifact["sha256"],"page":page}),
                 );
                 let visual = &snapshot["projectArtifactVisual"];

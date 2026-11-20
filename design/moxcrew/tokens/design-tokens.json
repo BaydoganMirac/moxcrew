@@ -22,15 +22,15 @@
   },
   "themes": {
     "light": {
-      "canvas": "#F5F7FC",
+      "canvas": "#F6F2E9",
       "surface": "#FFFFFF",
-      "raised": "#EEF2FA",
-      "text": "#15223D",
-      "secondaryText": "#56627A",
-      "border": "#DEE4F0",
+      "raised": "#EDEBE4",
+      "text": "#17233C",
+      "secondaryText": "#536176",
+      "border": "#D8D7D0",
       "primary": "#2854F4",
       "onPrimary": "#FFFFFF",
-      "controlBorder": "#7A889F",
+      "controlBorder": "#6E7D94",
       "accent": "#FF7A2F",
       "onAccent": "#15223D",
       "focus": "#2854F4",
@@ -41,21 +41,30 @@
       "danger": "#BC294A",
       "dangerSurface": "#FCECF0",
       "info": "#2348D7",
-      "infoSurface": "#EAF0FF"
+      "infoSurface": "#E8EEFF",
+      "navigation": {
+        "background": "#17233C",
+        "surface": "#263653",
+        "text": "#F7F8FC",
+        "secondaryText": "#B7C2D4",
+        "border": "#32415D",
+        "primary": "#C4D2FF",
+        "accent": "#FF9B66"
+      }
     },
     "dark": {
-      "canvas": "#090D18",
-      "surface": "#111827",
-      "raised": "#1B253A",
-      "text": "#F2F5FF",
-      "secondaryText": "#A7B3CC",
-      "border": "#28334B",
-      "primary": "#9BAEFF",
-      "onPrimary": "#090D18",
-      "controlBorder": "#71809E",
+      "canvas": "#101722",
+      "surface": "#192333",
+      "raised": "#263348",
+      "text": "#F5F4EF",
+      "secondaryText": "#AFBDD0",
+      "border": "#35445A",
+      "primary": "#A9BCFF",
+      "onPrimary": "#101722",
+      "controlBorder": "#8290A9",
       "accent": "#FF9B66",
       "onAccent": "#101827",
-      "focus": "#B4C4FF",
+      "focus": "#C0CFFF",
       "success": "#75D9B5",
       "successSurface": "#173D34",
       "warning": "#FFC08A",
@@ -63,7 +72,16 @@
       "danger": "#FF9CB3",
       "dangerSurface": "#492735",
       "info": "#ABC0FF",
-      "infoSurface": "#1C2A4B"
+      "infoSurface": "#263A5D",
+      "navigation": {
+        "background": "#0A101A",
+        "surface": "#1D2A3F",
+        "text": "#F5F4EF",
+        "secondaryText": "#AAB8CD",
+        "border": "#26364C",
+        "primary": "#A9BCFF",
+        "accent": "#FF9B66"
+      }
     }
   },
   "typography": {

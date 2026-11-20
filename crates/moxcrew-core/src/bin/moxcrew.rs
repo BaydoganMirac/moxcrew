@@ -1,4 +1,4 @@
-use patchfleet_core::{default_data_directory, Error, Host, Result};
+use moxcrew_core::{default_data_directory, Error, Host, Result};
 use std::io::{self, Read};
 
 #[tokio::main(flavor = "current_thread")]
@@ -20,21 +20,27 @@ async fn run() -> Result<()> {
         if memory_args.next().is_some() {
             return Err(Error("AGENT_MEMORY_INVALID_ARGUMENTS".into()));
         }
-        return patchfleet_core::agent_memory::serve_stdio(&ticket).await;
+        return moxcrew_core::agent_memory::serve_stdio(&ticket).await;
     }
-    let mut directory = default_data_directory()?;
     let mut command = args.next().unwrap_or_else(|| "help".into());
-    if command == "--data-dir" {
-        directory = args
+    let explicit_directory = if command == "--data-dir" {
+        let directory = args
             .next()
             .ok_or_else(|| Error("DATA_DIRECTORY_REQUIRED".into()))?
             .into();
         command = args.next().unwrap_or_else(|| "status".into());
-    }
+        Some(directory)
+    } else {
+        None
+    };
     if matches!(command.as_str(), "help" | "--help" | "-h") {
-        println!("Patchfleet Rust host\n\npatchfleet [--data-dir DIRECTORY] status|recover|run\npatchfleet [--data-dir DIRECTORY] action ACTION < payload.json\n\nThe desktop owns its directory while running. Offline CLI mutations require the desktop to be closed. Provider CLIs are installed separately.");
+        println!("Moxcrew Rust host\n\nmoxcrew [--data-dir DIRECTORY] status|recover|run\nmoxcrew [--data-dir DIRECTORY] action ACTION < payload.json\n\nThe desktop owns its directory while running. Offline CLI mutations require the desktop to be closed. Provider CLIs are installed separately.");
         return Ok(());
     }
+    let directory = match explicit_directory {
+        Some(path) => path,
+        None => default_data_directory()?,
+    };
     if !directory.is_absolute() {
         return Err(Error("DATA_DIRECTORY_MUST_BE_ABSOLUTE".into()));
     }
@@ -44,10 +50,8 @@ async fn run() -> Result<()> {
         if input.len() > 131_072 {
             return Err(Error("HOOK_PAYLOAD_TOO_LARGE".into()));
         }
-        if let Some(signal) =
-            patchfleet_core::providers::decode_gemini_hook(&input).map_err(Error)?
-        {
-            patchfleet_core::providers::write_gemini_inbox(&directory, &signal).map_err(Error)?;
+        if let Some(signal) = moxcrew_core::providers::decode_gemini_hook(&input).map_err(Error)? {
+            moxcrew_core::providers::write_gemini_inbox(&directory, &signal).map_err(Error)?;
         }
         return Ok(());
     }

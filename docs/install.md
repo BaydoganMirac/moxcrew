@@ -1,22 +1,24 @@
 # Install and operate Moxcrew Desktop
 
-Status: 0.13.1 native Rust desktop Public Preview
+Status: 0.13.3 native Rust desktop Public Preview
 
-Updated: 2026-11-08
+Updated: 2026-11-19
 
 ## Download
 
 Download the installer for your platform directly:
 
-- macOS: [Apple Silicon DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_macOS_Apple-Silicon.dmg)
-  or [Intel DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_macOS_Intel.dmg);
-- Linux x64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_x86_64.AppImage)
-  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_x86_64.deb);
-- Linux ARM64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_aarch64.AppImage)
-  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/Moxcrew_0.13.1_linux_aarch64.deb).
+- Windows x64: [Setup EXE](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_windows_x64-setup.exe)
+  or [MSI](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_windows_x64.msi).
+- macOS: [Apple Silicon DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_macOS_Apple-Silicon.dmg)
+  or [Intel DMG](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_macOS_Intel.dmg);
+- Linux x64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_x86_64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_x86_64.deb);
+- Linux ARM64: [AppImage](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_aarch64.AppImage)
+  or [Deb](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/Moxcrew_0.13.3_linux_aarch64.deb).
 
 No Rust, Node or source checkout is needed. Compare the installer's SHA-256
-digest with the published [SHA256SUMS.txt](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.1/SHA256SUMS.txt)
+digest with the published [SHA256SUMS.txt](https://github.com/BaydoganMirac/moxcrew/releases/download/v0.13.3/SHA256SUMS.txt)
 before opening it. Provider CLIs are separate: install and authenticate Codex,
 Claude Code or Gemini CLI according to the provider you intend to use.
 
@@ -25,41 +27,49 @@ Finder's **Open** action or the explicit **Open Anyway** control in Privacy &
 Security after verifying the checksum. Moxcrew does not require a shell command
 that disables an OS security feature.
 
-Windows packages are intentionally withheld from 0.13.1 Public Preview. The
-experimental Windows lane exposed unresolved private-storage ACL/locking and
-native behavior test failures. A configured NSIS/MSI build is not being presented
-as a usable download until those gates pass.
+On Windows, use the setup EXE for a per-user installation or the MSI for a
+machine-wide installation. Both contain the same desktop executable. The
+preview has no publisher signature. In PowerShell,
+`Get-FileHash -Algorithm SHA256 .\Moxcrew_0.13.3_windows_x64-setup.exe`
+prints the digest for the setup download. Substitute the MSI filename if needed.
+
+When saving a project file or ZIP on Windows, choose a folder on a local
+drive. You can copy the finished file to a network share afterward.
 
 ## Application requirements
 
-- macOS 11+, or Linux with native X11/Wayland and OpenGL runtime libraries. No
+- Windows x64, macOS 11+, or Linux with native X11/Wayland and OpenGL runtime libraries. No
   WebView runtime is required.
 - Provider CLIs installed separately. Their own Node/model/account requirements
   are independent of the Rust Moxcrew application.
-- Advertised macOS/Linux packages are built by the public release matrix.
-  Publisher signing, Windows readiness and hands-on fresh-install/upgrade
-  evidence remain production-release gates.
+- The public release matrix builds packages on their native platforms.
+  Publisher signing and hands-on upgrade coverage remain production gates.
 - Linux folder selection needs a working XDG desktop portal with a desktop
   backend, or Zenity as the fallback. The Deb declares these runtime packages;
   AppImage users need them supplied by their distribution. GTK is not bundled.
 
-Use the advertised platform installer: macOS DMG/application or Linux
-Deb/AppImage. The public artifacts are produced from the exact tagged source by
-the repository's native CI and published with checksums.
+The release workflow builds all eight installers from the exact tagged source
+and publishes a checksum manifest alongside them.
 
 For development, install Rust 1.99+ and platform compiler/window prerequisites.
-Run `cargo run --locked -p patchfleet-desktop`. Build a production executable with
-`cargo build --locked --release -p patchfleet-desktop`, then package it using
+Run `cargo run --locked -p moxcrew-desktop`. Build a production executable with
+`cargo build --locked --release -p moxcrew-desktop`, then package it using
 cargo-packager 0.11.8 and `Packager.toml`. Node is only legacy reference tooling.
 
-Moxcrew is the new display identity. Existing `patchfleet-desktop` executable,
-`com.patchfleet.desktop` bundle identifier and data locations remain stable.
-Do not run the old and new display names as separate writers.
+New native installs use the `moxcrew-desktop` executable and
+`com.moxcrew.desktop` bundle identifier. The Windows per-user EXE defaults to
+`%LOCALAPPDATA%\Moxcrew`. The MSI installs under 64-bit Program Files.
+Both use `%APPDATA%\Moxcrew` for a new Windows profile.
+Close the old application before installing the new one.
 
-For a native 0.13 upgrade, close the old application and replace its application
-bundle through the reviewed installer. The bundle identifier and data directory
-remain the same; existing Rust state can be read by the new application. Back up
-the stopped data directory before upgrading. Bound agent launches write V6
+For an upgrade to the Moxcrew identity, close the old application and back up
+its stopped data profile before using the reviewed installer. The bundle
+identifier changes. Moxcrew opens a recognized existing profile in its original
+location so earlier jobs can still find their files. If both profile locations
+exist, select the intended profile explicitly with `MOXCREW_DATA_DIR`.
+On Debian, remove the older `patchfleet-desktop` package
+after backing up its data, then install `moxcrew-desktop`; the new package name
+is a separate package identity. Bound agent launches write V6
 context facts requiring the 0.10 reader; rollback after V6 writes requires
 that unchanged pre-upgrade backup. Extraction commands add V7 facts requiring
 a 0.11 reader; older readers need the stopped pre-upgrade backup. Create job,
@@ -81,16 +91,20 @@ V20 recovery checkpoints. Preserve the stopped pre-upgrade copy before the first
 recovery run; older builds reject those facts and event versions must never be
 rewritten for rollback.
 
-### macOS opens an entirely white window
+Version 0.13.3 records a direct Mox chat answer as a V21 event. Back up the
+stopped profile before the first chat in this release. To return to 0.13.1,
+restore that pre-upgrade profile so its reader can open the log.
 
-An already-running 0.3 WebView copy can be reactivated even when opening the
-0.5 native application from Applications: both have the same bundle identifier.
-This launch routing was reproduced with disposable data. The installed 0.5
-production application draws correctly when the old process is closed.
+### Historical macOS 0.5 white-window issue
+
+In older 0.3/0.5 builds, an already-running WebView copy could be reactivated
+because both used the former bundle identifier. This historical launch routing
+was reproduced with disposable data. Current Moxcrew packages use the new
+identifier specified above.
 
 1. Quit all running Moxcrew / older Patchfleet copies with Command-Q.
 2. Eject the older Patchfleet disk image and close its installer window.
-3. Open `Applications/Moxcrew.app`. The sidebar should show `0.13.1`
+3. Open `Applications/Moxcrew.app`. The sidebar should show `0.13.3`
    and the Türkçe/English controls.
 
 If a Dock shortcut still opens the older disk-image copy, remove that shortcut
@@ -128,17 +142,15 @@ job's file panel to inspect its real outputs. Follow up on a completed, failed
 or interrupted job in the same Project; optionally select up to eight files
 (25 MiB total). The new task receives exact copies and a SHA-256 manifest in
 inputs/, preserving the originals. A follow-up still requires explicit start.
-On Windows, file references remain unavailable with the secure result-access
-limitation below; text-only follow-ups remain supported.
 
 The forty recipes guide the agent; they do not install missing renderers, model
 access or tools. Review any unmet requirements in the output. Task completion
 and file presence do not verify content quality. Read the job's actual output
 list, preview supported UTF-8 Markdown/text/CSV up to 256 KiB, or export a file
 up to 100 MiB using the system save dialog. Export refuses existing destinations.
-On Windows this build does not yet support result listing, preview or export.
-On Unix, a failed export publishes no incomplete copy; a complete competing file
-is preserved if the destination appears while Moxcrew is saving.
+To deliver several files together, select the outputs and save a ZIP. Its
+manifest identifies each selected file and its SHA-256 digest. Moxcrew publishes
+completed exports atomically and preserves a destination that appears during a save.
 Canceling the dialog changes nothing. Retries use a fresh job directory and
 retain the original Project and earlier outputs. Unsent text is session-only.
 
@@ -191,7 +203,7 @@ Check consent and enable it to send subsequent owner sources to the installed
 Codex provider together with relevant accepted project decisions, including
 older ADRs. The future-only rule applies to source queueing. This can use the provider account's quota; Local storage does
 not mean offline model inference. Codex0.155.1+ is required; no API-key field,
-Cloud account or Patchfleet subscription is needed.
+Cloud account or Moxcrew subscription is needed.
 
 Old sources are not automatically sent. Open a selected source and deliberately
 queue its current version. Activity shows counts and only the latest10 queued
@@ -223,7 +235,7 @@ Open **Sign in · optional** in the sidebar or the Cloud section. In connection
 settings, enter the root HTTPS origin of your compatible Cloud service and a
 name for this installation. There is no assumed live default address yet.
 Choose **Sign in to Cloud**, complete the existing browser login, compare the
-displayed code and approve the installation. Keep Patchfleet open while waiting;
+displayed code and approve the installation. Keep Moxcrew open while waiting;
 you can reopen/copy the browser link or cancel. No password is entered in the
 native application. Local operation continues while sign-in is pending.
 
@@ -258,12 +270,12 @@ offline copies. Publisher transfer and organization invitations are not included
 
 On Projects, choose **Choose folder** or **Add folder**. The system folder picker
 opens; select the actual Git repository root, then confirm **Add folder** in
-Patchfleet. The chosen path is read-only in the form. **Change folder** opens the
+Moxcrew. The chosen path is read-only in the form. **Change folder** opens the
 picker again; canceling leaves the draft intact. One-off work folders use the
 same picker. A container holding several repositories is not itself a Git root:
 choose the child containing `.git`, including a linked worktree's `.git` marker.
 
-Patchfleet checks the selected folder before displaying the confirmation and
+Moxcrew checks the selected folder before displaying the confirmation and
 checks current access again when registering a new command. A missing folder,
 non-repository, unsafe root, denied access and read-only folder have separate
 localized explanations. These checks inspect directory metadata, not source
@@ -275,7 +287,7 @@ Folders**. The App supplies purpose descriptions for Documents, Desktop,
 Downloads, removable and network volumes. A read-only folder instead points to
 **Finder > Get Info > Sharing & Permissions** or a writable disk. Windows
 guidance points to folder **Properties > Security**; Linux guidance points to
-read/write/traverse permissions in the file manager. Patchfleet does not change
+read/write/traverse permissions in the file manager. Moxcrew does not change
 ACLs, enable Full Disk Access or silently modify folder permissions. OS consent
 and filesystem access remain under the owner's control.
 
@@ -318,11 +330,16 @@ The platform application-data directory is:
 
 | Platform | Default |
 |---|---|
-| macOS | `~/Library/Application Support/com.patchfleet.desktop` |
-| Windows | `%APPDATA%\com.patchfleet.desktop` |
-| Linux | `$XDG_DATA_HOME/com.patchfleet.desktop` or `~/.local/share/com.patchfleet.desktop` |
+| macOS | `~/Library/Application Support/Moxcrew` |
+| Windows | `%APPDATA%\Moxcrew` |
+| Linux | `$XDG_DATA_HOME/moxcrew` or `~/.local/share/moxcrew` |
 
-An explicitly set absolute `PATCHFLEET_DATA_DIR` selects an alternate directory.
+An explicitly set absolute `MOXCREW_DATA_DIR` selects an alternate directory;
+`PATCHFLEET_DATA_DIR` remains a legacy alias. Different simultaneous values
+are rejected. On upgrade, the Host opens a recognized prior default profile
+in place. Multiple candidate profiles require an explicit selection. Back up
+the stopped profile before upgrade. The old Windows Local AppData Patchfleet
+folder is an installer destination, not a canonical data profile.
 One Rust host owns it. Unix modes are 0700/0600; Windows replaces inherited
 grants with a protected current-owner+SYSTEM ACL. Private state files reject
 symlink/reparse redirection. Do not run the old host against this directory.
@@ -354,8 +371,8 @@ pre-migration backup to the old host; never point the old reader at upgraded dat
 The optional native CLI uses the same core and data directory:
 
 ```sh
-cargo run -p patchfleet-core --bin patchfleet -- --help
-cargo run -p patchfleet-core --bin patchfleet -- --data-dir /absolute/test-data recover
+cargo run -p moxcrew-core --bin moxcrew -- --help
+cargo run -p moxcrew-core --bin moxcrew -- --data-dir /absolute/test-data recover
 ```
 
 `status`, `recover`, and `action ACTION < payload.json` require the desktop to be
@@ -371,7 +388,7 @@ desktop, configure the owner-approved native hook command with Gemini's own
 extension/settings consent. The desktop executable supports `--gemini-hook`,
 reading bounded native hook JSON on stdin and storing only lifecycle metadata.
 Use the same absolute data directory as the desktop. The executable path and
-quoting are platform-specific; Patchfleet does not rewrite provider settings.
+quoting are platform-specific; Moxcrew does not rewrite provider settings.
 
 ## Upgrade and uninstall
 

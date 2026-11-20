@@ -289,11 +289,10 @@ async fn empty_manifest_is_valid_but_canonical_start_failure_and_shutdown_revoke
 #[tokio::test]
 #[ignore = "requires an explicitly isolated installed Codex wrapper and built Rust MCP executable; never starts a model turn"]
 async fn installed_codex_uses_real_rust_host_from_two_worktrees_without_inference() {
-    let binary = PathBuf::from(
-        std::env::var_os("PATCHFLEET_TEST_MEMORY_BINARY").expect("explicit built CLI"),
-    );
+    let binary =
+        PathBuf::from(std::env::var_os("MOXCREW_TEST_MEMORY_BINARY").expect("explicit built CLI"));
     let codex = PathBuf::from(
-        std::env::var_os("PATCHFLEET_TEST_CODEX").expect("explicit isolated provider wrapper"),
+        std::env::var_os("MOXCREW_TEST_CODEX").expect("explicit isolated provider wrapper"),
     );
     assert!(binary.is_absolute() && codex.is_absolute());
     let f = fixture().await;
@@ -309,7 +308,7 @@ async fn installed_codex_uses_real_rust_host_from_two_worktrees_without_inferenc
         let (target, ticket) = launch(&f, index).await;
         let credential = credentials(&ticket);
         let mut config = ticket.config.clone();
-        config["mcp_servers"]["patchfleet_memory"]["command"] = json!(binary);
+        config["mcp_servers"]["moxcrew_memory"]["command"] = json!(binary);
         let memory = providers::MemoryConfig {
             config,
             active: ticket.active.clone(),

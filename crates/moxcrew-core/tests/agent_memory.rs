@@ -1,4 +1,4 @@
-use patchfleet_core::{
+use moxcrew_core::{
     agent_memory::{self as memory, Binding, Server},
     Host,
 };
@@ -306,7 +306,7 @@ fn crew_tool_arguments_cannot_forge_sender_or_project() {
     }
 }
 fn ticket(path: &Path) -> Value {
-    serde_json::from_slice(&patchfleet_core::store::read_private_file(path).unwrap()).unwrap()
+    serde_json::from_slice(&moxcrew_core::store::read_private_file(path).unwrap()).unwrap()
 }
 async fn raw(endpoint: &str, secret: &str, body: &Value, extra: &str, method: &str) -> Value {
     let url = reqwest::Url::parse(endpoint).unwrap();
@@ -330,7 +330,7 @@ async fn loopback_bounds_declared_sizes_and_closes_stalled_input() {
     let server = Server::start(
         Weak::<Host>::new(),
         dir.path().into(),
-        PathBuf::from(env!("CARGO_BIN_EXE_patchfleet")),
+        PathBuf::from(env!("CARGO_BIN_EXE_moxcrew")),
     )
     .await
     .unwrap();
@@ -363,17 +363,17 @@ async fn loopback_bounds_declared_sizes_and_closes_stalled_input() {
 async fn startup_cleans_only_recognized_private_ticket_and_interrupted_claim_files() {
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("agent-memory-tickets");
-    patchfleet_core::store::private_directory(&folder).unwrap();
+    moxcrew_core::store::private_directory(&folder).unwrap();
     let bootstrap = folder.join(format!("{}.json", uuid::Uuid::new_v4()));
     let claim = folder.join(format!(".{}.consumed", uuid::Uuid::new_v4()));
     let sentinel = folder.join("notes.json");
     for path in [&bootstrap, &claim, &sentinel] {
-        patchfleet_core::store::atomic_write(path, b"PRIVATE_SENTINEL").unwrap();
+        moxcrew_core::store::atomic_write(path, b"PRIVATE_SENTINEL").unwrap();
     }
     let server = Server::start(
         Weak::<Host>::new(),
         dir.path().into(),
-        PathBuf::from(env!("CARGO_BIN_EXE_patchfleet")),
+        PathBuf::from(env!("CARGO_BIN_EXE_moxcrew")),
     )
     .await
     .unwrap();
@@ -389,7 +389,7 @@ async fn loopback_requires_framed_bearer_live_lease_and_read_only_arguments() {
     let server = Server::start(
         Weak::<Host>::new(),
         dir.path().into(),
-        PathBuf::from(env!("CARGO_BIN_EXE_patchfleet")),
+        PathBuf::from(env!("CARGO_BIN_EXE_moxcrew")),
     )
     .await
     .unwrap();
@@ -400,7 +400,7 @@ async fn loopback_requires_framed_bearer_live_lease_and_read_only_arguments() {
     let request = json!({"schemaVersion":1,"tool":"project_context","arguments":{}});
     assert!(!grant.config.to_string().contains(bearer));
     assert_eq!(
-        grant.config["mcp_servers"]["patchfleet_memory"]["required"],
+        grant.config["mcp_servers"]["moxcrew_memory"]["required"],
         true
     );
     for (secret, extra, method, expected) in [
@@ -458,10 +458,17 @@ struct Mcp {
 }
 impl Mcp {
     fn spawn(path: &Path, home: &Path) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_patchfleet"))
+        let mut process = Command::new(env!("CARGO_BIN_EXE_moxcrew"));
+        process.env_clear();
+        // Windows needs its system directory for the loopback client in this child.
+        #[cfg(windows)]
+        process.env(
+            "SystemRoot",
+            std::env::var_os("SystemRoot").expect("Windows test host provides SystemRoot"),
+        );
+        let mut child = process
             .arg("--memory-mcp")
             .arg(path)
-            .env_clear()
             .env("HOME", home)
             .env("PATH", "/usr/bin:/bin")
             .stdin(Stdio::piped())
@@ -528,7 +535,7 @@ async fn stdio_inventory_is_static_first_valid_call_consumes_and_repeated_calls_
     let server = Server::start(
         Weak::<Host>::new(),
         dir.path().into(),
-        PathBuf::from(env!("CARGO_BIN_EXE_patchfleet")),
+        PathBuf::from(env!("CARGO_BIN_EXE_moxcrew")),
     )
     .await
     .unwrap();
@@ -584,12 +591,12 @@ async fn stdio_inventory_is_static_first_valid_call_consumes_and_repeated_calls_
 async fn expired_linked_or_outside_bootstrap_is_denied_without_reading_or_deleting_other_files() {
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("agent-memory-tickets");
-    patchfleet_core::store::private_directory(&folder).unwrap();
+    moxcrew_core::store::private_directory(&folder).unwrap();
     let folder = std::fs::canonicalize(folder).unwrap();
     let path = folder.join(format!("{}.json", uuid::Uuid::new_v4()));
     let old = chrono::Utc::now() - chrono::Duration::minutes(2);
     let value = json!({"schemaVersion":1,"endpoint":"http://127.0.0.1:12345/agent-memory/v1","bearer":"a".repeat(64),"createdAt":old.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),"expiresAt":(old+chrono::Duration::seconds(60)).to_rfc3339_opts(chrono::SecondsFormat::Millis,true)});
-    patchfleet_core::store::atomic_write(&path, &serde_json::to_vec(&value).unwrap()).unwrap();
+    moxcrew_core::store::atomic_write(&path, &serde_json::to_vec(&value).unwrap()).unwrap();
     let mut child = Mcp::spawn(&path, dir.path());
     child.initialize().await;
     child.send(json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"project_context","arguments":{}}})).await;
@@ -620,8 +627,7 @@ async fn expired_linked_or_outside_bootstrap_is_denied_without_reading_or_deleti
         assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
         assert_eq!(std::fs::read(&outside).unwrap(), b"DO_NOT_DELETE");
         let public = folder.join(format!("{}.json", uuid::Uuid::new_v4()));
-        patchfleet_core::store::atomic_write(&public, &serde_json::to_vec(&value).unwrap())
-            .unwrap();
+        moxcrew_core::store::atomic_write(&public, &serde_json::to_vec(&value).unwrap()).unwrap();
         std::fs::set_permissions(&public, std::fs::Permissions::from_mode(0o644)).unwrap();
         let mut child = Mcp::spawn(&public, dir.path());
         child.initialize().await;
@@ -663,14 +669,14 @@ async fn oversized_input_is_explicit_protocol_error_and_does_not_touch_a_ticket(
 async fn final_mcp_size_bound_is_checked_after_structured_and_text_duplication() {
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("agent-memory-tickets");
-    patchfleet_core::store::private_directory(&folder).unwrap();
+    moxcrew_core::store::private_directory(&folder).unwrap();
     let folder = std::fs::canonicalize(folder).unwrap();
     let path = folder.join(format!("{}.json", uuid::Uuid::new_v4()));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/agent-memory/v1", listener.local_addr().unwrap());
     let now = chrono::Utc::now();
     let ticket = json!({"schemaVersion":1,"endpoint":endpoint,"bearer":"a".repeat(64),"createdAt":now.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),"expiresAt":(now+chrono::Duration::seconds(60)).to_rfc3339_opts(chrono::SecondsFormat::Millis,true)});
-    patchfleet_core::store::atomic_write(&path, &serde_json::to_vec(&ticket).unwrap()).unwrap();
+    moxcrew_core::store::atomic_write(&path, &serde_json::to_vec(&ticket).unwrap()).unwrap();
     let task = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut bytes = Vec::new();

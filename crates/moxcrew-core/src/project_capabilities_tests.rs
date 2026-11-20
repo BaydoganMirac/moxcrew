@@ -1,7 +1,7 @@
 use super::*;
-use crate::project_crews::tests::{
-    command, fixture as provider_fixture, lifecycle, mission, prepare,
-};
+use crate::project_crews::tests::command;
+#[cfg(unix)]
+use crate::project_crews::tests::{fixture as provider_fixture, lifecycle, mission, prepare};
 use std::{
     fs,
     path::PathBuf,
@@ -20,6 +20,7 @@ pub(super) fn url_sample(host: &Host, url: &str) -> Option<(String, Vec<u8>)> {
         .get(&(host.creation_data_dir().to_owned(), url.to_owned()))
         .cloned()
 }
+#[cfg(unix)]
 fn url_bytes(host: &Host, url: &str, bytes: &[u8]) {
     url_fixtures().lock().unwrap().insert(
         (host.creation_data_dir().to_owned(), url.into()),
@@ -67,11 +68,13 @@ fn brand(project: &Value, revision: u64, refs: Value) -> Value {
         json!({"projectId":project,"expectedProfileRevision":revision,"logoResources":refs,"colours":["#123aEF"],"tone":"Concise and friendly","instructions":"Use clear accessible headings. PRIVATE_BRAND_CANARY"}),
     )
 }
+#[cfg(unix)]
 fn proposed(project: &Value, source: &Value) -> Value {
     command(
         json!({"projectId":project,"name":"A taught review process","steps":["Inspect the actual frozen input.","Check each claimed result against its source."],"expectedOutputs":["An evidence-backed report"],"sources":[source]}),
     )
 }
+#[cfg(unix)]
 fn accepted(project: &Value, id: &Value, revision: u64) -> Value {
     command(
         json!({"projectId":project,"skillId":id,"expectedSkillRevision":revision,"name":"Owner-reviewed process","steps":["Follow the owner-reviewed checked process. PRIVATE_SKILL_CANARY"],"expectedOutputs":["A checked report"]}),

@@ -5,12 +5,11 @@ cargo-packager 0.11.8. Node, Tauri, WebView2 and WebKit are not runtime or deskt
 build requirements. npm publication is retired. Pushing a reviewed version tag,
 public signing and Cloud deployment remain explicit owner release actions.
 
-The owner authorized the unsigned
-[0.13.1 Public Preview](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.1).
-It is a GitHub pre-release with native installers and SHA-256 checksums, not a
-claim of Apple notarization or production readiness.
-The first public asset set is macOS/Linux only. Windows remains an experimental
-CI lane and is withheld after its private-storage and native behavior gates failed.
+The 0.13.3 Public Preview targets Windows x64, macOS ARM64/Intel and Linux
+x64/ARM64. Its tag-gated workflow creates an unsigned GitHub pre-release after
+all five native jobs pass. The
+[previous release](https://github.com/BaydoganMirac/moxcrew/releases/tag/v0.13.1)
+contains the original six macOS and Linux installers.
 
 The owner-approved [1.0.0 master plan](plans/0039-version-one-release.md) is the
 next broad release target. Its [state](state/version-one-release.md) and ability
@@ -35,18 +34,31 @@ The target alone does not bump package versions or establish release readiness.
 
 ```sh
 cargo install cargo-packager --version 0.11.8 --locked
-cargo build --locked --release -p patchfleet-desktop
+cargo build --locked --release -p moxcrew-desktop
 cargo packager --config Packager.toml --formats app,dmg
 ```
 
-Local output is `dist/native`. Windows formats are `nsis,wix`; Linux uses
-`deb,appimage`. CI stages one target executable for the pinned packager's
-configured binaries directory, archives only installer outputs, and preserves
-executable permissions. Ordinary main/pull-request runs publish no release. An
-explicit exact `v0.MINOR.PATCH` preview tag must match both workspace and packager
-versions; after every required macOS/Linux native job passes, CI publishes a
-GitHub pre-release with two DMGs, four Linux installers and a verified checksum
-manifest. Windows remains excluded and no signing secret is used.
+Local output is `dist/native`. On Linux use `--formats deb,appimage`. For
+Windows x64, build with the static Visual C++ runtime and stage the executable
+in the configured binaries directory using PowerShell.
+
+```powershell
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = '-C target-feature=+crt-static'
+cargo build --locked --release -p moxcrew-desktop --target x86_64-pc-windows-msvc
+New-Item -ItemType Directory -Force target/release | Out-Null
+Copy-Item -LiteralPath target/x86_64-pc-windows-msvc/release/moxcrew-desktop.exe -Destination target/release/
+cargo packager --config Packager.toml --target x86_64-pc-windows-msvc --formats nsis,wix
+```
+
+The Windows runner checks the binary's imported runtime libraries, installs the
+NSIS package in a disposable location and extracts the MSI. It compares both
+payloads with the SHA-256 of the release build.
+
+Only an exact `v0.MINOR.PATCH` tag matching both the workspace and packager
+versions enables publication. The manifest covers one Windows EXE, one Windows
+MSI, two macOS DMGs, and an AppImage and Deb for each Linux architecture.
+The publisher checks the exact filenames, rejects empty or unexpected files
+and verifies the checksum manifest before creating the GitHub pre-release.
 
 The native folder picker is pinned to RFD 0.17.2: AppKit on macOS, Shell on
 Windows, and XDG portal/Zenity fallback on Linux. Verify the macOS bundle's
@@ -85,18 +97,18 @@ builds cannot read the new log. See [conversation state](state/connected-project
 ## Native rendering proof
 
 Test-only `ui-smoke` builds support eframe's screenshot capture and timed normal
-close in an explicitly empty test directory. Set `PATCHFLEET_NATIVE_SMOKE=1` to
+close in an explicitly empty test directory. Set `MOXCREW_NATIVE_SMOKE=1` to
 prevent provider probing. These controls are absent from production builds.
 The UI tests also paint all tabs without a display and exercise action payloads.
 The `decisions` scene creates real disposable source/ADR events with proposed,
 accepted, rejected and superseded states and opens an exact decision read.
 The `projects`, `folder-picker` and `folder-error` test scenes create an isolated
 Git fixture. The error scene removes write permission only from that fixture;
-restore its mode during test cleanup. `PATCHFLEET_SMOKE_MIN_WINDOW=1` checks the
-800×560 layout, and `PATCHFLEET_SMOKE_LANGUAGE=en` selects English. Check actual
+restore its mode during test cleanup. `MOXCREW_SMOKE_MIN_WINDOW=1` checks the
+800×560 layout, and `MOXCREW_SMOKE_LANGUAGE=en` selects English. Check actual
 native dialog opening, neutral cancellation and normal close with the sheet
 open. These scene controls are also absent from production.
-For a modal, use `PATCHFLEET_SMOKE_SCREENSHOT_TO=/absolute/test-image.png` rather
+For a modal, use `MOXCREW_SMOKE_SCREENSHOT_TO=/absolute/test-image.png` rather
 than eframe's early two-pass screenshot: it waits for sizing frames, requests
 the rendered image, saves it and closes through Host shutdown. Its PNG writer
 is an optional test-only dependency already used by eframe, not a new production
@@ -104,7 +116,7 @@ runtime component.
 
 The screenshot feature reads the OpenGL framebuffer; it alone does not prove
 that macOS presented the shipped window. Also launch the production App through
-LaunchServices with an explicit disposable `PATCHFLEET_DATA_DIR`, then inspect
+LaunchServices with an explicit disposable `MOXCREW_DATA_DIR`, then inspect
 an OS capture of only that test process's window. Close all older Patchfleet
 instances first: the shared bundle identifier can route an Applications launch
 to an already-running 0.3 WebView copy. Record the actual launched PID/bundle,
@@ -117,10 +129,10 @@ Package the App first, then use hdiutil with a distinct versioned volume name
 and a temporary folder containing the App, Applications shortcut and LICENSE.
 Verify the resulting compressed image before handing it off.
 
-Moxcrew display-identity packages retain `com.patchfleet.desktop`, binary names
-and canonical data paths. The packaged App is now `Moxcrew.app`; CI archive and
-verification paths use that display name. Theme smoke controls additionally
-accept `PATCHFLEET_SMOKE_THEME=light` or `dark`; these remain test-only.
+Current packages use `com.moxcrew.desktop`, `moxcrew-desktop` and the Moxcrew
+canonical data paths. The packaged App is `Moxcrew.app`; CI archive and
+verification paths use that name. Theme smoke controls accept
+`MOXCREW_SMOKE_THEME=light` or `dark`; these remain test-only.
 
 The `create-catalog` and `create-results` scenes seed a disposable non-Git
 Project and queued job. The results scene writes deterministic Markdown/CSV
@@ -135,9 +147,9 @@ installed CLI is probed. These images establish native rendering and containment
 not a model result, provider sign-in or verified ability output.
 
 Windows installer templates are pinned to cargo-packager0.11.8 under
-`crates/moxcrew-desktop/assets/windows/`. Moxcrew display labels deliberately
-retain Patchfleet registry/install/shortcut directory identities so existing
-NSIS/WiX installations are discovered. Reconcile the documented delta when
+`crates/moxcrew-desktop/assets/windows/`. New NSIS installs use Moxcrew registry,
+install and shortcut directory identities; exact Patchfleet keys are read only
+to remove a recognized prior installation. Reconcile the documented delta when
 upgrading the packager. Before a Windows release, exercise actual fresh install,
 upgrade from Patchfleet (including custom directories), cross-format upgrade
 and uninstall/data preservation. Source/template checks do not replace that gate.
@@ -216,6 +228,9 @@ without V18 support reject it. Never rewrite V18 facts as V17 for rollback.
 Task0104 adds V19 reviewer allocations and V20 recovery checkpoints for terminal
 adaptive failures. Preserve the same complete stopped backup before recovery;
 rollback must restore it instead of rewriting V19/V20 facts.
+
+Version 0.13.3 also records a direct chat answer in a V21 planner completion.
+Check rollback with the complete stopped backup from before the upgrade.
 
 Task0041 adds V9 owner audit for project_chat_send and desktop_motion. Rollback
 uses the complete stopped pre-upgrade copy, including preferences. Never remove

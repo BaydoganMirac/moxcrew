@@ -6,7 +6,7 @@ use crate::{Error, Result};
 use fs2::FileExt;
 use serde_json::Value;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::SystemTime;
@@ -58,7 +58,7 @@ struct Fingerprint {
     #[cfg(windows)]
     created: u64,
 }
-fn linked(metadata: &fs::Metadata) -> bool {
+pub(crate) fn linked(metadata: &fs::Metadata) -> bool {
     if metadata.file_type().is_symlink() {
         return true;
     }
@@ -220,7 +220,7 @@ pub fn read_private_file(path: &Path) -> Result<Vec<u8>> {
 fn windows_private_acl(path: &Path, directory: bool) -> Result<()> {
     use std::{
         ffi::c_void,
-        os::windows::ffi::OsStrExt,
+        os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
         ptr::{null, null_mut},
         sync::OnceLock,
     };
@@ -228,12 +228,13 @@ fn windows_private_acl(path: &Path, directory: bool) -> Result<()> {
         Foundation::{CloseHandle, LocalFree, HANDLE},
         Security::Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            SetNamedSecurityInfoW, SDDL_REVISION_1, SE_FILE_OBJECT,
+            SetSecurityInfo, SDDL_REVISION_1, SE_FILE_OBJECT,
         },
         Security::{
             GetSecurityDescriptorDacl, GetTokenInformation, TokenUser, DACL_SECURITY_INFORMATION,
             PROTECTED_DACL_SECURITY_INFORMATION, TOKEN_QUERY, TOKEN_USER,
         },
+        Storage::FileSystem::{FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT},
         System::Threading::{GetCurrentProcess, OpenProcessToken},
     };
     struct Token(HANDLE);
@@ -312,12 +313,24 @@ fn windows_private_acl(path: &Path, directory: bool) -> Result<()> {
         let _ = OWNER_SID.set(sid.clone());
         sid
     };
-    // Do not propagate a new directory ACL into existing children: one may be
-    // a hard link to an outside inode that must remain untouched. Every private
-    // file receives its own protected ACL after its no-link handle check, and
-    // the owner-only directory blocks traversal while a new empty file is set up.
-    let _ = directory;
-    let sddl: Vec<u16> = format!("D:P(A;;FA;;;{sid})(A;;FA;;;SY)")
+    // SetSecurityInfo documents MAXIMUM_ALLOWED handles as not propagating
+    // changes to existing children. This protects unrelated hard-link targets
+    // while still allowing new children to inherit the directory ACL.
+    const MAXIMUM_ALLOWED: u32 = 0x02000000;
+    let file = OpenOptions::new()
+        .access_mode(MAXIMUM_ALLOWED)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)?;
+    if directory {
+        let metadata = file.metadata()?;
+        if linked(&metadata) || !metadata.is_dir() {
+            return Err(Error("PRIVATE_STORAGE_TYPE_INVALID".into()));
+        }
+    } else {
+        checked_handle(&file)?;
+    }
+    let inheritance = if directory { "OICI" } else { "" };
+    let sddl: Vec<u16> = format!("D:P(A;{inheritance};FA;;;{sid})(A;{inheritance};FA;;;SY)")
         .encode_utf16()
         .chain(Some(0))
         .collect();
@@ -345,12 +358,11 @@ fn windows_private_acl(path: &Path, directory: bool) -> Result<()> {
             return Err(permission_error());
         }
     }
-    let name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     // Replace (rather than merge) the DACL and block inherited grants. Existing
     // explicit Everyone/Users ACEs must not survive an owner-selected directory.
     let status = unsafe {
-        SetNamedSecurityInfoW(
-            name.as_ptr(),
+        SetSecurityInfo(
+            file.as_raw_handle(),
             SE_FILE_OBJECT,
             DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
             null_mut(),
@@ -964,7 +976,8 @@ impl Store {
             existing_private_file(&path)?;
             let mut file = private_options()
                 .read(true)
-                .append(true)
+                .append(!state.incomplete_tail)
+                .write(state.incomplete_tail)
                 .create(true)
                 .open(&path)?;
             checked_handle(&file)?;
@@ -972,6 +985,7 @@ impl Store {
             secure_file(&path)?;
             if state.incomplete_tail {
                 file.set_len(state.valid_bytes)?;
+                file.seek(SeekFrom::End(0))?;
                 file.sync_all()?;
             }
             if !bytes.is_empty() {

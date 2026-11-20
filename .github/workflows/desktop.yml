@@ -13,42 +13,34 @@ permissions:
 jobs:
   native:
     timeout-minutes: 90
-    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-15
-            experimental: false
             target: aarch64-apple-darwin
             formats: app,dmg
-            executable: patchfleet-desktop
+            executable: moxcrew-desktop
             archive_paths: Moxcrew.app *.dmg
           - os: macos-15-intel
-            experimental: false
             target: x86_64-apple-darwin
             formats: app,dmg
-            executable: patchfleet-desktop
+            executable: moxcrew-desktop
             archive_paths: Moxcrew.app *.dmg
           - os: windows-2025
-            # Keep Windows evidence visible, but do not publish an installer
-            # until its private-storage and native behavior suites pass.
-            experimental: true
             target: x86_64-pc-windows-msvc
             formats: nsis,wix
-            executable: patchfleet-desktop.exe
+            executable: moxcrew-desktop.exe
             archive_paths: '*-setup.exe *.msi'
           - os: ubuntu-24.04
-            experimental: false
             target: x86_64-unknown-linux-gnu
             formats: deb,appimage
-            executable: patchfleet-desktop
+            executable: moxcrew-desktop
             archive_paths: '*.deb *.AppImage'
           - os: ubuntu-24.04-arm
-            experimental: false
             target: aarch64-unknown-linux-gnu
             formats: deb,appimage
-            executable: patchfleet-desktop
+            executable: moxcrew-desktop
             archive_paths: '*.deb *.AppImage'
     runs-on: ${{ matrix.os }}
     defaults:
@@ -68,8 +60,8 @@ jobs:
         run: |
           [[ "$GITHUB_REF_NAME" =~ ^v0\.[0-9]+\.[0-9]+$ ]]
           version="${GITHUB_REF_NAME#v}"
-          workspace_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
-          packager_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Packager.toml | head -n 1)"
+          workspace_version="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)"
+          packager_version="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Packager.toml | head -n 1)"
           test "$version" = "$workspace_version"
           test "$version" = "$packager_version"
       - name: Linux native window and packaging dependencies
@@ -87,10 +79,12 @@ jobs:
       - name: Native lint checks
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
       - name: Build standalone Rust desktop
-        run: cargo build --locked --release -p patchfleet-desktop --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: '-C target-feature=+crt-static'
+        run: cargo build --locked --release -p moxcrew-desktop --target ${{ matrix.target }}
       - name: Reject browser-engine runtime dependencies
         run: |
-          cargo tree --locked -p patchfleet-desktop --target ${{ matrix.target }} --prefix none | while read -r dependency remainder; do
+          cargo tree --locked -p moxcrew-desktop --target ${{ matrix.target }} --prefix none | while read -r dependency remainder; do
             case "$dependency" in
               tauri*|wry|webkit2gtk*|webview2*|javascriptcore*)
                 echo "Unexpected browser-engine dependency: $dependency"
@@ -117,15 +111,72 @@ jobs:
             fi
           done
           exit 1
+      - name: Check out previous Windows installer templates
+        if: runner.os == 'Windows'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: BaydoganMirac/moxcrew
+          ref: 029195074f13577c1463ada7eebcad9674ad325c # v0.13.1
+          path: previous-preview
+          sparse-checkout: |
+            /Packager.toml
+            /LICENSE
+            /crates/moxcrew-desktop/assets/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Build previous Patchfleet installer fixture
+        if: runner.os == 'Windows'
+        working-directory: previous-preview
+        run: |
+          mkdir -p target/release
+          echo 'fn main() {}' > installer_fixture.rs
+          rustc --target x86_64-pc-windows-msvc installer_fixture.rs -o target/release/patchfleet-desktop.exe
+          cargo-packager --config Packager.toml --target x86_64-pc-windows-msvc --formats nsis
+      - name: Verify Windows installers contain the release executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Packager.toml -Pattern '^version = "([^"]+)"').Matches.Groups[1].Value
+          $output = Join-Path $env:GITHUB_WORKSPACE 'dist/${{ matrix.target }}'
+          $setup = Get-Item -LiteralPath (Join-Path $output "moxcrew-desktop_${version}_x64-setup.exe")
+          $msi = Get-Item -LiteralPath (Join-Path $output "moxcrew-desktop_${version}_x64_en-US.msi")
+          if ($setup.VersionInfo.ProductName -ne 'Moxcrew' -or $setup.VersionInfo.ProductVersion -ne $version) {
+            throw 'Unexpected NSIS product metadata'
+          }
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $database = $installer.OpenDatabase($msi.FullName, 0)
+          $view = $database.OpenView('SELECT Property, Value FROM Property')
+          $view.Execute()
+          $metadata = @{}
+          while ($record = $view.Fetch()) { $metadata[$record.StringData(1)] = $record.StringData(2) }
+          if ($metadata.ProductName -ne 'Moxcrew' -or $metadata.ProductVersion -ne $version) {
+            throw 'Unexpected MSI product metadata'
+          }
+          $binary = Get-Item 'target/${{ matrix.target }}/release/moxcrew-desktop.exe'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $dumpbin = & $vswhere -latest -products '*' -find 'VC/Tools/MSVC/**/bin/Hostx64/x64/dumpbin.exe' | Select-Object -First 1
+          $imports = & $dumpbin /NOLOGO /DEPENDENTS $binary.FullName
+          if ($LASTEXITCODE -ne 0 -or $imports -match '^\s*(VCRUNTIME|MSVCP|CONCRT)\d+.*\.dll\s*$') {
+            throw 'Desktop requires an external Visual C++ runtime or its imports could not be inspected'
+          }
+          $expected = (Get-FileHash $binary.FullName).Hash
+          $msiDir = Join-Path $env:RUNNER_TEMP 'moxcrew-msi-inspect'
+          $msiRun = Start-Process msiexec.exe -ArgumentList @('/a', ('"{0}"' -f $msi.FullName), '/qn', ('TARGETDIR="{0}"' -f $msiDir)) -WindowStyle Hidden -Wait -PassThru
+          if ($msiRun.ExitCode -ne 0) { throw "MSI extraction failed: $($msiRun.ExitCode)" }
+          $payload = @(Get-ChildItem -LiteralPath $msiDir -File -Recurse -Filter moxcrew-desktop.exe)
+          if ($payload.Count -ne 1 -or (Get-FileHash $payload[0].FullName).Hash -ne $expected) {
+            throw 'MSI administrative image differs from the release build'
+          }
+          ./scripts/verify-windows-install.ps1 -Setup $setup.FullName -Msi $msi.FullName -ExpectedHash $expected
       - name: Verify package outputs
         run: |
           output="dist/${{ matrix.target }}"
           case "$RUNNER_OS" in
             macOS)
               expected_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Packager.toml | head -n 1)"
-              test -x "$output/Moxcrew.app/Contents/MacOS/patchfleet-desktop"
+              test -x "$output/Moxcrew.app/Contents/MacOS/moxcrew-desktop"
               test -f "$output"/*.dmg
-              test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$output/Moxcrew.app/Contents/Info.plist")" = com.patchfleet.desktop
+              test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$output/Moxcrew.app/Contents/Info.plist")" = com.moxcrew.desktop
               test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$output/Moxcrew.app/Contents/Info.plist")" = "$expected_version"
               /usr/libexec/PlistBuddy -c 'Print NSDocumentsFolderUsageDescription' "$output/Moxcrew.app/Contents/Info.plist"
               codesign --verify --deep --strict "$output/Moxcrew.app"
@@ -141,7 +192,7 @@ jobs:
               ;;
           esac
       - name: Stage public release assets
-        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -162,6 +213,10 @@ jobs:
             x86_64-apple-darwin)
               copy_one dmg "Moxcrew_${version}_macOS_Intel.dmg"
               ;;
+            x86_64-pc-windows-msvc)
+              cp "$output/moxcrew-desktop_${version}_x64-setup.exe" "release-assets/Moxcrew_${version}_windows_x64-setup.exe"
+              cp "$output/moxcrew-desktop_${version}_x64_en-US.msi" "release-assets/Moxcrew_${version}_windows_x64.msi"
+              ;;
             x86_64-unknown-linux-gnu)
               copy_one AppImage "Moxcrew_${version}_linux_x86_64.AppImage"
               copy_one deb "Moxcrew_${version}_linux_x86_64.deb"
@@ -175,7 +230,7 @@ jobs:
               ;;
           esac
       - name: Preserve public release assets
-        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-assets-${{ matrix.target }}
@@ -185,12 +240,12 @@ jobs:
       - name: Archive installers with executable permissions preserved
         run: |
           cd dist/${{ matrix.target }}
-          tar -czf ../../patchfleet-${{ matrix.target }}.tar.gz ${{ matrix.archive_paths }}
+          tar -czf ../../moxcrew-${{ matrix.target }}.tar.gz ${{ matrix.archive_paths }}
       - name: Preserve development artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: patchfleet-native-${{ matrix.target }}
-          path: patchfleet-${{ matrix.target }}.tar.gz
+          name: moxcrew-native-${{ matrix.target }}
+          path: moxcrew-${{ matrix.target }}.tar.gz
           if-no-files-found: error
           retention-days: 14
 
@@ -213,11 +268,20 @@ jobs:
       - name: Verify installers and write checksums
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          test "$(find release-assets -maxdepth 1 -type f | wc -l)" -eq 6
           cd release-assets
-          installers=(Moxcrew_*)
-          test "${#installers[@]}" -eq 6
+          version="${GITHUB_REF_NAME#v}"
+          installers=(
+            "Moxcrew_${version}_macOS_Apple-Silicon.dmg"
+            "Moxcrew_${version}_macOS_Intel.dmg"
+            "Moxcrew_${version}_linux_aarch64.AppImage"
+            "Moxcrew_${version}_linux_aarch64.deb"
+            "Moxcrew_${version}_linux_x86_64.AppImage"
+            "Moxcrew_${version}_linux_x86_64.deb"
+            "Moxcrew_${version}_windows_x64-setup.exe"
+            "Moxcrew_${version}_windows_x64.msi"
+          )
+          test "$(find . -mindepth 1 | wc -l)" -eq "${#installers[@]}"
+          for installer in "${installers[@]}"; do test -s "$installer"; done
           LC_ALL=C sha256sum "${installers[@]}" > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
       - name: Publish GitHub pre-release

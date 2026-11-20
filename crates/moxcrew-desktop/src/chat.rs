@@ -36,6 +36,35 @@ fn centered(ui: &mut Ui, width: f32, contents: impl FnOnce(&mut Ui)) {
     });
 }
 
+fn mox_hero_art(ui: &mut Ui, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    let palette = colors(ui);
+    let center = rect.center();
+    ui.painter().circle_filled(
+        center,
+        size * 0.45,
+        palette
+            .accent
+            .gamma_multiply(if ui.ctx().theme() == egui::Theme::Dark {
+                0.19
+            } else {
+                0.22
+            }),
+    );
+    ui.painter().circle_stroke(
+        center,
+        size * 0.45,
+        egui::Stroke::new(1.0, palette.accent.gamma_multiply(0.42)),
+    );
+    let image = egui::Rect::from_center_size(
+        center + egui::vec2(0.0, size * 0.04),
+        egui::vec2(size * 0.92, size * 0.92 * 2.0 / 3.0),
+    );
+    ui.scope_builder(egui::UiBuilder::new().max_rect(image), |ui| {
+        studio::mascot(ui, size * 0.92)
+    });
+}
+
 fn suggestion(goal: &str) -> Option<&'static str> {
     let words = goal.to_lowercase();
     let groups = [
@@ -224,7 +253,7 @@ impl Console {
             height +=
                 gap + text_height("An action is in progress. You can keep editing your message.");
         } else if self.create.planner_busy() {
-            height += gap + text_height("Mox is planning. You can write your next message.");
+            height += gap + text_height("Mox is responding. You can write your next message.");
         }
         if self.create.crew.single {
             height += gap
@@ -383,7 +412,7 @@ impl Console {
                     });
                 });
             } else {
-                ui.label(studio::title(t(ui, "Your studio"), 16.0).color(colors(ui).muted));
+                ui.label(studio::title(t(ui, "New conversation"), 16.0).color(colors(ui).muted));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if studio::quiet_button(ui, t(ui, "Connections").as_ref()).clicked() {
@@ -572,11 +601,6 @@ impl Console {
         });
         let frame =
             composer_frame(ui, focused).show(ui, |ui| self.chat_composer(ui, snapshot, commands));
-        let stripe = egui::Rect::from_min_max(
-            frame.response.rect.left_top() + egui::vec2(0.0, 12.0),
-            frame.response.rect.left_bottom() + egui::vec2(3.0, -12.0),
-        );
-        ui.painter().rect_filled(stripe, 2, colors(ui).accent);
         #[cfg(test)]
         ui.data_mut(|data| {
             data.insert_temp(
@@ -784,7 +808,7 @@ impl Console {
                 "An action is in progress. You can keep editing your message.",
             );
         } else if self.create.planner_busy() {
-            hint(ui, "Mox is planning. You can write your next message.");
+            hint(ui, "Mox is responding. You can write your next message.");
         }
         if !self.create.crew.single {
             let preference = self.create.planner_provider().clone();
@@ -801,7 +825,11 @@ impl Console {
                     if let Some(target) = target {
                         raw_hint(
                             ui,
-                            &tf(ui, "Planning with {0}", &[connect::provider_name(&target)]),
+                            &tf(
+                                ui,
+                                "Selected provider: {0}",
+                                &[connect::provider_name(&target)],
+                            ),
                         );
                     } else if preference.is_empty() {
                         hint(
@@ -1063,70 +1091,61 @@ impl Console {
     fn chat_welcome(&mut self, ui: &mut Ui, snapshot: &Value, commands: &mut Vec<Command>) {
         let compact = ui.ctx().viewport_rect().height() < 700.0;
         ui.add_space(if compact {
-            12.0
+            16.0
         } else {
-            (ui.available_height() * 0.08).clamp(20.0, 52.0)
+            (ui.available_height() * 0.10).clamp(28.0, 64.0)
         });
-        let cobalt = egui::Color32::from_rgb(40, 84, 244);
-        let orange = egui::Color32::from_rgb(255, 122, 47);
-        let hero = egui::Frame::new()
-            .fill(cobalt)
-            .corner_radius(studio::metrics::CARD_RADIUS)
-            .inner_margin(if compact { 20 } else { 28 })
-            .show(ui, |ui| {
-                let hero_height = if compact { 126.0 } else { 152.0 };
-                let mascot_width = if compact { 104.0 } else { 132.0 };
-                let gap = if compact { 16.0 } else { 24.0 };
-                let copy_width = (ui.available_width() - mascot_width - gap - 24.0).max(280.0);
+        let hero_height = if compact { 136.0 } else { 220.0 };
+        let width = ui.available_width();
+        let show_mascot = width >= 560.0;
+        let mascot_width = if compact { 120.0 } else { 200.0 };
+        let copy_width = if show_mascot {
+            (width - mascot_width - 24.0).min(520.0)
+        } else {
+            width
+        };
+        let spacer =
+            (width - copy_width - mascot_width - ui.spacing().item_spacing.x * 2.0).max(0.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(width, hero_height),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
                 ui.allocate_ui_with_layout(
-                    egui::vec2(ui.available_width(), hero_height),
-                    egui::Layout::left_to_right(egui::Align::Center),
+                    egui::vec2(copy_width, hero_height),
+                    egui::Layout::top_down(egui::Align::Min).with_main_align(egui::Align::Center),
                     |ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(copy_width, hero_height),
-                        egui::Layout::top_down(egui::Align::Min)
-                            .with_main_align(egui::Align::Center),
-                        |ui| {
-                            ui.label(
-                                RichText::new(t(ui, "Mox is ready"))
-                                    .size(13.0)
-                                    .strong()
-                                    .color(orange),
-                            );
-                            ui.add_space(8.0);
-                            ui.label(
-                                studio::title(
-                                    t(ui, "Name the outcome.\nWatch the crew take shape."),
-                                    if compact { 28.0 } else { 36.0 },
-                                )
-                                .color(egui::Color32::WHITE),
-                            );
-                            ui.add_space(10.0);
-                            ui.label(
-                                RichText::new(t(
-                                    ui,
-                                    "Mox shapes the plan and proposes the right roles. You stay in control.",
-                                ))
+                        ui.label(
+                            RichText::new("Mox")
                                 .size(14.0)
-                                .color(egui::Color32::from_rgb(221, 228, 255)),
-                            );
-                        },
-                    );
-                    ui.add_space(gap);
-                    egui::Frame::new()
-                        .fill(orange)
-                        .corner_radius(studio::metrics::CARD_RADIUS)
-                        .inner_margin(if compact { 8 } else { 12 })
-                        .show(ui, |ui| studio::mascot(ui, mascot_width));
+                                .strong()
+                                .color(colors(ui).primary),
+                        );
+                        ui.add_space(studio::metrics::CONTROL_GAP);
+                        ui.label(
+                            studio::title(
+                                t(ui, "Ask a question.\nGive Mox a goal."),
+                                if compact { 32.0 } else { 48.0 },
+                            )
+                            .color(colors(ui).text),
+                        );
+                        ui.add_space(studio::metrics::CONTROL_GAP);
+                        ui.label(
+                            RichText::new(t(
+                                ui,
+                                "Mox answers questions and plans work. You stay in control.",
+                            ))
+                            .size(if compact { 14.0 } else { 15.0 })
+                            .color(colors(ui).muted),
+                        );
                     },
                 );
-            });
-        let accent = egui::Rect::from_min_size(
-            hero.response.rect.left_bottom() - egui::vec2(0.0, 6.0),
-            egui::vec2((hero.response.rect.width() * 0.22).max(120.0), 6.0),
+                if show_mascot {
+                    ui.add_space(spacer);
+                    mox_hero_art(ui, mascot_width);
+                }
+            },
         );
-        ui.painter().rect_filled(accent, 0, orange);
-        ui.add_space(if compact { 12.0 } else { 16.0 });
+        ui.add_space(if compact { 12.0 } else { 24.0 });
         self.chat_composer_frame(ui, snapshot, commands);
         if self.create.conversation_input().trim().is_empty()
             && self.create.attachment_paths().is_empty()
@@ -1236,7 +1255,7 @@ impl Console {
                             ||json!({"runId":run["runId"],"expectedRunRevision":run["revision"]}));
                     }
                     let before=commands.len();
-                    action(ui,commands,"Files","project_results_read",issue.is_none() && !cfg!(target_os="windows"),
+                    action(ui,commands,"Files","project_results_read",issue.is_none(),
                         ||json!({"projectId":self.create.project,"workItemId":work["workItemId"]}));
                     if commands.len()>before {
                         self.create.selected_work.insert(self.create.project.clone(),text(work,"workItemId").into());
@@ -1612,7 +1631,7 @@ mod tests {
         studio::install(&ctx);
         let mut data = snapshot();
         data["desktopPreferences"] = json!({"language":"en"});
-        data["abilities"] = patchfleet_core::abilities::catalog();
+        data["abilities"] = moxcrew_core::abilities::catalog();
         data["projectJobs"][0]["abilityId"] = json!("V1");
         data["work"]["revision"] = json!(4);
         data["work"]["items"][0]["title"] = json!("Video edit");

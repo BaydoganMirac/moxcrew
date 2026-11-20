@@ -1,4 +1,4 @@
-use patchfleet_core::providers::{self, Controller, Programs};
+use moxcrew_core::providers::{self, Controller, Programs};
 use serde_json::json;
 use std::{
     path::PathBuf,
@@ -172,7 +172,7 @@ async fn unavailable_malformed_timeout_are_safe() {
     let all = providers::observe_with(&p).await.unwrap();
     assert_eq!(all[0]["provider"]["error"]["code"], "CODEX_PROBE_TIMEOUT");
     assert!(at.elapsed() < Duration::from_secs(5));
-    p.codex = PathBuf::from("patchfleet-no-such-provider-1234");
+    p.codex = PathBuf::from("moxcrew-no-such-provider-1234");
     let all = providers::observe_with(&p).await.unwrap();
     assert_eq!(all[0]["provider"]["state"], "unavailable");
     p.codex = fixture("codex-bad-rpc");
